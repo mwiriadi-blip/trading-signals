@@ -9,7 +9,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Signal Engine Core — Indicators & Vote** — Pure-math indicator library (ATR/ADX/Mom/RVol) and the 2-of-3 momentum vote with ADX gate, fixture-tested
+- [x] **Phase 1: Signal Engine Core — Indicators & Vote** — Pure-math indicator library (ATR/ADX/Mom/RVol) and the 2-of-3 momentum vote with ADX gate, fixture-tested (completed 2026-04-20)
 - [ ] **Phase 2: Signal Engine — Sizing, Exits, Pyramiding** — Pure-math position sizing (skip-if-zero), exit rules (intraday H/L), and pyramid state machine, fixture-tested
 - [ ] **Phase 3: State Persistence with Recovery** — `state_manager.py` with atomic writes, corruption recovery, and schema versioning
 - [ ] **Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI** — Live yfinance fetch, `main.py` orchestrator, CLI flags, structured logs
@@ -30,13 +30,13 @@
   3. ADX ≥ 25 with ≥2 of [Mom1, Mom3, Mom12] above +0.02 returns signal 1 (LONG); mirror case returns -1 (SHORT); split vote returns 0 (FLAT)
   4. Warm-up bars (first N-1 of each indicator) return NaN, not zero or garbage, via `min_periods=period`
   5. `pytest tests/test_signal_engine.py -k indicators_or_vote` passes green with zero network calls
-**Plans:** 6 plans
+**Plans:** 6/6 plans complete
 - [x] 01-01-PLAN.md — Wave 0 scaffold: Python 3.11 venv, pinned requirements.txt (R-02), pyproject.toml with pytest + ruff config (R-05), CLAUDE.md stack amendment, test-package skeleton, oracle README
 - [x] 01-02-PLAN.md — Wave 1: pure-Python-loop Wilder oracle (ATR, ADX, +DI, -DI, Mom, RVol) + oracle self-consistency tests per D-02
 - [x] 01-03-PLAN.md — Wave 1 (parallel): canonical fixtures for ^AXJO + AUDUSD=X (R-03), 9 scenario fixtures (D-16), regenerate_goldens.py + initial goldens + determinism snapshot
-- [ ] 01-04-PLAN.md — Wave 2: signal_engine.py compute_indicators + private helpers; TestIndicators class proves SIG-01..04 match oracle to 1e-9 on both canonical fixtures
-- [ ] 01-05-PLAN.md — Wave 3 (after 04; both share signal_engine.py): signal_engine.py get_signal + get_latest_indicators; TestVote + TestEdgeCases classes prove SIG-05..08 + D-09..12 via 9 scenario fixtures
-- [ ] 01-06-PLAN.md — Wave 4: TestDeterminism class (SHA256 snapshot regression + architectural AST guards); full phase gate
+- [x] 01-04-PLAN.md — Wave 2: signal_engine.py compute_indicators + private helpers; TestIndicators class proves SIG-01..04 match oracle to 1e-9 on both canonical fixtures
+- [x] 01-05-PLAN.md — Wave 3 (after 04; both share signal_engine.py): signal_engine.py get_signal + get_latest_indicators; TestVote + TestEdgeCases classes prove SIG-05..08 + D-09..12 via 9 scenario fixtures
+- [x] 01-06-PLAN.md — Wave 4: TestDeterminism class (SHA256 snapshot regression + architectural AST guards); full phase gate
 **UI hint**: no
 
 ### Phase 2: Signal Engine — Sizing, Exits, Pyramiding
@@ -150,7 +150,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Signal Engine Core — Indicators & Vote | 5/6 | In progress | - |
+| 1. Signal Engine Core — Indicators & Vote | 6/6 | Complete    | 2026-04-20 |
 | 2. Signal Engine — Sizing, Exits, Pyramiding | 0/0 | Not started | - |
 | 3. State Persistence with Recovery | 0/0 | Not started | - |
 | 4. End-to-End Skeleton — Fetch + Orchestrator + CLI | 0/0 | Not started | - |
