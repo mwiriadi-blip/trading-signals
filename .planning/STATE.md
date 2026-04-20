@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 6
-status: ready_to_plan
-last_updated: "2026-04-20T20:39:36.241Z"
+current_plan: Not started
+status: planning
+last_updated: "2026-04-20T23:59:19.284Z"
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 6
+  completed_phases: 1
+  total_plans: 11
   completed_plans: 6
-  percent: 25
+  percent: 55
 ---
 
 # STATE — Trading Signals
@@ -116,7 +116,7 @@ None.
 ---
 *State initialised: 2026-04-20 at roadmap creation*
 
-**Planned Phase:** 1 (Signal Engine Core — Indicators & Vote) — 6 plans — 2026-04-20T13:11:46.127Z
+**Planned Phase:** 02 (Signal Engine — Sizing, Exits, Pyramiding) — 5 plans — 2026-04-20T23:59:19.275Z
 
 **Plan 01-02 completed:** 2026-04-20T19:49:00Z — 3 tasks, 3 files created (tests/oracle/wilder.py, tests/oracle/mom_rvol.py, tests/oracle/test_oracle_self_consistency.py), 17 self-consistency tests passing, requirements SIG-01..SIG-04 marked complete.
 
