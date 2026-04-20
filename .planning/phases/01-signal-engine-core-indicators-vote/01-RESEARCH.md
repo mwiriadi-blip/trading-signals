@@ -599,32 +599,34 @@ def build_snapshot(df_with_indicators: pd.DataFrame) -> dict:
 | A7 | ADX(20) first non-NaN at bar 2*period-2 = bar 38 (0-indexed) | Pattern 2 | VERIFIED empirically on synthetic 60-bar series; could shift by ±1 depending on TR bar-0 convention (we chose bar 0 TR = H-L). If operator prefers bar 0 TR = NaN, shifts to bar 39. |
 | A8 | Test runner is pytest (project convention per CLAUDE.md) with no pytest-cov | Test Layout | If operator wants coverage reporting, need to add to plan; but D-16 explicitly declines pytest-cov |
 
-## Open Questions
+## Open Questions (RESOLVED 2026-04-20 by operator)
+
+All 5 questions resolved in `/gsd-plan-phase 1` pre-planning gate. Each resolution is tagged with an `R-XX` ID that flows into the planner prompt and every affected plan.
 
 1. **SIG-01 formula interpretation — critical planning-time question.**
    - What we know: SIG-01 text says `ewm(alpha=1/14, adjust=False, min_periods=14)` and ALSO says "Wilder's". These two statements are in conflict (Pitfall 1).
    - What's unclear: Did the operator/spec author intend "canonical Wilder" (which requires SMA seeding) or literally the pandas one-liner as written?
-   - Recommendation: Planner surfaces this in the plan-check step. Default plan: implement SMA-seeded ewm (Pattern 1), mention the spec-text gap in a phase-kickoff note. This matches intent (ATR(14) via Wilder) and is bit-identical to pure-loop Wilder.
+   - **RESOLVED as R-01: SMA-seeded ewm = canonical Wilder.** Production uses `rolling(N).mean()` seed at bar N-1 + recursive Wilder thereafter (bit-identical to pure-loop Wilder to 1e-14). Oracle uses pure Python loop. REQUIREMENTS.md SIG-01 text unchanged; PLAN.md carries a one-line clarification that the *intent* is Wilder and the SMA-seed step is implied.
 
 2. **Python/pandas/numpy version lock.**
    - What we know: CLAUDE.md specifies Python 3.11, pandas 2.2, numpy 1.26+. Dev machine has 3.9.6, pandas 2.3.3, numpy 2.0.2.
    - What's unclear: Are the CLAUDE.md versions the *target* for production (GHA), or the *current* dev setup? Since GHA in Phase 7 will specify versions, the pin is ultimately what CI uses.
-   - Recommendation: Plan task "Install Python 3.11 + pin `requirements.txt` to 2.2.x pandas / 1.26.x numpy." Lock at phase 1 start; never let drift be a silent source of SHA256 divergence.
+   - **RESOLVED as R-02: Accept dev-machine major versions, keep Python 3.11+.** CLAUDE.md stack line updated from `pandas 2.2` → `pandas 2.3+` and `numpy 1.26+` → `numpy 2.0+`. `requirements.txt` pins exact: `pandas==2.3.3`, `numpy==2.0.2`, `pytest==8.x`, `yfinance==1.2.x`. Python 3.11 still required — install via pyenv as Wave 0 first task (dev has 3.9.6). MUST audit for float32 leaks per Pitfall 5 (numpy 2.0 scalar cast behavior).
 
 3. **Canonical 400-bar fixture: one instrument or two?**
    - What we know: D-01 says "one canonical ~400-bar real historical snapshot." SPEC mentions two instruments (^AXJO, AUDUSD=X).
    - What's unclear: Does `one canonical` fixture mean one file for one instrument (e.g., ^AXJO), or one file per instrument?
-   - Recommendation: Start with `^AXJO` (SPI 200) only — it's the primary instrument. Add `AUDUSD=X` fixture if the regenerate_goldens script proves trivially extensible. Surface in plan-check.
+   - **RESOLVED as R-03: Both ^AXJO AND AUDUSD=X.** Two real 400-bar snapshots, two sets of goldens, both covered by the determinism snapshot. Exercises indicators across index scale (~7000-8000) and FX scale (~0.6-0.7) to catch scale-sensitivity bugs early.
 
 4. **Bar 0 TR convention.**
    - What we know: At bar 0, `close_{t-1}` is NaN, so two of the three TR candidates (|H-Cprev|, |L-Cprev|) are NaN. pandas' `.max(axis=1, skipna=True)` (default) returns `high - low`. An alternative convention returns NaN.
    - What's unclear: Does the operator/oracle author prefer NaN at bar 0 or high-low?
-   - Recommendation: Use pandas default (skipna=True → bar 0 TR = high - low). Document in `tests/oracle/README.md`. Oracle MUST match this convention. Warmup ATR/ADX already produces NaN for the first 13/38 bars, so bar 0 specifics are masked; the difference only shows up if someone reads `ATR.iloc[0]` directly.
+   - **RESOLVED as R-04: pandas default — bar 0 TR = high - low.** Oracle matches by using `skipna=True` semantics in its loop. Documented in `tests/oracle/README.md`. Warmup masking NaNs the first 13 ATR bars, so the bar-0 value only matters if someone reads TR directly.
 
 5. **Whether `ruff format` replaces autopep8 / black.**
    - What we know: CLAUDE.md says "PEP 8 via ruff" and "2-space indent, single quotes."
    - What's unclear: `ruff format` defaults to 4-space indent and double quotes (following black). Will need a `pyproject.toml` ruff config override.
-   - Recommendation: Plan task to write `pyproject.toml` with `[tool.ruff.format] indent-style = "space" indent-width = 2 quote-style = "single"`. These are ruff 0.1+ config keys.
+   - **RESOLVED as R-05: pyproject.toml ruff config override.** Wave 0 `pyproject.toml` includes `[tool.ruff.format] indent-style = "space"`, `indent-width = 2`, `quote-style = "single"` (ruff 0.1+ keys). Enforces CLAUDE.md conventions against ruff's black-derived defaults.
 
 ## Environment Availability
 
