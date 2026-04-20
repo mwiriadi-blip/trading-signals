@@ -218,6 +218,38 @@ class TestIndicators:
         f'{stem} {col} has dtype {out[col].dtype.name}, expected float64 (Pitfall 5)'
       )
 
+  # --- REVIEWS pass-2 #2: idempotency guard ---
+
+  def test_compute_indicators_is_idempotent(self) -> None:
+    '''REVIEWS pass-2 #2: calling compute_indicators twice must produce identical output.
+
+    Locks a property Phase 2/4 will rely on defensively -- a caller that
+    inadvertently re-enriches an already-enriched DataFrame should get the
+    same result, not stale/drifted values. Bit-equality (atol=0) because
+    compute_indicators is pure: running it on the same inputs (OHLCV cols
+    are preserved across calls) must produce byte-identical floats.
+    '''
+    fixture = _load_fixture('axjo_400bar')
+    out1 = compute_indicators(fixture)
+    out2 = compute_indicators(out1)
+    # 1. Column order preserved (no re-appending of indicator cols in a new position)
+    assert list(out1.columns) == list(out2.columns), (
+      f'column-order drift: out1={list(out1.columns)}, out2={list(out2.columns)}'
+    )
+    assert list(out1.columns) == EXPECTED_OUTPUT_COLUMNS, (
+      f'out1 columns should match canonical order, got {list(out1.columns)}'
+    )
+    # 2. Index preserved (date index, same length)
+    assert out1.index.equals(out2.index), 'index drift between first and second call'
+    assert len(out1) == len(out2), 'row count drift between first and second call'
+    # 3. Strict bit-equality across every column (atol=0, equal_nan=True)
+    np.testing.assert_allclose(
+      out1.to_numpy(dtype='float64'),
+      out2.to_numpy(dtype='float64'),
+      atol=0, rtol=0, equal_nan=True,
+      err_msg='compute_indicators is not idempotent: bit-level drift on second call',
+    )
+
 
 # =========================================================================
 # TestVote -- 9 scenario fixtures covering the vote truth table (D-16)
