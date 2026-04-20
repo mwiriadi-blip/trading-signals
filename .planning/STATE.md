@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 1
 status: executing
-last_updated: "2026-04-20T19:41:33.935Z"
+last_updated: "2026-04-20T19:50:22.004Z"
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
-  percent: 17
+  completed_plans: 2
+  percent: 33
 ---
 
 # STATE — Trading Signals
@@ -28,10 +28,10 @@ progress:
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 1 — Signal Engine Core — Indicators & Vote
-- **Current Plan:** 1
+- **Current Plan:** 2
 - **Total Plans:** 6
 - **Status:** Executing Phase 1
-- **Progress:** [██░░░░░░░░] 17%
+- **Progress:** [███░░░░░░░] 33%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -47,6 +47,7 @@ progress:
 | Phases in-flight | 0 |
 | Decisions logged | 4 (operator decisions baked into roadmap) |
 | Phase 01 P01 | 9 | 3 tasks | 10 files |
+| Phase 01 P02 | 5 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,8 @@ progress:
 - Python 3.11.8 installed via pyenv (Homebrew-installed); 5 Phase 1 deps pinned to bit-locked versions in requirements.txt (numpy==2.0.2, pandas==2.3.3, pytest==8.3.3, yfinance==1.2.0, ruff==0.6.9); later-phase deps deferred to their phase scaffolds
 - ruff format NOT used in Phase 1 — ruff 0.6.9 lacks indent-width knob (would reflow to 4-space). Using ruff check only, with .editorconfig + reviewer discipline + Plan 06 lint guard for 2-space enforcement (R-05)
 - Pyenv preflight remediated by brew install pyenv (was not installed); REVIEWS.md Gemini preflight guidance satisfied. Future GHA setup-python will pick up .python-version=3.11.8
+- Plan 01-02 Task 1 AC #10 contradicted documented seed-window NaN rule and Task 3's explicit test; implemented rule-per-documented-intent (Rule 1 deviation logged)
+- `_wilder_smooth` pure-loop oracle now trust anchor for ATR/ADX; D-11 flat-price NaN propagation and D-12 bit-exact 0 RVol both verified at 17-test level
 
 ### Todos Carried Forward
 
@@ -80,8 +83,8 @@ None.
 
 ## Session Continuity
 
-- **Last action:** Roadmap created with 8 phases (fine granularity); all 78 v1 requirements mapped; operator decisions baked into Phase 2 and Phase 7 goals.
-- **Next action:** Run `/gsd-plan-phase 1` (Signal Engine Core — Indicators & Vote). Optionally run `/gsd-plan-phase 3` in parallel (State Persistence) — the two share no code.
+- **Last action:** Executed Plan 01-02 — pure-Python-loop Wilder + Mom/RVol oracle created; 17 self-consistency tests pass; SIG-01..04 requirements marked complete.
+- **Next action:** Execute Plan 01-03 (canonical fixtures + regenerate_goldens.py + determinism snapshot). Run `/gsd-execute-phase 1` to continue.
 - **Files ready for review:**
   - `.planning/ROADMAP.md` — full phase detail + success criteria
   - `.planning/REQUIREMENTS.md` — traceability table populated
@@ -94,3 +97,5 @@ None.
 *State initialised: 2026-04-20 at roadmap creation*
 
 **Planned Phase:** 1 (Signal Engine Core — Indicators & Vote) — 6 plans — 2026-04-20T13:11:46.127Z
+
+**Plan 01-02 completed:** 2026-04-20T19:49:00Z — 3 tasks, 3 files created (tests/oracle/wilder.py, tests/oracle/mom_rvol.py, tests/oracle/test_oracle_self_consistency.py), 17 self-consistency tests passing, requirements SIG-01..SIG-04 marked complete.

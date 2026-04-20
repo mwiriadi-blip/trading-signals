@@ -18,10 +18,14 @@ Fine granularity — each requirement is independently testable.
 
 ### Signal Engine (pure math)
 
-- [ ] **SIG-01**: ATR(14) computed via Wilder's `ewm(alpha=1/14, adjust=False, min_periods=14)`
-- [ ] **SIG-02**: ADX(20) with +DI and -DI computed via Wilder's method, garbage bars return NaN
-- [ ] **SIG-03**: Mom1 / Mom3 / Mom12 computed as 21 / 63 / 252-day price returns
-- [ ] **SIG-04**: RVol computed as 20-day daily return std × √252
+- [x] **SIG-01
+**: ATR(14) computed via Wilder's `ewm(alpha=1/14, adjust=False, min_periods=14)`
+- [x] **SIG-02
+**: ADX(20) with +DI and -DI computed via Wilder's method, garbage bars return NaN
+- [x] **SIG-03
+**: Mom1 / Mom3 / Mom12 computed as 21 / 63 / 252-day price returns
+- [x] **SIG-04
+**: RVol computed as 20-day daily return std × √252
 - [ ] **SIG-05**: Signal FLAT (0) when ADX < 25
 - [ ] **SIG-06**: Signal LONG (1) when ADX ≥ 25 and ≥2 of [Mom1, Mom3, Mom12] > +0.02
 - [ ] **SIG-07**: Signal SHORT (-1) when ADX ≥ 25 and ≥2 of [Mom1, Mom3, Mom12] < -0.02
@@ -169,10 +173,10 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | DATA-04 | Phase 4 | Pending |
 | DATA-05 | Phase 4 | Pending |
 | DATA-06 | Phase 4 | Pending |
-| SIG-01 | Phase 1 | Pending |
-| SIG-02 | Phase 1 | Pending |
-| SIG-03 | Phase 1 | Pending |
-| SIG-04 | Phase 1 | Pending |
+| SIG-01 | Phase 1 | Complete (Plan 01-02) |
+| SIG-02 | Phase 1 | Complete (Plan 01-02) |
+| SIG-03 | Phase 1 | Complete (Plan 01-02) |
+| SIG-04 | Phase 1 | Complete (Plan 01-02) |
 | SIG-05 | Phase 1 | Pending |
 | SIG-06 | Phase 1 | Pending |
 | SIG-07 | Phase 1 | Pending |
