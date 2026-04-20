@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 5
+current_plan: 6
 status: executing
-last_updated: "2026-04-20T20:15:14.928Z"
+last_updated: "2026-04-20T20:25:29.182Z"
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # STATE — Trading Signals
@@ -28,10 +28,10 @@ progress:
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 1 — Signal Engine Core — Indicators & Vote
-- **Current Plan:** 5
+- **Current Plan:** 6
 - **Total Plans:** 6
 - **Status:** Executing Phase 1
-- **Progress:** [███████░░░] 67%
+- **Progress:** [████████░░] 83%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -50,6 +50,7 @@ progress:
 | Phase 01 P02 | 5 | 3 tasks | 3 files |
 | Phase 01 P03 | 10 | 2 tasks | 28 files |
 | Phase 01 P04 | 4min | 2 tasks | 2 files |
+| Phase 01 P05 | 4m18s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ progress:
 - Plan 01-04: production _wilder_smooth uses explicit numpy loop (not pandas .ewm) to enforce oracle's NaN-strict seed-window rule bit-for-bit (REVIEWS MEDIUM)
 - Plan 01-04: every indicator column assignment uses explicit .astype('float64') (12 casts) to defend against numpy 2.0 float32 leaks (Pitfall 5)
 - Plan 01-04: _assert_index_aligned(computed, golden) helper called BEFORE every assert_allclose so date-index drift fails with clear message (REVIEWS MEDIUM)
+- Plan 01-05: get_signal uses list-comprehension NaN-abstaining vote pattern (RESEARCH Example 4); get_latest_indicators wraps every scalar with float() to strip numpy.float64 (REVIEWS POLISH); threshold-equality boundary tests for ADX==25, Mom==+/-0.02 pin < vs <= semantics
+- Plan 01-05: _make_single_bar_df helper lets threshold-equality tests bypass compute_indicators — tests isolate vote semantics without coupling to indicator math
+- Plan 01-05: per-function imports inside each test (mirror Plan 04 style) + ruff --fix I001 autofix applied as Rule-3 formatting-only deviation
 
 ### Todos Carried Forward
 
@@ -91,8 +95,8 @@ None.
 
 ## Session Continuity
 
-- **Last action:** Executed Plan 01-04 — production `signal_engine.py` (193 lines) + `tests/test_signal_engine.py::TestIndicators` (38 tests). compute_indicators(df) returns NEW DataFrame with [ATR, ADX, PDI, NDI, Mom1, Mom3, Mom12, RVol] — all float64, D-07 non-mutating. Production `_wilder_smooth` matches oracle's NaN-strict seed-window rule bit-for-bit (REVIEWS MEDIUM). Per-indicator max abs diff vs oracle: 5.7e-14 worst case (ATR axjo), well inside 1e-9. Both canonical fixtures (^AXJO + AUDUSD=X per R-03) match. `_assert_index_aligned(computed, golden)` called before every assert_allclose (REVIEWS MEDIUM). Ruff clean. 55/55 tests pass (17 oracle + 38 TestIndicators).
-- **Next action:** Execute Plan 01-05 (TestVote + TestEdgeCases + get_signal + get_latest_indicators). Run `/gsd-execute-phase 1` to continue.
+- **Last action:** Executed Plan 01-05 — appended `get_signal(df) -> int` + `get_latest_indicators(df) -> dict` to `signal_engine.py` (193 → 254 lines) and appended TestVote (15 tests) + TestEdgeCases (10 tests) to `tests/test_signal_engine.py` (213 → 409 lines). 9 D-16 scenario fixtures all produce their filename-implied expected_signal; split-vote scenario verified FLAT end-to-end (REVIEWS MUST FIX closed). REVIEWS STRONGLY RECOMMENDED boundary tests pin ADX==25.0 opening gate and Mom==±0.02 abstaining. REVIEWS POLISH `get_latest_indicators` contract verified: every value `type(v) is float`, NaN preserved as `float('nan')` not None. 63/63 tests in tests/test_signal_engine.py pass; 80/80 full-suite green; ruff clean. Requirements SIG-05..SIG-08 marked complete. Commits: b0ebeb3 (feat Task 1), 675b713 (test Task 2).
+- **Next action:** Execute Plan 01-06 (architectural guards + determinism SHA256 snapshot + lint guard). Run `/gsd-execute-phase 1` to continue.
 - **Files ready for review:**
   - `.planning/ROADMAP.md` — full phase detail + success criteria
   - `.planning/REQUIREMENTS.md` — traceability table populated
@@ -111,3 +115,5 @@ None.
 **Plan 01-03 completed:** 2026-04-20T20:01:00Z — 2 tasks, 28 files created: 2 canonical yfinance fixtures (^AXJO + AUDUSD=X) with provenance READMEs per R-03; 9 deterministic scenario fixtures + scenarios.README.md per D-16; tests/regenerate_goldens.py offline pipeline per D-04; 2 canonical golden CSVs + 9 scenario JSONs + SHA256 determinism snapshot per D-14. Split-vote scenario verified via Mom1=+0.058, Mom3=-0.043, Mom12=-0.003 ⇒ FLAT per SIG-08 (MUST FIX compliance). Requirements SIG-01..SIG-08 are now covered end-to-end by fixtures + goldens (pending Plan 04/05 production tests).
 
 **Plan 01-04 completed:** 2026-04-20T20:13:24Z — 2 tasks, 2 files created (signal_engine.py 193 lines, tests/test_signal_engine.py 213 lines). Production compute_indicators matches oracle goldens to 5.7e-14 worst case across 8 indicators × 2 canonical fixtures (1e-9 plan tolerance). `_wilder_smooth` implements NaN-strict seed-window rule matching oracle bit-for-bit (REVIEWS MEDIUM). `_assert_index_aligned` helper fires before every `assert_allclose` (REVIEWS MEDIUM). 38 TestIndicators tests pass; 55/55 full suite green; ruff clean. Requirements SIG-01..SIG-04 marked complete. Commits: a0ab525 (feat Task 1), f75151a (test Task 2).
+
+**Plan 01-05 completed:** 2026-04-20T20:22:46Z — 2 tasks, 2 files modified (signal_engine.py 193 → 254 lines; tests/test_signal_engine.py 213 → 409 lines). `get_signal(df) -> int` (D-06 bare int, NaN-abstaining 2-of-3 vote gated by ADX >= 25) and `get_latest_indicators(df) -> dict` (D-08 8-key lowercase dict, every value explicit `float()` cast per REVIEWS POLISH) appended after existing compute_indicators. TestVote (9 parametrized scenarios + 6 named SIG-05..08 shortcuts) + TestEdgeCases (D-09 NaN ADX, D-10 Mom12 NaN 2-of-2, D-11 flat-price NaN, D-12 RVol 0.0, 3 threshold-equality tests for ADX==25 and Mom==±0.02, 3 get_latest_indicators contract tests) cover SIG-05..08 + D-09..12 + REVIEWS STRONGLY RECOMMENDED + REVIEWS POLISH. Split-vote scenario verified FLAT end-to-end (REVIEWS MUST FIX closed). 63/63 tests in tests/test_signal_engine.py pass; 80/80 full-suite green; ruff clean. Requirements SIG-05..SIG-08 marked complete. Commits: b0ebeb3 (feat Task 1), 675b713 (test Task 2).
