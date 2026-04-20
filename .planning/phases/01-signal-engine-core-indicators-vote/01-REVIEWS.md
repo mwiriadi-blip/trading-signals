@@ -2,141 +2,137 @@
 phase: 1
 reviewers: [gemini, codex]
 reviewed_at: 2026-04-21T00:00:00+08:00
+pass: 2
 plans_reviewed: [01-01-PLAN.md, 01-02-PLAN.md, 01-03-PLAN.md, 01-04-PLAN.md, 01-05-PLAN.md, 01-06-PLAN.md]
+post_execution: true
 runtime: claude-code (claude skipped for self-review independence)
-skipped_reviewers: [claude, coderabbit, opencode, qwen, cursor]
+prior_pass: 01-REVIEWS-pass1.md
 ---
 
-# Cross-AI Plan Review — Phase 1
+# Cross-AI Plan Review — Phase 1 (Second Pass, Post-Execution)
 
-> Two external reviewers (Gemini CLI and Codex CLI) independently audited the 6-plan package. Claude CLI was skipped because the review orchestration ran inside Claude Code. The other reviewers (coderabbit, opencode, qwen, cursor) are not installed on this machine.
+> **Context.** This is the second review of Phase 1, run AFTER execution completed successfully (99/99 tests passing). The first pass (preserved at `01-REVIEWS-pass1.md`) drove a plan revision via `/gsd-plan-phase 1 --reviews` that fixed a MUST FIX (split-vote scenario) and applied all STRONGLY RECOMMENDED + POLISH items. This pass asks reviewers to look retrospectively at the revised plans with fresh eyes and flag anything the first pass or the verifier missed.
 
-## Gemini Review
+## Gemini Review (Pass 2)
 
-*Verdict: **APPROVED** — Risk **LOW***
+*Verdict: Proceed to Phase 2 — Risk **LOW***
 
 ### Summary
-The implementation strategy for Phase 1 is exceptionally rigorous, prioritizing numerical reproducibility and architectural purity. By establishing a "ground truth" through a pure-Python oracle (Plan 02) and enforcing bit-level determinism with SHA256 snapshots (Plan 06), the plan effectively mitigates the risks of floating-point drift and library-induced discrepancies. The resolution of the Wilder/Pandas EWM discrepancy (R-01) is a highlight, demonstrating deep research into financial math conventions.
+The revised plans successfully addressed all high-priority concerns from the first pass, most notably the Wilder/Pandas EWM discrepancy (R-01) and the split-vote scenario correction. The execution phase exceeded the 1e-9 tolerance target, achieving 5.7e-14 precision, which confirms that the SMA-seeded vectorised implementation in `signal_engine.py` is bit-compatible with the pure-loop oracle for all practical purposes. The addition of the AST-based blocklist and the tokenize-aware indent guard provides a robust defense against architectural and stylistic drift as the project scales.
 
-### Strengths
-- **Trust Anchor Design (Plan 02):** Pure-loop Python oracle (D-02) as truth anchor ensures production optimizations are always validated against an unambiguous reference.
-- **Wilder EWM Idiom (Plan 04, R-01):** SMA-seeded EWM is mathematically superior to literal spec text and aligns with standard charting packages.
-- **Bit-Level Regression (Plan 06, D-14):** SHA256 hashing is the gold standard for determinism across environments.
-- **Surgical Fixture Design (Plan 03, D-16):** 9 specific scenario fixtures exercise the vote truth table at its boundaries.
-- **Architectural Guardrails (Plan 06):** AST walk enforcing hexagonal boundary prevents import leakage before it can pollute the codebase.
+### Residual Risks
+- **Oracle-to-Production Hashing Asymmetry (Plan 06 Task 1).** Decision at execution time to hash the **oracle** rather than production. Scientifically sound (oracle is the bit-level truth), but `signal_engine.py` itself is not bit-locked by the SHA256 snapshot. A change in `signal_engine.py` that shifts a float bit but stays under 1e-9 will pass CI silently.
+- **Fixture staleness (Pitfall 3 acknowledged).** yfinance retroactive adjustments mean re-running `regenerate_goldens.py` in 6 months could produce different baseline bars. The project treats committed CSVs as "fixed history," which is correct for testing but could cause "first-run differences" when Phase 4 goes live.
+- **Extreme scale sensitivity.** Tested on index (~8000) and FX (~0.6) scales. Penny stock (~0.0001) or hyper-inflation scales are not exercised. The 1e-9 `atol` is absolute; at very small price scales, tolerance may be too loose relative to price.
 
-### Concerns
-- **MEDIUM — Plan 01 Task 2 (ruff format vs 2-space convention):** `ruff format` forces 4-space indent, conflicting with project's 2-space rule. Relying on `.editorconfig` + author discipline without automated lint gate may cause style drift.
-- **LOW — Plan 03 Task 1 (ADX warmup in scenarios):** 280-bar fixtures need precise construction to clear both Mom12 (252) and ADX (38) warmup AND trigger signal logic on the exact last bar.
-- **LOW — Plan 03 Task 1 (yfinance retroactive adjustments):** Pitfall 3 noted but depends on future developers reading the fixture README.
+### Second-Order Bugs
+- **RVol single-value NaN case.** `rolling(period).std()` on a series with only one non-NaN value returns NaN. Phase 2's `SIZE-03` handles magnitude via the 1e-9 clamp, but the orchestrator must be prepared for RVol being NaN or 0.0.
+- **Extremely short series.** `get_signal` uses `df.iloc[-1]`. For frames <20 bars, all indicators are NaN; system correctly returns FLAT (safest failure mode).
 
-### Suggestions
-- **Automate indent check:** Add a grep-based task in Plan 06 to assert no `.py` files contain 4-space leading indent.
-- **Explicit scalar casting:** In `get_latest_indicators`, explicitly cast to Python `float` so numpy types don't leak into downstream JSON serialization (Phase 3).
-- **Pyenv preflight:** In Plan 01 Task 1, verify pyenv/Python 3.11 exists before attempting venv creation with a clear error message.
+### Architectural Debt
+- **Dict vs. Dataclass for `get_latest_indicators`.** Sufficient now; NamedTuple/Dataclass would give better IDE completion and type safety as Phase 2-8 pass the dict through multiple layers.
+- **Global constants in `signal_engine.py`.** `ADX_GATE`, `MOM_THRESHOLD`, etc. are hardcoded. If configuration-driven tuning is ever desired, constants will need to move out of the pure-math module.
+
+### Documentation Gaps
+- **The "Why" of hashing oracle.** A new contributor seeing `test_snapshot_hash_stable` re-running oracle (not production) will be confused. Rationale is in Plan 06 SUMMARY but should be inlined as a comment block on the test.
 
 ### Risk Assessment
-**LOW.** Front-loading the oracle and fixtures reduces execution to a "matching" exercise — the most robust way to build a deterministic signal engine.
+**LOW.** Phase 1 is a highly safe foundation. Separation of oracle from production + bit-level snapshots for the truth anchor is elite engineering for a financial system. 99/99 tests and 5.7e-14 precision margin give high confidence.
+
+**Recommendation:** Proceed to Phase 2. `signal_engine.py` API is locked and mathematically verified.
 
 ---
 
-## Codex Review
+## Codex Review (Pass 2)
 
-*Verdict: **PROCEED AFTER EDITS** — Risk **MEDIUM***
+*Verdict: Proceed — Risk **MEDIUM-LOW***
 
 ### Summary
-The plan set is substantially above average: explicit about formulas, determinism, fixture strategy, and verification, and it directly addresses the main failure mode for this phase (silently implementing "pandas-ish ATR/ADX" instead of Wilder-canonical math). Strongest part is the separation between oracle, fixtures, production implementation, and determinism guards. Weakest part is operational realism in Wave 0 and Wave 1: several tasks assume network/package/install capabilities and exact tool behavior that are brittle, and a few acceptance criteria are internally inconsistent or over-constrained enough to create false failures.
+The revised plans closed the first-pass concerns well. The split-vote bug was actually fixed end-to-end, the threshold-equality cases were added, the seed-window NaN rule was aligned, and the brittle whitelist was replaced with a blocklist. The only material thing that slipped in the post-execution state is that the Phase 1 "determinism" story changed shape: **the final gate now locks oracle bytes, not production bytes**, so cross-version drift in `signal_engine.py` can still sneak through as long as it stays within the 1e-9 tolerance envelope. That is not a Phase 1 blocker, but it is the main retrospective gap.
 
-### Strengths
-- **Plan 02 Task 1** correctly treats the ATR spec ambiguity as a real risk and locks the oracle to SMA-seeded Wilder recursion. Single most important numerical decision.
-- **Plan 02 overall** preserves real oracle independence — pure loops, no pandas, no shared helper import from `signal_engine.py`.
-- **Plan 03 Task 2** is well-designed as an offline regeneration path (D-04).
-- **Plan 04 Task 2** compares production against committed oracle goldens rather than recalculating in the same test path.
-- **Plan 05** cleanly separates signal semantics from indicator calculation and explicitly tests D-09 through D-12.
-- **Plan 06 Task 1** uses AST guards — stronger than grep-only checks.
-- **Plan 06 Task 2** traces to ROADMAP success criteria rather than inventing parallel "done" definitions.
+### Residual Risks
 
-### Concerns
-- **HIGH — Plan 03 Task 1 (split-vote scenario definition is self-contradictory):** Line 174 states `Mom1 > +0.02, Mom3 < -0.02, Mom12 > +0.02 — votes 2 up 1 down → FLAT per SIG-08`. That's actually **2 up / 1 down → LONG** per SIG-06, not FLAT. When `regenerate_goldens.py` runs, the computed `expected_signal` will be `1` (LONG), contradicting the fixture's name and the SIG-08 label. **This will fail at Wave 1 execution.** (Verified at Plan 03 line 174.)
-- **HIGH — Plans 01 Task 1 / Task 2 / 03 Task 1 (network and local-env assumptions):** Plans assume internet access and mutable env setup (pyenv, brew, pip, yfinance fetch) as guaranteed. If the execution environment lacks network or install rights, Wave 0 stalls before any math work begins.
-- **HIGH — Plan 01 Task 2 (ruff format convention mismatch):** `ruff format` does not support the 2-space Python indent contract the task implies; `indent-width = 2` is enforced only partially. Will create formatting churn.
-- **HIGH — Plan 03 Task 1 (scenario generation underspecified):** Several fixtures described with qualitative recipes ("gentle downtrend", "final sharp uptrend") without deterministic construction algorithms. Invites hand-tuning loops and unstable fixtures.
-- **HIGH — Plan 03 Task 2 / Plan 06 Task 2 (determinism sources beyond packages):** Snapshot is strong, but lower-level drift sources (locale, NaN bit patterns, pandas serialization) are assumed stable without explicit normalization.
-- **MEDIUM — Plan 02 Task 1 + Plan 04 Task 1 (oracle/production seed-window NaN handling):** Oracle uses `sum(series[0:period]) / period`; production uses `.iloc[:period].mean()`. Behaviors diverge if NaNs enter the seed window. Plan should force equivalence, not assume it.
-- **MEDIUM — Plan 04 Task 2 (index alignment):** Tests compare float arrays at 1e-9 but don't explicitly assert index or row-count equality before `.to_numpy()`. Date-index mismatch would fail opaquely.
-- **MEDIUM — Plan 05 Task 1 (missing-column defensive contract):** `get_signal(df)` assumes indicator columns exist; no contract test for the missing-column case.
-- **MEDIUM — Plan 06 Task 1 (whitelist brittleness):** `test_allowed_imports_only` whitelisting only `{numpy, pandas, typing, math}` will fail on innocuous future additions like `__future__`, `dataclasses`, `collections` even if purity preserved.
-- **MEDIUM — Plan 06 Task 2 (≥88 tests assertion is fragile bookkeeping):** Parametrization changes can alter counts without changing coverage quality.
-- **LOW — Plan 01 Task 1 (later-phase deps in requirements.txt):** Pinning `requests`, `schedule`, `pytz`, `python-dotenv` now increases Wave 0 failure surface for no immediate Phase 1 value.
-- **LOW — Threat model across plans:** "N/A" is slightly overstated — the offline regenerate script does introduce supply-chain surface through PyPI and Yahoo.
+**1. Production-byte drift is no longer pinned** (biggest second-pass finding)
+- Plan 06 originally hashed production output; post-execution, `TestDeterminism` hashes oracle output ([`tests/test_signal_engine.py:522-585`](tests/test_signal_engine.py#L522)).
+- `TestIndicators` still compares production to oracle at `atol=1e-9` ([`tests/test_signal_engine.py:90-93`](tests/test_signal_engine.py#L90)).
+- A future library bump could change production bits, leave oracle bits unchanged, and still pass Phase 1.
+- Acceptable if intentional, but "bit-level determinism" now applies to oracle, not shipped engine.
 
-### Suggestions
-- **Fix split-vote scenario:** Replace with `Mom1 > +0.02, Mom3 < -0.02, Mom12 between -0.02 and +0.02` → 1 up / 1 down / 1 abstain → FLAT.
-- **Add Wave 0 execution preflight task:** Verify `python3.11`, network, and package install capability before env mutation; if unavailable, switch to artifact-only planning mode.
-- **Make scenario generation deterministic:** Commit a generator spec with exact bar counts, percentage changes, volatility perturbations per segment.
-- **Tighten oracle/production Wilder smoothing equivalence:** State explicitly in Plans 02+04: "Seed windows for Wilder smoothing must contain no NaN values; if they do, return NaN until a full non-NaN seed window exists."
-- **Add fixture integrity assertions:** In Plan 04 Task 2, assert index equality, row-count equality, and OHLCV column presence.
-- **Relax whitelist guard:** Replace with forbid-known-impure-modules (datetime, os, requests, yfinance, signal_engine cross-hex imports).
-- **Remove false-precision count assertions:** Replace "≥88 tests passing" with behavior-based checks.
-- **Add threshold-equality edge tests to Plan 05:** `ADX == 25.0` → gate open; `Mom == ±0.02` → abstains (rules use `>`/`<`, not `>=`/`<=`).
-- **Add `get_latest_indicators` contract test:** Verify NaN preserved as `float('nan')`, not `None`; verify values match `df.iloc[-1]` exactly.
+**2. Empty/malformed DataFrame behavior is unpinned**
+- `get_signal` and `get_latest_indicators` assume indicator columns exist ([`signal_engine.py:220-245`](signal_engine.py#L220)).
+- Empty frame → `IndexError`; missing columns → `KeyError`; malformed fetch → raw pandas error.
+- Fine for pure-math core, but **Phase 4 must guard this before calling Phase 1** to meet "handle Yahoo failures / corrupted state gracefully".
+
+**3. Scenario regeneration is reproducible on paper, not scripted**
+- Deliberate choice: commit fixture CSVs + README recipes, not a scenario generator.
+- Trust surface stayed small, but contributors can regenerate goldens, not scenarios.
+- Main doc/maintenance debt — the most delicate fixtures are the vote-logic-proof ones.
+
+### Second-Order Bugs to Watch
+- **Cross-version drift below tolerance.** A pandas/numpy change moving production by 1e-12 to 1e-10 fails no test, but subtly shifts state/email/dashboard values. Only visible because of the oracle-hash deviation.
+- **Repeat-call idempotency not tested.** `compute_indicators(compute_indicators(df))` looks safe by implementation ([`signal_engine.py:183-193`](signal_engine.py#L183)) but Plan 04 only locked non-mutation on raw fixtures. If later phases rely on this, add a test.
+- **Error-path robustness deferred.** Corrupted CSV, object-dtype columns, all-NaN input, zero-length frames are caller hazards, not engine-handled. Phase 4/8 must not assume the core is more defensive than it is.
+
+### Architectural Debt
+- **`get_latest_indicators` is brittle on caller discipline.** Lowercase key naming is correct. But callers must remember: input must be indicator-enriched; frame non-empty; NaN preserved as `float('nan')`. Phase 2/4 should wrap this behind orchestration contract, not pass raw frames.
+- **Constants need a config boundary soon.** Fine for Phase 1; once Phase 2 adds sizing constants, stop multiples, pyramid thresholds, costs, instrument specs, one module block will get noisy. Recommend `system_params.py` before Phase 2/3 spreads constants.
+- **Oracle maintenance is explicitly dual-track.** Formula changes require updating: oracle + production + goldens + snapshot + tolerance tests. Known, but confirmed by execution.
+
+### Documentation Gaps
+- Determinism gate changed from "hash production" to "hash oracle" — captured in Plan 06 summary + test docstring, but not in an obvious contributor-facing note.
+- Scenario fixtures reproducible, but not via committed script.
+- Pure layer's failure contract for empty/malformed data is undocumented; newcomer might assume Phase 1 handles bad input.
 
 ### Risk Assessment
-**MEDIUM.** Numerical core is sound. Main risks are execution risks from brittle Wave 0 assumptions, one outright scenario-definition bug, and a few overly rigid acceptance criteria. With those corrected, the phase becomes low-risk.
+**MEDIUM-LOW.** Safe foundation for Phase 2-8 from correctness standpoint. Earlier review's meaningful issues closed; numerical core strong; 99 tests not hollow. No hidden correctness bug in shipped math/vote logic.
+
+Not pure LOW because of the determinism gap from Plan 06 deviation: production bytes not locked, only oracle. Survivable, but weakens cross-version drift story enough to tighten before later phases persist/render these values widely.
 
 ---
 
-## Consensus Summary
+## Consensus Summary (Pass 2)
 
-### Agreed Strengths
-- **Pure-loop oracle as trust anchor** (Plan 02) — both reviewers call this the strongest design choice in the phase
-- **SMA-seeded Wilder (R-01)** — both reviewers explicitly praise the resolution of the SIG-01 formula ambiguity
-- **SHA256 determinism snapshot** (Plan 06 / D-14) — both reviewers flag this as best-practice regression defense
-- **AST-based architectural guards** (Plan 06 Task 1) — both reviewers prefer this over grep-only
-- **9-case scenario fixture coverage** (Plan 03 / D-16) — both reviewers approve boundary-exercising test design
+### Top Finding — Both Reviewers Agree
 
-### Agreed Concerns
+**Production-byte drift is no longer pinned.** The executor's Plan 06 deviation (hash oracle output instead of production, because production differs from oracle by ~5e-14) is semantically defensible but changes the determinism story. `TestDeterminism` now regression-tests oracle stability; production stability depends on `TestIndicators` at `atol=1e-9`. A numpy/pandas upgrade that drifts production by 1e-12 to 1e-10 passes all tests.
 
-1. **[HIGH — codex only; not flagged by gemini] Plan 03 Task 1 line 174 — split-vote scenario is self-contradictory.** The described moms produce LONG, not FLAT. This will fail at execution when `regenerate_goldens.py` computes the wrong `expected_signal`. **Must fix before execution.**
-
-2. **[MEDIUM from both] `ruff format` vs 2-space convention mismatch (Plan 01 Task 2).** `ruff format` defaults to 4-space/double-quotes; the config key `indent-width = 2` is supported but the author-discipline fallback creates drift risk. Both reviewers suggest automated indent-enforcement in Plan 06.
-
-3. **[Gemini: LOW / Codex: MEDIUM] Scenario fixture construction is qualitative rather than deterministic.** 280-bar recipes use prose ("gentle downtrend", "final sharp uptrend") without exact bar-count + percentage specifications. Codex flags as HIGH; Gemini flags as needing "precise construction."
-
-4. **[MEDIUM — both] numpy/pandas/seed-window NaN handling convention not explicit.** Oracle and production may diverge on how they handle NaNs inside the SMA seed window. Both reviewers want an explicit rule.
-
-5. **[LOW from both] Explicit float/dtype casting.** Gemini flags `get_latest_indicators` scalar casting for future JSON serialization; Codex flags preserving `float('nan')` (not `None`).
+### Agreed Residual Risks
+- Oracle-vs-production hashing asymmetry (primary finding from both)
+- Empty/malformed DataFrame not guarded at Phase 1 layer (caller responsibility, but Phase 4 must handle)
+- Constants layout will need a config boundary before Phase 2/3 expands the constant set
 
 ### Divergent Views
+- **Overall risk:** Gemini **LOW** / Codex **MEDIUM-LOW**. Difference is driven by Codex's stronger concern about the production-byte determinism regression.
+- **Scale sensitivity:** Gemini flags penny-stock/hyper-inflation scales as untested. Codex doesn't raise this — may be less concerned given Phase 1's committed fixtures span index + FX.
+- **RVol NaN on single-value window:** Gemini calls out; Codex doesn't. Phase 2's SIZE-03 guard mitigates but doesn't fully close this.
 
-- **Overall risk:** Gemini LOW / Codex MEDIUM. The difference is driven by Codex's identification of the split-vote scenario bug (which Gemini didn't catch) and Codex's pickier stance on Wave 0 environmental assumptions.
-- **Pinning later-phase deps in `requirements.txt`:** Codex flags as LOW concern (Wave 0 surface bloat); Gemini doesn't mention it. Suggests trimming to Phase 1 needs only (pandas, numpy, pytest, yfinance, ruff) and letting Phase 4+ add its own.
-- **Whitelist vs blocklist for architectural imports (Plan 06 Task 1):** Codex wants blocklist ("forbid known impure modules"); Gemini accepts the whitelist as-is. Blocklist is more resilient to benign additions.
-
-### Codex-Only Findings Worth Escalating
-These are not in Gemini's review but worth addressing because they're specific and verifiable:
-- **Threshold-equality tests** (ADX == 25.0 at gate; Mom == ±0.02 at threshold) — SIG-05/06/07 use strict `<`/`>`. Missing from current Plan 05 test enumeration.
-- **Index-alignment assertion** in golden-vs-computed comparison (Plan 04 Task 2).
-- **Seed-window NaN equivalence rule** for Wilder smoothing (Plans 02 + 04).
+### Previous Pass — MUST FIX Verified
+All pass-1 items closed by the plan revision AND verified end-to-end by execution:
+- ✓ Split-vote scenario FLAT (Mom=(+0.058, -0.043, -0.003) → FLAT)
+- ✓ Threshold-equality tests (ADX=25.0 opens gate; Mom=±0.02 abstains)
+- ✓ Wilder seed-window NaN rule identical in oracle + production
+- ✓ Whitelist → blocklist AST guard
+- ✓ Index-alignment assertion before `assert_allclose`
+- ✓ `requirements.txt` trimmed to Phase 1 scope
 
 ---
 
-## Recommended Action
+## Recommended Follow-Up (Not Blocking Phase 1)
 
-1. **Before execution — MANDATORY fix:**
-   - Plan 03 line 174: correct the split-vote scenario recipe to produce a true FLAT outcome (1 up / 1 down / 1 abstain).
+These can be addressed during Phase 2 planning or carried forward as explicit debt:
 
-2. **Strongly recommended before execution:**
-   - Add threshold-equality tests to Plan 05 (ADX=25.0, Mom=±0.02).
-   - State the Wilder seed-window NaN rule explicitly in Plans 02 + 04.
-   - Convert Plan 06 whitelist to blocklist.
-   - Add index-alignment assertion in Plan 04 Task 2.
-   - Trim `requirements.txt` in Plan 01 Task 1 to Phase 1 deps only.
+1. **[Low-effort, high-value]** Add a comment block to `TestDeterminism.test_snapshot_hash_stable` explaining why the test re-runs oracle (not production) — closes the documentation gap both reviewers flagged.
 
-3. **Optional polish:**
-   - Deterministic scenario generator spec (Codex's suggested generator algorithm).
-   - Indent-enforcement lint rule in Plan 06.
-   - Explicit `float()` cast on `get_latest_indicators` values.
-   - Revise "N/A" threat model to mention offline-regenerate supply-chain surface.
+2. **[Low-effort]** Add `test_compute_indicators_is_idempotent` — call `compute_indicators` twice and assert identical output. Locks a property Phase 2/4 will likely rely on.
 
-**Incorporate via:** `/gsd-plan-phase 1 --reviews`
+3. **[Phase 2 input guard]** Wrap `get_signal` / `get_latest_indicators` calls in Phase 4's orchestrator with a defensive contract check: non-empty frame, required columns present, float64 dtype. Matches REQUIREMENTS §ERR-04 spirit.
+
+4. **[Phase 2/3 refactor]** Before Phase 2 adds its constants (risk_pct, trail_mult, pyramid thresholds, contract specs), decide whether to move `ADX_GATE` / `MOM_THRESHOLD` / periods to a `system_params.py`. Aligns the constant layout before it sprawls.
+
+5. **[Nice to have]** Commit a `tests/regenerate_scenarios.py` script that regenerates scenario CSVs from the README recipes — closes Codex's "reproducible on paper, not scripted" gap.
+
+6. **[Optional retrospective]** Add a second determinism test that hashes production output and freezes the current values. Acceptable if one wants to trade "now" production bytes against future floating-point drift; skip if tolerance-based comparison is enough.
+
+---
+
+**Pass-1 archive:** [01-REVIEWS-pass1.md](01-REVIEWS-pass1.md)
