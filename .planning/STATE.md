@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 3
+current_plan: 5
 status: executing
-last_updated: "2026-04-20T20:05:11.592Z"
+last_updated: "2026-04-20T20:15:14.928Z"
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 4
+  percent: 67
 ---
 
 # STATE — Trading Signals
@@ -28,10 +28,10 @@ progress:
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 1 — Signal Engine Core — Indicators & Vote
-- **Current Plan:** 3
+- **Current Plan:** 5
 - **Total Plans:** 6
 - **Status:** Executing Phase 1
-- **Progress:** [█████░░░░░] 50%
+- **Progress:** [███████░░░] 67%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -49,6 +49,7 @@ progress:
 | Phase 01 P01 | 9 | 3 tasks | 10 files |
 | Phase 01 P02 | 5 | 3 tasks | 3 files |
 | Phase 01 P03 | 10 | 2 tasks | 28 files |
+| Phase 01 P04 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ progress:
 - Plan 01-03: %.17g format renders 100.0 as '100' (C %g behaviour); AC grep pattern assumed '100.0' text — prioritised Pitfall 4 bit-roundtrip correctness (Rule 1 deviation)
 - Plan 01-03: Split-vote scenario uses 1 up / 1 down / 1 abstain (per REVIEWS MUST FIX); Mom1=+0.058, Mom3=-0.043, Mom12=-0.003 produces FLAT per SIG-08
 - Plan 01-03: Scenario generator is inline (not committed as script); only regenerate_goldens.py is committed per D-04. scenarios.README.md documents exact segment endpoints.
+- Plan 01-04: production _wilder_smooth uses explicit numpy loop (not pandas .ewm) to enforce oracle's NaN-strict seed-window rule bit-for-bit (REVIEWS MEDIUM)
+- Plan 01-04: every indicator column assignment uses explicit .astype('float64') (12 casts) to defend against numpy 2.0 float32 leaks (Pitfall 5)
+- Plan 01-04: _assert_index_aligned(computed, golden) helper called BEFORE every assert_allclose so date-index drift fails with clear message (REVIEWS MEDIUM)
 
 ### Todos Carried Forward
 
@@ -87,8 +91,8 @@ None.
 
 ## Session Continuity
 
-- **Last action:** Executed Plan 01-03 — 2 canonical yfinance fixtures (^AXJO + AUDUSD=X per R-03) + 9 deterministic scenario fixtures + tests/regenerate_goldens.py + 11 goldens (2 CSVs + 9 JSONs) + SHA256 determinism snapshot committed. Split-vote scenario verified FLAT via 1up/1dn/1abstain per REVIEWS MUST FIX. All 9 scenario signals match filename semantics. Idempotent regeneration confirmed. 17/17 oracle tests still pass.
-- **Next action:** Execute Plan 01-04 (production signal_engine.py — compute_indicators compared to oracle goldens at 1e-9 tolerance). Run `/gsd-execute-phase 1` to continue.
+- **Last action:** Executed Plan 01-04 — production `signal_engine.py` (193 lines) + `tests/test_signal_engine.py::TestIndicators` (38 tests). compute_indicators(df) returns NEW DataFrame with [ATR, ADX, PDI, NDI, Mom1, Mom3, Mom12, RVol] — all float64, D-07 non-mutating. Production `_wilder_smooth` matches oracle's NaN-strict seed-window rule bit-for-bit (REVIEWS MEDIUM). Per-indicator max abs diff vs oracle: 5.7e-14 worst case (ATR axjo), well inside 1e-9. Both canonical fixtures (^AXJO + AUDUSD=X per R-03) match. `_assert_index_aligned(computed, golden)` called before every assert_allclose (REVIEWS MEDIUM). Ruff clean. 55/55 tests pass (17 oracle + 38 TestIndicators).
+- **Next action:** Execute Plan 01-05 (TestVote + TestEdgeCases + get_signal + get_latest_indicators). Run `/gsd-execute-phase 1` to continue.
 - **Files ready for review:**
   - `.planning/ROADMAP.md` — full phase detail + success criteria
   - `.planning/REQUIREMENTS.md` — traceability table populated
@@ -105,3 +109,5 @@ None.
 **Plan 01-02 completed:** 2026-04-20T19:49:00Z — 3 tasks, 3 files created (tests/oracle/wilder.py, tests/oracle/mom_rvol.py, tests/oracle/test_oracle_self_consistency.py), 17 self-consistency tests passing, requirements SIG-01..SIG-04 marked complete.
 
 **Plan 01-03 completed:** 2026-04-20T20:01:00Z — 2 tasks, 28 files created: 2 canonical yfinance fixtures (^AXJO + AUDUSD=X) with provenance READMEs per R-03; 9 deterministic scenario fixtures + scenarios.README.md per D-16; tests/regenerate_goldens.py offline pipeline per D-04; 2 canonical golden CSVs + 9 scenario JSONs + SHA256 determinism snapshot per D-14. Split-vote scenario verified via Mom1=+0.058, Mom3=-0.043, Mom12=-0.003 ⇒ FLAT per SIG-08 (MUST FIX compliance). Requirements SIG-01..SIG-08 are now covered end-to-end by fixtures + goldens (pending Plan 04/05 production tests).
+
+**Plan 01-04 completed:** 2026-04-20T20:13:24Z — 2 tasks, 2 files created (signal_engine.py 193 lines, tests/test_signal_engine.py 213 lines). Production compute_indicators matches oracle goldens to 5.7e-14 worst case across 8 indicators × 2 canonical fixtures (1e-9 plan tolerance). `_wilder_smooth` implements NaN-strict seed-window rule matching oracle bit-for-bit (REVIEWS MEDIUM). `_assert_index_aligned` helper fires before every `assert_allclose` (REVIEWS MEDIUM). 38 TestIndicators tests pass; 55/55 full suite green; ruff clean. Requirements SIG-01..SIG-04 marked complete. Commits: a0ab525 (feat Task 1), f75151a (test Task 2).

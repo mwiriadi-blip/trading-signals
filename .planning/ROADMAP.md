@@ -150,7 +150,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Signal Engine Core — Indicators & Vote | 3/6 | In progress | - |
+| 1. Signal Engine Core — Indicators & Vote | 4/6 | In progress | - |
 | 2. Signal Engine — Sizing, Exits, Pyramiding | 0/0 | Not started | - |
 | 3. State Persistence with Recovery | 0/0 | Not started | - |
 | 4. End-to-End Skeleton — Fetch + Orchestrator + CLI | 0/0 | Not started | - |

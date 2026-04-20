@@ -177,10 +177,10 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | DATA-04 | Phase 4 | Pending |
 | DATA-05 | Phase 4 | Pending |
 | DATA-06 | Phase 4 | Pending |
-| SIG-01 | Phase 1 | Complete (Plan 01-02) |
-| SIG-02 | Phase 1 | Complete (Plan 01-02) |
-| SIG-03 | Phase 1 | Complete (Plan 01-02) |
-| SIG-04 | Phase 1 | Complete (Plan 01-02) |
+| SIG-01 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
+| SIG-02 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
+| SIG-03 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
+| SIG-04 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
 | SIG-05 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
 | SIG-06 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
 | SIG-07 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
