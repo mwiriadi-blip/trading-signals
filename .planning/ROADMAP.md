@@ -31,7 +31,7 @@
   4. Warm-up bars (first N-1 of each indicator) return NaN, not zero or garbage, via `min_periods=period`
   5. `pytest tests/test_signal_engine.py -k indicators_or_vote` passes green with zero network calls
 **Plans:** 6 plans
-- [ ] 01-01-PLAN.md — Wave 0 scaffold: Python 3.11 venv, pinned requirements.txt (R-02), pyproject.toml with pytest + ruff config (R-05), CLAUDE.md stack amendment, test-package skeleton, oracle README
+- [x] 01-01-PLAN.md — Wave 0 scaffold: Python 3.11 venv, pinned requirements.txt (R-02), pyproject.toml with pytest + ruff config (R-05), CLAUDE.md stack amendment, test-package skeleton, oracle README
 - [ ] 01-02-PLAN.md — Wave 1: pure-Python-loop Wilder oracle (ATR, ADX, +DI, -DI, Mom, RVol) + oracle self-consistency tests per D-02
 - [ ] 01-03-PLAN.md — Wave 1 (parallel): canonical fixtures for ^AXJO + AUDUSD=X (R-03), 9 scenario fixtures (D-16), regenerate_goldens.py + initial goldens + determinism snapshot
 - [ ] 01-04-PLAN.md — Wave 2: signal_engine.py compute_indicators + private helpers; TestIndicators class proves SIG-01..04 match oracle to 1e-9 on both canonical fixtures

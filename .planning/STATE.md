@@ -2,14 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-last_updated: "2026-04-20T13:11:46.133Z"
+current_plan: 1
+status: executing
+last_updated: "2026-04-20T19:41:33.935Z"
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 6
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 17
 ---
 
 # STATE — Trading Signals
@@ -21,15 +22,16 @@ progress:
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
 - **Core value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Roadmap created; ready to plan Phase 1 (and optionally Phase 3 in parallel)
+- **Current focus:** Phase --phase — 1
 
 ## Current Position
 
 - **Milestone:** v1 — Mechanical Signal System
-- **Phase:** — (pre-Phase 1, awaiting `/gsd-plan-phase 1`)
-- **Plan:** —
-- **Status:** Roadmap approved, not yet in planning
-- **Progress:** 0/8 phases complete
+- **Phase:** 1 — Signal Engine Core — Indicators & Vote
+- **Current Plan:** 1
+- **Total Plans:** 6
+- **Status:** Executing Phase 1
+- **Progress:** [██░░░░░░░░] 17%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -44,6 +46,7 @@ progress:
 | Phases completed | 0 |
 | Phases in-flight | 0 |
 | Decisions logged | 4 (operator decisions baked into roadmap) |
+| Phase 01 P01 | 9 | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -55,6 +58,10 @@ progress:
 | `n_contracts == 0` skips the trade and warns (no `max(1, …)` floor) | 2 | A `max(1, …)` floor silently breaches the 1% risk budget on small accounts; skipping with a visible warning keeps risk discipline |
 | LONG→FLAT (and SHORT→FLAT) closes the open position | 2 | Unambiguous semantics: FLAT means "no position", so any non-matching signal closes |
 | Trailing stops use intraday HIGH/LOW for both peak updates and hit detection | 2 | Consistent intraday convention matches how the backtest was built; close-only convention would diverge from reconciliation data |
+
+- Python 3.11.8 installed via pyenv (Homebrew-installed); 5 Phase 1 deps pinned to bit-locked versions in requirements.txt (numpy==2.0.2, pandas==2.3.3, pytest==8.3.3, yfinance==1.2.0, ruff==0.6.9); later-phase deps deferred to their phase scaffolds
+- ruff format NOT used in Phase 1 — ruff 0.6.9 lacks indent-width knob (would reflow to 4-space). Using ruff check only, with .editorconfig + reviewer discipline + Plan 06 lint guard for 2-space enforcement (R-05)
+- Pyenv preflight remediated by brew install pyenv (was not installed); REVIEWS.md Gemini preflight guidance satisfied. Future GHA setup-python will pick up .python-version=3.11.8
 
 ### Todos Carried Forward
 
