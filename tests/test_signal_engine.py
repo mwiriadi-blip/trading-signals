@@ -539,6 +539,25 @@ class TestDeterminism:
     make the determinism gate entangled with numpy's internal float semantics,
     defeating the tamper-detection purpose.
     '''
+    # =========================================================================
+    # WHY THIS TEST HASHES ORACLE OUTPUT (NOT PRODUCTION)
+    # -------------------------------------------------------------------------
+    # The committed snapshot at tests/determinism/snapshot.json was generated
+    # by tests/regenerate_goldens.py using the pure-Python ORACLE
+    # (tests/oracle/wilder.py + mom_rvol.py). Production `compute_indicators`
+    # diverges from oracle by up to ~5e-14 -- well inside the 1e-9 tolerance
+    # gate but NOT bit-identical. Hashing production output would therefore
+    # never match the committed snapshot.
+    #
+    # This test locks the oracle's bit-level output (the trust anchor).
+    # Production-vs-oracle correctness at 1e-9 is enforced separately by
+    # TestIndicators::test_indicator_matches_oracle. Bit-level equivalence
+    # between production and oracle is NOT claimed and NOT required.
+    #
+    # Cross-refs:
+    #   - 01-REVIEWS.md §"Top Finding" (pass-2 consensus)
+    #   - 01-06-SUMMARY.md §"Deviations from Plan" #1
+    # =========================================================================
     # Local, test-only oracle import. Kept inside the test so signal_engine.py never
     # sees tests.oracle (architectural guard is intact).
     import sys as _sys
