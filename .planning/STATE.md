@@ -91,6 +91,12 @@ progress:
 
 None.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260421-723 | Phase 1 REVIEWS pass-2 follow-up: oracle-hash comment + test_compute_indicators_is_idempotent + tests/regenerate_scenarios.py | 2026-04-21 | 2ace992 | [260421-723-add-oracle-hash-comment-test-compute-ind](./quick/260421-723-add-oracle-hash-comment-test-compute-ind/) |
+
 ### Warnings (roadmap-level)
 
 - Requirements count reconciliation: prompt stated 67 v1 requirements; REQUIREMENTS.md contains 78 across 11 categories. All 78 are mapped. Verify at Phase 1 kickoff that the operator's intent matches.
