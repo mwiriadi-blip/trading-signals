@@ -163,13 +163,101 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmapper) | | |
+| DATA-01 | Phase 4 | Pending |
+| DATA-02 | Phase 4 | Pending |
+| DATA-03 | Phase 4 | Pending |
+| DATA-04 | Phase 4 | Pending |
+| DATA-05 | Phase 4 | Pending |
+| DATA-06 | Phase 4 | Pending |
+| SIG-01 | Phase 1 | Pending |
+| SIG-02 | Phase 1 | Pending |
+| SIG-03 | Phase 1 | Pending |
+| SIG-04 | Phase 1 | Pending |
+| SIG-05 | Phase 1 | Pending |
+| SIG-06 | Phase 1 | Pending |
+| SIG-07 | Phase 1 | Pending |
+| SIG-08 | Phase 1 | Pending |
+| SIZE-01 | Phase 2 | Pending |
+| SIZE-02 | Phase 2 | Pending |
+| SIZE-03 | Phase 2 | Pending |
+| SIZE-04 | Phase 2 | Pending |
+| SIZE-05 | Phase 2 | Pending |
+| SIZE-06 | Phase 2 | Pending |
+| EXIT-01 | Phase 2 | Pending |
+| EXIT-02 | Phase 2 | Pending |
+| EXIT-03 | Phase 2 | Pending |
+| EXIT-04 | Phase 2 | Pending |
+| EXIT-05 | Phase 2 | Pending |
+| EXIT-06 | Phase 2 | Pending |
+| EXIT-07 | Phase 2 | Pending |
+| EXIT-08 | Phase 2 | Pending |
+| EXIT-09 | Phase 2 | Pending |
+| PYRA-01 | Phase 2 | Pending |
+| PYRA-02 | Phase 2 | Pending |
+| PYRA-03 | Phase 2 | Pending |
+| PYRA-04 | Phase 2 | Pending |
+| PYRA-05 | Phase 2 | Pending |
+| STATE-01 | Phase 3 | Pending |
+| STATE-02 | Phase 3 | Pending |
+| STATE-03 | Phase 3 | Pending |
+| STATE-04 | Phase 3 | Pending |
+| STATE-05 | Phase 3 | Pending |
+| STATE-06 | Phase 3 | Pending |
+| STATE-07 | Phase 3 | Pending |
+| NOTF-01 | Phase 6 | Pending |
+| NOTF-02 | Phase 6 | Pending |
+| NOTF-03 | Phase 6 | Pending |
+| NOTF-04 | Phase 6 | Pending |
+| NOTF-05 | Phase 6 | Pending |
+| NOTF-06 | Phase 6 | Pending |
+| NOTF-07 | Phase 6 | Pending |
+| NOTF-08 | Phase 6 | Pending |
+| NOTF-09 | Phase 6 | Pending |
+| NOTF-10 | Phase 8 | Pending |
+| DASH-01 | Phase 5 | Pending |
+| DASH-02 | Phase 5 | Pending |
+| DASH-03 | Phase 5 | Pending |
+| DASH-04 | Phase 5 | Pending |
+| DASH-05 | Phase 5 | Pending |
+| DASH-06 | Phase 5 | Pending |
+| DASH-07 | Phase 5 | Pending |
+| DASH-08 | Phase 5 | Pending |
+| DASH-09 | Phase 5 | Pending |
+| SCHED-01 | Phase 7 | Pending |
+| SCHED-02 | Phase 7 | Pending |
+| SCHED-03 | Phase 7 | Pending |
+| SCHED-04 | Phase 7 | Pending |
+| SCHED-05 | Phase 7 | Pending |
+| SCHED-06 | Phase 7 | Pending |
+| SCHED-07 | Phase 7 | Pending |
+| CLI-01 | Phase 4 | Pending |
+| CLI-02 | Phase 4 | Pending |
+| CLI-03 | Phase 4 | Pending |
+| CLI-04 | Phase 4 | Pending |
+| CLI-05 | Phase 4 | Pending |
+| ERR-01 | Phase 4 | Pending |
+| ERR-02 | Phase 8 | Pending |
+| ERR-03 | Phase 8 | Pending |
+| ERR-04 | Phase 8 | Pending |
+| ERR-05 | Phase 8 | Pending |
+| ERR-06 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 67 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 67 (pending roadmap)
+- v1 requirements: 78 total (DATA 6 + SIG 8 + SIZE 6 + EXIT 9 + PYRA 5 + STATE 7 + NOTF 10 + DASH 9 + SCHED 7 + CLI 5 + ERR 6)
+- Mapped to phases: 78
+- Unmapped: 0
+
+**Per-phase counts:**
+- Phase 1 (Signal Engine Core): 8 reqs
+- Phase 2 (Sizing/Exits/Pyramiding): 20 reqs
+- Phase 3 (State Persistence): 7 reqs
+- Phase 4 (E2E Skeleton): 13 reqs
+- Phase 5 (Dashboard): 9 reqs
+- Phase 6 (Email Notification): 9 reqs
+- Phase 7 (Scheduler + Deploy): 7 reqs
+- Phase 8 (Hardening): 5 reqs
+- **Total: 78**
 
 ---
 *Requirements defined: 2026-04-20*
-*Last updated: 2026-04-20 after initial definition*
+*Traceability populated: 2026-04-20 (roadmap creation)*
