@@ -7,8 +7,8 @@ See [.planning/PROJECT.md](.planning/PROJECT.md) for full context and [SPEC.md](
 ## Stack
 
 - **Python 3.11** with CommonJS-style flat module layout
-- **yfinance** `>=0.2.65,<0.3` — data source
-- **pandas 2.2** / **numpy 1.26+** — DataFrame math
+- **yfinance** `>=1.2,<2.0 (pinned 1.2.0 in requirements.txt)` — data source
+- **pandas 2.3+ (pinned 2.3.3 in requirements.txt)** / **numpy 2.0+ (pinned 2.0.2 in requirements.txt)** — DataFrame math
 - **requests** — Resend HTTPS calls (no SDK)
 - **schedule** — in-process daily loop for Replit path
 - **python-dotenv** — local `.env` only
@@ -17,6 +17,8 @@ See [.planning/PROJECT.md](.planning/PROJECT.md) for full context and [SPEC.md](
 - **pytest** + **pytest-freezer** — fixture-driven signal tests
 
 **Hand-roll** ATR(14), ADX(20), +DI, -DI, Mom, RVol — no pandas-ta or TA-Lib.
+
+Exact version pins (no `>=`, no `~=`) are maintained in requirements.txt per STATE.md §Todos Carried Forward. Phase 1 pins only the 5 deps actually used in Phase 1; later phases add their own. Bumps are deliberate PRs.
 
 ## Conventions
 
