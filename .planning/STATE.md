@@ -1,3 +1,17 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: planning
+last_updated: "2026-04-20T13:11:46.133Z"
+progress:
+  total_phases: 8
+  completed_phases: 0
+  total_plans: 6
+  completed_plans: 0
+  percent: 0
+---
+
 # STATE — Trading Signals
 
 **Last updated:** 2026-04-20 (roadmap created)
@@ -71,3 +85,5 @@ None.
 
 ---
 *State initialised: 2026-04-20 at roadmap creation*
+
+**Planned Phase:** 1 (Signal Engine Core — Indicators & Vote) — 6 plans — 2026-04-20T13:11:46.127Z
