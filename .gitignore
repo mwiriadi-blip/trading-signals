@@ -1,0 +1,5 @@
+state.json
+dashboard.html
+.env
+__pycache__/
+*.pyc
