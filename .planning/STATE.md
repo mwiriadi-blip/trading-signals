@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 1
+current_plan: 3
 status: executing
-last_updated: "2026-04-20T19:50:22.004Z"
+last_updated: "2026-04-20T20:05:11.592Z"
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 50
 ---
 
 # STATE — Trading Signals
@@ -28,10 +28,10 @@ progress:
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 1 — Signal Engine Core — Indicators & Vote
-- **Current Plan:** 2
+- **Current Plan:** 3
 - **Total Plans:** 6
 - **Status:** Executing Phase 1
-- **Progress:** [███░░░░░░░] 33%
+- **Progress:** [█████░░░░░] 50%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -48,6 +48,7 @@ progress:
 | Decisions logged | 4 (operator decisions baked into roadmap) |
 | Phase 01 P01 | 9 | 3 tasks | 10 files |
 | Phase 01 P02 | 5 | 3 tasks | 3 files |
+| Phase 01 P03 | 10 | 2 tasks | 28 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,9 @@ progress:
 - Pyenv preflight remediated by brew install pyenv (was not installed); REVIEWS.md Gemini preflight guidance satisfied. Future GHA setup-python will pick up .python-version=3.11.8
 - Plan 01-02 Task 1 AC #10 contradicted documented seed-window NaN rule and Task 3's explicit test; implemented rule-per-documented-intent (Rule 1 deviation logged)
 - `_wilder_smooth` pure-loop oracle now trust anchor for ATR/ADX; D-11 flat-price NaN propagation and D-12 bit-exact 0 RVol both verified at 17-test level
+- Plan 01-03: %.17g format renders 100.0 as '100' (C %g behaviour); AC grep pattern assumed '100.0' text — prioritised Pitfall 4 bit-roundtrip correctness (Rule 1 deviation)
+- Plan 01-03: Split-vote scenario uses 1 up / 1 down / 1 abstain (per REVIEWS MUST FIX); Mom1=+0.058, Mom3=-0.043, Mom12=-0.003 produces FLAT per SIG-08
+- Plan 01-03: Scenario generator is inline (not committed as script); only regenerate_goldens.py is committed per D-04. scenarios.README.md documents exact segment endpoints.
 
 ### Todos Carried Forward
 
@@ -83,8 +87,8 @@ None.
 
 ## Session Continuity
 
-- **Last action:** Executed Plan 01-02 — pure-Python-loop Wilder + Mom/RVol oracle created; 17 self-consistency tests pass; SIG-01..04 requirements marked complete.
-- **Next action:** Execute Plan 01-03 (canonical fixtures + regenerate_goldens.py + determinism snapshot). Run `/gsd-execute-phase 1` to continue.
+- **Last action:** Executed Plan 01-03 — 2 canonical yfinance fixtures (^AXJO + AUDUSD=X per R-03) + 9 deterministic scenario fixtures + tests/regenerate_goldens.py + 11 goldens (2 CSVs + 9 JSONs) + SHA256 determinism snapshot committed. Split-vote scenario verified FLAT via 1up/1dn/1abstain per REVIEWS MUST FIX. All 9 scenario signals match filename semantics. Idempotent regeneration confirmed. 17/17 oracle tests still pass.
+- **Next action:** Execute Plan 01-04 (production signal_engine.py — compute_indicators compared to oracle goldens at 1e-9 tolerance). Run `/gsd-execute-phase 1` to continue.
 - **Files ready for review:**
   - `.planning/ROADMAP.md` — full phase detail + success criteria
   - `.planning/REQUIREMENTS.md` — traceability table populated
@@ -99,3 +103,5 @@ None.
 **Planned Phase:** 1 (Signal Engine Core — Indicators & Vote) — 6 plans — 2026-04-20T13:11:46.127Z
 
 **Plan 01-02 completed:** 2026-04-20T19:49:00Z — 3 tasks, 3 files created (tests/oracle/wilder.py, tests/oracle/mom_rvol.py, tests/oracle/test_oracle_self_consistency.py), 17 self-consistency tests passing, requirements SIG-01..SIG-04 marked complete.
+
+**Plan 01-03 completed:** 2026-04-20T20:01:00Z — 2 tasks, 28 files created: 2 canonical yfinance fixtures (^AXJO + AUDUSD=X) with provenance READMEs per R-03; 9 deterministic scenario fixtures + scenarios.README.md per D-16; tests/regenerate_goldens.py offline pipeline per D-04; 2 canonical golden CSVs + 9 scenario JSONs + SHA256 determinism snapshot per D-14. Split-vote scenario verified via Mom1=+0.058, Mom3=-0.043, Mom12=-0.003 ⇒ FLAT per SIG-08 (MUST FIX compliance). Requirements SIG-01..SIG-08 are now covered end-to-end by fixtures + goldens (pending Plan 04/05 production tests).

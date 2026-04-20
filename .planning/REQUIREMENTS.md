@@ -26,10 +26,14 @@ Fine granularity — each requirement is independently testable.
 **: Mom1 / Mom3 / Mom12 computed as 21 / 63 / 252-day price returns
 - [x] **SIG-04
 **: RVol computed as 20-day daily return std × √252
-- [ ] **SIG-05**: Signal FLAT (0) when ADX < 25
-- [ ] **SIG-06**: Signal LONG (1) when ADX ≥ 25 and ≥2 of [Mom1, Mom3, Mom12] > +0.02
-- [ ] **SIG-07**: Signal SHORT (-1) when ADX ≥ 25 and ≥2 of [Mom1, Mom3, Mom12] < -0.02
-- [ ] **SIG-08**: Signal FLAT (0) when ADX ≥ 25 but neither up nor down vote reaches 2
+- [x] **SIG-05
+**: Signal FLAT (0) when ADX < 25
+- [x] **SIG-06
+**: Signal LONG (1) when ADX ≥ 25 and ≥2 of [Mom1, Mom3, Mom12] > +0.02
+- [x] **SIG-07
+**: Signal SHORT (-1) when ADX ≥ 25 and ≥2 of [Mom1, Mom3, Mom12] < -0.02
+- [x] **SIG-08
+**: Signal FLAT (0) when ADX ≥ 25 but neither up nor down vote reaches 2
 
 ### Position Sizing
 
@@ -177,10 +181,10 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | SIG-02 | Phase 1 | Complete (Plan 01-02) |
 | SIG-03 | Phase 1 | Complete (Plan 01-02) |
 | SIG-04 | Phase 1 | Complete (Plan 01-02) |
-| SIG-05 | Phase 1 | Pending |
-| SIG-06 | Phase 1 | Pending |
-| SIG-07 | Phase 1 | Pending |
-| SIG-08 | Phase 1 | Pending |
+| SIG-05 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
+| SIG-06 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
+| SIG-07 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
+| SIG-08 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
 | SIZE-01 | Phase 2 | Pending |
 | SIZE-02 | Phase 2 | Pending |
 | SIZE-03 | Phase 2 | Pending |
