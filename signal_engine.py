@@ -191,3 +191,64 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
   out['Mom12'] = _mom(out['Close'], MOM_PERIODS[2]).astype('float64')
   out['RVol'] = _rvol(out['Close'], RVOL_PERIOD, ANNUALISATION_FACTOR).astype('float64')
   return out
+
+
+# =========================================================================
+# Vote logic + latest-indicator extractor (D-06, D-08, D-09, D-10)
+# =========================================================================
+
+def get_signal(df: pd.DataFrame) -> int:
+  '''2-of-3 momentum vote on the last bar, gated by ADX >= ADX_GATE.
+
+  Returns one of {LONG=1, SHORT=-1, FLAT=0} as a bare int (D-06).
+
+  Rules:
+    - D-09: NaN ADX => FLAT (also triggered by ADX < ADX_GATE per SIG-05)
+    - D-10: NaN Mom values abstain from voting (do not count toward either direction)
+    - SIG-06: >=2 non-NaN moms > +MOM_THRESHOLD => LONG
+    - SIG-07: >=2 non-NaN moms < -MOM_THRESHOLD => SHORT
+    - SIG-08: otherwise => FLAT
+
+  Boundary behaviour (REVIEWS STRONGLY RECOMMENDED):
+    - ADX exactly == ADX_GATE (25.0) opens the gate (rule is `adx < ADX_GATE` for FLAT).
+    - Mom exactly == +MOM_THRESHOLD abstains (rule is `m > +MOM_THRESHOLD`).
+    - Mom exactly == -MOM_THRESHOLD abstains (rule is `m < -MOM_THRESHOLD`).
+
+  Does NOT call compute_indicators -- assumes indicator columns already on df.
+  (Caller flow: df2 = compute_indicators(df); signal = get_signal(df2).)
+  '''
+  row = df.iloc[-1]
+  adx = row['ADX']
+  if pd.isna(adx) or adx < ADX_GATE:
+    return FLAT
+  moms = [row['Mom1'], row['Mom3'], row['Mom12']]
+  valid = [m for m in moms if not pd.isna(m)]
+  votes_up = sum(1 for m in valid if m > MOM_THRESHOLD)
+  votes_dn = sum(1 for m in valid if m < -MOM_THRESHOLD)
+  if votes_up >= 2:
+    return LONG
+  if votes_dn >= 2:
+    return SHORT
+  return FLAT
+
+
+def get_latest_indicators(df: pd.DataFrame) -> dict:
+  '''Last-row indicator scalars per D-08.
+
+  Returns dict with keys: atr, adx, pdi, ndi, mom1, mom3, mom12, rvol.
+  Every value is Python `float` (numpy.float64 is explicitly unwrapped via `float()`
+  per REVIEWS POLISH so downstream JSON serialisation in Phase 3+ does not encounter
+  numpy scalar types). NaN is preserved as `float('nan')`, NOT None -- callers use
+  `math.isnan()` or `pd.isna()` to check.
+  '''
+  row = df.iloc[-1]
+  return {
+    'atr': float(row['ATR']),
+    'adx': float(row['ADX']),
+    'pdi': float(row['PDI']),
+    'ndi': float(row['NDI']),
+    'mom1': float(row['Mom1']),
+    'mom3': float(row['Mom3']),
+    'mom12': float(row['Mom12']),
+    'rvol': float(row['RVol']),
+  }
