@@ -5,6 +5,12 @@ Organized into classes per D-13. This file grows across Plans 04 (TestIndicators
 
 This file is created in Plan 04 with TestIndicators only.
 '''
+import ast
+import hashlib
+import json
+import re
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -406,4 +412,238 @@ class TestEdgeCases:
     assert isinstance(latest['adx'], float), 'NaN should be a float, not None'
     assert math.isnan(latest['adx']), (
       f'Expected float("nan") for ADX at warmup last bar, got {latest["adx"]}'
+    )
+
+
+# =========================================================================
+# TestDeterminism -- SHA256 snapshot (D-14) + architectural guards (CLAUDE.md)
+# =========================================================================
+# (ast / hashlib / json / re / Path imported at top of file per ruff E402.)
+
+SNAPSHOT_PATH = Path('tests/determinism/snapshot.json')
+SIGNAL_ENGINE_PATH = Path('signal_engine.py')
+TEST_SIGNAL_ENGINE_PATH = Path('tests/test_signal_engine.py')
+
+# REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
+# __future__, dataclasses, collections, enum, functools are allowed. Only modules
+# that would violate the hex boundary (I/O, network, clock, sibling hexes) are blocked.
+FORBIDDEN_MODULES = frozenset({
+  # I/O and clock (CLAUDE.md Architecture: pure math, no I/O, no clock reads)
+  'datetime', 'os', 'sys', 'subprocess', 'socket', 'time', 'pickle', 'json', 'pathlib', 'io',
+  # Network (Phase 1 is pure math; no network calls)
+  'requests', 'urllib', 'urllib2', 'urllib3', 'http', 'httpx',
+  # Sibling hexes (signal_engine <-> state_manager/notifier/dashboard must NOT import each other)
+  'state_manager', 'notifier', 'dashboard', 'main',
+  # Orchestration and external service deps (belong in other hexes)
+  'schedule', 'dotenv', 'pytz', 'yfinance',
+})
+
+
+def _hash_series_values(values) -> str:
+  '''SHA256 of float64 bytes. Matches regenerate_goldens.py convention.'''
+  arr = pd.Series(values, dtype='float64').to_numpy(dtype='float64', copy=True)
+  return hashlib.sha256(arr.tobytes()).hexdigest()
+
+
+def _top_level_imports(source_path: Path) -> set[str]:
+  '''Parse the given Python file and return the top-level module names imported.
+
+  For `import foo.bar` returns 'foo'; for `from foo.bar import baz` returns 'foo'.
+  Includes imports nested inside functions / classes / conditionals (ast.walk
+  traverses the full tree).
+  '''
+  tree = ast.parse(source_path.read_text())
+  modules: set[str] = set()
+  for node in ast.walk(tree):
+    if isinstance(node, ast.Import):
+      for alias in node.names:
+        modules.add(alias.name.split('.')[0])
+    elif isinstance(node, ast.ImportFrom):
+      if node.module:
+        modules.add(node.module.split('.')[0])
+  return modules
+
+
+_TWO_SPACE_INDENT = re.compile(r'^  [^ ]')
+_FOUR_SPACE_INDENT = re.compile(r'^    [^ ]')
+
+
+def _string_literal_line_ranges(source_path: Path) -> set[int]:
+  '''Return the set of physical line numbers that lie inside a string literal.
+
+  Uses `tokenize` so the test only inspects Python-code lines, not prose
+  continuation inside docstrings or multi-line string constants.
+  '''
+  import tokenize
+  lines_inside_string: set[int] = set()
+  with source_path.open('rb') as fh:
+    for tok in tokenize.tokenize(fh.readline):
+      if tok.type == tokenize.STRING:
+        start_line, _ = tok.start
+        end_line, _ = tok.end
+        if end_line > start_line:
+          # Mark "interior" lines (start_line+1 .. end_line) as inside-string.
+          # start_line itself has the opening quote (code context).
+          for ln in range(start_line + 1, end_line + 1):
+            lines_inside_string.add(ln)
+  return lines_inside_string
+
+
+def _has_two_space_indent_evidence(source_path: Path) -> bool:
+  '''REVIEWS POLISH (Gemini): evidence-based 2-space-indent lint.
+
+  In a pure 4-space codebase, NO code line starts with exactly 2 leading spaces
+  (levels are 0, 4, 8, ...). In a 2-space codebase, top-level indented code lines
+  start with exactly 2 leading spaces (levels are 0, 2, 4, 6, ...).
+
+  This function returns True iff at least one Python-code (non-string-literal)
+  line starts with exactly 2 spaces followed by a non-space character. If False,
+  the file has been reflowed to 4-space indent -- which is exactly what
+  `ruff format` would produce, and what the lint is meant to catch.
+
+  Simply checking for 4-space lines is insufficient because 2-level-nested code
+  in 2-space style legitimately has 4 leading spaces (a nested `if` body is at
+  column 4). 2-space lines are the unambiguous signature of 2-space indent.
+  '''
+  string_lines = _string_literal_line_ranges(source_path)
+  for lineno, line in enumerate(source_path.read_text().splitlines(), start=1):
+    if lineno in string_lines:
+      continue
+    if _TWO_SPACE_INDENT.match(line):
+      return True
+  return False
+
+
+class TestDeterminism:
+  '''Bit-level determinism + architectural hex-boundary guards.'''
+
+  @pytest.mark.parametrize('stem', CANONICAL_FIXTURES)
+  @pytest.mark.parametrize('col', INDICATOR_COLUMNS)
+  def test_snapshot_hash_stable(self, stem: str, col: str) -> None:
+    '''D-14: SHA256 of each indicator series matches committed snapshot.
+
+    The snapshot is generated by `tests/regenerate_goldens.py` from the pure-Python
+    ORACLE (tests/oracle/wilder.py + mom_rvol.py), not the pandas/numpy production
+    implementation. This is intentional: the oracle is the bit-level trust anchor
+    (pure Python loops, no numpy math), and production is verified against the
+    oracle via 1e-9 tolerance tests in `TestIndicators::test_indicator_matches_oracle`.
+
+    This test therefore locks the ORACLE bits. Any numpy/pandas upgrade that shifts
+    oracle bits (e.g. via pd.read_csv float parsing or list -> float cast) fails loudly.
+    Production-vs-oracle tolerance drift is caught separately by TestIndicators.
+
+    Rationale: production's Wilder-smoothing recursion (`_wilder_smooth`) uses numpy
+    `+` / `/` on float64 scalars which differ from the oracle's pure-Python equivalents
+    at the ~5e-14 level (below 1e-9 tolerance, above float64 epsilon). Hashing
+    production would require regenerating the snapshot from production and would
+    make the determinism gate entangled with numpy's internal float semantics,
+    defeating the tamper-detection purpose.
+    '''
+    # Local, test-only oracle import. Kept inside the test so signal_engine.py never
+    # sees tests.oracle (architectural guard is intact).
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _repo_root = _Path('.').resolve()
+    if str(_repo_root) not in _sys.path:
+      _sys.path.insert(0, str(_repo_root))
+    from tests.oracle.mom_rvol import mom as _oracle_mom
+    from tests.oracle.mom_rvol import rvol as _oracle_rvol
+    from tests.oracle.wilder import adx_plus_minus_di as _oracle_adx
+    from tests.oracle.wilder import atr as _oracle_atr
+
+    snapshot = json.loads(SNAPSHOT_PATH.read_text())
+    expected_hash = snapshot[stem][col]
+    fixture = _load_fixture(stem)
+    highs = fixture['High'].tolist()
+    lows = fixture['Low'].tolist()
+    closes = fixture['Close'].tolist()
+    if col == 'ATR':
+      oracle_vals = _oracle_atr(highs, lows, closes, 14)
+    elif col in {'ADX', 'PDI', 'NDI'}:
+      adx_v, pdi_v, ndi_v = _oracle_adx(highs, lows, closes, 20)
+      oracle_vals = {'ADX': adx_v, 'PDI': pdi_v, 'NDI': ndi_v}[col]
+    elif col == 'Mom1':
+      oracle_vals = _oracle_mom(closes, 21)
+    elif col == 'Mom3':
+      oracle_vals = _oracle_mom(closes, 63)
+    elif col == 'Mom12':
+      oracle_vals = _oracle_mom(closes, 252)
+    elif col == 'RVol':
+      oracle_vals = _oracle_rvol(closes, 20, 252)
+    else:
+      raise ValueError(f'unexpected indicator column: {col}')
+    actual_hash = _hash_series_values(oracle_vals)
+    assert actual_hash == expected_hash, (
+      f'{stem} {col}: ORACLE SHA256 drift detected.\n'
+      f'  expected: {expected_hash}\n'
+      f'  actual:   {actual_hash}\n'
+      f'The oracle bits changed. If this is an intentional library upgrade, re-run '
+      f'`python tests/regenerate_goldens.py` and review the git diff carefully.\n'
+      f'Note: production-vs-oracle tolerance drift at 1e-9 is caught by '
+      f'TestIndicators; this gate specifically locks the bit-level oracle output.'
+    )
+
+  # --- Architectural guards (CLAUDE.md hex boundary) ---
+
+  def test_forbidden_imports_absent(self) -> None:
+    '''CLAUDE.md Architecture: signal_engine.py must not import any module in the
+    blocklist. Per REVIEWS STRONGLY RECOMMENDED, a blocklist is more resilient to
+    benign future additions (dataclasses, __future__, enum, functools, collections)
+    than a whitelist. Add entries to FORBIDDEN_MODULES only after deliberate review.
+    '''
+    imports = _top_level_imports(SIGNAL_ENGINE_PATH)
+    leaked = imports & FORBIDDEN_MODULES
+    assert not leaked, (
+      f'signal_engine.py illegally imports forbidden module(s): {sorted(leaked)}. '
+      f'Pure-math modules must not do I/O, network, clock reads, or import sibling '
+      f'hexes (state_manager / notifier / dashboard). Move this functionality to '
+      f'main.py or an appropriate adapter.'
+    )
+
+  def test_signal_engine_has_core_public_surface(self) -> None:
+    '''Public API contract: compute_indicators, get_signal, get_latest_indicators,
+    LONG, SHORT, FLAT all importable.
+    '''
+    import signal_engine
+    public_names = [
+      'compute_indicators', 'get_signal', 'get_latest_indicators',
+      'LONG', 'SHORT', 'FLAT',
+    ]
+    for name in public_names:
+      assert hasattr(signal_engine, name), f'signal_engine missing public name: {name}'
+    assert signal_engine.LONG == 1
+    assert signal_engine.SHORT == -1
+    assert signal_engine.FLAT == 0
+
+  # --- REVIEWS POLISH (Gemini): 2-space indent guard against ruff's 4-space default ---
+
+  def test_no_four_space_indent(self) -> None:
+    '''REVIEWS POLISH (Gemini): defend CLAUDE.md 2-space indent convention against
+    ruff format's 4-space default.
+
+    Evidence-based check: in a pure 4-space codebase, NO Python-code line begins
+    with exactly 2 leading spaces (levels are 0, 4, 8, ...). In a 2-space codebase,
+    top-level indented code lines begin with exactly 2 spaces. So the unambiguous
+    signature of 2-space indent is the presence of "^  [^ ]" lines.
+
+    Checking for 4-space lines directly is insufficient: 2-level-nested code in
+    2-space style legitimately has 4 leading spaces (e.g. a nested `if` body or
+    a `return {` dict body). Only the 2-space-presence check distinguishes the
+    two styles cleanly.
+
+    Fails loudly if either signal_engine.py or tests/test_signal_engine.py has
+    been reflowed to 4-space (the signature of `ruff format`).
+    '''
+    missing_2space_files = []
+    for path in [SIGNAL_ENGINE_PATH, TEST_SIGNAL_ENGINE_PATH]:
+      if not _has_two_space_indent_evidence(path):
+        missing_2space_files.append(str(path))
+    assert not missing_2space_files, (
+      'Files appear to have been reflowed to 4-space indent (no Python-code line '
+      'starts with exactly 2 spaces -- the signature of 2-space indent):\n'
+      + '\n'.join(f'  {p}' for p in missing_2space_files)
+      + '\nProject convention is 2-space indent (CLAUDE.md). Do NOT run `ruff format` '
+      + 'on these files -- ruff 0.6.9 reflows to 4-space. Use .editorconfig '
+      + 'indent_size=2 and manual review.'
     )
