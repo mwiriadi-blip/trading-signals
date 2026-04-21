@@ -439,4 +439,212 @@ def step(
     StepResult capturing position_after, closed_trade, sizing_decision,
     pyramid_decision, unrealised_pnl, and warnings list.
   '''
-  raise NotImplementedError('step: implement in Plan 02-05')
+  warnings: list[str] = []
+  closed_trade: ClosedTrade | None = None
+  sizing_decision: SizingDecision | None = None
+  pyramid_decision: PyramidDecision | None = None
+  forced_exit = False
+
+  # -----------------------------------------------------------------------
+  # Phase 0 (D-16): peak/trough update — shallow copy, update BEFORE exits.
+  # step() owns peak/trough updates; individual callables assume it's done.
+  # -----------------------------------------------------------------------
+  current_position: Position | None = None
+  if position is not None:
+    current_position = dict(position)  # type: ignore[assignment]
+    # D-16: peak/trough updated by step() before stop logic
+    if current_position['direction'] == 'LONG':
+      prev_peak = current_position.get('peak_price') or current_position['entry_price']
+      current_position['peak_price'] = max(prev_peak, bar['high'])
+    else:
+      prev_trough = (
+        current_position.get('trough_price') or current_position['entry_price']
+      )
+      current_position['trough_price'] = min(prev_trough, bar['low'])
+
+  # -----------------------------------------------------------------------
+  # Phase 1: exits on existing position.
+  # -----------------------------------------------------------------------
+  if current_position is not None:
+    adx = indicators.get('adx', float('nan'))
+    # EXIT-05 (A4): check today's ADX against ADX_EXIT_GATE.
+    if math.isfinite(adx) and adx < ADX_EXIT_GATE:
+      # ADX exit: close at bar close, no new entry (A2).
+      closed_trade = _close_position(
+        current_position, bar, multiplier, cost_aud_open, 'adx_exit',
+      )
+      current_position = None
+      forced_exit = True
+    elif check_stop_hit(
+      current_position, bar['high'], bar['low'], indicators.get('atr', float('nan')),
+    ):
+      # EXIT-08/09 stop hit: close at computed stop level (B-5).
+      stop_level = get_trailing_stop(
+        current_position, bar['close'], indicators.get('atr', float('nan')),
+      )
+      # B-5: if stop_level is NaN (should not happen if atr_entry is finite),
+      # fall back to bar['close'] to avoid producing a NaN exit price.
+      exit_price = stop_level if math.isfinite(stop_level) else bar['close']
+      closed_trade = _close_position(
+        current_position, bar, multiplier, cost_aud_open, 'stop_hit',
+        exit_price=exit_price,  # B-5 stop-level fill
+      )
+      current_position = None
+      forced_exit = True
+    elif new_signal == FLAT:
+      # EXIT-01/02: FLAT signal closes the open position.
+      closed_trade = _close_position(
+        current_position, bar, multiplier, cost_aud_open, 'flat_signal',
+      )
+      current_position = None
+      # forced_exit stays False: FLAT is voluntary; doesn't suppress next-bar entry.
+    elif new_signal != FLAT and (
+      (position['direction'] == 'LONG' and new_signal == SHORT)
+      or (position['direction'] == 'SHORT' and new_signal == LONG)
+    ):
+      # EXIT-03/04: signal reversal — close existing, then open new (Phase 2).
+      closed_trade = _close_position(
+        current_position, bar, multiplier, cost_aud_open, 'signal_reversal',
+      )
+      current_position = None
+      # forced_exit stays False: reversal explicitly opens new position below.
+
+  # -----------------------------------------------------------------------
+  # Phase 2: entry sizing. D-19: reversal uses INPUT account (no mutation).
+  # A2: no new entry on forced-exit (ADX-exit or stop-hit) day.
+  # -----------------------------------------------------------------------
+  position_after: Position | None = current_position  # may already be updated
+  if not forced_exit:
+    # New entry conditions:
+    # (a) reversal: closed_trade exists AND position_after is None AND new_signal not FLAT
+    # (b) fresh entry: position was None (no existing position) AND new_signal not FLAT
+    is_reversal = closed_trade is not None and position_after is None
+    is_fresh_entry = position is None and new_signal != FLAT
+    if is_reversal or is_fresh_entry:
+      if new_signal != FLAT:
+        # D-19: D-17 signature: account is INPUT account passed by caller.
+        sizing_decision = calc_position_size(
+          account=account,
+          signal=new_signal,
+          atr=indicators.get('atr', float('nan')),
+          rvol=indicators.get('rvol', float('nan')),
+          multiplier=multiplier,
+        )
+        if sizing_decision.contracts > 0:
+          # Build new position dict (fresh; not a copy of old).
+          direction_str = 'LONG' if new_signal == LONG else 'SHORT'
+          position_after = {
+            'direction': direction_str,
+            'entry_price': bar['close'],
+            'entry_date': bar['date'],
+            'n_contracts': sizing_decision.contracts,
+            'pyramid_level': 0,
+            'peak_price': bar['close'] if direction_str == 'LONG' else None,
+            'trough_price': bar['close'] if direction_str == 'SHORT' else None,
+            'atr_entry': indicators.get('atr', float('nan')),
+          }
+        else:
+          # SIZE-05: contracts == 0, no new position.
+          if sizing_decision.warning:
+            warnings.append(sizing_decision.warning)
+          position_after = None
+
+  # -----------------------------------------------------------------------
+  # Phase 3 + Phase 4 (D-18): pyramid check on surviving open position,
+  # then APPLY the add to position_after.
+  # Only pyramid if position was ALREADY open before this bar (not a new entry
+  # or reversal-open this very bar) AND no forced exit occurred.
+  # -----------------------------------------------------------------------
+  is_new_entry_this_bar = (
+    (closed_trade is not None and position_after is not None)  # reversal
+    or (position is None and position_after is not None)  # fresh entry
+  )
+  if (
+    position_after is not None
+    and not forced_exit
+    and not is_new_entry_this_bar
+  ):
+    pyramid_decision = check_pyramid(
+      position_after,
+      current_price=bar['close'],  # A1: CLOSE for pyramid trigger
+      atr_entry=position_after['atr_entry'],
+    )
+    if pyramid_decision.add_contracts > 0:
+      # D-18: apply pyramid add to position_after (mutate the working copy).
+      # position_after['n_contracts'] and position_after['pyramid_level'] are
+      # updated here; check_pyramid itself stays pure (D-12 / D-18).
+      position_after = {
+        **position_after,
+        'n_contracts': position_after['n_contracts'] + pyramid_decision.add_contracts,
+        'pyramid_level': pyramid_decision.new_level,  # D-18
+      }
+
+  # -----------------------------------------------------------------------
+  # Phase 5 (B-6): unrealised PnL on FINAL position state (post-pyramid).
+  # -----------------------------------------------------------------------
+  if position_after is not None:
+    unrealised_pnl = compute_unrealised_pnl(
+      position_after, bar['close'], multiplier, cost_aud_open,
+    )
+  else:
+    unrealised_pnl = 0.0
+
+  return StepResult(
+    position_after=position_after,  # type: ignore[arg-type]
+    closed_trade=closed_trade,
+    sizing_decision=sizing_decision,
+    pyramid_decision=pyramid_decision,
+    unrealised_pnl=unrealised_pnl,
+    warnings=warnings,
+  )
+
+
+def _close_position(
+  position: Position,
+  bar: dict,
+  multiplier: float,
+  cost_aud_open: float,
+  exit_reason: str,
+  *,
+  exit_price: float | None = None,
+) -> ClosedTrade:
+  '''Build a ClosedTrade record for a position being closed.
+
+  B-5: exit_price kwarg allows stop-hit fills to use the computed stop level
+  rather than bar['close']. Default (None) uses bar['close'].
+
+  D-13 (close-half cost): realised_pnl = gross_pnl - close_cost_half.
+  The close-half cost equals cost_aud_open (same as the open-half — both
+  are half of the round-trip cost). Phase 3 record_trade wires this into
+  the trade log; Phase 2 computes it here.
+
+  Args:
+    position:      position being closed (D-08 TypedDict)
+    bar:           today's OHLC dict with 'close' and 'date' keys
+    multiplier:    instrument point value
+    cost_aud_open: per-contract opening cost in AUD (= closing cost per D-13)
+    exit_reason:   one of 'flat_signal', 'signal_reversal', 'stop_hit', 'adx_exit'
+    exit_price:    override exit fill price; defaults to bar['close'] if None (B-5)
+
+  Returns:
+    ClosedTrade with realised_pnl reflecting closing-half cost.
+  '''
+  effective_exit_price = exit_price if exit_price is not None else bar['close']
+  direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
+  gross = (
+    direction_mult
+    * (effective_exit_price - position['entry_price'])
+    * position['n_contracts']
+    * multiplier
+  )
+  # D-13: closing half is same per-contract cost as opening half.
+  close_cost = cost_aud_open * position['n_contracts']
+  realised_pnl = gross - close_cost
+  return ClosedTrade(
+    direction=position['direction'],
+    entry_price=position['entry_price'],
+    exit_price=effective_exit_price,
+    n_contracts=position['n_contracts'],
+    realised_pnl=realised_pnl,
+    exit_reason=exit_reason,
+  )
