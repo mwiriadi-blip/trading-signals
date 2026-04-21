@@ -211,11 +211,11 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | SIZE-04 | Phase 2 | Pending |
 | SIZE-05 | Phase 2 | Pending |
 | SIZE-06 | Phase 2 | Pending |
-| EXIT-01 | Phase 2 | Pending |
-| EXIT-02 | Phase 2 | Pending |
-| EXIT-03 | Phase 2 | Pending |
-| EXIT-04 | Phase 2 | Pending |
-| EXIT-05 | Phase 2 | Pending |
+| EXIT-01 | Phase 2 | Complete |
+| EXIT-02 | Phase 2 | Complete |
+| EXIT-03 | Phase 2 | Complete |
+| EXIT-04 | Phase 2 | Complete |
+| EXIT-05 | Phase 2 | Complete |
 | EXIT-06 | Phase 2 | Pending |
 | EXIT-07 | Phase 2 | Pending |
 | EXIT-08 | Phase 2 | Pending |
@@ -224,7 +224,7 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | PYRA-02 | Phase 2 | Pending |
 | PYRA-03 | Phase 2 | Pending |
 | PYRA-04 | Phase 2 | Pending |
-| PYRA-05 | Phase 2 | Pending |
+| PYRA-05 | Phase 2 | Complete |
 | STATE-01 | Phase 3 | Pending |
 | STATE-02 | Phase 3 | Pending |
 | STATE-03 | Phase 3 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 1
-status: executing
-last_updated: "2026-04-21T02:02:38.490Z"
+status: verifying
+last_updated: "2026-04-21T02:24:32.396Z"
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 11
-  completed_plans: 10
-  percent: 91
+  completed_plans: 11
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -33,8 +33,8 @@ Plan: 5 of 5
 - **Phase:** 2
 - **Current Plan:** 1
 - **Total Plans:** 6
-- **Status:** Ready to execute
-- **Progress:** [█████████░] 91%
+- **Status:** Phase complete — ready for verification
+- **Progress:** [██████████] 100%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -59,6 +59,7 @@ Plan: 5 of 5
 | Phase 02 P02 | 6m34s | 2 tasks | 2 files |
 | Phase 02 P03 | 460s | 2 tasks | 2 files |
 | Phase 02 P04 | 64m | 2 tasks | 19 files |
+| Phase 02 P05 | 14 | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,10 @@ Plan: 5 of 5
 - B-4 dual-maintenance accepted for phase2 fixtures: regenerate_phase2_fixtures.py reimplements sizing math inline without importing sizing_engine.py so production bugs surface as fixture mismatches
 - D-15 entry-ATR anchor: fixture helpers pass prev[atr_entry] not today's ATR to trailing stop and stop-hit math
 - D-12 pyramid stateless invariant hardcoded in regenerator: inline assert add_contracts==1 inside pyramid_gap fixture builder catches recipe bugs at generation time
+- D-16: peak/trough update via shallow copy BEFORE exit logic in step() so stop level uses bar's updated high/low
+- D-18: pyramid application uses dict spread pattern for grep-auditable AC compliance
+- A2: is_forced_exit flag prevents new sizing on ADX-drop or stop-hit days
+- B-4: regenerator oracle reimplements step() inline without importing sizing_engine (dual-maintenance by design)
 
 ### Todos Carried Forward
 
