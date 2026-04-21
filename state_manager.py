@@ -86,20 +86,62 @@ MIGRATIONS: dict = {
 def _atomic_write(data: str, path: Path) -> None:
   '''STATE-02 / D-08 (amended by D-17): tempfile + fsync(file) + os.replace + fsync(parent dir).
 
-  D-17 ordering (corrected from RESEARCH.md §Pattern 1): the parent-dir
-  fsync MUST happen AFTER os.replace so the rename itself is durable.
+  Durability sequence (D-17 ordering — corrected from RESEARCH.md §Pattern 1):
+    1. write data to tempfile in same directory as target
+    2. flush + fsync(tempfile.fileno())  -- data durable on disk
+    3. close tempfile (NamedTemporaryFile context exit)
+    4. os.replace(tempfile, target)      -- atomic rename
+    5. fsync(parent dir fd) on POSIX     -- rename itself durable on disk
 
-  Wave 1 fills this in. See PATTERNS.md §Atomic write — core pattern,
-  then apply D-17 ordering (post-replace dir fsync).
+  Why fsync-AFTER-replace: parent-dir fsync's purpose is to make the
+  DIRECTORY ENTRY UPDATE (the rename) durable. fsync'ing before the
+  replace only persists the not-yet-renamed temp file's directory entry.
+  Atomicity (no torn writes) is preserved either way; durability against
+  power loss AFTER the rename is only guaranteed by the post-replace fsync.
+
+  Tempfile cleanup: try/finally unlinks the tempfile if any step before
+  os.replace raises (Pitfall 1). On success, tmp_path_str is set to None
+  so the finally clause is a no-op.
   '''
-  raise NotImplementedError('Wave 1: implement atomic write (D-17 ordering)')
+  parent = path.parent
+  tmp_path_str = None
+  try:
+    with tempfile.NamedTemporaryFile(
+      dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
+    ) as tmp:
+      tmp_path_str = tmp.name
+      tmp.write(data)
+      tmp.flush()
+      os.fsync(tmp.fileno())
+    # tempfile is now closed (NamedTemporaryFile context exit)
+    # D-17: os.replace BEFORE parent-dir fsync (rename durability)
+    os.replace(tmp_path_str, path)
+    if os.name == 'posix':
+      dir_fd = os.open(str(parent), os.O_RDONLY)
+      try:
+        os.fsync(dir_fd)
+      finally:
+        os.close(dir_fd)
+    tmp_path_str = None  # success: do not delete in finally
+  finally:
+    if tmp_path_str is not None:
+      try:
+        os.unlink(tmp_path_str)
+      except FileNotFoundError:
+        pass
 
 def _migrate(state: dict) -> dict:
   '''STATE-04: walk schema_version forward to STATE_SCHEMA_VERSION.
 
-  Wave 1 fills this in. See PATTERNS.md §Schema migration pattern.
+  Pitfall 5 (RESEARCH.md): state without schema_version key defaults to 0
+  via state.get('schema_version', 0), walks up to current.
   '''
-  raise NotImplementedError('Wave 1: implement schema migration')
+  version = state.get('schema_version', 0)
+  while version < STATE_SCHEMA_VERSION:
+    version += 1
+    state = MIGRATIONS[version](state)
+  state['schema_version'] = STATE_SCHEMA_VERSION
+  return state
 
 def _backup_corrupt(path: Path, now: datetime) -> str:
   '''D-06 (amended by B-1 + B-2): rename corrupt state file to
@@ -162,35 +204,58 @@ def reset_state() -> dict:
 def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
   '''STATE-01 / STATE-03 / STATE-04 / D-18: load state.json; recover on corruption.
 
-  If path does not exist: returns reset_state() output (B-3: does NOT
-  auto-save — orchestrator must explicitly call save_state to materialize
-  state.json on first run).
+  If path does not exist: returns a fresh state dict. The file is NOT
+  created on this call (B-3 — no side-effect on read; state_manager.py
+  never auto-saves on load). The orchestrator (Phase 4) must explicitly
+  call save_state(state) after load_state on first run to materialize
+  state.json. (Wave 2 will refactor the literal here to call reset_state().)
+
   On JSONDecodeError (D-05): backup file (D-06 + B-1 + B-2), reinit, append
-  warning with source='state_manager' (D-07), save fresh state, return it.
+  warning with source='state_manager' (D-07), save fresh state (this branch
+  DOES persist — recovery rewrites state.json), return it.
+    - Wave 1: corruption branch raises NotImplementedError('Wave 2: ...')
+    - Wave 2: implements the corruption recovery
   On successful parse: walk MIGRATIONS forward (STATE-04), run
   _validate_loaded_state (D-18 — raises ValueError on missing required
-  keys), and return.
-
-  Wave 1 fills the happy + missing-file paths; Wave 2 fills the corruption
-  path AND the D-18 validator step in the happy path.
+  keys, Wave 2), and return.
   '''
-  raise NotImplementedError('Wave 1/2: implement load_state')
+  if not path.exists():
+    # Wave 1: literal fresh-state shape (Wave 2 refactors to call reset_state()).
+    # B-3: do NOT save here — no side-effect on read; orchestrator owns
+    # file materialization via explicit save_state(state) on first run.
+    return {
+      'schema_version': STATE_SCHEMA_VERSION,
+      'account': INITIAL_ACCOUNT,
+      'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [],
+      'equity_history': [],
+      'warnings': [],
+    }
+  raw = path.read_bytes()
+  try:
+    state = json.loads(raw)
+  except json.JSONDecodeError as exc:
+    # Wave 2 implements: backup + reinit + warn (and that branch DOES save_state).
+    raise NotImplementedError('Wave 2: implement corruption recovery branch') from exc
+  return _migrate(state)
 
 def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
   '''STATE-02 / D-08 (amended by D-17): atomic write of state to path.
 
-  JSON formatting: sort_keys=True, indent=2, allow_nan=False (Claude's
-  Discretion). NaN in state is a bug; allow_nan=False surfaces it as
-  ValueError immediately rather than silently persisting non-standard JSON.
+  JSON formatting: sort_keys=True (git-friendly diffs), indent=2 (project
+  convention), allow_nan=False (Claude's Discretion). NaN in state is a
+  bug; allow_nan=False surfaces it as ValueError immediately rather than
+  silently persisting non-standard JSON.
 
   OSError on os.replace is RE-RAISED (RESEARCH §Open Question 2):
   data integrity > silent failure. Orchestrator (Phase 4) handles.
 
   Durability ordering per D-17: see _atomic_write docstring.
-
-  Wave 1 fills this in.
   '''
-  raise NotImplementedError('Wave 1: implement save_state')
+  data = json.dumps(state, sort_keys=True, indent=2, allow_nan=False)
+  _atomic_write(data, path)
 
 def append_warning(state: dict, source: str, message: str, now=None) -> dict:
   '''D-09 / D-10 / D-11: append {date, source, message}; FIFO trim to MAX_WARNINGS.
