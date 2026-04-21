@@ -4,14 +4,15 @@ All policy constants for Phase 1 indicator logic and Phase 2 sizing/exit/pyramid
 logic live here. Pure module: no I/O, no network, no clock reads.
 
 Architecture (hexagonal-lite, CLAUDE.md): shared by signal_engine.py (Phase 1
-indicator periods + vote thresholds) and sizing_engine.py (Phase 2 sizing/exit
-constants). Must NOT import state_manager, notifier, dashboard, main, requests,
-datetime, os, or any I/O/network module.
+indicator periods + vote thresholds), sizing_engine.py (Phase 2 sizing/exit
+constants), and state_manager.py (Phase 3 I/O hex). Must NOT import notifier,
+dashboard, main, requests, datetime, os, or any I/O/network module.
 
 D-01: Phase 1 policy constants migrated from signal_engine.py (ADX_GATE,
 MOM_THRESHOLD, periods). LONG/SHORT/FLAT signal encoding stays in signal_engine.py.
 D-08: Position TypedDict lives here so Phase 3 state.json round-trips directly.
 D-11: SPI mini $5/pt, $6 AUD RT (operator confirmed at /gsd-discuss-phase 2).
+D-XX (Phase 3): INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE added.
 '''
 from typing import Literal, TypedDict
 
@@ -65,6 +66,15 @@ SPI_COST_AUD: float = 6.0       # round-trip; half deducted on open, half on clo
 # AUD/USD: $10,000 notional, $5 AUD RT (split $2.50 on open + $2.50 on close)
 AUDUSD_NOTIONAL: float = 10000.0
 AUDUSD_COST_AUD: float = 5.0    # round-trip; half deducted on open, half on close
+
+# =========================================================================
+# Phase 3 constants — state persistence (STATE-01, STATE-07, D-11)
+# =========================================================================
+
+INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
+MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
+STATE_SCHEMA_VERSION: int = 1       # bump on each schema change (STATE-04)
+STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================
 # Position TypedDict — D-08
