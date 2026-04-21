@@ -19,21 +19,36 @@ All retry-loop parameters (`timeout=10`, `retries=3`, `backoff_s=10.0`) are
 parameterised for test determinism — Wave 1 tests pass `retries=3, backoff_s=0.01`
 to exercise the loop quickly without real sleeps.
 
-Wave 0 (this commit): stub module with docstrings, imports, exception classes,
-and a NotImplementedError fetch_ohlcv body. Wave 1 fills the retry loop
-(04-02-PLAN.md).
+Wave 1 (04-02-PLAN.md, C-6 revision 2026-04-22): fetch_ohlcv body implements
+the retry loop + narrow-catch tuple + empty-frame guard + required-OHLCV-column
+validation (C-6 prevents KeyError-as-generic-Exception schema-drift leak).
 '''
 import logging
-import time  # noqa: F401 — used in Wave 1 fetch_ohlcv retry loop (time.sleep)
+import time
 
-import pandas as pd  # noqa: F401 — used in Wave 1 fetch_ohlcv return type
-import requests.exceptions  # noqa: F401 — used in Wave 1 _RETRY_EXCEPTIONS
-import yfinance as yf  # noqa: F401 — used in Wave 1 yf.Ticker(sym).history()
-from yfinance.exceptions import (  # noqa: F401 — Wave 1 _RETRY_EXCEPTIONS member
-  YFRateLimitError,
-)
+import pandas as pd
+import requests.exceptions
+import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 logger = logging.getLogger(__name__)
+
+
+# Retry-eligible transient exceptions (04-RESEARCH.md §Pattern 1, Pitfall 4).
+# Empty-frame-on-invalid-symbol is raised as ValueError inside the try block
+# and added to the except tuple via tuple-unpack — NEVER catch bare Exception.
+_RETRY_EXCEPTIONS = (
+  YFRateLimitError,
+  requests.exceptions.ReadTimeout,
+  requests.exceptions.ConnectionError,
+)
+
+# C-6 revision 2026-04-22: required OHLCV columns for downstream signal_engine +
+# sizing_engine consumption. If yfinance schema drifts and one is missing, raise
+# DataFetchError with explicit missing-column names — do NOT let a KeyError leak
+# as a generic Exception (which would map to exit 1 "unexpected crash" instead of
+# exit 2 "data failure" in the Wave 3 top-level handler).
+_REQUIRED_COLUMNS = frozenset({'Open', 'High', 'Low', 'Close', 'Volume'})
 
 
 class DataFetchError(Exception):
@@ -69,6 +84,48 @@ def fetch_ohlcv(
 
   Raises:
     DataFetchError: after `retries` attempts all fail with retry-eligible
-                    exceptions OR empty-frame response.
+                    exceptions OR empty-frame response. Also raised directly
+                    (non-retry-eligible) if the response is missing any of the
+                    required OHLCV columns — C-6 revision 2026-04-22.
   '''
-  raise NotImplementedError('Wave 1 implements fetch_ohlcv — see 04-02-PLAN.md')
+  last_err: Exception | None = None
+  for attempt in range(1, retries + 1):
+    try:
+      ticker = yf.Ticker(symbol)
+      df = ticker.history(
+        period=f'{days}d',
+        interval='1d',
+        auto_adjust=True,
+        actions=False,
+        timeout=10,
+      )
+      if df.empty:
+        raise ValueError(
+          f'yfinance returned empty DataFrame for {symbol} '
+          f'(likely invalid symbol or Yahoo outage)',
+        )
+      # C-6 revision 2026-04-22: validate required-column coverage BEFORE the
+      # defensive slice. A KeyError from the slice would leak as a generic
+      # Exception; a dedicated DataFetchError maps to exit 2 cleanly.
+      # This raise is NOT in _RETRY_EXCEPTIONS or ValueError, so it propagates
+      # past the except tuple — correct posture for a non-retry-eligible
+      # schema-drift failure.
+      missing = _REQUIRED_COLUMNS - set(df.columns)
+      if missing:
+        raise DataFetchError(
+          f'{symbol}: missing required columns: {sorted(missing)} '
+          f'(got {sorted(df.columns)}); yfinance schema may have drifted',
+        )
+      return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+    except (*_RETRY_EXCEPTIONS, ValueError) as e:
+      last_err = e
+      logger.warning(
+        '[Fetch] %s attempt %d/%d failed: %s: %s',
+        symbol, attempt, retries, type(e).__name__, e,
+      )
+      if attempt < retries:
+        time.sleep(backoff_s)
+  raise DataFetchError(
+    f'{symbol}: retries exhausted after {retries} attempts; '
+    f'last error: {type(last_err).__name__}: {last_err}',
+  ) from last_err
