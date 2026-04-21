@@ -8,12 +8,21 @@ in Plans 02-02 (sizing), 02-03 (exits + pyramid), 02-04 (scenario fixtures),
 Fixture files live at tests/fixtures/phase2/*.json (15 JSON scenario fixtures
 per D-14); Phase 2 determinism snapshot at tests/determinism/phase2_snapshot.json.
 '''
+import math
 from pathlib import Path
 
 import pytest
 
 from signal_engine import FLAT, LONG, SHORT
-from sizing_engine import SizingDecision, calc_position_size, compute_unrealised_pnl
+from sizing_engine import (
+  PyramidDecision,
+  SizingDecision,
+  calc_position_size,
+  check_pyramid,
+  check_stop_hit,
+  compute_unrealised_pnl,
+  get_trailing_stop,
+)
 from system_params import Position
 
 # Module-level path constants (mirrors test_signal_engine.py SIGNAL_ENGINE_PATH pattern)
@@ -21,6 +30,41 @@ SIZING_ENGINE_PATH = Path('sizing_engine.py')
 SYSTEM_PARAMS_PATH = Path('system_params.py')
 PHASE2_FIXTURES_DIR = Path('tests/fixtures/phase2')
 PHASE2_SNAPSHOT_PATH = Path('tests/determinism/phase2_snapshot.json')
+
+
+def _load_phase2_fixture(name: str) -> dict:
+  '''Load a Phase 2 JSON scenario fixture.'''
+  import json
+  path = PHASE2_FIXTURES_DIR / f'{name}.json'
+  return json.loads(path.read_text())
+
+
+def _make_position(
+  direction: str = 'LONG',
+  entry_price: float = 7000.0,
+  n_contracts: int = 2,
+  pyramid_level: int = 0,
+  peak_price: float | None = None,
+  trough_price: float | None = None,
+  atr_entry: float = 53.0,
+  entry_date: str = '2026-01-02',
+) -> Position:
+  '''Build a Position TypedDict with sensible defaults for unit tests.
+
+  Defaults to LONG with atr_entry=53 (matches RESEARCH §Pattern 2 reference numbers).
+  peak_price/trough_price default to None so tests must override the relevant one
+  to test stop-hit math beyond the entry-price fallback.
+  '''
+  return {
+    'direction': direction,
+    'entry_price': entry_price,
+    'entry_date': entry_date,
+    'n_contracts': n_contracts,
+    'pyramid_level': pyramid_level,
+    'peak_price': peak_price,
+    'trough_price': trough_price,
+    'atr_entry': atr_entry,
+  }
 
 
 # =========================================================================
@@ -267,61 +311,114 @@ class TestSizing:
 # =========================================================================
 
 class TestExits:
-  '''Unit tests for get_trailing_stop and check_stop_hit (EXIT-06..09).
+  '''EXIT-06..09 unit tests for get_trailing_stop + check_stop_hit.
 
-  Covers: LONG/SHORT stop computation, intraday H/L hit detection, D-15
-  ATR anchor, None-guard for peak/trough, NaN guard per D-03.
+  D-15 anchor: stop distance uses position['atr_entry'] (NOT the `atr` argument).
+  Some tests pass a deliberately-wrong `atr=999.0` to prove the parameter is
+  ignored — the result should still be the entry-ATR-anchored value.
 
-  Implementations land in Plan 02-03.
+  CLAUDE.md operator decision: intraday HIGH/LOW for both peak/trough updates
+  AND hit detection. Stop boundaries are INCLUSIVE (low <= stop / high >= stop).
+
+  D-16 ownership: peak/trough is assumed already updated by caller (step()).
+  These unit tests build positions with the post-update peak/trough values.
+
+  B-1 NaN policy (per D-03 + reviews-revision pass):
+    - get_trailing_stop NaN atr_entry -> float('nan')
+    - check_stop_hit NaN high or low -> False
+  All numeric expectations from RESEARCH.md §Pattern 2 verified-numbers table.
   '''
 
-  def test_long_trailing_stop_formula(self) -> None:
-    '''EXIT-06: LONG stop = peak_price - TRAIL_MULT_LONG * atr_entry.'''
-    pytest.skip('implement in Plan 02-03')
-
-  def test_short_trailing_stop_formula(self) -> None:
-    '''EXIT-07: SHORT stop = trough_price + TRAIL_MULT_SHORT * atr_entry.'''
-    pytest.skip('implement in Plan 02-03')
+  # --- EXIT-06: LONG trailing stop = peak - 3*atr_entry (D-15) ---
 
   def test_long_trailing_stop_peak_update(self) -> None:
-    '''EXIT-06: peak updates with today HIGH (owned by step(), D-16).'''
-    pytest.skip('implement in Plan 02-03')
+    '''EXIT-06 + D-15: LONG stop = peak_price - TRAIL_MULT_LONG * atr_entry.
+    peak=7050, atr_entry=53 -> stop = 7050 - 3*53 = 6891.0.
+    Pass atr=999 to prove the argument is ignored (D-15 anchor).'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert get_trailing_stop(pos, current_price=7100.0, atr=999.0) == 6891.0  # D-15
+
+  def test_long_trailing_stop_d15_anchor_explicit(self) -> None:
+    '''D-15 explicit anchor proof: same position, two different atr arguments,
+    same stop result. If the atr arg leaked into the math, the two calls would
+    return different stops.'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert get_trailing_stop(pos, 7100.0, atr=53.0) == get_trailing_stop(pos, 7100.0, atr=200.0)
+
+  def test_long_trailing_stop_peak_none_falls_back_to_entry(self) -> None:
+    '''Pitfall 3: peak_price=None -> use entry_price (no TypeError).
+    entry=7000, atr_entry=53 -> stop = 7000 - 159 = 6841.0.'''
+    pos = _make_position(direction='LONG', peak_price=None, entry_price=7000.0, atr_entry=53.0)
+    assert get_trailing_stop(pos, current_price=7100.0, atr=53.0) == 6841.0
+
+  # --- EXIT-07: SHORT trailing stop = trough + 2*atr_entry (D-15) ---
 
   def test_short_trailing_stop_trough_update(self) -> None:
-    '''EXIT-07: trough updates with today LOW (owned by step(), D-16).'''
-    pytest.skip('implement in Plan 02-03')
+    '''EXIT-07 + D-15: SHORT stop = trough_price + TRAIL_MULT_SHORT * atr_entry.
+    trough=6950, atr_entry=53 -> stop = 6950 + 2*53 = 7056.0.'''
+    pos = _make_position(direction='SHORT', trough_price=6950.0, atr_entry=53.0)
+    assert get_trailing_stop(pos, current_price=6900.0, atr=999.0) == 7056.0  # D-15
 
-  def test_long_stop_hit_intraday_low(self) -> None:
-    '''EXIT-08: LONG stop hit when low <= stop.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_short_trailing_stop_trough_none_falls_back_to_entry(self) -> None:
+    '''Pitfall 3: trough_price=None -> use entry_price.
+    entry=7000, atr_entry=53 -> stop = 7000 + 106 = 7106.0.'''
+    pos = _make_position(direction='SHORT', trough_price=None, entry_price=7000.0, atr_entry=53.0)
+    assert get_trailing_stop(pos, current_price=6900.0, atr=53.0) == 7106.0
 
-  def test_short_stop_hit_intraday_high(self) -> None:
-    '''EXIT-09: SHORT stop hit when high >= stop.'''
-    pytest.skip('implement in Plan 02-03')
+  # --- EXIT-08: LONG stop hit if today's LOW <= stop (intraday) ---
 
-  def test_long_stop_not_hit_above(self) -> None:
-    '''EXIT-08: LONG stop NOT hit when low > stop.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_long_stop_hit_intraday_low_at_boundary(self) -> None:
+    '''EXIT-08: low EXACTLY at stop is a hit (inclusive boundary).
+    peak=7050, atr_entry=53 -> stop=6891. low=6891, high=7100 -> hit.'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=7100.0, low=6891.0, atr=53.0) is True
 
-  def test_short_stop_not_hit_below(self) -> None:
-    '''EXIT-09: SHORT stop NOT hit when high < stop.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_long_stop_hit_intraday_low_below(self) -> None:
+    '''EXIT-08: low far below stop -> hit. Models intraday flush.'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=7100.0, low=6850.0, atr=53.0) is True
 
-  def test_stop_hit_nan_guard_returns_false(self) -> None:
-    '''D-03: NaN inputs to check_stop_hit -> False (no false exit).'''
-    pytest.skip('implement in Plan 02-03')
+  def test_long_no_stop_hit_low_above(self) -> None:
+    '''EXIT-08 negative: low above stop -> no hit. peak=7050, stop=6891, low=6900.'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=7100.0, low=6900.0, atr=53.0) is False
 
-  def test_trailing_stop_nan_guard_returns_nan(self) -> None:
-    '''D-03: NaN inputs to get_trailing_stop -> float("nan").'''
-    pytest.skip('implement in Plan 02-03')
+  # --- EXIT-09: SHORT stop hit if today's HIGH >= stop ---
 
-  def test_d15_uses_atr_entry_not_today_atr(self) -> None:
-    '''D-15: stop distance uses position["atr_entry"] not the atr argument.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_short_stop_hit_intraday_high_at_boundary(self) -> None:
+    '''EXIT-09: high EXACTLY at stop is a hit. trough=6950, atr_entry=53 -> stop=7056.
+    high=7056, low=6900 -> hit.'''
+    pos = _make_position(direction='SHORT', trough_price=6950.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=7056.0, low=6900.0, atr=53.0) is True
 
-  def test_peak_none_falls_back_to_entry_price(self) -> None:
-    '''Pitfall 3: peak_price=None -> fallback to entry_price prevents TypeError.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_short_no_stop_hit_high_below(self) -> None:
+    '''EXIT-09 negative: high below stop -> no hit. trough=6950, stop=7056, high=7050.'''
+    pos = _make_position(direction='SHORT', trough_price=6950.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=7050.0, low=6900.0, atr=53.0) is False
+
+  # --- B-1 NaN policy (per D-03; formalised in reviews-revision pass) ---
+
+  def test_get_trailing_stop_nan_atr_returns_nan(self) -> None:
+    '''B-1: NaN position[atr_entry] -> float('nan'). Caller must isnan-check.'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=float('nan'))
+    result = get_trailing_stop(pos, current_price=7100.0, atr=53.0)
+    assert math.isnan(result), f'B-1 violation: expected nan, got {result}'
+
+  def test_check_stop_hit_nan_high_returns_false(self) -> None:
+    '''B-1: NaN HIGH -> False (cannot detect hit on missing data; defer to next bar).'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=float('nan'), low=6850.0, atr=53.0) is False
+
+  def test_check_stop_hit_nan_low_returns_false(self) -> None:
+    '''B-1: NaN LOW -> False (mirror; LONG check uses low so NaN low must defer).'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=53.0)
+    assert check_stop_hit(pos, high=7100.0, low=float('nan'), atr=53.0) is False
+
+  def test_check_stop_hit_nan_atr_entry_returns_false(self) -> None:
+    '''B-1: NaN position[atr_entry] -> False (computed stop would be NaN; comparison
+    against any real number returns False; we make this explicit for clarity).'''
+    pos = _make_position(direction='LONG', peak_price=7050.0, atr_entry=float('nan'))
+    assert check_stop_hit(pos, high=7100.0, low=6850.0, atr=53.0) is False
 
 
 # =========================================================================
@@ -329,45 +426,123 @@ class TestExits:
 # =========================================================================
 
 class TestPyramid:
-  '''Unit tests for check_pyramid (PYRA-01..05).
+  '''PYRA-01..05 unit tests for check_pyramid (D-12 stateless single-step).
 
-  Covers: level 0->1 at 1x ATR, level 1->2 at 2x ATR, cap at level 2,
-  PYRA-05 single-step per call, NaN guard per D-03, stateless invariant.
+  Stateless invariant: function reads position.pyramid_level and evaluates ONLY
+  the next-level threshold. add_contracts is always 0 or 1, never higher.
+  D-18: check_pyramid does NOT mutate position; step() applies the add.
 
-  Implementations land in Plan 02-03.
+  B-1 NaN policy (per D-03 + reviews-revision pass): NaN current_price OR NaN
+  atr_entry -> PyramidDecision(0, current_level). No add when uncertain.
+
+  All numeric expectations from RESEARCH.md §Pattern 3 verified-numbers table.
   '''
 
+  # --- PYRA-01: pyramid_level persists in Position TypedDict (structural) ---
+
   def test_position_carries_pyramid_level(self) -> None:
-    '''PYRA-01: Position TypedDict has pyramid_level field.'''
-    pytest.skip('implement in Plan 02-03')
+    '''PYRA-01: Position TypedDict has pyramid_level: int field that survives
+    a dict round-trip. The field is part of the Wave 0 D-08 schema.'''
+    expected_keys = set(Position.__required_keys__) | set(
+      getattr(Position, '__optional_keys__', set())
+    )
+    assert 'pyramid_level' in expected_keys
+    pos = _make_position(pyramid_level=1)
+    assert pos['pyramid_level'] == 1
 
-  def test_pyramid_level_0_to_1(self) -> None:
-    '''PYRA-02: level 0 -> 1 when unrealised >= 1 * atr_entry.'''
-    pytest.skip('implement in Plan 02-03')
+  # --- PYRA-02: Level 0 -> 1 at 1*ATR distance ---
 
-  def test_pyramid_level_1_to_2(self) -> None:
-    '''PYRA-03: level 1 -> 2 when unrealised >= 2 * atr_entry.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_pyramid_level_0_to_1_long(self) -> None:
+    '''PYRA-02 LONG: distance = current - entry = 53 = 1*atr_entry -> add 1.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=0)
+    decision = check_pyramid(pos, current_price=7053.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=1, new_level=1), decision
+
+  def test_pyramid_level_0_to_1_short(self) -> None:
+    '''PYRA-02 SHORT mirror: distance = entry - current = 53 -> add 1.'''
+    pos = _make_position(direction='SHORT', entry_price=7000.0, pyramid_level=0)
+    decision = check_pyramid(pos, current_price=6947.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=1, new_level=1), decision
+
+  def test_pyramid_level_0_no_add_below_threshold(self) -> None:
+    '''PYRA-02 negative: distance=52 < 53 -> no add.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=0)
+    decision = check_pyramid(pos, current_price=7052.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=0, new_level=0), decision
+
+  # --- PYRA-03: Level 1 -> 2 at 2*ATR distance ---
+
+  def test_pyramid_level_1_to_2_long(self) -> None:
+    '''PYRA-03 LONG: distance = 110 >= 2*53=106 -> add 1, advance to level 2.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=1)
+    decision = check_pyramid(pos, current_price=7110.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=1, new_level=2), decision
+
+  def test_pyramid_level_1_to_2_short(self) -> None:
+    '''PYRA-03 SHORT mirror: distance = 110 = 7000-6890 -> add, advance to 2.'''
+    pos = _make_position(direction='SHORT', entry_price=7000.0, pyramid_level=1)
+    decision = check_pyramid(pos, current_price=6890.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=1, new_level=2), decision
+
+  def test_pyramid_level_1_no_add_below_threshold(self) -> None:
+    '''PYRA-03 negative: distance=105 < 106 -> no add at level 1.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=1)
+    decision = check_pyramid(pos, current_price=7105.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=0, new_level=1), decision
+
+  # --- PYRA-04: cap at level 2 (3 total contracts) ---
 
   def test_pyramid_capped_at_level_2(self) -> None:
-    '''PYRA-04: at level 2, check_pyramid returns add_contracts=0.'''
-    pytest.skip('implement in Plan 02-03')
+    '''PYRA-04: at level 2, NEVER advance regardless of distance.
+    current=7500, distance=500 (way past everything) -> still add_contracts=0.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=2)
+    decision = check_pyramid(pos, current_price=7500.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=0, new_level=2), decision
 
-  def test_pyramid_below_threshold_no_add(self) -> None:
-    '''PYRA-02: unrealised < 1 * atr_entry at level 0 -> no add.'''
-    pytest.skip('implement in Plan 02-03')
+  def test_pyramid_cap_independent_of_max_constant(self) -> None:
+    '''PYRA-04 + sanity: MAX_PYRAMID_LEVEL is 2 (3 total contracts: levels 0/1/2).'''
+    from system_params import MAX_PYRAMID_LEVEL
+    assert MAX_PYRAMID_LEVEL == 2, MAX_PYRAMID_LEVEL
 
-  def test_pyramid_short_direction(self) -> None:
-    '''PYRA-02: SHORT pyramid triggers on price fall (distance = entry - current).'''
-    pytest.skip('implement in Plan 02-03')
+  # --- PYRA-05 (D-12): max 1 step per call — stateless single-level check ---
 
-  def test_pyramid_nan_guard_no_add(self) -> None:
-    '''D-03: NaN current_price or atr_entry -> PyramidDecision(0, current_level).'''
-    pytest.skip('implement in Plan 02-03')
+  def test_pyramid_gap_day_caps_at_one_add_long(self) -> None:
+    '''D-12 + PYRA-05: gap day where current is past BOTH 1*atr and 2*atr
+    thresholds — function still returns add_contracts=1 because only the CURRENT
+    level (0) trigger is evaluated. The next bar will see level=1 and trigger again.
 
-  def test_pyramid_stateless_no_side_effects(self) -> None:
-    '''D-12: check_pyramid does not mutate the input position.'''
-    pytest.skip('implement in Plan 02-03')
+    distance = 7150 - 7000 = 150 (past 1*53=53 AND 2*53=106).
+    Expected: PyramidDecision(add_contracts=1, new_level=1), NOT (add_contracts>1).'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=0)
+    decision = check_pyramid(pos, current_price=7150.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=1, new_level=1), (
+      f'D-12 violation: gap day past both thresholds returned {decision} '
+      f'but PYRA-05 requires single-step (max one add per call).'
+    )
+
+  def test_pyramid_gap_day_caps_at_one_add_short(self) -> None:
+    '''D-12 SHORT mirror: gap-down day where price is well past both thresholds.
+    distance = 7000 - 6800 = 200 (past 1*53 and 2*53). Still adds 1 only.'''
+    pos = _make_position(direction='SHORT', entry_price=7000.0, pyramid_level=0)
+    decision = check_pyramid(pos, current_price=6800.0, atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=1, new_level=1), (
+      f'D-12 SHORT mirror violation: returned {decision}'
+    )
+
+  # --- B-1 NaN policy ---
+
+  def test_check_pyramid_nan_current_price_returns_no_add(self) -> None:
+    '''B-1: NaN current_price -> PyramidDecision(0, current_level). pyramid_level
+    passes through unchanged so subsequent (valid) bars can pick up state.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=1)
+    decision = check_pyramid(pos, current_price=float('nan'), atr_entry=53.0)
+    assert decision == PyramidDecision(add_contracts=0, new_level=1), decision
+
+  def test_check_pyramid_nan_atr_entry_returns_no_add(self) -> None:
+    '''B-1: NaN atr_entry -> no add, level held.'''
+    pos = _make_position(direction='LONG', entry_price=7000.0, pyramid_level=0)
+    decision = check_pyramid(pos, current_price=7150.0, atr_entry=float('nan'))
+    assert decision == PyramidDecision(add_contracts=0, new_level=0), decision
 
 
 # =========================================================================
