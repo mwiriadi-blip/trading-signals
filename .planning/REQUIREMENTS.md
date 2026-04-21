@@ -147,6 +147,11 @@ Fine granularity — each requirement is independently testable.
 - [ ] **ERR-05**: If `last_run` is > 2 days old on startup, the next email prefixes a "stale state" banner
 - [ ] **ERR-06**: Console logs use a structured format readable in Replit/GHA output (one block per instrument + summary)
 
+### Configuration (added 2026-04-22 — folded in from pending todo, landing in Phase 8)
+
+- [ ] **CONF-01**: Starting account amount is a runtime config entered at `--reset` (CLI flag `--initial-account <amount>`), persisted under `state['initial_account']`. Dashboard total-return formula (DASH-07) and Phase 6 email equity/P&L references read from `state['initial_account']` instead of the hardcoded `system_params.INITIAL_ACCOUNT`. Backward-compat: if the key is missing from a pre-existing state.json, default to `INITIAL_ACCOUNT` (current $100,000) via Phase 3's `_migrate` hook. Minimum: $1,000 (validated at CLI parse).
+- [ ] **CONF-02**: Contract size is selectable per instrument via CLI flag (`--spi-contract {mini|standard|full}` and `--audusd-contract {standard|mini}`) at `--reset`, persisted under `state['contracts'][symbol]` as a preset label. Orchestrator reads the preset and passes the corresponding `multiplier` + `cost_aud` tier to `sizing_engine.step()` and `_closed_trade_to_record`. Tier table lives in `system_params.py` (`SPI_CONTRACTS`, `AUDUSD_CONTRACTS` dicts). Backward-compat: missing key defaults to `'mini'` (SPI: $5/pt $6 round-trip — current locked values per Phase 2 D-11).
+
 ## v2 Requirements
 
 Deferred to future releases. Not in current roadmap.
@@ -270,12 +275,15 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | ERR-04 | Phase 8 | Pending |
 | ERR-05 | Phase 8 | Pending |
 | ERR-06 | Phase 4 | Pending |
+| CONF-01 | Phase 8 | Pending |
+| CONF-02 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 78 total (DATA 6 + SIG 8 + SIZE 6 + EXIT 9 + PYRA 5 + STATE 7 + NOTF 10 + DASH 9 + SCHED 7 + CLI 5 + ERR 6)
-- Mapped to phases: 78
+- v1 requirements: 80 total (DATA 6 + SIG 8 + SIZE 6 + EXIT 9 + PYRA 5 + STATE 7 + NOTF 10 + DASH 9 + SCHED 7 + CLI 5 + ERR 6 + CONF 2)
+- Mapped to phases: 80
 - Unmapped: 0
 - Note (2026-04-22): CLI-01, CLI-03, and CLI-05 are split across phases — Phase 4 owns the CLI surface + compute + structural guarantees; Phase 6 owns Resend dispatch (CLI-01 `[TEST]` send + CLI-03 today's email); Phase 7 owns the schedule loop (CLI-05 default-mode loop). Each split is tracked in the per-phase requirement lists; coverage is still 1:1 at the phase-requirement-closure level.
+- Note (2026-04-22): CONF-01 and CONF-02 added by folding a pending todo ("Configurable starting account and contract sizes") into Phase 8 Hardening. Phase 8 req count now 7 (was 5).
 
 **Per-phase counts:**
 - Phase 1 (Signal Engine Core): 8 reqs
@@ -285,8 +293,8 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 - Phase 5 (Dashboard): 9 reqs
 - Phase 6 (Email Notification): 9 reqs
 - Phase 7 (Scheduler + Deploy): 7 reqs
-- Phase 8 (Hardening): 5 reqs
-- **Total: 78**
+- Phase 8 (Hardening): 7 reqs (5 original + CONF-01 + CONF-02 added 2026-04-22)
+- **Total: 80**
 
 ---
 *Requirements defined: 2026-04-20*

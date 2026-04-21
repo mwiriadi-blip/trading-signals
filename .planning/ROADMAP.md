@@ -4,7 +4,7 @@
 **Amended:** 2026-04-22 (Phase 4 SC-5 wording — per Phase 4 cross-AI review 04-REVIEWS.md C-1)
 **Granularity:** fine
 **Parallelization:** true
-**Coverage:** 78/78 v1 requirements mapped
+**Coverage:** 80/80 v1 requirements mapped (was 78; +2 CONF-01/02 folded into Phase 8 on 2026-04-22)
 
 **Core Value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 
@@ -17,7 +17,7 @@
 - [ ] **Phase 5: Dashboard** — Static `dashboard.html` with Chart.js equity curve, positions, trades, key stats
 - [ ] **Phase 6: Email Notification** — Resend HTML email with ACTION REQUIRED block, mobile-responsive dark theme, graceful degradation
 - [ ] **Phase 7: Scheduler + GitHub Actions Deployment** — `cron 0 0 * * 1-5` GHA workflow with state commit-back, Replit alternative documented
-- [ ] **Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email** — Warning persistence, stale-state banner, top-level crash path, corrupt-state recovery surfaced to operator
+- [ ] **Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account** — Warning persistence, stale-state banner, top-level crash path, corrupt-state recovery surfaced to operator, configurable starting account + per-instrument contract-size tiers (CONF-01/02 folded in 2026-04-22)
 
 ## Phase Details
 
@@ -133,16 +133,18 @@
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email
-**Goal**: Close the "looks done but isn't" gap — make sure warnings from any run surface in the next email, a dead scheduler is loudly visible, corrupt-state recovery is announced to the operator, and any unhandled exception attempts one last crash email before exit.
+### Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account
+**Goal**: Close the "looks done but isn't" gap — make sure warnings from any run surface in the next email, a dead scheduler is loudly visible, corrupt-state recovery is announced to the operator, any unhandled exception attempts one last crash email before exit, AND the operator can configure starting account + contract-size tiers at `--reset` time so the system works for real broker situations (not just SPI mini + $100k).
 **Depends on**: Phase 7 (post-shipping hardening against real failure modes)
-**Requirements**: NOTF-10, ERR-02, ERR-03, ERR-04, ERR-05
+**Requirements**: NOTF-10, ERR-02, ERR-03, ERR-04, ERR-05, CONF-01, CONF-02
 **Success Criteria** (what must be TRUE):
   1. Warnings appended to `state.warnings` in run N appear as a highlighted banner in the run-(N+1) email header, then are cleared after that email sends
   2. If `last_run` is > 2 days old on startup, the next email is prefixed with a visible "stale state" banner naming the gap in days
   3. A deliberately injected unhandled exception inside `run_daily_check` triggers the top-level `except Exception` handler, attempts one crash-email POST to Resend, logs the error, and exits non-zero
   4. A corrupt `state.json` (recovered via Phase 3's backup + reinit path) surfaces a warning in the next email that the state was reset, including the backup filename
   5. A failed Resend POST (simulated 5xx) is logged to the console with the status code and body excerpt, and the workflow continues to the next step without crashing
+  6. `python main.py --reset --initial-account 50000` initialises state with `state['initial_account'] = 50000`; dashboard total-return formula + email equity references read from `state['initial_account']` instead of the hardcoded `system_params.INITIAL_ACCOUNT`; a pre-existing state.json without the key defaults to $100,000 via Phase 3's `_migrate` hook (backward-compat)
+  7. `python main.py --reset --spi-contract standard --audusd-contract standard` persists per-instrument contract tiers into `state['contracts']`; orchestrator reads the preset at each run and passes the corresponding multiplier + cost to sizing functions; tier presets live in `system_params.py` (`SPI_CONTRACTS = {'mini': {m:5, cost:6}, 'standard': {m:25, cost:30}, 'full': {m:50, cost:50}}`, `AUDUSD_CONTRACTS = {...}`); missing key defaults to `'mini'` for SPI (per Phase 2 D-11 locked values)
 **Plans**: TBD
 **UI hint**: no
 
@@ -177,8 +179,8 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 
 ## Coverage Validation
 
-- **Total v1 requirements:** 78 (note: prompt mentioned 67; actual count in REQUIREMENTS.md across 11 categories is 78 — DATA 6, SIG 8, SIZE 6, EXIT 9, PYRA 5, STATE 7, NOTF 10, DASH 9, SCHED 7, CLI 5, ERR 6)
-- **Mapped to phases:** 78/78
+- **Total v1 requirements:** 80 (was 78 until 2026-04-22; +2 CONF reqs folded into Phase 8 from pending todo — now 12 categories: DATA 6, SIG 8, SIZE 6, EXIT 9, PYRA 5, STATE 7, NOTF 10, DASH 9, SCHED 7, CLI 5, ERR 6, CONF 2)
+- **Mapped to phases:** 80/80
 - **Orphans:** 0
 - **Duplicates:** 0
 - **Split requirements (2026-04-22 amendment):** CLI-01 (Phase 4 structural + Phase 6 email), CLI-03 (Phase 4 stub + Phase 6 notifier), CLI-05 (Phase 4 one-shot default + Phase 7 schedule loop) — tracked in REQUIREMENTS.md Traceability table with split phase labels.

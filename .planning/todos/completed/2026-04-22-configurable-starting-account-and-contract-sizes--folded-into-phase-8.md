@@ -1,5 +1,7 @@
 ---
 created: 2026-04-22T05:30:00.000Z
+closed: 2026-04-22T06:00:00.000Z
+closure_reason: folded-into-phase-8
 title: Configurable starting account and contract sizes
 area: config
 files:
@@ -7,7 +9,19 @@ files:
   - .planning/phases/02-signal-engine-sizing-exits-pyramiding/02-CONTEXT.md (D-11 locks SPI_MULT=5, SPI_COST_AUD=6)
   - .planning/phases/04-end-to-end-skeleton-fetch-orchestrator-cli/04-CONTEXT.md (D-10 total return vs INITIAL_ACCOUNT)
   - .planning/phases/05-dashboard/05-CONTEXT.md (D-10 total return uses INITIAL_ACCOUNT)
+  - .planning/REQUIREMENTS.md (CONF-01 + CONF-02 added 2026-04-22)
+  - .planning/ROADMAP.md (Phase 8 goal/success-criteria expanded 2026-04-22)
 ---
+
+> **FOLDED INTO PHASE 8 HARDENING (2026-04-22).**
+> This todo is no longer free-floating. The two sub-problems are now formal v1 requirements:
+> - **CONF-01** — runtime-configurable starting account via `--reset --initial-account <amount>`
+> - **CONF-02** — per-instrument contract-size tier selection (mini/standard/full)
+>
+> Phase 8 now has 7 requirements (was 5) and 7 success criteria (was 5). When Phase 8 reaches `/gsd-discuss-phase 8` the planner will read this file alongside `.planning/REQUIREMENTS.md` CONF-01/02 and the expanded Phase 8 goal/success criteria.
+>
+> See REQUIREMENTS.md "Configuration (added 2026-04-22 …)" section and ROADMAP.md §Phase 8 Success Criteria #6 and #7 for the locked contract. Below is the original pending-todo detail that motivated the fold, kept for historical rationale.
+
 
 ## Problem
 
