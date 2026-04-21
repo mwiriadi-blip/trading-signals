@@ -15,7 +15,7 @@ class docstring.
 '''
 import json  # noqa: F401 — used in Wave 1/2 TestLoadSave/TestCorruptionRecovery
 import os  # noqa: F401 — used in Wave 1 TestAtomicity
-from datetime import datetime, timezone  # noqa: F401 — used in Wave 1/2 clock injection
+from datetime import UTC, datetime, timezone  # noqa: F401 — used in Wave 1/2 clock injection
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401 — used in Wave 1 TestAtomicity
 
@@ -377,7 +377,163 @@ class TestCorruptionRecovery:
 
   Wave 2 fills this in.
   '''
-  pass
+
+  def test_corrupt_file_triggers_backup_and_reset(self, tmp_path) -> None:
+    '''STATE-03 / D-05/D-06/D-07 + B-2: garbage bytes -> backup created (with
+    microsecond suffix), fresh state returned.
+    '''
+    path = tmp_path / 'state.json'
+    path.write_bytes(b'\x00\xff\x00not json')
+    # Inject a microsecond-precision timestamp so we can predict the suffix
+    fixed_now = datetime(2026, 4, 21, 9, 30, 45, 123456, tzinfo=UTC)
+
+    state = load_state(path=path, now=fixed_now)
+
+    # B-2: backup uses microsecond-precision timestamp ('%Y%m%dT%H%M%S_%fZ')
+    # Expected basename: state.json.corrupt.20260421T093045_123456Z
+    backups = list(tmp_path.glob('state.json.corrupt.20260421T093045_*Z'))
+    assert len(backups) == 1, (
+      f'D-06 + B-2: expected 1 backup matching microsecond pattern, '
+      f'got {len(backups)} from tmp_path contents: '
+      f'{sorted(p.name for p in tmp_path.iterdir())}'
+    )
+    backup = backups[0]
+    # Microsecond suffix must be present (B-2 hardening; not the bare-second format)
+    assert '_' in backup.name.split('.')[-1], (
+      f'B-2: microsecond suffix (underscore + microseconds) must appear in '
+      f'backup filename {backup.name!r}'
+    )
+    # Backup contains the original garbage bytes (proves the rename, not a copy)
+    assert backup.read_bytes() == b'\x00\xff\x00not json'
+
+    # STATE-07: returned state is a fresh reset (D-05: no silent clobber of valid state)
+    assert state['account'] == INITIAL_ACCOUNT
+    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}
+    assert state['schema_version'] == STATE_SCHEMA_VERSION
+
+    # D-07: warning appended with source='state_manager'
+    assert len(state['warnings']) == 1, 'D-07: corruption-recovery warning must be appended'
+    warning = state['warnings'][0]
+    assert warning['source'] == 'state_manager'
+    assert backup.name in warning['message'], (
+      'D-07: warning message must reference the backup filename for forensics'
+    )
+
+    # The fresh state was persisted (so next run reads clean state.json, not garbage)
+    assert path.exists(), 'load_state must rewrite a fresh state.json after recovery'
+    on_disk = json.loads(path.read_text())
+    assert on_disk == state, 'on-disk state must equal the returned state after recovery'
+
+  def test_corruption_recovery_does_not_catch_non_json_value_error(
+      self, tmp_path, monkeypatch) -> None:
+    '''Pitfall 4 / D-05: load_state must catch ONLY JSONDecodeError, not bare ValueError.
+
+    If _migrate raises a non-JSON ValueError (e.g., schema mismatch), it must
+    propagate -- catching ValueError broadly would mask non-corruption bugs as
+    spurious corruption events.
+    '''
+    path = tmp_path / 'state.json'
+    # Write a syntactically VALID JSON state (so json.loads succeeds)
+    valid_state = reset_state()
+    path.write_text(json.dumps(valid_state, indent=2))
+
+    # Monkeypatch _migrate to raise a non-JSON ValueError
+    import state_manager
+    def bad_migrate(s):
+      raise ValueError('schema mismatch — not corruption')
+    monkeypatch.setattr(state_manager, '_migrate', bad_migrate)
+
+    # The ValueError must propagate, NOT be caught and trigger spurious backup
+    with pytest.raises(ValueError, match='schema mismatch'):
+      load_state(path=path)
+
+    # No backup file was created (corruption recovery did NOT fire)
+    backups = list(tmp_path.glob('state.json.corrupt.*'))
+    assert backups == [], (
+      f'Pitfall 4: non-JSON ValueError must NOT trigger corruption backup; '
+      f'found spurious backup(s): {backups}'
+    )
+
+  def test_corrupt_state_returns_new_state_with_corruption_warning(self, tmp_path) -> None:
+    '''D-07 + A1: warning has AWST date + state_manager source + descriptive message.'''
+    path = tmp_path / 'state.json'
+    path.write_bytes(b'definitely not json {')
+    # 2026-04-21 09:30 UTC = 2026-04-21 17:30 AWST (same calendar date)
+    fixed_now = datetime(2026, 4, 21, 9, 30, 45, 0, tzinfo=UTC)
+
+    state = load_state(path=path, now=fixed_now)
+
+    warning = state['warnings'][0]
+    assert warning['date'] == '2026-04-21', 'A1: warning date is AWST YYYY-MM-DD'
+    assert warning['source'] == 'state_manager'
+    assert warning['message'].startswith('recovered from corruption'), warning['message']
+
+  def test_load_state_valid_json_missing_keys_raises_value_error(self, tmp_path) -> None:
+    '''D-18 (reviews-revision pass): valid JSON missing required top-level keys
+    raises ValueError; does NOT trigger corruption backup (D-05 narrow catch
+    preserved — _validate_loaded_state runs OUTSIDE the JSONDecodeError except
+    block so its ValueError propagates).
+
+    Reason: a file like {"schema_version": 1} parses fine, will migrate (no-op),
+    and downstream code crashes with KeyError on state['account']. D-18 makes
+    this surface as a specific ValueError at the load boundary so the operator
+    sees a real error rather than a confusing downstream crash.
+    '''
+    path = tmp_path / 'state.json'
+    # Valid JSON but MISSING 'account' (and 'positions', for stronger signal)
+    bare_state = {
+      'schema_version': STATE_SCHEMA_VERSION,
+      'last_run': None,
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [],
+      'equity_history': [],
+      'warnings': [],
+      # 'account' deliberately missing
+      # 'positions' deliberately missing
+    }
+    path.write_text(json.dumps(bare_state, indent=2))
+
+    # D-18: validator raises ValueError naming the missing keys
+    with pytest.raises(ValueError, match='account'):
+      load_state(path=path)
+
+    # D-05 NARROWNESS PRESERVED: this was NOT corruption, so no backup created
+    backups = list(tmp_path.glob('state.json.corrupt.*'))
+    assert backups == [], (
+      f'D-18 + D-05: valid-JSON-missing-keys must raise ValueError WITHOUT '
+      f'triggering corruption backup; found spurious backup(s): {backups}. '
+      f'D-18 validator must run OUTSIDE the JSONDecodeError except block.'
+    )
+
+  def test_backup_uses_path_derived_name_not_hardcoded(self, tmp_path) -> None:
+    '''B-1 (reviews-revision pass): _backup_corrupt derives backup filename from
+    path.name, not the hardcoded literal "state.json".
+
+    For the canonical path (path.name == 'state.json') the result is identical
+    to the original behavior. For non-default paths (tests, future reuse), the
+    backup correctly mirrors the source filename.
+    '''
+    path = tmp_path / 'custom-state.json'
+    path.write_bytes(b'\x00\xff\x00not json')
+    fixed_now = datetime(2026, 4, 21, 9, 30, 45, 654321, tzinfo=UTC)
+
+    load_state(path=path, now=fixed_now)
+
+    # B-1: backup name derives from path.name, NOT hardcoded 'state.json'
+    backups = list(tmp_path.glob('custom-state.json.corrupt.*'))
+    assert len(backups) == 1, (
+      f'B-1: expected 1 backup with name derived from custom-state.json; '
+      f'got {len(backups)}. tmp_path contents: '
+      f'{sorted(p.name for p in tmp_path.iterdir())}'
+    )
+    # Hardcoded 'state.json.corrupt.*' must NOT exist (would prove the bug)
+    wrong_backups = list(tmp_path.glob('state.json.corrupt.*'))
+    assert wrong_backups == [], (
+      f'B-1: backup name must be derived from path.name (custom-state.json), '
+      f'NOT hardcoded as state.json. Found wrong backup(s): {wrong_backups}'
+    )
+    # Backup is in the same directory as the source path
+    assert backups[0].parent == tmp_path
 
 class TestRecordTrade:
   '''STATE-05 / D-13..D-16 / D-19 / D-20: validation, closing-half cost,
@@ -403,14 +559,95 @@ class TestReset:
 
   Wave 2 fills this in.
   '''
-  pass
+
+  def test_reset_state_has_all_8_top_level_keys(self) -> None:
+    '''STATE-01: reset_state returns dict with exactly 8 top-level keys.'''
+    state = reset_state()
+    expected_keys = {
+      'schema_version', 'account', 'last_run', 'positions',
+      'signals', 'trade_log', 'equity_history', 'warnings',
+    }
+    assert set(state.keys()) == expected_keys, (
+      f'STATE-01: reset_state keys mismatch. Expected {sorted(expected_keys)}, '
+      f'got {sorted(state.keys())}'
+    )
+
+  def test_reset_state_canonical_default_values(self) -> None:
+    '''STATE-07 / D-01 / D-03: every default value matches CONTEXT.md.'''
+    state = reset_state()
+    assert state['schema_version'] == STATE_SCHEMA_VERSION
+    assert state['account'] == INITIAL_ACCOUNT
+    assert state['last_run'] is None
+    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
+    assert state['signals'] == {'SPI200': 0, 'AUDUSD': 0}, 'D-03: FLAT=0 init'
+    assert state['trade_log'] == []
+    assert state['equity_history'] == []
+    assert state['warnings'] == []
+
+  def test_reset_state_returns_independent_dicts(self) -> None:
+    '''Idempotence: mutating one returned state must not affect a future reset.'''
+    first = reset_state()
+    first['trade_log'].append({'instrument': 'SPI200'})
+    first['warnings'].append({'date': '2026-04-21', 'source': 'x', 'message': 'y'})
+    second = reset_state()
+    assert second['trade_log'] == [], (
+      'reset_state must return a NEW dict each call, not share mutable refs'
+    )
+    assert second['warnings'] == []
 
 class TestWarnings:
   '''D-09 / D-10 / D-11 / B-5: warning shape, AWST date, FIFO bound to MAX_WARNINGS.
 
   Wave 2 fills this in.
   '''
-  pass
+
+  def test_append_warning_basic_shape(self) -> None:
+    '''D-09: warning entry has exactly {date, source, message} keys.'''
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 21, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'sizing_engine', 'size=0: vol_scale clip', now=fixed_now)
+    assert len(state['warnings']) == 1
+    warning = state['warnings'][0]
+    assert set(warning.keys()) == {'date', 'source', 'message'}, (
+      f'D-09: warning shape must be exactly date+source+message; got {sorted(warning.keys())}'
+    )
+    assert warning['date'] == '2026-04-21'
+    assert warning['source'] == 'sizing_engine'
+    assert warning['message'] == 'size=0: vol_scale clip'
+
+  def test_append_warning_date_uses_awst(self) -> None:
+    '''D-09 + A1: warning.date is AWST (Australia/Perth), ISO YYYY-MM-DD.
+
+    Inject a UTC datetime that corresponds to morning UTC = same AWST date.
+    2026-04-21 09:30 UTC = 2026-04-21 17:30 AWST (same date).
+    '''
+    state = reset_state()
+    now_utc = datetime(2026, 4, 21, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'state_manager', 'test msg', now=now_utc)
+    assert state['warnings'][0]['date'] == '2026-04-21'
+
+  def test_append_warning_fifo_trims_oldest_entries(self) -> None:
+    '''D-11: 105 appends -> len(warnings) == MAX_WARNINGS (=100); oldest 5 dropped.'''
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 21, 9, 0, 0, tzinfo=UTC)
+    for i in range(105):
+      state = append_warning(state, 'test', f'msg {i}', now=fixed_now)
+    assert len(state['warnings']) == MAX_WARNINGS, (
+      f'D-11: bound to MAX_WARNINGS={MAX_WARNINGS}; got {len(state["warnings"])}'
+    )
+    # Oldest 5 (msg 0..4) must be gone; msg 5 is the new first entry
+    assert state['warnings'][0]['message'] == 'msg 5', (
+      'D-11: FIFO must drop oldest entries first'
+    )
+    # Most recent is msg 104
+    assert state['warnings'][-1]['message'] == 'msg 104'
+
+  def test_append_warning_returns_mutated_state(self) -> None:
+    '''Pattern: all mutation functions return the mutated state for chaining.'''
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 21, 9, 0, 0, tzinfo=UTC)
+    result = append_warning(state, 'test', 'msg', now=fixed_now)
+    assert result is state, 'append_warning must return the same state dict reference'
 
 class TestSchemaVersion:
   '''STATE-04: MIGRATIONS dict walk-forward; no-op at v1; handles missing key.
