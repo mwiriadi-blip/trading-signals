@@ -460,6 +460,9 @@ TEST_SIGNAL_ENGINE_PATH = Path('tests/test_signal_engine.py')
 SIZING_ENGINE_PATH = Path('sizing_engine.py')
 SYSTEM_PARAMS_PATH = Path('system_params.py')
 TEST_SIZING_ENGINE_PATH = Path('tests/test_sizing_engine.py')
+# Phase 3 Wave 0: add state_manager.py to AST guard
+STATE_MANAGER_PATH = Path('state_manager.py')
+TEST_STATE_MANAGER_PATH = Path('tests/test_state_manager.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
@@ -482,6 +485,24 @@ FORBIDDEN_MODULES = frozenset({
 
 # Phase 2 stdlib-only hex modules must also avoid numpy and pandas (D-07, RESEARCH §Stack)
 FORBIDDEN_MODULES_STDLIB_ONLY = FORBIDDEN_MODULES | frozenset({'numpy', 'pandas'})
+
+
+# Phase 3 Wave 0: state_manager.py IS the I/O hex — os/json/sys/tempfile/datetime/zoneinfo/
+# pathlib/math ARE allowed (those are its PURPOSE, math added in Wave 3 for D-19/B-4
+# finiteness checks). But it must NOT import sibling hexes, numpy, pandas, requests,
+# network modules, scheduler, or third-party tz libs.
+FORBIDDEN_MODULES_STATE_MANAGER = frozenset({
+  # Sibling hexes (hexagonal-lite boundary — state_manager is peers, never imports them)
+  'signal_engine', 'sizing_engine', 'notifier', 'dashboard', 'main',
+  # Network / external data deps (I/O hex reads disk only; no network)
+  'requests', 'urllib', 'urllib2', 'urllib3', 'http', 'httpx',
+  # Heavy scientific stack (state_manager is pure stdlib + system_params)
+  'numpy', 'pandas',
+  # Scheduler and external service deps
+  'schedule', 'dotenv', 'yfinance',
+  # pytz is third-party; state_manager uses zoneinfo (stdlib) instead
+  'pytz',
+})
 
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
 _HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH]
@@ -695,6 +716,31 @@ class TestDeterminism:
       f'not numpy.isnan. numpy/pandas belong in signal_engine.py (indicator math) only.'
     )
 
+  @pytest.mark.parametrize('module_path', [STATE_MANAGER_PATH])
+  def test_state_manager_no_forbidden_imports(self, module_path: Path) -> None:
+    '''Phase 3 Wave 0: state_manager.py must not import sibling hexes, numpy, pandas,
+    or network modules. It IS allowed to import stdlib I/O modules (os, json, tempfile,
+    datetime, zoneinfo, pathlib, sys, math) — those are its PURPOSE as the I/O hex.
+
+    Uses a SEPARATE forbidden set (FORBIDDEN_MODULES_STATE_MANAGER) from the pure-math
+    FORBIDDEN_MODULES because I/O stdlib is explicitly permitted for state_manager but
+    forbidden for pure-math hexes.
+
+    This is the structural enforcement of CLAUDE.md §Architecture hexagonal-lite for
+    state_manager: signal_engine and sizing_engine cannot import state_manager (caught
+    by test_forbidden_imports_absent above), and state_manager cannot import them
+    (caught by THIS test). The hex boundary is symmetric.
+    '''
+    imports = _top_level_imports(module_path)
+    leaked = imports & FORBIDDEN_MODULES_STATE_MANAGER
+    assert not leaked, (
+      f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
+      f'state_manager.py must not import sibling hexes (signal_engine, sizing_engine, '
+      f'notifier, dashboard, main), numpy, pandas, or network/external modules. '
+      f'Allowed: stdlib (json, os, sys, tempfile, datetime, zoneinfo, pathlib, typing, math) '
+      f'+ system_params. State_manager IS the I/O hex — that is its PURPOSE.'
+    )
+
   def test_signal_engine_has_core_public_surface(self) -> None:
     '''Public API contract: compute_indicators, get_signal, get_latest_indicators,
     LONG, SHORT, FLAT all importable.
@@ -737,6 +783,8 @@ class TestDeterminism:
       SIZING_ENGINE_PATH,       # Phase 2 Wave 0
       SYSTEM_PARAMS_PATH,       # Phase 2 Wave 0
       TEST_SIZING_ENGINE_PATH,  # Phase 2 Wave 0
+      STATE_MANAGER_PATH,       # Phase 3 Wave 0
+      TEST_STATE_MANAGER_PATH,  # Phase 3 Wave 0
     ]
     missing_2space_files = []
     for path in covered_paths:
