@@ -1,0 +1,44 @@
+{
+  "account": 100000.0,
+  "bar": {
+    "close": 6990.0,
+    "date": "2026-01-03",
+    "high": 7020.0,
+    "low": 6980.0,
+    "open": 7000.0,
+    "volume": 5000.0
+  },
+  "description": "LONG to FLAT (EXIT-01): signal goes FLAT, close LONG, no new entry",
+  "expected": {
+    "position_after": null,
+    "pyramid_decision": null,
+    "sizing_decision": null,
+    "stop_hit": false,
+    "trail_stop": 6891.0,
+    "unrealised_pnl": -106.0
+  },
+  "indicators": {
+    "adx": 24.0,
+    "atr": 55.0,
+    "mom1": 0.01,
+    "mom12": -0.01,
+    "mom3": 0.0,
+    "ndi": 15.0,
+    "pdi": 35.0,
+    "rvol": 0.15
+  },
+  "instrument_cost_aud": 6.0,
+  "multiplier": 5.0,
+  "new_signal": 0,
+  "old_signal": 1,
+  "prev_position": {
+    "atr_entry": 53.0,
+    "direction": "LONG",
+    "entry_date": "2026-01-02",
+    "entry_price": 7000.0,
+    "n_contracts": 2,
+    "peak_price": 7050.0,
+    "pyramid_level": 0,
+    "trough_price": null
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "account": 100000.0,
+  "bar": {
+    "close": 7005.0,
+    "date": "2026-01-03",
+    "high": 7010.0,
+    "low": 6995.0,
+    "open": 7000.0,
+    "volume": 5000.0
+  },
+  "description": "No position to FLAT: no action, stay flat. Cell exists for matrix completeness.",
+  "expected": {
+    "position_after": null,
+    "pyramid_decision": null,
+    "sizing_decision": null,
+    "stop_hit": null,
+    "trail_stop": null,
+    "unrealised_pnl": null
+  },
+  "indicators": {
+    "adx": 22.0,
+    "atr": 53.0,
+    "mom1": 0.005,
+    "mom12": -0.005,
+    "mom3": 0.0,
+    "ndi": 15.0,
+    "pdi": 35.0,
+    "rvol": 0.15
+  },
+  "instrument_cost_aud": 6.0,
+  "multiplier": 5.0,
+  "new_signal": 0,
+  "old_signal": 0,
+  "prev_position": null
+}

@@ -1,0 +1,44 @@
+{
+  "account": 100000.0,
+  "bar": {
+    "close": 7045.0,
+    "date": "2026-01-03",
+    "high": 7060.0,
+    "low": 7040.0,
+    "open": 7050.0,
+    "volume": 5000.0
+  },
+  "description": "EXIT-05: ADX=18 < ADX_EXIT_GATE=20 while LONG is open. Position must close regardless of new_signal.",
+  "expected": {
+    "position_after": null,
+    "pyramid_decision": null,
+    "sizing_decision": null,
+    "stop_hit": false,
+    "trail_stop": null,
+    "unrealised_pnl": 444.0
+  },
+  "indicators": {
+    "adx": 18.0,
+    "atr": 55.0,
+    "mom1": 0.04,
+    "mom12": 0.06,
+    "mom3": 0.05,
+    "ndi": 15.0,
+    "pdi": 35.0,
+    "rvol": 0.15
+  },
+  "instrument_cost_aud": 6.0,
+  "multiplier": 5.0,
+  "new_signal": 1,
+  "old_signal": 1,
+  "prev_position": {
+    "atr_entry": 53.0,
+    "direction": "LONG",
+    "entry_date": "2026-01-02",
+    "entry_price": 7000.0,
+    "n_contracts": 2,
+    "peak_price": 7050.0,
+    "pyramid_level": 0,
+    "trough_price": null
+  }
+}
