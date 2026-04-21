@@ -1,7 +1,9 @@
 '''Main — daily orchestrator + CLI.
 
 Wires data_fetcher + signal_engine + sizing_engine + state_manager behind
-argparse. Implements run_daily_check(args) per D-11 step sequence (Wave 2).
+argparse. Implements run_daily_check(args) per D-11 step sequence (Wave 2),
+and the top-level typed-exception boundary + --reset confirmation +
+--force-email stub + DATA-05 stale-bar path (Wave 3).
 
 Architecture (hexagonal-lite, CLAUDE.md): main.py is the ONLY module allowed
 to import from all sides of the hex. Pure-math modules (signal_engine,
@@ -21,13 +23,14 @@ are NEVER substituted for each other — both logged on every run (D-13).
 
 Wave 0 (argparse skeleton + module constants + bootstrap
 logging.basicConfig(force=True) in main() [Pitfall 4] + stubs for the
-Wave 2 targets) is done. Wave 2 (this commit) fills run_daily_check +
-_compute_run_date + _closed_trade_to_record (04-03-PLAN.md); Wave 3 adds
-the top-level typed-exception boundary in `if __name__ == '__main__'`
-(04-04-PLAN.md).
+Wave 2 targets) is done. Wave 2 filled run_daily_check + _compute_run_date
++ _closed_trade_to_record (04-03-PLAN.md). Wave 3 (this commit) adds the
+top-level typed-exception boundary inside main() + _handle_reset +
+_force_email_stub + DATA-05 stale-bar detection (04-04-PLAN.md).
 '''
 import argparse
 import logging
+import os
 import sys
 import time
 from datetime import datetime
@@ -37,7 +40,7 @@ import data_fetcher
 import signal_engine
 import sizing_engine
 import state_manager
-from data_fetcher import ShortFrameError  # noqa: F401 — re-exported for test consumers
+from data_fetcher import DataFetchError, ShortFrameError
 from sizing_engine import ClosedTrade
 from system_params import (
   AUDUSD_COST_AUD,
@@ -68,6 +71,9 @@ _SYMBOL_CONTRACT_SPECS: dict = {
 
 # DATA-04 (Pitfall 6): minimum bars required before compute_indicators.
 _MIN_BARS_REQUIRED = 300
+
+# DATA-05 (D-09): stale when (run_date - signal_as_of).days > this.
+_STALE_THRESHOLD_DAYS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +406,27 @@ def run_daily_check(args: argparse.Namespace) -> int:
     # 3.c: signal_as_of from last-bar date — NO tz conversion (D-13, Pitfall 3).
     signal_as_of = df.index[-1].strftime('%Y-%m-%d')
 
+    # 3.c.i: DATA-05 stale-bar check — RESEARCH §Example 5 lines 880-897.
+    # AFTER fetch + signal_as_of, BEFORE compute_indicators (D-11 step 3.c).
+    # last_bar in market-local tz date; run_date in AWST wall-clock date —
+    # naive subtraction per Pitfall 3 (do NOT tz_convert the index).
+    last_bar_date = df.index[-1].date()
+    today_awst_date = run_date.date()
+    days_old = (today_awst_date - last_bar_date).days
+    if days_old > _STALE_THRESHOLD_DAYS:
+      logger.warning(
+        '[Fetch] WARN %s stale: signal_as_of=%s is %dd old (threshold=%dd)',
+        yf_symbol, signal_as_of, days_old, _STALE_THRESHOLD_DAYS,
+      )
+      # D-10: queue for end-of-run flush so warnings land in state.json even
+      # if later steps fail. append_warning takes POSITIONAL (source, message)
+      # — the tuple `('fetch', f'...')` unpacks via `append_warning(state, *tup)`.
+      pending_warnings.append((
+        'fetch',
+        f'{yf_symbol} stale: signal_as_of={signal_as_of} is {days_old}d old '
+        f'(threshold={_STALE_THRESHOLD_DAYS}d)',
+      ))
+
     # 3.d-f: indicators + signal. Scalars feed sizing_engine AND get
     # persisted under state[signals][state_key][last_scalars] (G-2).
     df_with_indicators = signal_engine.compute_indicators(df)
@@ -546,20 +573,96 @@ def run_daily_check(args: argparse.Namespace) -> int:
 
 
 # =========================================================================
+# CLI-02 / CLI-03 handlers (Wave 3)
+# =========================================================================
+
+def _handle_reset() -> int:
+  '''CLI-02: reinitialise state.json to fresh $100k after operator confirmation.
+
+  Confirmation rules (RESEARCH §Pitfall 5 lines 542-553):
+    - If env var RESET_CONFIRM=='YES' (stripped), skip the interactive prompt.
+      (Used by CI + tests.)
+    - Else interactive: input('Type YES to confirm reset: '); catch EOFError
+      (non-interactive stdin = cancellation, not a crash).
+
+  Exit codes:
+    0 — confirmed + reset + save_state succeeded.
+    1 — operator cancelled (input != 'YES'); distinct from argparse=2 and
+        success=0.
+
+  Note: this function contains its OWN state_manager.save_state call,
+  distinct from the one inside run_daily_check. The C-7 AST gate
+  (revision 2026-04-22) is scoped to run_daily_check only; this second
+  site at module level is expected and valid.
+  '''
+  confirm = os.getenv('RESET_CONFIRM', '').strip()
+  if confirm != 'YES':
+    try:
+      confirm = input('Type YES to confirm reset: ').strip()
+    except EOFError:
+      confirm = ''
+  if confirm != 'YES':
+    logger.info('[State] --reset cancelled by operator')
+    return 1
+  state = state_manager.reset_state()
+  state_manager.save_state(state)
+  logger.info('[State] state.json reset to fresh $100k account')
+  return 0
+
+
+def _force_email_stub() -> int:
+  '''CLI-03: Phase 4 stub — logs an [Email] line and returns 0.
+
+  Phase 6 replaces this with the Resend notifier dispatch. The planned
+  Phase 6 shape (C-8 revision 2026-04-22 per 04-REVIEWS.md) is:
+
+    rc = run_daily_check(args)
+    if rc == 0:
+      notifier.send_daily_email(state, signals, positions)
+    return rc
+
+  The --test + --force-email combination ALREADY lands the
+  compute-then-dispatch pattern in Phase 4 (see main()'s dispatch ladder:
+  if args.force_email and args.test: run_daily_check(args); _force_email_stub()).
+  Phase 6 generalises the same fresh-compute-then-dispatch shape to the
+  non-test path so operators get fresh data in the "send today's email
+  right now" flow.
+  '''
+  logger.info('[Email] --force-email received; notifier wiring arrives in Phase 6')
+  return 0
+
+
+# =========================================================================
 # Entry point
 # =========================================================================
 
 def main(argv: list[str] | None = None) -> int:
-  '''Parse CLI args + configure logging + dispatch to run_daily_check.
+  '''Parse CLI args + configure logging + dispatch under a typed-exception
+  boundary.
 
   Pitfall 4: logging.basicConfig MUST use force=True — pytest and other
   plugins may have already added handlers to the root logger; without
   force=True the call is a silent no-op and our format/stream are ignored.
 
-  Wave 3 wraps `return run_daily_check(args)` with a typed-exception
-  boundary in `if __name__ == '__main__'` (DataFetchError / ShortFrameError
-  → exit 2; unexpected → exit 1). Wave 2 adds --reset confirmation +
-  --force-email stub dispatch.
+  Dispatch ladder (D-05 / D-06 / D-07):
+    - --reset  → _handle_reset() (D-05: mutually exclusive with other flags;
+                 enforced by _validate_flag_combo pre-parse).
+    - --force-email + --test → run_daily_check(args) first (no save_state
+                 due to --test), then _force_email_stub().
+    - --force-email (no --test) → _force_email_stub() alone (no compute).
+    - --once | default | --test alone → run_daily_check(args) (D-07: default
+                 == --once in Phase 4; scheduler loop lands Phase 7).
+
+  Exit-code mapping (Wave 3):
+    0 — run_daily_check returned 0 (happy path) OR --reset confirmed OR
+        --force-email stub.
+    1 — operator cancelled --reset (returned from _handle_reset);
+        OR unexpected Exception bubbled into the catch-all.
+    2 — DataFetchError / ShortFrameError — data-layer failure (ERR-01 /
+        D-03); argparse error (from _validate_flag_combo.parser.error).
+
+  ERR-04 (crash-email) is Phase 8 scope. Wave 3's `except Exception` ONLY
+  logs + returns 1.
   '''
   parser = _build_parser()
   args = parser.parse_args(argv)
@@ -570,7 +673,25 @@ def main(argv: list[str] | None = None) -> int:
     stream=sys.stderr,
     force=True,
   )
-  return run_daily_check(args)
+  try:
+    if args.reset:
+      return _handle_reset()
+    if args.force_email:
+      # D-05: --test + --force-email is allowed. --test runs full compute
+      # structurally-read-only; --force-email-alone skips compute (Phase 4
+      # stub only; Phase 6 will generalise compute-then-dispatch per C-8).
+      rc = run_daily_check(args) if args.test else 0
+      stub_rc = _force_email_stub()
+      return rc if rc != 0 else stub_rc
+    return run_daily_check(args)
+  except (DataFetchError, ShortFrameError) as e:
+    logger.error('[Fetch] ERROR: %s', e)
+    return 2
+  except Exception as e:
+    logger.error(
+      '[Sched] ERROR: unexpected crash: %s: %s', type(e).__name__, e,
+    )
+    return 1
 
 
 if __name__ == '__main__':
