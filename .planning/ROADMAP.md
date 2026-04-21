@@ -84,7 +84,11 @@
   3. `signal_as_of` (last data-bar date) and `run_date` (Perth clock-now) are both logged on every run and never substituted for each other
   4. `python main.py --test` produces the full computed summary and leaves `state.json` mtime unchanged (structurally separated compute vs persist)
   5. `python main.py --reset` reinitialises state after confirmation; `python main.py --once` exits cleanly for GHA use; default `python main.py` runs immediately and enters the schedule loop
-**Plans**: TBD
+**Plans:** 4 plans
+- [ ] 04-01-PLAN.md — Wave 0 BLOCKING scaffold: data_fetcher.py + main.py stubs, tests/test_data_fetcher.py + tests/test_main.py skeletons, tests/regenerate_fetch_fixtures.py + committed JSON fixtures, AST blocklist extension, pytest-freezer pin
+- [ ] 04-02-PLAN.md — Wave 1: data_fetcher.fetch_ohlcv with yfinance retry loop + TestFetch + TestColumnShape (DATA-01/02/03)
+- [ ] 04-03-PLAN.md — Wave 2: run_daily_check D-11 sequence + _closed_trade_to_record + D-08 backward-compat + TestOrchestrator happy-path + TestCLI smoke tests (DATA-04/06, CLI-04/05, ERR-06, D-08/D-12)
+- [ ] 04-04-PLAN.md — Wave 3 (PHASE GATE): top-level exception boundary + --reset confirmation + --force-email stub + DATA-05 stale-bar detection + TestCLI CLI-01/02/03 + TestOrchestrator DATA-05/ERR-01 + TestLoggerConfig (Pitfall 4)
 **UI hint**: no
 
 ### Phase 5: Dashboard
