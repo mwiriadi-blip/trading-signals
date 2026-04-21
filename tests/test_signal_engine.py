@@ -455,10 +455,19 @@ class TestEdgeCases:
 SNAPSHOT_PATH = Path('tests/determinism/snapshot.json')
 SIGNAL_ENGINE_PATH = Path('signal_engine.py')
 TEST_SIGNAL_ENGINE_PATH = Path('tests/test_signal_engine.py')
+# Phase 2 Wave 0: extend AST guard to cover new hex modules (D-07, RESEARCH §Example 5)
+SIZING_ENGINE_PATH = Path('sizing_engine.py')
+SYSTEM_PARAMS_PATH = Path('system_params.py')
+TEST_SIZING_ENGINE_PATH = Path('tests/test_sizing_engine.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
 # that would violate the hex boundary (I/O, network, clock, sibling hexes) are blocked.
+#
+# Phase 2 Wave 0: numpy and pandas added to FORBIDDEN_MODULES for sizing_engine.py
+# and system_params.py — those are stdlib-only modules (RESEARCH.md §Standard Stack).
+# signal_engine.py legitimately imports numpy and pandas (indicator math); that module
+# is excluded from the numpy/pandas check via HEX_PATHS_STDLIB_ONLY parametrize list.
 FORBIDDEN_MODULES = frozenset({
   # I/O and clock (CLAUDE.md Architecture: pure math, no I/O, no clock reads)
   'datetime', 'os', 'sys', 'subprocess', 'socket', 'time', 'pickle', 'json', 'pathlib', 'io',
@@ -469,6 +478,14 @@ FORBIDDEN_MODULES = frozenset({
   # Orchestration and external service deps (belong in other hexes)
   'schedule', 'dotenv', 'pytz', 'yfinance',
 })
+
+# Phase 2 stdlib-only hex modules must also avoid numpy and pandas (D-07, RESEARCH §Stack)
+FORBIDDEN_MODULES_STDLIB_ONLY = FORBIDDEN_MODULES | frozenset({'numpy', 'pandas'})
+
+# Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
+_HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH]
+# signal_engine.py legitimately uses numpy/pandas; Phase 2 modules must not
+_HEX_PATHS_STDLIB_ONLY = [SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH]
 
 
 def _hash_series_values(values) -> str:
@@ -637,19 +654,44 @@ class TestDeterminism:
 
   # --- Architectural guards (CLAUDE.md hex boundary) ---
 
-  def test_forbidden_imports_absent(self) -> None:
-    '''CLAUDE.md Architecture: signal_engine.py must not import any module in the
-    blocklist. Per REVIEWS STRONGLY RECOMMENDED, a blocklist is more resilient to
-    benign future additions (dataclasses, __future__, enum, functools, collections)
-    than a whitelist. Add entries to FORBIDDEN_MODULES only after deliberate review.
+  @pytest.mark.parametrize('module_path', _HEX_PATHS_ALL)
+  def test_forbidden_imports_absent(self, module_path: Path) -> None:
+    '''CLAUDE.md Architecture: all pure-math hex modules must not import any module
+    in the blocklist. Phase 2 Wave 0 extends this from signal_engine.py alone to
+    also cover sizing_engine.py and system_params.py.
+
+    Per REVIEWS STRONGLY RECOMMENDED, a blocklist is more resilient to benign future
+    additions (dataclasses, __future__, enum, functools, collections) than a whitelist.
+    Add entries to FORBIDDEN_MODULES only after deliberate review.
+
+    Note: signal_engine.py legitimately imports numpy and pandas (indicator math).
+    sizing_engine.py and system_params.py must be stdlib-only; see
+    test_phase2_hex_modules_no_numpy_pandas for that additional constraint.
     '''
-    imports = _top_level_imports(SIGNAL_ENGINE_PATH)
+    imports = _top_level_imports(module_path)
     leaked = imports & FORBIDDEN_MODULES
     assert not leaked, (
-      f'signal_engine.py illegally imports forbidden module(s): {sorted(leaked)}. '
+      f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
       f'Pure-math modules must not do I/O, network, clock reads, or import sibling '
       f'hexes (state_manager / notifier / dashboard). Move this functionality to '
       f'main.py or an appropriate adapter.'
+    )
+
+  @pytest.mark.parametrize('module_path', _HEX_PATHS_STDLIB_ONLY)
+  def test_phase2_hex_modules_no_numpy_pandas(self, module_path: Path) -> None:
+    '''Phase 2 stdlib-only constraint (RESEARCH.md §Standard Stack, D-07).
+
+    sizing_engine.py and system_params.py must be pure stdlib modules — no numpy
+    or pandas. This keeps the Phase 2 hex free of heavy scientific deps and ensures
+    math.isnan / math.isfinite are used (not numpy.isnan) per the AST blocklist design.
+    Extending FORBIDDEN_MODULES with numpy/pandas for these two paths only.
+    '''
+    imports = _top_level_imports(module_path)
+    leaked = imports & FORBIDDEN_MODULES_STDLIB_ONLY
+    assert not leaked, (
+      f'{module_path} illegally imports: {sorted(leaked)}. '
+      f'sizing_engine.py and system_params.py must be stdlib-only — use math.isnan '
+      f'not numpy.isnan. numpy/pandas belong in signal_engine.py (indicator math) only.'
     )
 
   def test_signal_engine_has_core_public_surface(self) -> None:
@@ -683,11 +725,20 @@ class TestDeterminism:
     a `return {` dict body). Only the 2-space-presence check distinguishes the
     two styles cleanly.
 
-    Fails loudly if either signal_engine.py or tests/test_signal_engine.py has
-    been reflowed to 4-space (the signature of `ruff format`).
+    Phase 2 Wave 0: extended to cover sizing_engine.py, system_params.py, and
+    tests/test_sizing_engine.py alongside the original Phase 1 files.
+
+    Fails loudly if any covered file has been reflowed to 4-space (ruff format).
     '''
+    covered_paths = [
+      SIGNAL_ENGINE_PATH,
+      TEST_SIGNAL_ENGINE_PATH,
+      SIZING_ENGINE_PATH,       # Phase 2 Wave 0
+      SYSTEM_PARAMS_PATH,       # Phase 2 Wave 0
+      TEST_SIZING_ENGINE_PATH,  # Phase 2 Wave 0
+    ]
     missing_2space_files = []
-    for path in [SIGNAL_ENGINE_PATH, TEST_SIGNAL_ENGINE_PATH]:
+    for path in covered_paths:
       if not _has_two_space_indent_evidence(path):
         missing_2space_files.append(str(path))
     assert not missing_2space_files, (
@@ -698,3 +749,44 @@ class TestDeterminism:
       + 'on these files -- ruff 0.6.9 reflows to 4-space. Use .editorconfig '
       + 'indent_size=2 and manual review.'
     )
+
+  def test_sizing_engine_has_core_public_surface(self) -> None:
+    '''Phase 2 Wave 0: public API contract for sizing_engine.py.
+
+    All six public callables must be importable from sizing_engine. This test fires
+    immediately when a function is accidentally renamed or removed. Stubs raise
+    NotImplementedError -- that is expected and allowed at Wave 0.
+    The dataclasses (SizingDecision, PyramidDecision, StepResult) must also be
+    present and frozen (immutable at runtime).
+    '''
+    import sizing_engine
+    public_functions = [
+      'calc_position_size',
+      'get_trailing_stop',
+      'check_stop_hit',
+      'check_pyramid',
+      'compute_unrealised_pnl',
+      'step',
+    ]
+    public_dataclasses = [
+      'SizingDecision',
+      'PyramidDecision',
+      'StepResult',
+    ]
+    for name in public_functions:
+      assert hasattr(sizing_engine, name), (
+        f'sizing_engine missing public callable: {name}'
+      )
+      assert callable(getattr(sizing_engine, name)), (
+        f'sizing_engine.{name} is not callable'
+      )
+    for name in public_dataclasses:
+      assert hasattr(sizing_engine, name), (
+        f'sizing_engine missing public dataclass: {name}'
+      )
+      # Verify frozen=True: attempting to assign to a field must raise FrozenInstanceError
+      cls = getattr(sizing_engine, name)
+      import dataclasses as _dc
+      assert _dc.is_dataclass(cls), f'{name} must be a dataclass'
+      params = _dc.fields(cls)
+      assert len(params) >= 1, f'{name} must have at least one field'
