@@ -11,7 +11,7 @@
 
 - [x] **Phase 1: Signal Engine Core — Indicators & Vote** — Pure-math indicator library (ATR/ADX/Mom/RVol) and the 2-of-3 momentum vote with ADX gate, fixture-tested (completed 2026-04-20)
 - [ ] **Phase 2: Signal Engine — Sizing, Exits, Pyramiding** — Pure-math position sizing (skip-if-zero), exit rules (intraday H/L), and pyramid state machine, fixture-tested
-- [ ] **Phase 3: State Persistence with Recovery** — `state_manager.py` with atomic writes, corruption recovery, and schema versioning
+- [x] **Phase 3: State Persistence with Recovery** — `state_manager.py` with atomic writes, corruption recovery, and schema versioning (completed 2026-04-21)
 - [ ] **Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI** — Live yfinance fetch, `main.py` orchestrator, CLI flags, structured logs
 - [ ] **Phase 5: Dashboard** — Static `dashboard.html` with Chart.js equity curve, positions, trades, key stats
 - [ ] **Phase 6: Email Notification** — Resend HTML email with ACTION REQUIRED block, mobile-responsive dark theme, graceful degradation
@@ -67,11 +67,11 @@
   3. A deliberately corrupted `state.json` is moved to `state.json.corrupt.<timestamp>` and a fresh state is written, with no exception propagated to the caller
   4. `record_trade(state, trade)` appends to `trade_log` and adjusts `account` consistent with the trade P&L; `update_equity_history` appends `{date, equity}` where equity = account + sum(unrealised)
   5. `reset_state()` reinitialises account to $100,000 with empty positions, trades, and history, and passes the schema-version migration hook (no-op at v1)
-**Plans:** 4 plans
-- [ ] 03-01-PLAN.md — Wave 0 BLOCKING scaffold: system_params.py constants (INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE), state_manager.py + tests/test_state_manager.py stubs, AST blocklist extension for I/O hex
-- [ ] 03-02-PLAN.md — Wave 1: _atomic_write + save_state + _migrate + happy-path load_state; TestLoadSave + TestAtomicity + TestSchemaVersion (STATE-02, STATE-04)
-- [ ] 03-03-PLAN.md — Wave 2: reset_state + corruption recovery + append_warning; TestReset + TestCorruptionRecovery + TestWarnings (STATE-01, STATE-03, STATE-07)
-- [ ] 03-04-PLAN.md — Wave 3 (phase gate): _validate_trade + record_trade + update_equity_history; TestRecordTrade (incl. CRITICAL Phase 4 boundary AC) + TestEquityHistory (STATE-05, STATE-06)
+**Plans:** 4/4 plans complete
+- [x] 03-01-PLAN.md — Wave 0 BLOCKING scaffold: system_params.py constants (INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE), state_manager.py + tests/test_state_manager.py stubs, AST blocklist extension for I/O hex
+- [x] 03-02-PLAN.md — Wave 1: _atomic_write + save_state + _migrate + happy-path load_state; TestLoadSave + TestAtomicity + TestSchemaVersion (STATE-02, STATE-04)
+- [x] 03-03-PLAN.md — Wave 2: reset_state + corruption recovery + append_warning; TestReset + TestCorruptionRecovery + TestWarnings (STATE-01, STATE-03, STATE-07)
+- [x] 03-04-PLAN.md — Wave 3 (phase gate): _validate_trade + record_trade + update_equity_history; TestRecordTrade (incl. CRITICAL Phase 4 boundary AC) + TestEquityHistory (STATE-05, STATE-06)
 **UI hint**: no
 
 ### Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI
