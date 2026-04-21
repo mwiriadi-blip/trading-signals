@@ -102,7 +102,10 @@
   3. Open positions table shows entry, current, contracts, pyramid level, trail stop, and unrealised P&L; closed-trades table shows the last 20 trades
   4. Key stats block computes total return, Sharpe, max drawdown, and win rate from `equity_history` + `trade_log`
   5. "Last updated" timestamp is rendered in AWST (Australia/Perth)
-**Plans**: TBD
+**Plans:** 3 plans
+- [ ] 05-01-PLAN.md — Wave 0 BLOCKING scaffold: dashboard.py stub module + palette/Chart.js SRI constants + _INLINE_CSS scaffold; tests/test_dashboard.py 6-class skeleton; tests/fixtures/dashboard/ (sample_state.json + empty_state.json + placeholder goldens); tests/regenerate_dashboard_golden.py; AST blocklist extension (FORBIDDEN_MODULES_DASHBOARD); B-1 retrofit in main.py:514-519 (add last_close to signal dict) + test_main.py extension
+- [ ] 05-02-PLAN.md — Wave 1: stats math (Sharpe/MaxDD/WinRate/TotalReturn) + inline unrealised-P&L + trail-stop display math (hex-safe re-impl) + 6 formatters (currency/percent/P&L colour/em-dash/AWST last-updated) + 6 per-block renderers (header/signal_cards/positions_table/trades_table/key_stats/footer); populate TestStatsMath + TestFormatters + TestRenderBlocks
+- [ ] 05-03-PLAN.md — Wave 2 (PHASE GATE): Chart.js container with SRI + </script> injection defence + HTML shell + atomic write (mirror state_manager._atomic_write) + render_dashboard public API + full _INLINE_CSS stylesheet; regenerate golden fixtures (byte-stable double-run); D-06 main.py integration (never-crash try/except) + 2 orchestrator tests (render-happens + failure-isolated); populate TestEmptyState + TestGoldenSnapshot + TestAtomicWrite
 **UI hint**: no
 
 ### Phase 6: Email Notification
