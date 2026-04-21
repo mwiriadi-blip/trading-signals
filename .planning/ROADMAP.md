@@ -13,7 +13,7 @@
 - [x] **Phase 1: Signal Engine Core — Indicators & Vote** — Pure-math indicator library (ATR/ADX/Mom/RVol) and the 2-of-3 momentum vote with ADX gate, fixture-tested (completed 2026-04-20)
 - [ ] **Phase 2: Signal Engine — Sizing, Exits, Pyramiding** — Pure-math position sizing (skip-if-zero), exit rules (intraday H/L), and pyramid state machine, fixture-tested
 - [x] **Phase 3: State Persistence with Recovery** — `state_manager.py` with atomic writes, corruption recovery, and schema versioning (completed 2026-04-21)
-- [ ] **Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI** — Live yfinance fetch, `main.py` orchestrator, CLI flags, structured logs
+- [x] **Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI** — Live yfinance fetch, `main.py` orchestrator, CLI flags, structured logs (completed 2026-04-22)
 - [ ] **Phase 5: Dashboard** — Static `dashboard.html` with Chart.js equity curve, positions, trades, key stats
 - [ ] **Phase 6: Email Notification** — Resend HTML email with ACTION REQUIRED block, mobile-responsive dark theme, graceful degradation
 - [ ] **Phase 7: Scheduler + GitHub Actions Deployment** — `cron 0 0 * * 1-5` GHA workflow with state commit-back, Replit alternative documented
@@ -85,11 +85,11 @@
   3. `signal_as_of` (last data-bar date) and `run_date` (Perth clock-now) are both logged on every run and never substituted for each other
   4. `python main.py --test` produces the full computed summary and leaves `state.json` mtime unchanged (structurally separated compute vs persist)
   5. `python main.py --reset` reinitialises state after confirmation; `python main.py --once` exits cleanly for GHA use; default `python main.py` runs once and exits in Phase 4 (schedule-loop wiring lands in Phase 7 per SCHED-01/02; `--force-email` and `--test`-email are stubbed in Phase 4 and wired in Phase 6 per NOTF-01)
-**Plans:** 4 plans
-- [ ] 04-01-PLAN.md — Wave 0 BLOCKING scaffold: data_fetcher.py + main.py stubs, tests/test_data_fetcher.py + tests/test_main.py skeletons, tests/regenerate_fetch_fixtures.py + committed JSON fixtures, AST blocklist extension, pytest-freezer pin, REQUIREMENTS.md + ROADMAP.md amendments per Phase 4 cross-AI review
-- [ ] 04-02-PLAN.md — Wave 1: data_fetcher.fetch_ohlcv with yfinance retry loop + TestFetch + TestColumnShape (DATA-01/02/03) + TestColumnShape missing-required-columns test
-- [ ] 04-03-PLAN.md — Wave 2: run_daily_check D-11 sequence + _closed_trade_to_record + D-08 backward-compat + TestOrchestrator happy-path + TestCLI smoke tests (DATA-04/06, CLI-04/05, ERR-06, D-08/D-12, reversal-ordering AC-1)
-- [ ] 04-04-PLAN.md — Wave 3 (PHASE GATE): top-level exception boundary + --reset confirmation + --force-email stub + DATA-05 stale-bar detection + TestCLI CLI-01/02/03 + TestOrchestrator DATA-05/ERR-01 + TestLoggerConfig (Pitfall 4)
+**Plans:** 4/4 plans complete
+- [x] 04-01-PLAN.md — Wave 0 BLOCKING scaffold: data_fetcher.py + main.py stubs, tests/test_data_fetcher.py + tests/test_main.py skeletons, tests/regenerate_fetch_fixtures.py + committed JSON fixtures, AST blocklist extension, pytest-freezer pin, REQUIREMENTS.md + ROADMAP.md amendments per Phase 4 cross-AI review
+- [x] 04-02-PLAN.md — Wave 1: data_fetcher.fetch_ohlcv with yfinance retry loop + TestFetch + TestColumnShape (DATA-01/02/03) + TestColumnShape missing-required-columns test
+- [x] 04-03-PLAN.md — Wave 2: run_daily_check D-11 sequence + _closed_trade_to_record + D-08 backward-compat + TestOrchestrator happy-path + TestCLI smoke tests (DATA-04/06, CLI-04/05, ERR-06, D-08/D-12, reversal-ordering AC-1)
+- [x] 04-04-PLAN.md — Wave 3 (PHASE GATE): top-level exception boundary + --reset confirmation + --force-email stub + DATA-05 stale-bar detection + TestCLI CLI-01/02/03 + TestOrchestrator DATA-05/ERR-01 + TestLoggerConfig (Pitfall 4)
 **UI hint**: no
 
 ### Phase 5: Dashboard
