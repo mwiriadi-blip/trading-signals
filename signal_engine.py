@@ -22,21 +22,20 @@ no clock reads, no imports of state_manager / notifier / dashboard.
 import numpy as np
 import pandas as pd
 
-# --- Signal constants (CLAUDE.md) ---
+from system_params import (
+  ADX_GATE,
+  ADX_PERIOD,
+  ANNUALISATION_FACTOR,
+  ATR_PERIOD,
+  MOM_PERIODS,
+  MOM_THRESHOLD,
+  RVOL_PERIOD,
+)
+
+# --- Signal constants (CLAUDE.md) — remain here as signal-encoding primitives (D-01) ---
 LONG: int = 1
 SHORT: int = -1
 FLAT: int = 0
-
-# --- Indicator periods (locked) ---
-ATR_PERIOD: int = 14
-ADX_PERIOD: int = 20
-MOM_PERIODS: tuple[int, int, int] = (21, 63, 252)
-RVOL_PERIOD: int = 20
-ANNUALISATION_FACTOR: int = 252
-
-# --- Vote thresholds (SPEC.md) ---
-ADX_GATE: float = 25.0
-MOM_THRESHOLD: float = 0.02
 
 
 # =========================================================================
