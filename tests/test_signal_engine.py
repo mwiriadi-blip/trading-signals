@@ -463,6 +463,11 @@ TEST_SIZING_ENGINE_PATH = Path('tests/test_sizing_engine.py')
 # Phase 3 Wave 0: add state_manager.py to AST guard
 STATE_MANAGER_PATH = Path('state_manager.py')
 TEST_STATE_MANAGER_PATH = Path('tests/test_state_manager.py')
+# Phase 4 Wave 0: add data_fetcher.py + main.py to AST guard
+DATA_FETCHER_PATH = Path('data_fetcher.py')
+TEST_DATA_FETCHER_PATH = Path('tests/test_data_fetcher.py')
+MAIN_PATH = Path('main.py')
+TEST_MAIN_PATH = Path('tests/test_main.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
@@ -502,6 +507,37 @@ FORBIDDEN_MODULES_STATE_MANAGER = frozenset({
   'schedule', 'dotenv', 'yfinance',
   # pytz is third-party; state_manager uses zoneinfo (stdlib) instead
   'pytz',
+})
+
+# Phase 4 Wave 0: data_fetcher.py IS the fetch I/O hex — yfinance/pandas/
+# requests/time/logging ARE allowed (those are its PURPOSE). But it must NOT
+# import sibling hexes (signal_engine, sizing_engine, state_manager, notifier,
+# dashboard, main) or numpy directly (pandas-only; numeric math belongs in
+# signal_engine/sizing_engine).
+FORBIDDEN_MODULES_DATA_FETCHER = frozenset({
+  # Sibling hexes — data_fetcher is peers, never imports them
+  'signal_engine', 'sizing_engine', 'state_manager', 'notifier', 'dashboard', 'main',
+  # numpy direct — no numeric work in the fetch hex
+  'numpy',
+  # Scheduler + env deps — data_fetcher is pure fetch, no orchestration
+  'schedule', 'dotenv',
+  # pytz — project uses zoneinfo (stdlib) via state_manager precedent
+  'pytz',
+})
+
+# Phase 4 Wave 0 + C-5 revision 2026-04-22: main.py IS the orchestrator — it
+# MAY import sibling hexes (data_fetcher, signal_engine, sizing_engine,
+# state_manager — that is its PURPOSE). But it MUST NOT reach directly into
+# transport/data libraries: numpy (numeric math belongs in the engines),
+# yfinance (fetch hex owns), requests (HTTP owned by data_fetcher or Phase 6
+# notifier), pandas (DataFrame handling owned by data_fetcher + signal_engine).
+# If main.py feels a need to import one of these, that is a signal the code
+# belongs in a hex module, not in the orchestrator.
+FORBIDDEN_MODULES_MAIN = frozenset({
+  'numpy',
+  'yfinance',
+  'requests',
+  'pandas',
 })
 
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
@@ -741,6 +777,44 @@ class TestDeterminism:
       f'+ system_params. State_manager IS the I/O hex — that is its PURPOSE.'
     )
 
+  @pytest.mark.parametrize('module_path', [DATA_FETCHER_PATH])
+  def test_data_fetcher_no_forbidden_imports(self, module_path: Path) -> None:
+    '''Phase 4 Wave 0: data_fetcher.py must not import sibling hexes or numpy.
+    yfinance/pandas/requests/time/logging ARE allowed — those are its PURPOSE as the fetch hex.
+
+    This is the structural enforcement of CLAUDE.md §Architecture hexagonal-lite for
+    data_fetcher: signal_engine/sizing_engine/state_manager cannot import data_fetcher
+    (caught by test_forbidden_imports_absent above + test_state_manager_no_forbidden_imports),
+    and data_fetcher cannot import them (caught by THIS test). The hex boundary is symmetric.
+    '''
+    imports = _top_level_imports(module_path)
+    leaked = imports & FORBIDDEN_MODULES_DATA_FETCHER
+    assert not leaked, (
+      f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
+      f'data_fetcher.py must not import sibling hexes (signal_engine, sizing_engine, '
+      f'state_manager, notifier, dashboard, main) or numpy. '
+      f'Allowed: yfinance, pandas, requests, logging, time, system_params. '
+      f'data_fetcher IS the fetch hex — that is its PURPOSE.'
+    )
+
+  @pytest.mark.parametrize('module_path', [MAIN_PATH])
+  def test_main_no_forbidden_imports(self, module_path: Path) -> None:
+    '''Phase 4 Wave 0 + C-5 revision 2026-04-22: main.py is the ONLY module allowed to
+    import from both sides of the hex (signal_engine + sizing_engine + state_manager
+    + data_fetcher). It MUST NOT reach directly into transport/data libraries (numpy
+    belongs in the engines; yfinance in data_fetcher; requests in data_fetcher or
+    the Phase 6 notifier; pandas in data_fetcher + signal_engine).
+    '''
+    imports = _top_level_imports(module_path)
+    leaked = imports & FORBIDDEN_MODULES_MAIN
+    assert not leaked, (
+      f'{module_path} illegally imports: {sorted(leaked)}. '
+      f'main.py must not import transport/data libraries directly. Push '
+      f'yfinance/pandas/requests use into the data_fetcher hex or the Phase 6 '
+      f'notifier; push numpy use into signal_engine or sizing_engine. main IS '
+      f'the orchestrator — it imports the hex modules, not their internals.'
+    )
+
   def test_signal_engine_has_core_public_surface(self) -> None:
     '''Public API contract: compute_indicators, get_signal, get_latest_indicators,
     LONG, SHORT, FLAT all importable.
@@ -785,6 +859,10 @@ class TestDeterminism:
       TEST_SIZING_ENGINE_PATH,  # Phase 2 Wave 0
       STATE_MANAGER_PATH,       # Phase 3 Wave 0
       TEST_STATE_MANAGER_PATH,  # Phase 3 Wave 0
+      DATA_FETCHER_PATH,        # Phase 4 Wave 0
+      TEST_DATA_FETCHER_PATH,   # Phase 4 Wave 0
+      MAIN_PATH,                # Phase 4 Wave 0
+      TEST_MAIN_PATH,           # Phase 4 Wave 0
     ]
     missing_2space_files = []
     for path in covered_paths:
