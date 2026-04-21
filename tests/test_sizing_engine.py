@@ -12,6 +12,10 @@ from pathlib import Path
 
 import pytest
 
+from signal_engine import FLAT, LONG, SHORT
+from sizing_engine import SizingDecision, calc_position_size, compute_unrealised_pnl
+from system_params import Position
+
 # Module-level path constants (mirrors test_signal_engine.py SIGNAL_ENGINE_PATH pattern)
 SIZING_ENGINE_PATH = Path('sizing_engine.py')
 SYSTEM_PARAMS_PATH = Path('system_params.py')
@@ -24,53 +28,238 @@ PHASE2_SNAPSHOT_PATH = Path('tests/determinism/phase2_snapshot.json')
 # =========================================================================
 
 class TestSizing:
-  '''Unit tests for calc_position_size (SIZE-01..06).
+  '''SIZE-01..06 unit tests for calc_position_size and compute_unrealised_pnl.
 
-  Covers: risk_pct by direction, trail_mult by direction, vol_scale clip + NaN
-  guard, n_contracts formula, no max(1,...) floor (SIZE-05 skip + warn).
+  Verified numbers come from RESEARCH.md §Pattern 1 (computed live at research time).
+  All assertions are exact (==) — sizing is integer math + simple float multiplication;
+  no Wilder smoothing, no rolling windows, no tolerance needed.
 
-  Implementations land in Plan 02-02.
+  D-17 alignment: compute_unrealised_pnl takes explicit cost_aud_open. One test
+  here pins that signature so accidental API regressions are caught at unit-test time.
   '''
 
+  # --- SIZE-01: risk_pct = 1.0% LONG, 0.5% SHORT ---
+
   def test_risk_pct_long_is_1pct(self) -> None:
-    '''SIZE-01: LONG entry uses 1.0% account risk.'''
-    pytest.skip('implement in Plan 02-02')
+    '''SIZE-01 LONG branch: account=100000, atr=53, rvol=0.15, mult=5 -> contracts=1.
+
+    Computed: risk_pct=0.01, trail_mult=3.0, stop_dist=53*3*5=795,
+    vol_scale=clip(0.12/0.15,0.3,2.0)=0.8, n_raw=(100000*0.01/795)*0.8=1.00629,
+    int(1.00629)=1.
+    '''
+    decision = calc_position_size(
+      account=100000.0, signal=LONG, atr=53.0, rvol=0.15, multiplier=5.0,
+    )
+    assert decision == SizingDecision(contracts=1, warning=None), decision
 
   def test_risk_pct_short_is_half_pct(self) -> None:
-    '''SIZE-01: SHORT entry uses 0.5% account risk.'''
-    pytest.skip('implement in Plan 02-02')
+    '''SIZE-01 SHORT branch: account=100000, atr=53, rvol=0.15, mult=5 -> contracts=0.
+
+    Computed: risk_pct=0.005 (half of LONG), trail_mult=2.0, stop_dist=53*2*5=530,
+    vol_scale=0.8, n_raw=(100000*0.005/530)*0.8=0.7547, int=0 -> SIZE-05 warning.
+    '''
+    decision = calc_position_size(
+      account=100000.0, signal=SHORT, atr=53.0, rvol=0.15, multiplier=5.0,
+    )
+    assert decision.contracts == 0, decision
+    assert decision.warning is not None and decision.warning.startswith('size=0:'), decision
+
+  # --- SIZE-02: trail_mult = 3.0 LONG, 2.0 SHORT ---
 
   def test_trail_mult_by_direction(self) -> None:
-    '''SIZE-02: trail_mult = 3.0 for LONG, 2.0 for SHORT.'''
-    pytest.skip('implement in Plan 02-02')
+    '''SIZE-02: SHORT (trail_mult=2) needs HALF the stop_dist a LONG (trail_mult=3) needs.
+
+    Direct evidence via differential test: same atr/multiplier, only signal changes.
+    LONG stop_dist = 53*3*5 = 795; SHORT stop_dist = 53*2*5 = 530; ratio 2/3 = 0.667.
+    At atr=20, mult=5: LONG stop_dist=300, n_raw=(100000*0.01/300)*0.8=2.667, int=2.
+    SHORT same atr/mult: stop_dist=200, n_raw=(100000*0.005/200)*0.8=2.0, int=2.
+    Both produce 2 — the ratio is clean and verifiable.
+    '''
+    long_d = calc_position_size(100000.0, LONG, 20.0, 0.15, 5.0)
+    short_d = calc_position_size(100000.0, SHORT, 20.0, 0.15, 5.0)
+    assert long_d.contracts == 2, long_d
+    assert short_d.contracts == 2, short_d
+    # Differential: LONG at larger atr produces more contracts than SHORT (3.0/2.0 ratio)
+    long_smaller = calc_position_size(100000.0, LONG, 53.0, 0.15, 5.0)   # 1
+    short_smaller = calc_position_size(100000.0, SHORT, 53.0, 0.15, 5.0)  # 0
+    assert long_smaller.contracts > short_smaller.contracts, (long_smaller, short_smaller)
+
+  # --- SIZE-03: vol_scale = clip(0.12 / RVol, 0.3, 2.0); NaN/zero -> 2.0 ---
+
+  def test_vol_scale_clip_ceiling(self) -> None:
+    '''SIZE-03 ceiling: rvol=0.05 -> 0.12/0.05=2.4 -> clipped to VOL_SCALE_MAX=2.0.
+
+    Computed: stop_dist=795, n_raw=(100000*0.01/795)*2.0=2.5157, int=2.
+    '''
+    decision = calc_position_size(100000.0, LONG, 53.0, 0.05, 5.0)
+    assert decision.contracts == 2, decision
+
+  def test_vol_scale_clip_floor(self) -> None:
+    '''SIZE-03 floor: rvol=0.50 -> 0.12/0.50=0.24 -> clipped to VOL_SCALE_MIN=0.3.
+
+    Computed: stop_dist=795, n_raw=(100000*0.01/795)*0.3=0.3774, int=0 -> warning.
+    '''
+    decision = calc_position_size(100000.0, LONG, 53.0, 0.50, 5.0)
+    assert decision.contracts == 0, decision
+    assert decision.warning is not None and decision.warning.startswith('size=0:'), decision
 
   def test_vol_scale_nan_guard(self) -> None:
-    '''SIZE-03: NaN/zero/inf rvol -> vol_scale = VOL_SCALE_MAX (2.0).'''
-    pytest.skip('implement in Plan 02-02')
+    '''SIZE-03 + D-03: NaN rvol -> vol_scale = VOL_SCALE_MAX (2.0). Does NOT crash.
 
-  def test_vol_scale_clip_min(self) -> None:
-    '''SIZE-03: very high rvol clips vol_scale to VOL_SCALE_MIN (0.3).'''
-    pytest.skip('implement in Plan 02-02')
+    Computed with vol_scale=2.0: stop_dist=795, n_raw=2.5157, int=2.
+    '''
+    decision = calc_position_size(100000.0, LONG, 53.0, float('nan'), 5.0)
+    assert decision.contracts == 2, decision
+    assert decision.warning is None, decision  # Not size=0; the nan was absorbed by the guard
 
-  def test_vol_scale_clip_max(self) -> None:
-    '''SIZE-03: very low rvol clips vol_scale to VOL_SCALE_MAX (2.0).'''
-    pytest.skip('implement in Plan 02-02')
+  def test_vol_scale_zero_guard(self) -> None:
+    '''SIZE-03 + D-03: rvol <= 1e-9 -> vol_scale = VOL_SCALE_MAX (2.0). No div-by-zero.'''
+    decision = calc_position_size(100000.0, LONG, 53.0, 1e-10, 5.0)
+    assert decision.contracts == 2, decision
+    assert decision.warning is None, decision
+
+  # --- SIZE-04: n_contracts = int(n_raw); no floor (operator-locked) ---
+
+  def test_no_max_one_floor_when_undersized(self) -> None:
+    '''SIZE-04 + STATE.md operator decision: n_raw < 1 produces contracts=0, NOT 1.
+
+    atr=80 makes stop_dist big enough that even with vol_scale=0.8 the raw count
+    is sub-1: n_raw=(100000*0.01/(80*3*5))*0.8=0.6667, int=0.
+    A floor would silently return 1 here and breach the 1% risk budget.
+    '''
+    decision = calc_position_size(100000.0, LONG, 80.0, 0.15, 5.0)
+    assert decision.contracts == 0, decision
+    assert decision.warning is not None, decision
 
   def test_calc_position_size_formula(self) -> None:
-    '''SIZE-04: n_contracts = int((account * risk_pct / stop_dist) * vol_scale).'''
-    pytest.skip('implement in Plan 02-02')
+    '''SIZE-04: n_contracts = int((account * risk_pct / stop_dist) * vol_scale).
 
-  def test_zero_contracts_warning(self) -> None:
-    '''SIZE-05: n_contracts == 0 returns SizingDecision(0, warning="size=0: ...").'''
-    pytest.skip('implement in Plan 02-02')
+    Verify the atr=20 case: stop_dist=300, n_raw=(100000*0.01/300)*0.8=2.667, int=2.
+    '''
+    decision = calc_position_size(100000.0, LONG, 20.0, 0.15, 5.0)
+    assert decision.contracts == 2, decision
+    assert decision.warning is None, decision
 
-  def test_no_max1_floor(self) -> None:
-    '''SIZE-05: no max(1,...) floor applied — undersized result stays at 0.'''
-    pytest.skip('implement in Plan 02-02')
+  # --- SIZE-05: contracts==0 -> warning with diagnostic substrings ---
 
-  def test_spi_mini_multiplier_constant(self) -> None:
-    '''D-11: SPI_MULT = 5 used in stop_dist; $5/pt confirmed (not $25).'''
-    pytest.skip('implement in Plan 02-02')
+  def test_zero_contracts_warning_format(self) -> None:
+    '''SIZE-05: warning contains diagnostic substrings for log readability.
+
+    Operator can paste the warning into a debug session and reproduce sizing math
+    without re-running the function.
+    '''
+    decision = calc_position_size(100000.0, LONG, 80.0, 0.15, 5.0)
+    assert decision.contracts == 0
+    w = decision.warning
+    assert w is not None
+    for substr in ['size=0:', 'account=', 'atr=', 'rvol=', 'vol_scale=', 'stop_dist=']:
+      assert substr in w, f'warning missing {substr!r}: {w!r}'
+
+  # --- SIZE-06: SPI mini multiplier ($5/pt per D-11) and AUDUSD ($10000 notional) ---
+
+  def test_contract_specs_spi_mini(self) -> None:
+    '''SIZE-06 + D-11: SPI multiplier is 5.0 (mini), NOT 25 (full ASX 200 SPI).
+
+    Sanity: same account/risk/atr/rvol with mult=5 vs mult=25 produces different
+    n_contracts (because stop_dist scales with multiplier).
+    '''
+    from system_params import SPI_MULT
+    assert SPI_MULT == 5.0, f'D-11 violation: SPI_MULT={SPI_MULT}, expected 5.0'
+    spi_mini = calc_position_size(100000.0, LONG, 53.0, 0.15, SPI_MULT)
+    spi_full_legacy = calc_position_size(100000.0, LONG, 53.0, 0.15, 25.0)
+    # mini stop_dist=795, n_raw=1.006, int=1
+    # full stop_dist=3975, n_raw=0.201, int=0
+    assert spi_mini.contracts == 1, spi_mini
+    assert spi_full_legacy.contracts == 0, spi_full_legacy
+
+  def test_contract_specs_audusd(self) -> None:
+    '''SIZE-06: AUDUSD multiplier is AUDUSD_NOTIONAL ($10,000 mini-lot). atr is in
+    USD-per-AUD price (e.g. 0.005 = 50 pip ATR). Verify the formula doesn't blow up
+    with a small atr times a large notional.
+    '''
+    from system_params import AUDUSD_NOTIONAL
+    assert AUDUSD_NOTIONAL == 10000.0
+    # stop_dist = 3.0 * 0.005 * 10000 = 150 (AUD); n_raw = (100000*0.01/150)*0.8 = 5.333; int=5
+    decision = calc_position_size(100000.0, LONG, 0.005, 0.15, AUDUSD_NOTIONAL)
+    assert decision.contracts == 5, decision
+
+  def test_flat_signal_returns_size_zero_with_warning(self) -> None:
+    '''SIZE-04 caller-error guard: signal=FLAT (0) is not LONG or SHORT — return
+    contracts=0 with a clear warning rather than silently picking LONG defaults.
+    '''
+    decision = calc_position_size(100000.0, FLAT, 53.0, 0.15, 5.0)
+    assert decision.contracts == 0
+    assert decision.warning is not None and 'is not LONG or SHORT' in decision.warning, decision
+
+  # --- compute_unrealised_pnl: D-13 split-cost + D-17 explicit cost_aud_open + Pitfall 7 ---
+
+  def test_unrealised_pnl_signature_has_cost_aud_open(self) -> None:
+    '''D-17: signature must include cost_aud_open. Pre-emptive guard against
+    accidental API regression — the test_sizing_engine_has_core_public_surface
+    test in TestDeterminism also pins this; this is the unit-level mirror.'''
+    import inspect
+    sig = inspect.signature(compute_unrealised_pnl)
+    assert 'cost_aud_open' in sig.parameters, (
+      f'D-17 violation: compute_unrealised_pnl missing cost_aud_open: {sig}'
+    )
+
+  def test_unrealised_pnl_long_profit(self) -> None:
+    '''D-13 + D-17: LONG position in profit. gross=(7050-7000)*2*5=500; minus 3.0*2=6 = 494.0.'''
+    pos: Position = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-01-02',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 7050.0,
+      'trough_price': None, 'atr_entry': 53.0,
+    }
+    pnl = compute_unrealised_pnl(pos, current_price=7050.0, multiplier=5.0, cost_aud_open=3.0)
+    assert pnl == 494.0, pnl
+
+  def test_unrealised_pnl_long_loss(self) -> None:
+    '''D-13: LONG position in loss. gross=(6950-7000)*2*5=-500; minus 6 = -506.0.'''
+    pos: Position = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-01-02',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 7000.0,
+      'trough_price': None, 'atr_entry': 53.0,
+    }
+    pnl = compute_unrealised_pnl(pos, current_price=6950.0, multiplier=5.0, cost_aud_open=3.0)
+    assert pnl == -506.0, pnl
+
+  def test_unrealised_pnl_short_profit_pitfall_7(self) -> None:
+    '''Pitfall 7: SHORT direction_mult flips the sign so falling price = positive PnL.
+
+    SHORT entry=7000, current=6950 -> direction_mult=-1, gross=-1*(6950-7000)*2*5=+500;
+    minus 6 = +494.0. Without direction_mult this would be -506 (wrong: a winning
+    SHORT showing as a loss).
+    '''
+    pos: Position = {
+      'direction': 'SHORT', 'entry_price': 7000.0, 'entry_date': '2026-01-02',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': None,
+      'trough_price': 6950.0, 'atr_entry': 53.0,
+    }
+    pnl = compute_unrealised_pnl(pos, current_price=6950.0, multiplier=5.0, cost_aud_open=3.0)
+    assert pnl == 494.0, pnl
+
+  def test_unrealised_pnl_short_loss(self) -> None:
+    '''SHORT entry=7000, current=7050 (price went UP -> SHORT loss).
+    direction_mult=-1, gross=-1*(7050-7000)*2*5=-500; minus 6 = -506.0.'''
+    pos: Position = {
+      'direction': 'SHORT', 'entry_price': 7000.0, 'entry_date': '2026-01-02',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': None,
+      'trough_price': 7000.0, 'atr_entry': 53.0,
+    }
+    pnl = compute_unrealised_pnl(pos, current_price=7050.0, multiplier=5.0, cost_aud_open=3.0)
+    assert pnl == -506.0, pnl
+
+  def test_unrealised_pnl_audusd_split_cost(self) -> None:
+    '''D-13 + AUDUSD: with AUDUSD_NOTIONAL=10000 and cost_aud_open=2.5,
+    LONG entry=0.65, current=0.66, n=2 -> gross=0.01*2*10000=200; minus 2.5*2=5 = 195.0.
+    '''
+    pos: Position = {
+      'direction': 'LONG', 'entry_price': 0.65, 'entry_date': '2026-01-02',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 0.66,
+      'trough_price': None, 'atr_entry': 0.005,
+    }
+    pnl = compute_unrealised_pnl(pos, current_price=0.66, multiplier=10000.0, cost_aud_open=2.5)
+    assert abs(pnl - 195.0) < 1e-9, pnl  # float multiplication on 0.01 has tiny epsilon
 
 
 # =========================================================================
