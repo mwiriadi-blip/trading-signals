@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 1
 status: executing
-last_updated: "2026-04-21T01:32:57.544Z"
+last_updated: "2026-04-21T01:45:36.054Z"
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 11
-  completed_plans: 8
-  percent: 73
+  completed_plans: 9
+  percent: 82
 ---
 
 # STATE — Trading Signals
@@ -27,14 +27,14 @@ progress:
 ## Current Position
 
 Phase: 02 (Signal Engine — Sizing, Exits, Pyramiding) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 2
 - **Current Plan:** 1
 - **Total Plans:** 6
 - **Status:** Ready to execute
-- **Progress:** [███████░░░] 73%
+- **Progress:** [████████░░] 82%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -57,6 +57,7 @@ Plan: 3 of 5
 | Phase 01 P06 | 7m6s | 2 tasks | 1 files |
 | Phase 02 P01 | 9m58s | 3 tasks | 7 files |
 | Phase 02 P02 | 6m34s | 2 tasks | 2 files |
+| Phase 02 P03 | 460s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,9 @@ Plan: 3 of 5
 - system_params.py introduces FORBIDDEN_MODULES_STDLIB_ONLY to block numpy/pandas in Phase 2 pure-math hex (sizing_engine.py, system_params.py)
 - D-17 enforced: compute_unrealised_pnl takes explicit cost_aud_open (no multiplier-lookup coupling)
 - SIZE-05 no-floor confirmed: int() truncation returns 0 with size=0: warning when undersized
+- D-15 enforced via del atr in get_trailing_stop + check_stop_hit: stop distance uses position['atr_entry'] (entry-ATR anchor), not the atr argument
+- D-12 stateless invariant: check_pyramid evaluates only (level+1)*atr_entry threshold — add_contracts is always 0 or 1 (gap-day cap proven by TestPyramid gap tests)
+- B-1 NaN policy: get_trailing_stop NaN atr_entry->nan; check_stop_hit NaN high/low/atr_entry->False; check_pyramid NaN->hold level (D-03 generalisation)
 
 ### Todos Carried Forward
 

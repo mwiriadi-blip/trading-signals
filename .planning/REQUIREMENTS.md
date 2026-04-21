@@ -57,18 +57,27 @@ Fine granularity — each requirement is independently testable.
 - [ ] **EXIT-03**: LONG→SHORT in one run closes LONG then opens SHORT (two-phase eval: exits before entries)
 - [ ] **EXIT-04**: SHORT→LONG in one run closes SHORT then opens LONG
 - [ ] **EXIT-05**: ADX < 20 while in trade closes the position immediately
-- [ ] **EXIT-06**: LONG trailing stop = peak_price − (3 × ATR); peak updates with today's HIGH (intraday)
-- [ ] **EXIT-07**: SHORT trailing stop = trough_price + (2 × ATR); trough updates with today's LOW (intraday)
-- [ ] **EXIT-08**: LONG stop hit if today's LOW ≤ stop (intraday check)
-- [ ] **EXIT-09**: SHORT stop hit if today's HIGH ≥ stop (intraday check)
+- [x] **EXIT-06
+**: LONG trailing stop = peak_price − (3 × ATR); peak updates with today's HIGH (intraday)
+- [x] **EXIT-07
+**: SHORT trailing stop = trough_price + (2 × ATR); trough updates with today's LOW (intraday)
+- [x] **EXIT-08
+**: LONG stop hit if today's LOW ≤ stop (intraday check)
+- [x] **EXIT-09
+**: SHORT stop hit if today's HIGH ≥ stop (intraday check)
 
 ### Pyramiding
 
-- [ ] **PYRA-01**: Pyramid level persists in state per position
-- [ ] **PYRA-02**: At level 0, adds 1 contract when unrealised ≥ 1 × ATR_entry → level 1
-- [ ] **PYRA-03**: At level 1, adds 1 contract when unrealised ≥ 2 × ATR_entry → level 2
-- [ ] **PYRA-04**: Never adds beyond 3 total contracts (level ≤ 2)
-- [ ] **PYRA-05**: Maximum one pyramid step per daily run (no double-add on gap days)
+- [x] **PYRA-01
+**: Pyramid level persists in state per position
+- [x] **PYRA-02
+**: At level 0, adds 1 contract when unrealised ≥ 1 × ATR_entry → level 1
+- [x] **PYRA-03
+**: At level 1, adds 1 contract when unrealised ≥ 2 × ATR_entry → level 2
+- [x] **PYRA-04
+**: Never adds beyond 3 total contracts (level ≤ 2)
+- [x] **PYRA-05
+**: Maximum one pyramid step per daily run (no double-add on gap days)
 
 ### State Persistence
 
