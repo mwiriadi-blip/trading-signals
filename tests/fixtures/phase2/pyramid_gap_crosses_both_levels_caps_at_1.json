@@ -10,7 +10,16 @@
   },
   "description": "PYRA-05 / D-12: gap day past both 1xATR and 2xATR thresholds. Stateless cap = 1 add only.",
   "expected": {
-    "position_after": null,
+    "position_after": {
+      "atr_entry": 53.0,
+      "direction": "LONG",
+      "entry_date": "2026-01-02",
+      "entry_price": 7000.0,
+      "n_contracts": 3,
+      "peak_price": 7160.0,
+      "pyramid_level": 1,
+      "trough_price": null
+    },
     "pyramid_decision": {
       "add_contracts": 1,
       "new_level": 1

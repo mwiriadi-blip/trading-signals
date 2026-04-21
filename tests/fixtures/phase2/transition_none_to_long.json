@@ -10,7 +10,16 @@
   },
   "description": "No position to LONG: new LONG entry, sizing applied, position created",
   "expected": {
-    "position_after": null,
+    "position_after": {
+      "atr_entry": 53.0,
+      "direction": "LONG",
+      "entry_date": "2026-01-03",
+      "entry_price": 7040.0,
+      "n_contracts": 1,
+      "peak_price": 7040.0,
+      "pyramid_level": 0,
+      "trough_price": null
+    },
     "pyramid_decision": null,
     "sizing_decision": {
       "contracts": 1,

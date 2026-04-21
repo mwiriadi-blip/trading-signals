@@ -10,7 +10,16 @@
   },
   "description": "SHORT hold (SHORT signal continues): price falls, pyramid level 0->1 at +1xATR distance",
   "expected": {
-    "position_after": null,
+    "position_after": {
+      "atr_entry": 53.0,
+      "direction": "SHORT",
+      "entry_date": "2026-01-02",
+      "entry_price": 7000.0,
+      "n_contracts": 3,
+      "peak_price": null,
+      "pyramid_level": 1,
+      "trough_price": 6890.0
+    },
     "pyramid_decision": {
       "add_contracts": 1,
       "new_level": 1

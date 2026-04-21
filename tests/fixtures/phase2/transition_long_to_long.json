@@ -10,7 +10,16 @@
   },
   "description": "LONG hold (LONG signal continues): price rises, pyramid level 0->1 at +1xATR, no stop hit",
   "expected": {
-    "position_after": null,
+    "position_after": {
+      "atr_entry": 53.0,
+      "direction": "LONG",
+      "entry_date": "2026-01-02",
+      "entry_price": 7000.0,
+      "n_contracts": 3,
+      "peak_price": 7120.0,
+      "pyramid_level": 1,
+      "trough_price": null
+    },
     "pyramid_decision": {
       "add_contracts": 1,
       "new_level": 1

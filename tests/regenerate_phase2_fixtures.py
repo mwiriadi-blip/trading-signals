@@ -75,6 +75,7 @@ SPI_COST_AUD = 6.0
 AUDUSD_NOTIONAL = 10000.0
 AUDUSD_COST_AUD = 5.0
 MAX_PYRAMID_LEVEL = 2
+ADX_EXIT_GATE = 20.0
 
 LONG = 1
 SHORT = -1
@@ -170,12 +171,160 @@ def _pyramid_decision(direction, entry_price, current_price, atr_entry, level):
 
 
 def _close_position(direction, entry_price, current_price, n_contracts, multiplier,
-                    cost_aud_open):
-  '''D-13 inline unrealised PnL (same formula as compute_unrealised_pnl).
-  direction_mult = +1 LONG, -1 SHORT. cost_aud_open is half the round-trip cost.'''
+                    cost_aud_open, exit_price=None):
+  '''D-13 inline: realised PnL on close.
+  direction_mult = +1 LONG, -1 SHORT. cost_aud_open is half the round-trip cost.
+  B-5: exit_price overrides current_price when provided (stop-hit fill at stop level).'''
+  eff_price = exit_price if exit_price is not None else current_price
   dm = 1.0 if direction == 'LONG' else -1.0
-  gross = dm * (current_price - entry_price) * n_contracts * multiplier
+  gross = dm * (eff_price - entry_price) * n_contracts * multiplier
   return gross - cost_aud_open * n_contracts
+
+
+def _step(prev_position, bar, indicators, old_signal, new_signal, account,
+          multiplier, cost_aud_open):
+  '''Inline mirror of sizing_engine.step() (B-4 dual-maintenance accepted).
+
+  Mirrors the production step() phase order exactly:
+    Phase 0 (D-16): shallow-copy position, update peak/trough from bar.high/low.
+    Phase 1: exits — ADX<20 exit (forced), stop-hit (forced), FLAT signal, reversal.
+    Phase 2 (D-19): entry sizing if not forced exit.
+    Phase 3+4 (D-18): pyramid check + apply add to position_after.
+    Phase 5 (B-6): unrealised PnL on final position state.
+
+  Returns a dict mirroring StepResult fields:
+    {position_after, closed_trade_realised_pnl, sizing_decision,
+     pyramid_decision, unrealised_pnl, warnings}
+
+  Inline — does NOT import sizing_engine (B-4 oracle independence).
+  '''
+  warnings_list = []
+  closed_trade_pnl = None
+  sizing_dec = None
+  pyramid_dec = None
+  forced_exit = False
+
+  # Phase 0: shallow copy + peak/trough update (D-16).
+  cur = None
+  if prev_position is not None:
+    cur = dict(prev_position)
+    if cur['direction'] == 'LONG':
+      prev_peak = cur.get('peak_price') or cur['entry_price']
+      cur['peak_price'] = max(prev_peak, bar['high'])
+    else:
+      prev_trough = cur.get('trough_price') or cur['entry_price']
+      cur['trough_price'] = min(prev_trough, bar['low'])
+
+  # Phase 1: exits.
+  if cur is not None:
+    adx = indicators.get('adx', float('nan'))
+    if math.isfinite(adx) and adx < ADX_EXIT_GATE:
+      # EXIT-05: ADX exit — close at bar close, forced, no new entry (A2).
+      closed_trade_pnl = _close_position(
+        cur['direction'], cur['entry_price'], bar['close'],
+        cur['n_contracts'], multiplier, cost_aud_open,
+      )
+      cur = None
+      forced_exit = True
+    elif _stop_hit(
+      cur['direction'],
+      cur.get('peak_price') if cur['direction'] == 'LONG' else cur.get('trough_price'),
+      cur['entry_price'], cur['atr_entry'], bar['high'], bar['low'],
+    ):
+      # EXIT-08/09: stop hit — close at stop level (B-5).
+      stop_lvl = _trailing_stop(
+        cur['direction'],
+        cur.get('peak_price') if cur['direction'] == 'LONG' else cur.get('trough_price'),
+        cur['entry_price'], cur['atr_entry'],
+      )
+      eff_exit = stop_lvl if math.isfinite(stop_lvl) else bar['close']
+      closed_trade_pnl = _close_position(
+        cur['direction'], cur['entry_price'], bar['close'],
+        cur['n_contracts'], multiplier, cost_aud_open,
+        exit_price=eff_exit,  # B-5 stop-level fill
+      )
+      cur = None
+      forced_exit = True
+    elif new_signal == FLAT:
+      # EXIT-01/02: FLAT signal.
+      closed_trade_pnl = _close_position(
+        cur['direction'], cur['entry_price'], bar['close'],
+        cur['n_contracts'], multiplier, cost_aud_open,
+      )
+      cur = None
+    elif (
+      (prev_position['direction'] == 'LONG' and new_signal == SHORT)
+      or (prev_position['direction'] == 'SHORT' and new_signal == LONG)
+    ):
+      # EXIT-03/04: reversal — close existing, open new in Phase 2.
+      closed_trade_pnl = _close_position(
+        cur['direction'], cur['entry_price'], bar['close'],
+        cur['n_contracts'], multiplier, cost_aud_open,
+      )
+      cur = None
+
+  # Phase 2: entry sizing (D-19: uses INPUT account, no mutation; A2: skip if forced).
+  pos_after = cur
+  if not forced_exit:
+    is_reversal = closed_trade_pnl is not None and pos_after is None
+    is_fresh = prev_position is None and new_signal != FLAT
+    if is_reversal or is_fresh:
+      if new_signal != FLAT:
+        sizing_dec = _n_contracts(account, new_signal,
+                                  indicators.get('atr', float('nan')),
+                                  indicators.get('rvol', float('nan')),
+                                  multiplier)
+        if sizing_dec['contracts'] > 0:
+          dir_str = 'LONG' if new_signal == LONG else 'SHORT'
+          pos_after = {
+            'direction': dir_str,
+            'entry_price': bar['close'],
+            'entry_date': bar['date'],
+            'n_contracts': sizing_dec['contracts'],
+            'pyramid_level': 0,
+            'peak_price': bar['close'] if dir_str == 'LONG' else None,
+            'trough_price': bar['close'] if dir_str == 'SHORT' else None,
+            'atr_entry': indicators.get('atr', float('nan')),
+          }
+        else:
+          if sizing_dec['warning']:
+            warnings_list.append(sizing_dec['warning'])
+          pos_after = None
+
+  # Phase 3+4 (D-18): pyramid check + apply. Only on surviving pre-existing position.
+  is_new_entry = (
+    (closed_trade_pnl is not None and pos_after is not None)
+    or (prev_position is None and pos_after is not None)
+  )
+  if pos_after is not None and not forced_exit and not is_new_entry:
+    pyramid_dec = _pyramid_decision(
+      pos_after['direction'], pos_after['entry_price'],
+      bar['close'], pos_after['atr_entry'], pos_after['pyramid_level'],
+    )
+    if pyramid_dec['add_contracts'] > 0:
+      pos_after = {
+        **pos_after,
+        'n_contracts': pos_after['n_contracts'] + pyramid_dec['add_contracts'],
+        'pyramid_level': pyramid_dec['new_level'],
+      }
+
+  # Phase 5 (B-6): unrealised PnL on final position state.
+  if pos_after is not None:
+    unreal = _close_position(
+      pos_after['direction'], pos_after['entry_price'],
+      bar['close'], pos_after['n_contracts'], multiplier, cost_aud_open,
+    )
+  else:
+    unreal = 0.0
+
+  return {
+    'position_after': pos_after,
+    'closed_trade_realised_pnl': closed_trade_pnl,
+    'sizing_decision': sizing_dec,
+    'pyramid_decision': pyramid_dec,
+    'unrealised_pnl': unreal,
+    'warnings': warnings_list,
+  }
 
 
 # =========================================================================
@@ -761,11 +910,37 @@ def write_fixture(name, data):
   print(f'[regen-p2] wrote {name}')
 
 
+def _enrich_position_after(data):
+  '''Call _step() on a fixture dict and populate expected.position_after.
+
+  This is the Task 2 (plan 02-05) extension: run each fixture through the
+  inline _step() oracle and store the resulting position_after so TestStep
+  can assert step() produces matching output.
+
+  B-4 dual-maintenance: _step() here mirrors sizing_engine.step() exactly;
+  if they diverge, TestStep will catch it as a fixture mismatch.
+  '''
+  step_result = _step(
+    prev_position=data['prev_position'],
+    bar=data['bar'],
+    indicators=data['indicators'],
+    old_signal=data['old_signal'],
+    new_signal=data['new_signal'],
+    account=data['account'],
+    multiplier=data['multiplier'],
+    cost_aud_open=data['instrument_cost_aud'] / 2.0,
+  )
+  data['expected']['position_after'] = step_result['position_after']
+  return data
+
+
 def main():
   '''Generate all 15 Phase 2 scenario fixtures.'''
   FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
   for name, builder in ALL_FIXTURES.items():
-    write_fixture(name, builder())
+    data = builder()
+    data = _enrich_position_after(data)
+    write_fixture(name, data)
   print(f'[regen-p2] wrote {len(ALL_FIXTURES)} fixtures to {FIXTURES_DIR}')
 
 
