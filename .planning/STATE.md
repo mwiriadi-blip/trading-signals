@@ -108,6 +108,7 @@ Plan: 4 of 4 complete
 - [ ] Verify Resend sender domain (`signals@carbonbookkeeping.com.au`) SPF/DKIM/DMARC before Phase 6 first live send
 - [ ] Pin exact yfinance version (not `>=`) in `requirements.txt` at Phase 4; bump deliberately
 - [ ] Document Replit Reserved VM path in Phase 7 deployment guide alongside GHA
+- [ ] **Configurable starting account + contract-size selection** — make INITIAL_ACCOUNT a runtime base entered at `--reset`; add tiers (mini $5 / std $25 / full $50) per instrument. Touches state schema, sizing_engine, dashboard D-10, future email. See [.planning/todos/pending/2026-04-22-configurable-starting-account-and-contract-sizes.md](./todos/pending/2026-04-22-configurable-starting-account-and-contract-sizes.md)
 
 ### Blockers
 
