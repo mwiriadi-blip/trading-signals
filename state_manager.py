@@ -32,6 +32,7 @@ save failures cause data loss; orchestrator (Phase 4) handles the exception
 explicitly per CLAUDE.md "data integrity > silent failure" stance.
 '''
 import json  # noqa: F401 — used in save_state/load_state (Waves 1/2)
+import math  # used in _validate_trade (D-19) + update_equity_history (B-4) finiteness checks
 import os  # noqa: F401 — used in _atomic_write/_backup_corrupt (Waves 1/2)
 import sys  # noqa: F401 — used in load_state stderr logging (Wave 2)
 import tempfile  # noqa: F401 — used in _atomic_write (Wave 1)
@@ -171,21 +172,73 @@ def _backup_corrupt(path: Path, now: datetime) -> str:
   return backup_name
 
 def _validate_trade(trade: dict) -> None:
-  '''D-15 + D-19 (reviews-revision pass): raise ValueError if trade dict
-  is missing required fields or has invalid field types/values.
+  '''D-15 + D-19 (extended 2026-04-21 reviews-revision pass): raise ValueError
+  if trade dict is missing required fields or has invalid field values/types.
 
-  D-15: instrument in {SPI200, AUDUSD}; direction in {LONG, SHORT};
-    n_contracts int > 0; all 11 required fields present per
-    _REQUIRED_TRADE_FIELDS.
-  D-19: extends to all 8 remaining fields:
-    entry_date/exit_date/exit_reason must be non-empty str;
-    entry_price/exit_price/gross_pnl/multiplier/cost_aud must be finite
-    numeric (rejecting bool via isinstance bool check, rejecting NaN/inf
-    via math.isfinite).
+  Required fields per _REQUIRED_TRADE_FIELDS (11 total).
 
-  Wave 3 fills this in (and adds `import math` to the imports block).
+  D-15 (base):
+    instrument must be in {'SPI200', 'AUDUSD'}.
+    direction must be in {'LONG', 'SHORT'}.
+    n_contracts must be int > 0.
+
+  D-19 (extended-field type checks):
+    entry_date, exit_date, exit_reason: must be non-empty str.
+    entry_price, exit_price, gross_pnl, multiplier, cost_aud: must be
+      finite numeric (int or float); explicitly rejecting bool (Python
+      quirk: isinstance(True, int) is True) and NaN/+inf/-inf via
+      math.isfinite. Catches Phase 4 wire-up bugs that pass typed
+      surrogate values (booleans, NaN from sizing edge cases).
+
+  Raises:
+    ValueError: with a specific message naming the offending field
+                or value, so Phase 4 wire-up bugs surface immediately.
   '''
-  raise NotImplementedError('Wave 3: implement trade validation (D-15 + D-19)')
+  missing = _REQUIRED_TRADE_FIELDS - trade.keys()
+  if missing:
+    raise ValueError(
+      f'record_trade: missing required fields: {sorted(missing)}'
+    )
+  # D-15 base checks
+  if trade['instrument'] not in {'SPI200', 'AUDUSD'}:
+    raise ValueError(
+      f'record_trade: invalid instrument={trade["instrument"]!r}; '
+      f'must be in {{SPI200, AUDUSD}}'
+    )
+  if trade['direction'] not in {'LONG', 'SHORT'}:
+    raise ValueError(
+      f'record_trade: invalid direction={trade["direction"]!r}; '
+      f'must be in {{LONG, SHORT}}'
+    )
+  if (
+    not isinstance(trade['n_contracts'], int)
+    or isinstance(trade['n_contracts'], bool)
+    or trade['n_contracts'] <= 0
+  ):
+    raise ValueError(
+      f'record_trade: n_contracts must be int > 0, '
+      f'got {trade["n_contracts"]!r}'
+    )
+  # D-19 extended checks: string fields must be non-empty str
+  for field in ('entry_date', 'exit_date', 'exit_reason'):
+    value = trade[field]
+    if not isinstance(value, str) or len(value) == 0:
+      raise ValueError(
+        f'record_trade: field {field!r} must be non-empty str, '
+        f'got {value!r}'
+      )
+  # D-19 extended checks: numeric fields must be finite int/float (NOT bool, NOT NaN/inf)
+  for field in ('entry_price', 'exit_price', 'gross_pnl', 'multiplier', 'cost_aud'):
+    value = trade[field]
+    if (
+      not isinstance(value, int | float)
+      or isinstance(value, bool)
+      or not math.isfinite(value)
+    ):
+      raise ValueError(
+        f'record_trade: field {field!r} must be finite numeric '
+        f'(int or float, not bool, not NaN/inf), got {value!r}'
+      )
 
 def _validate_loaded_state(state: dict) -> None:
   '''D-18 (reviews-revision pass, 2026-04-21): raise ValueError if state
@@ -367,24 +420,63 @@ def record_trade(state: dict, trade: dict) -> dict:
     the closing cost deducted by Phase 2 _close_position. Passing
     realised_pnl as gross_pnl causes double-counting of the closing cost.
     Phase 4 orchestrator is responsible for this projection.
-
-  Wave 3 fills this in. See PATTERNS.md §record_trade validation pattern.
   '''
-  raise NotImplementedError('Wave 3: implement record_trade (D-13/D-14/D-15/D-16/D-19/D-20)')
+  _validate_trade(trade)
+  # D-14: closing-half cost split. Phase 2 deducted opening half via
+  # compute_unrealised_pnl during the position's lifetime. Phase 3 deducts
+  # the closing half here at trade close.
+  closing_cost_half = trade['cost_aud'] * trade['n_contracts'] / 2
+  net_pnl = trade['gross_pnl'] - closing_cost_half
+  state['account'] += net_pnl
+  # D-20: append a copy of trade WITH net_pnl, do NOT mutate caller's dict.
+  state['trade_log'].append(dict(trade, net_pnl=net_pnl))
+  # D-13 / D-01: position is closed atomically with the trade record.
+  state['positions'][trade['instrument']] = None
+  return state
 
 def update_equity_history(state: dict, date: str, equity: float) -> dict:
   '''STATE-06 / D-04 / B-4: append {date, equity} to equity_history.
 
   D-04: equity is caller-computed (state_manager is pure I/O hex; must NOT
-  import sizing_engine to compute unrealised_pnl). Phase 4 orchestrator
-  sums state['account'] + sum(unrealised_pnl across active positions) and
+  import sizing_engine to compute unrealised_pnl — that would break
+  hexagonal-lite). Phase 4 orchestrator computes:
+    equity = state['account'] + sum(unrealised_pnl across active positions)
+  using sizing_engine.compute_unrealised_pnl per active position, then
   passes the total here.
 
-  B-4 (reviews-revision pass): minimal boundary validation — date must be
-  str of length 10 (ISO YYYY-MM-DD shape); equity must be finite numeric
-  (rejecting bool, NaN, ±inf via math.isfinite). Raises ValueError on
-  malformed input.
+  B-4 (reviews-revision pass, 2026-04-21): minimal boundary validation.
+    - date must be str of length 10 (ISO YYYY-MM-DD shape; not a full
+      format check — that's the orchestrator's job)
+    - equity must be finite numeric (int or float, not bool, not NaN/inf)
+    Catches Phase 4 wire-up bugs (e.g., passing a datetime object instead
+    of a string, or a NaN that leaked from a sizing edge case) immediately
+    rather than relying on save_state's allow_nan=False catch later.
 
-  Wave 3 fills this in (and adds `import math` to the imports block).
+  Date format per CLAUDE.md: ISO YYYY-MM-DD (no time component for
+  equity_history entries; daily-cadence system).
+
+  Returns the mutated state dict.
+
+  Raises:
+    ValueError: on malformed date (not str / wrong length) or non-finite
+                equity (NaN, ±inf, bool, non-numeric).
   '''
-  raise NotImplementedError('Wave 3: implement update_equity_history (D-04 + B-4)')
+  # B-4: validate date shape
+  if not isinstance(date, str) or len(date) != 10:
+    raise ValueError(
+      f'update_equity_history: date must be str of length 10 '
+      f'(ISO YYYY-MM-DD), got {date!r}'
+    )
+  # B-4: validate equity is finite numeric (rejecting bool, NaN, ±inf)
+  if (
+    not isinstance(equity, int | float)
+    or isinstance(equity, bool)
+    or not math.isfinite(equity)
+  ):
+    raise ValueError(
+      f'update_equity_history: equity must be finite numeric '
+      f'(int or float, not bool, not NaN/inf), got {equity!r}'
+    )
+  entry = {'date': date, 'equity': equity}
+  state['equity_history'].append(entry)
+  return state
