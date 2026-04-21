@@ -454,12 +454,14 @@ def step(
     current_position = dict(position)  # type: ignore[assignment]
     # D-16: peak/trough updated by step() before stop logic
     if current_position['direction'] == 'LONG':
-      prev_peak = current_position.get('peak_price') or current_position['entry_price']
+      prev_peak = current_position['peak_price']
+      if prev_peak is None:
+        prev_peak = current_position['entry_price']
       current_position['peak_price'] = max(prev_peak, bar['high'])
     else:
-      prev_trough = (
-        current_position.get('trough_price') or current_position['entry_price']
-      )
+      prev_trough = current_position['trough_price']
+      if prev_trough is None:
+        prev_trough = current_position['entry_price']
       current_position['trough_price'] = min(prev_trough, bar['low'])
 
   # -----------------------------------------------------------------------
@@ -499,8 +501,8 @@ def step(
       current_position = None
       # forced_exit stays False: FLAT is voluntary; doesn't suppress next-bar entry.
     elif new_signal != FLAT and (
-      (position['direction'] == 'LONG' and new_signal == SHORT)
-      or (position['direction'] == 'SHORT' and new_signal == LONG)
+      (current_position['direction'] == 'LONG' and new_signal == SHORT)
+      or (current_position['direction'] == 'SHORT' and new_signal == LONG)
     ):
       # EXIT-03/04: signal reversal — close existing, then open new (Phase 2).
       closed_trade = _close_position(

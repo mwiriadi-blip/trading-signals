@@ -209,10 +209,14 @@ def _step(prev_position, bar, indicators, old_signal, new_signal, account,
   if prev_position is not None:
     cur = dict(prev_position)
     if cur['direction'] == 'LONG':
-      prev_peak = cur.get('peak_price') or cur['entry_price']
+      prev_peak = cur['peak_price']
+      if prev_peak is None:
+        prev_peak = cur['entry_price']
       cur['peak_price'] = max(prev_peak, bar['high'])
     else:
-      prev_trough = cur.get('trough_price') or cur['entry_price']
+      prev_trough = cur['trough_price']
+      if prev_trough is None:
+        prev_trough = cur['entry_price']
       cur['trough_price'] = min(prev_trough, bar['low'])
 
   # Phase 1: exits.
