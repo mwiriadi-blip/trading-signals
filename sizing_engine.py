@@ -182,28 +182,62 @@ def get_trailing_stop(
   current_price: float,
   atr: float,
 ) -> float:
-  '''EXIT-06/07. Current trailing stop price from position peak/trough.
+  '''EXIT-06/07: compute current trailing stop price. D-15 anchor: stop distance
+  uses position['atr_entry'], NOT the `atr` argument.
 
-  LONG: stop = peak_price - TRAIL_MULT_LONG * position['atr_entry']
+  LONG:  stop = peak_price  - TRAIL_MULT_LONG  * position['atr_entry']
   SHORT: stop = trough_price + TRAIL_MULT_SHORT * position['atr_entry']
 
-  D-15: stop distance is anchored to position['atr_entry'] (NOT the `atr` argument).
-  The `atr` parameter is retained in the signature for API stability but is unused.
-  D-16: peak_price / trough_price must already be updated by the caller (typically
-  step()) before this is called.
+  D-15 rationale: anchoring stop distance to the ATR captured at entry keeps
+  the risk consistent with the original sizing decision. Using today's ATR
+  would let a vol spike ratchet the stop AWAY from price (LONG stop drifts
+  down on a vol spike), which violates the conservative-defaults posture.
+  The `atr` parameter stays in the signature for API stability — callers
+  (Phase 4 orchestrator) keep passing today's atr without breaking; this
+  function ignores it for the trail distance.
 
-  NaN guard (D-03): if peak_price/trough_price is None, falls back to entry_price.
-  Returns float('nan') if position data is invalid.
+  D-16 ownership: this function ASSUMES peak/trough is already updated for
+  today's bar (HIGH for LONG, LOW for SHORT). The owner of that update is
+  step() (per D-16); individual callers must update peak/trough before
+  calling this function.
+
+  Pitfall 3: peak_price (LONG) or trough_price (SHORT) may be None on the
+  first bar of a new position before peak/trough has been initialized by
+  the orchestrator. Fall back to entry_price — gives a stop equal to
+  entry +/- trail_mult*atr_entry (no profit lock yet).
+
+  B-1 NaN policy: if position['atr_entry'] is NaN (broken upstream data),
+  return float('nan'). Callers must math.isnan check before using the
+  result. This is safer than raising — Phase 2 functions are documented
+  as NaN-pass-through (D-03) so the orchestrator can decide how to react
+  (e.g. log + skip stop check) rather than crashing the whole step.
+
+  current_price parameter is reserved for future callers; today the function
+  only needs peak/trough/entry/atr_entry. Kept in signature for API stability.
 
   Args:
     position:      open position TypedDict (D-08)
-    current_price: current bar close (used only as None-guard fallback)
+    current_price: reserved; not used in trail-stop math (D-16)
     atr:           today's ATR (unused per D-15; retained for API stability)
 
   Returns:
-    Stop price as float.
+    Stop price as float, or float('nan') if atr_entry is NaN (B-1).
   '''
-  raise NotImplementedError('get_trailing_stop: implement in Plan 02-03')
+  del current_price  # Reserved; not used in trail-stop math (D-16).
+  del atr  # D-15: stop distance uses position['atr_entry'] not this parameter.
+  atr_entry = position['atr_entry']
+  if not math.isfinite(atr_entry):
+    return float('nan')  # B-1: NaN-pass-through
+  if position['direction'] == 'LONG':
+    peak = position['peak_price']
+    if peak is None:
+      peak = position['entry_price']
+    return peak - TRAIL_MULT_LONG * atr_entry
+  # SHORT branch
+  trough = position['trough_price']
+  if trough is None:
+    trough = position['entry_price']
+  return trough + TRAIL_MULT_SHORT * atr_entry
 
 
 def check_stop_hit(
@@ -212,16 +246,33 @@ def check_stop_hit(
   low: float,
   atr: float,
 ) -> bool:
-  '''EXIT-08/09. Returns True if today's intraday bar hits the trailing stop.
+  '''EXIT-08/09: True if today's intraday bar hit the trailing stop.
+  D-15 anchor: uses position['atr_entry'], NOT the `atr` argument.
 
-  LONG: hit if today's low <= stop  (stop = peak_price - TRAIL_MULT_LONG * atr_entry)
-  SHORT: hit if today's high >= stop (stop = trough_price + TRAIL_MULT_SHORT * atr_entry)
+  LONG:  stop = peak_price - TRAIL_MULT_LONG * position['atr_entry']
+         hit when today's low is at or below stop (inclusive boundary)
+  SHORT: stop = trough_price + TRAIL_MULT_SHORT * position['atr_entry']
+         hit when today's high is at or above stop (inclusive boundary)
 
-  D-15: uses position['atr_entry'] for stop distance (NOT the `atr` argument).
-  D-16: assumes peak/trough already updated by caller (typically step()).
-  Uses intraday HIGH/LOW per CLAUDE.md Operator Decisions.
+  Boundary check is inclusive on both sides — a bar touching the stop exactly counts as a hit.
 
-  NaN guard (D-03): returns False if position data is invalid (prevents false exits).
+  CLAUDE.md operator decision: intraday HIGH/LOW (NOT close-only). Phase 2
+  fixtures must supply both HIGH and LOW; close-only fixtures are
+  under-specified for this phase.
+
+  D-16 ownership: assumes peak/trough already updated for today's bar by
+  caller (typically step()).
+
+  Pitfall 2: this function returns BOOL ONLY. Fill price logic (stop vs
+  gap-open for gap-through-stop case) is Phase 3 record_trade territory.
+
+  Pitfall 3: peak_price/trough_price None safety mirrors get_trailing_stop.
+
+  B-1 NaN policy: if HIGH OR LOW is NaN, return False. We cannot detect a
+  hit on missing data and an auto-True would force an unwanted close;
+  False defers the decision. If position['atr_entry'] is NaN, also return
+  False (a NaN-stop comparison would be False anyway, but we make it
+  explicit to short-circuit the math).
 
   Args:
     position: open position TypedDict (D-08)
@@ -230,9 +281,26 @@ def check_stop_hit(
     atr:      today's ATR (unused per D-15; retained for API stability)
 
   Returns:
-    True if stop was hit, False otherwise.
+    True if stop was hit, False otherwise (including NaN inputs, B-1).
   '''
-  raise NotImplementedError('check_stop_hit: implement in Plan 02-03')
+  del atr  # D-15: stop distance uses position['atr_entry'] not this parameter.
+  if not math.isfinite(high) or not math.isfinite(low):
+    return False  # B-1: NaN-pass-through
+  atr_entry = position['atr_entry']
+  if not math.isfinite(atr_entry):
+    return False  # B-1: NaN-pass-through
+  if position['direction'] == 'LONG':
+    peak = position['peak_price']
+    if peak is None:
+      peak = position['entry_price']
+    stop = peak - TRAIL_MULT_LONG * atr_entry
+    return low <= stop
+  # SHORT branch
+  trough = position['trough_price']
+  if trough is None:
+    trough = position['entry_price']
+  stop = trough + TRAIL_MULT_SHORT * atr_entry
+  return high >= stop
 
 
 def check_pyramid(
@@ -240,30 +308,53 @@ def check_pyramid(
   current_price: float,
   atr_entry: float,
 ) -> PyramidDecision:
-  '''PYRA-01..05. Stateless next-level pyramid trigger check (D-12).
+  '''PYRA-01..05 stateless single-step (D-12). check_pyramid is PURE — it does
+  NOT mutate position. Application of the add to position_after['n_contracts']
+  and position_after['pyramid_level'] is owned by step() per D-18.
 
-  Reads position['pyramid_level'] and evaluates ONLY the trigger for the next level:
-    Level 0: add if unrealised_distance >= 1 * atr_entry -> PyramidDecision(1, 1)
-    Level 1: add if unrealised_distance >= 2 * atr_entry -> PyramidDecision(1, 2)
-    Level 2: never add (cap) -> PyramidDecision(0, 2)
+  Reads position.pyramid_level. Evaluates ONLY the trigger for the NEXT level:
+    - Level 0: add 1 if unrealised_distance >= 1 * atr_entry -> PyramidDecision(1, 1)
+    - Level 1: add 1 if unrealised_distance >= 2 * atr_entry -> PyramidDecision(1, 2)
+    - Level 2: never adds; returns PyramidDecision(0, 2)            (PYRA-04 cap)
 
-  PYRA-05: never returns add_contracts=2. Gap days that cross both thresholds still
-  return add_contracts=1 because only the current-level trigger is evaluated (D-12).
+  Unrealised distance is in PRICE units (not P&L) and uses the position direction:
+    LONG:  distance = current_price - entry_price
+    SHORT: distance = entry_price - current_price
 
-  Unrealised distance uses CLOSE price (current_price) per D-14 / RESEARCH A1.
+  D-12 stateless invariant (PYRA-05): add_contracts is always 0 or 1, never
+  higher. Gap days past BOTH thresholds still return add_contracts=1 (only
+  the current level trigger is evaluated). The next bar sees pyramid_level=1
+  and triggers the second add then.
 
-  NaN guard (D-03): if current_price or atr_entry is NaN/invalid, returns
-  PyramidDecision(0, position['pyramid_level']) (no-op).
+  RESEARCH A1: current_price = today's CLOSE (passed by orchestrator as
+  bar['close']). Pitfall 1: atr_entry is from position['atr_entry'] (NOT today's atr).
+
+  B-1 NaN policy: if current_price OR atr_entry is NaN, return
+  PyramidDecision(add_contracts=0, new_level=position['pyramid_level']) —
+  no add when uncertain. The pyramid_level passes through unchanged so
+  subsequent bars (with valid data) can pick up where we left off.
 
   Args:
     position:      open position TypedDict (D-08)
-    current_price: today's bar close (mark-to-market)
+    current_price: today's bar close (mark-to-market; RESEARCH A1)
     atr_entry:     ATR at time of entry (from position['atr_entry'])
 
   Returns:
-    PyramidDecision with add_contracts in {0, 1} and updated new_level.
+    PyramidDecision with add_contracts in {0, 1} and new_level.
   '''
-  raise NotImplementedError('check_pyramid: implement in Plan 02-03')
+  level = position['pyramid_level']
+  if not math.isfinite(current_price) or not math.isfinite(atr_entry):
+    return PyramidDecision(add_contracts=0, new_level=level)  # B-1
+  if level >= MAX_PYRAMID_LEVEL:
+    return PyramidDecision(add_contracts=0, new_level=level)
+  if position['direction'] == 'LONG':
+    distance = current_price - position['entry_price']
+  else:
+    distance = position['entry_price'] - current_price
+  threshold = (level + 1) * atr_entry
+  if distance >= threshold:
+    return PyramidDecision(add_contracts=1, new_level=level + 1)
+  return PyramidDecision(add_contracts=0, new_level=level)
 
 
 def compute_unrealised_pnl(
