@@ -37,6 +37,7 @@ import sys  # noqa: F401 — used in load_state stderr logging (Wave 2)
 import tempfile  # noqa: F401 — used in _atomic_write (Wave 1)
 import zoneinfo  # noqa: F401 — used in append_warning via _AWST (Wave 2)
 from datetime import (  # noqa: F401 — used in append_warning/_backup_corrupt (Waves 1/2)
+  UTC,
   datetime,
   timezone,
 )
@@ -144,16 +145,30 @@ def _migrate(state: dict) -> dict:
   return state
 
 def _backup_corrupt(path: Path, now: datetime) -> str:
-  '''D-06 (amended by B-1 + B-2): rename corrupt state file to
-  {path.name}.corrupt.<ISO-microsecond-ts>.
+  '''D-06 (amended by B-1 + B-2, 2026-04-21 reviews-revision pass):
+  rename corrupt state file to {path.name}.corrupt.<ISO-microsecond-ts>.
 
-  B-1: backup name derived from path.name (NOT hardcoded 'state.json').
-  B-2: microsecond-precision timestamp ('%Y%m%dT%H%M%S_%fZ').
+  B-1: backup name derived from path.name (NOT hardcoded 'state.json') so
+    the helper is robust to non-default paths in tests and future reuse.
+    For the canonical path (path.name == 'state.json'), the result is
+    'state.json.corrupt.<ts>' which still matches REQUIREMENTS.md STATE-03.
+  B-2: ISO 8601 basic format with MICROSECOND precision (%Y%m%dT%H%M%S_%fZ)
+    eliminates same-second collision risk. Format: 20260421T093045_123456Z.
 
-  Returns the backup filename (string, basename only) for caller to record
-  in the warning message. Wave 2 fills this in.
+  Returns the backup filename (basename only, no directory) for caller to
+  record in the corruption-recovery warning message.
+
+  Logs a [State] WARNING line to stderr per CLAUDE.md §Conventions.
   '''
-  raise NotImplementedError('Wave 2: implement corrupt backup (B-1 + B-2)')
+  ts = now.strftime('%Y%m%dT%H%M%S_%fZ')      # B-2: microsecond precision
+  backup_name = f'{path.name}.corrupt.{ts}'   # B-1: derive from path.name
+  backup_path = path.parent / backup_name
+  os.rename(str(path), str(backup_path))
+  print(
+    f'[State] WARNING: state.json was corrupt; backup at {backup_name}',
+    file=sys.stderr,
+  )
+  return backup_name
 
 def _validate_trade(trade: dict) -> None:
   '''D-15 + D-19 (reviews-revision pass): raise ValueError if trade dict
@@ -174,21 +189,35 @@ def _validate_trade(trade: dict) -> None:
 
 def _validate_loaded_state(state: dict) -> None:
   '''D-18 (reviews-revision pass, 2026-04-21): raise ValueError if state
-  is missing required top-level keys per _REQUIRED_STATE_KEYS.
+  is missing required top-level keys.
 
-  Called by load_state AFTER _migrate but BEFORE returning. Runs OUTSIDE
-  the JSONDecodeError except block so its ValueError propagates to caller
-  — does NOT trigger corruption recovery (D-05 narrow catch is preserved:
-  only json.JSONDecodeError triggers backup; semantic mismatches raise as
-  bugs).
+  Called by load_state AFTER _migrate but BEFORE returning a successfully-
+  parsed state. The validator's ValueError propagates to caller — it does
+  NOT trigger corruption recovery (D-05 narrow catch is preserved: only
+  json.JSONDecodeError triggers backup; semantic mismatches raise as bugs).
 
-  Validates KEY PRESENCE only — value types are NOT checked here (record_trade
-  does that for trade-shape; equity validation is at the
-  update_equity_history boundary per B-4).
+  Rationale (D-05's bug-surfacing posture extended to schema):
+    Valid JSON like {"schema_version": 1} parses fine, will migrate (no-op
+    at v1), then downstream code crashes with KeyError on state['account'].
+    D-18 makes this surface as ValueError immediately at the load boundary,
+    with a specific message naming the missing key(s), so the operator
+    sees a real error rather than a confusing downstream crash.
 
-  Wave 2 fills this in.
+  Validates KEY PRESENCE only — value types/ranges are NOT checked here
+  (record_trade does that for trade-shape; equity validation is at the
+  update_equity_history boundary per B-4). Narrow validation; one job.
+
+  Required top-level keys per STATE-01:
+    schema_version, account, last_run, positions, signals, trade_log,
+    equity_history, warnings (8 total).
+
+  Raises:
+    ValueError: with sorted list of missing keys for deterministic test
+                assertions and stable error messages.
   '''
-  raise NotImplementedError('Wave 2: implement state-shape validation (D-18)')
+  missing = _REQUIRED_STATE_KEYS - state.keys()
+  if missing:
+    raise ValueError(f'state missing required keys: {sorted(missing)}')
 
 # =========================================================================
 # Public API
@@ -197,49 +226,70 @@ def _validate_loaded_state(state: dict) -> None:
 def reset_state() -> dict:
   '''STATE-07 / D-01 / D-03: fresh state, $100k account, empty collections.
 
-  Wave 2 fills this in. See PATTERNS.md §reset_state canonical shape.
+  Each call returns a NEW dict (no shared mutable references) so that
+  mutating one returned state doesn't bleed into a future reset.
   '''
-  raise NotImplementedError('Wave 2: implement reset_state')
+  return {
+    'schema_version': STATE_SCHEMA_VERSION,
+    'account': INITIAL_ACCOUNT,
+    'last_run': None,
+    'positions': {                            # D-01: None = inactive
+      'SPI200': None,
+      'AUDUSD': None,
+    },
+    'signals': {                              # D-03: FLAT=0 init
+      'SPI200': 0,
+      'AUDUSD': 0,
+    },
+    'trade_log': [],
+    'equity_history': [],
+    'warnings': [],
+  }
 
 def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
   '''STATE-01 / STATE-03 / STATE-04 / D-18: load state.json; recover on corruption.
 
-  If path does not exist: returns a fresh state dict. The file is NOT
-  created on this call (B-3 — no side-effect on read; state_manager.py
-  never auto-saves on load). The orchestrator (Phase 4) must explicitly
-  call save_state(state) after load_state on first run to materialize
-  state.json. (Wave 2 will refactor the literal here to call reset_state().)
+  If path does not exist: returns reset_state() output (fresh state).
+    B-3: does NOT save the fresh state — orchestrator (Phase 4) must
+    explicitly call save_state to materialize state.json on first run.
+  On JSONDecodeError (D-05 — NARROW catch, NOT bare ValueError per Pitfall 4):
+    - backup file via _backup_corrupt (D-06 + B-1 path.name + B-2 microsecond ts)
+    - reinit via reset_state (STATE-07)
+    - append warning with source='state_manager' (D-07)
+    - save fresh state to path (so next run reads clean state.json)
+    - return fresh state
+  On successful parse:
+    - walk MIGRATIONS forward (STATE-04)
+    - run _validate_loaded_state (D-18 — raises ValueError on missing keys)
+    - return validated state
 
-  On JSONDecodeError (D-05): backup file (D-06 + B-1 + B-2), reinit, append
-  warning with source='state_manager' (D-07), save fresh state (this branch
-  DOES persist — recovery rewrites state.json), return it.
-    - Wave 1: corruption branch raises NotImplementedError('Wave 2: ...')
-    - Wave 2: implements the corruption recovery
-  On successful parse: walk MIGRATIONS forward (STATE-04), run
-  _validate_loaded_state (D-18 — raises ValueError on missing required
-  keys, Wave 2), and return.
+  Schema mismatches (raises by _migrate OR _validate_loaded_state)
+  PROPAGATE — those indicate code-vs-state divergence the operator should
+  know about (D-05 narrow definition; silently nuking state on a code-side
+  typo would mask bugs). The validator runs OUTSIDE the JSONDecodeError
+  try/except so its ValueError is not caught as corruption.
   '''
   if not path.exists():
-    # Wave 1: literal fresh-state shape (Wave 2 refactors to call reset_state()).
-    # B-3: do NOT save here — no side-effect on read; orchestrator owns
-    # file materialization via explicit save_state(state) on first run.
-    return {
-      'schema_version': STATE_SCHEMA_VERSION,
-      'account': INITIAL_ACCOUNT,
-      'last_run': None,
-      'positions': {'SPI200': None, 'AUDUSD': None},
-      'signals': {'SPI200': 0, 'AUDUSD': 0},
-      'trade_log': [],
-      'equity_history': [],
-      'warnings': [],
-    }
+    return reset_state()                  # B-3: no auto-save on missing file
   raw = path.read_bytes()
   try:
     state = json.loads(raw)
-  except json.JSONDecodeError as exc:
-    # Wave 2 implements: backup + reinit + warn (and that branch DOES save_state).
-    raise NotImplementedError('Wave 2: implement corruption recovery branch') from exc
-  return _migrate(state)
+  except json.JSONDecodeError:
+    if now is None:
+      now = datetime.now(UTC)
+    backup_name = _backup_corrupt(path, now)
+    state = reset_state()
+    state = append_warning(
+      state, 'state_manager',
+      f'recovered from corruption; backup at {backup_name}',
+      now=now,
+    )
+    save_state(state, path=path)
+    return state
+  # Happy path: migrate, then D-18 validate, then return
+  state = _migrate(state)
+  _validate_loaded_state(state)           # D-18: raises ValueError on missing keys
+  return state
 
 def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
   '''STATE-02 / D-08 (amended by D-17): atomic write of state to path.
@@ -260,17 +310,32 @@ def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
 def append_warning(state: dict, source: str, message: str, now=None) -> dict:
   '''D-09 / D-10 / D-11: append {date, source, message}; FIFO trim to MAX_WARNINGS.
 
-  Date format: ISO YYYY-MM-DD in AWST (Australia/Perth) per CLAUDE.md.
-  All subsystems route through this helper — state_manager is the SOLE
-  writer to state['warnings'] (D-10) to prevent schema drift.
+  Date format: ISO YYYY-MM-DD in AWST (Australia/Perth) per CLAUDE.md
+  "Times always AWST in user-facing output" (RESEARCH §Open Question 3 / A1).
 
-  MAX_WARNINGS rationale (B-5): conservative bound for v1 daily-cadence
-  (~5 months at 1/day); chronic high-warning regimes should bump the
-  constant in system_params.py rather than expanding the contract here.
+  State_manager is the SOLE writer to state['warnings'] (D-10). All other
+  subsystems must call this helper rather than directly appending.
 
-  Wave 2 fills this in. See PATTERNS.md §append_warning pattern.
+  `now` defaults to datetime.now(timezone.utc); tests inject a fixed UTC
+  datetime for determinism without pytest-freezer.
+
+  MAX_WARNINGS rationale (B-5 reviews-revision pass):
+    MAX_WARNINGS = 100 is intentionally conservative for v1's daily cadence
+    (~5 months of warnings at 1/day average). A bad-day loop generating
+    50+ warnings in one run still fits within the bound. Chronic
+    high-warning regimes (e.g., a bug emitting hundreds per day) should
+    bump MAX_WARNINGS in system_params.py rather than expanding the
+    contract here. The FIFO drop-oldest discipline ensures the bound
+    is best-effort history — operators see the most recent 100 events,
+    which is the actionable window for a daily-cadence system.
   '''
-  raise NotImplementedError('Wave 2: implement append_warning')
+  if now is None:
+    now = datetime.now(UTC)
+  today_awst = now.astimezone(_AWST).strftime('%Y-%m-%d')
+  entry = {'date': today_awst, 'source': source, 'message': message}
+  # FIFO trim: keep last (MAX_WARNINGS - 1) + new entry = MAX_WARNINGS total
+  state['warnings'] = state['warnings'][-(MAX_WARNINGS - 1):] + [entry]
+  return state
 
 def record_trade(state: dict, trade: dict) -> dict:
   '''STATE-05 / D-13 / D-14 / D-15 / D-16 / D-19 / D-20: record a closed trade.
