@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 1
 status: executing
-last_updated: "2026-04-21T01:21:56.195Z"
+last_updated: "2026-04-21T01:32:57.544Z"
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 11
-  completed_plans: 7
-  percent: 64
+  completed_plans: 8
+  percent: 73
 ---
 
 # STATE — Trading Signals
@@ -27,14 +27,14 @@ progress:
 ## Current Position
 
 Phase: 02 (Signal Engine — Sizing, Exits, Pyramiding) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 2
 - **Current Plan:** 1
 - **Total Plans:** 6
 - **Status:** Ready to execute
-- **Progress:** [██████░░░░] 64%
+- **Progress:** [███████░░░] 73%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -56,6 +56,7 @@ Plan: 2 of 5
 | Phase 01 P05 | 4m18s | 2 tasks | 2 files |
 | Phase 01 P06 | 7m6s | 2 tasks | 1 files |
 | Phase 02 P01 | 9m58s | 3 tasks | 7 files |
+| Phase 02 P02 | 6m34s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,8 @@ Plan: 2 of 5
 - Plan 01-06 closed Phase 1: TestDeterminism (19 tests) with oracle-anchored SHA256 (D-14), AST blocklist hex guard (REVIEWS STRONGLY RECOMMENDED), and tokenize-aware 2-space indent evidence check (REVIEWS POLISH). Two Rule-1 plan bugs fixed inline: (1) hash oracle not production because production has ~5e-14 drift from oracle snapshot; (2) indent check needed 2-space-presence evidence (not 4-space absence) since 2-level nesting legitimately has 4 leading spaces in 2-space style.
 - D-11 SPI mini $5/pt, $6 AUD RT propagated to SPEC.md, CLAUDE.md, system_params.py (operator confirmed)
 - system_params.py introduces FORBIDDEN_MODULES_STDLIB_ONLY to block numpy/pandas in Phase 2 pure-math hex (sizing_engine.py, system_params.py)
+- D-17 enforced: compute_unrealised_pnl takes explicit cost_aud_open (no multiplier-lookup coupling)
+- SIZE-05 no-floor confirmed: int() truncation returns 0 with size=0: warning when undersized
 
 ### Todos Carried Forward
 

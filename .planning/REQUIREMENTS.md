@@ -37,12 +37,18 @@ Fine granularity — each requirement is independently testable.
 
 ### Position Sizing
 
-- [ ] **SIZE-01**: `risk_pct` = 1.0% for LONG, 0.5% for SHORT
-- [ ] **SIZE-02**: `trail_mult` = 3.0 for LONG, 2.0 for SHORT
-- [ ] **SIZE-03**: `vol_scale = clip(0.12 / RVol, 0.3, 2.0)` (guard RVol ≤ 1e-9 as 2.0)
-- [ ] **SIZE-04**: `n_contracts = int((account × risk_pct / stop_dist) × vol_scale)` (no `max(1, …)` floor)
-- [ ] **SIZE-05**: If sized `n_contracts == 0`, skip the trade and surface a "size=0" warning in the email
-- [ ] **SIZE-06**: SPI multiplier $25/point, $30 AUD round-trip cost; AUD/USD $10,000 notional, $5 AUD round-trip cost
+- [x] **SIZE-01
+**: `risk_pct` = 1.0% for LONG, 0.5% for SHORT
+- [x] **SIZE-02
+**: `trail_mult` = 3.0 for LONG, 2.0 for SHORT
+- [x] **SIZE-03
+**: `vol_scale = clip(0.12 / RVol, 0.3, 2.0)` (guard RVol ≤ 1e-9 as 2.0)
+- [x] **SIZE-04
+**: `n_contracts = int((account × risk_pct / stop_dist) × vol_scale)` (no `max(1, …)` floor)
+- [x] **SIZE-05
+**: If sized `n_contracts == 0`, skip the trade and surface a "size=0" warning in the email
+- [x] **SIZE-06
+**: SPI multiplier $25/point, $30 AUD round-trip cost; AUD/USD $10,000 notional, $5 AUD round-trip cost
 
 ### Exit Rules
 
