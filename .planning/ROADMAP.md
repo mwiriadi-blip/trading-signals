@@ -50,11 +50,11 @@
   4. Given a gap-up fixture crossing both +1×ATR and +2×ATR in one bar, pyramid level advances by exactly 1 (not 2), and never exceeds level 2 (3 total contracts)
   5. ADX < 20 while in an active position produces an immediate-close decision regardless of trailing-stop state
 **Plans:** 5 plans
-- [ ] 02-01-PLAN.md — Wave 0 BLOCKING scaffold: SPEC.md/CLAUDE.md amendments (D-11/D-07), system_params.py + sizing_engine.py stubs + tests/test_sizing_engine.py skeleton, AST blocklist extension, Phase 1 constant migration
-- [ ] 02-02-PLAN.md — Wave 1: calc_position_size + compute_unrealised_pnl + TestSizing (SIZE-01..06)
-- [ ] 02-03-PLAN.md — Wave 2: get_trailing_stop + check_stop_hit + check_pyramid + TestExits + TestPyramid (EXIT-06..09, PYRA-01..05)
-- [ ] 02-04-PLAN.md — Wave 3: 15 JSON scenario fixtures + regenerator + TestTransitions + TestEdgeCases (EXIT-01..09, PYRA-05, SIZE-05 via scenarios)
-- [ ] 02-05-PLAN.md — Wave 4 (phase gate): step() orchestrator + position_after fixture re-emission + phase2_snapshot.json + TestStep + TestDeterminism extension (D-06)
+- [x] 02-01-PLAN.md — Wave 0 BLOCKING scaffold: SPEC.md/CLAUDE.md amendments (D-11/D-07), system_params.py + sizing_engine.py stubs + tests/test_sizing_engine.py skeleton, AST blocklist extension, Phase 1 constant migration
+- [x] 02-02-PLAN.md — Wave 1: calc_position_size + compute_unrealised_pnl + TestSizing (SIZE-01..06)
+- [x] 02-03-PLAN.md — Wave 2: get_trailing_stop + check_stop_hit + check_pyramid + TestExits + TestPyramid (EXIT-06..09, PYRA-01..05)
+- [x] 02-04-PLAN.md — Wave 3: 15 JSON scenario fixtures + regenerator + TestTransitions + TestEdgeCases (EXIT-01..09, PYRA-05, SIZE-05 via scenarios)
+- [x] 02-05-PLAN.md — Wave 4 (phase gate): step() orchestrator + position_after fixture re-emission + phase2_snapshot.json + TestStep + TestDeterminism extension (D-06)
 **UI hint**: no
 
 ### Phase 3: State Persistence with Recovery
