@@ -23,19 +23,18 @@ Defensive checks on every fetch (Pitfall 1 + Pitfall 2):
     so a typo in SYMBOLS cannot write empty fixtures that would silently
     pass Wave 1 happy-path tests against nothing).
 
-# NOTE (2026-04-22 revision): Wave 0 uses yf.Ticker directly because
-# data_fetcher.fetch_ohlcv is still a NotImplementedError stub. After
-# Wave 1 merges and fetch_ohlcv is production-ready, 04-02-PLAN.md Task 2
-# switches this script to import and call data_fetcher.fetch_ohlcv so
-# fixtures reflect the production code path (C-9 follow-up).
+# C-9 revision 2026-04-22 (applied in 04-02-PLAN.md Task 1, Wave 1):
+# regenerator now routes through data_fetcher.fetch_ohlcv so committed fixtures
+# reflect the production retry loop + empty-frame guard + column validation +
+# defensive OHLCV slice. Previously invoked the yfinance library directly.
 '''
 import sys
 from pathlib import Path
 
-import yfinance as yf
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+from data_fetcher import fetch_ohlcv  # noqa: E402, I001 — import after sys.path.insert for script-run resolution
 
 FIXTURES_DIR = ROOT / 'tests' / 'fixtures' / 'fetch'
 
@@ -46,31 +45,20 @@ SYMBOLS = [
 
 
 def fetch_one(symbol: str):
-  '''Fetch >= 400 bars of daily OHLCV directly from yfinance and slice defensively.
-
-  Wave 0 uses yf.Ticker(...).history(...) directly (see module C-9 NOTE).
-  Wave 1 switchover point lives in 04-02-PLAN.md Task 2.
+  '''C-9 revision 2026-04-22: route through production fetch_ohlcv so fixtures
+  reflect the Wave 1 retry loop + column validation + defensive OHLCV slice.
 
   Note (2026-04-22, Rule 3 deviation from 04-01-PLAN.md): the plan-specified
-  `period='400d'` returns ~399 bars for ^AXJO and ~395 bars for AUDUSD=X
-  (yfinance treats `period='Nd'` as calendar days, and weekends/holidays
-  are excluded from daily bars). We use `period='600d'` here to guarantee
-  `len(df) >= 400` — Pitfall 2 requires loud aborting on short fixtures so
-  a fixture that silently under-delivers is never committed. Production
-  `fetch_ohlcv(days=400)` (Wave 1) still uses `period='400d'` as specified;
-  the DATA-04 `len < 300 -> ShortFrameError` check there is tuned for that
-  reality. This regenerator over-fetches by design — more history never
-  harms the fixture's happy-path role.
+  `days=400` returns ~399 bars for ^AXJO and ~395 bars for AUDUSD=X (yfinance
+  treats `period='Nd'` as calendar days, and weekends/holidays are excluded
+  from daily bars). We pass `days=600` here to guarantee `len(df) >= 400` —
+  Pitfall 2 requires loud aborting on short fixtures so a fixture that silently
+  under-delivers is never committed. Production `fetch_ohlcv(days=400)` in
+  main.py still uses the default; the DATA-04 `len < 300 -> ShortFrameError`
+  check there is tuned for that reality. This regenerator over-fetches by
+  design — more history never harms the fixture's happy-path role.
   '''
-  ticker = yf.Ticker(symbol)
-  df = ticker.history(
-    period='600d',
-    interval='1d',
-    auto_adjust=True,
-    actions=False,
-    timeout=10,
-  )
-  df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+  df = fetch_ohlcv(symbol, days=600, retries=3, backoff_s=10.0)
   if len(df) < 400:
     raise RuntimeError(
       f'{symbol}: got {len(df)} bars, expected >= 400 '
