@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: Not started
 status: planning
-last_updated: "2026-04-20T23:59:19.284Z"
+last_updated: "2026-04-21T01:06:30.566Z"
 progress:
   total_phases: 8
   completed_phases: 1
@@ -116,7 +116,7 @@ None.
 ---
 *State initialised: 2026-04-20 at roadmap creation*
 
-**Planned Phase:** 02 (Signal Engine — Sizing, Exits, Pyramiding) — 5 plans — 2026-04-20T23:59:19.275Z
+**Planned Phase:** 02 (Signal Engine — Sizing, Exits, Pyramiding) — 5 plans — 2026-04-21T01:06:30.512Z
 
 **Plan 01-02 completed:** 2026-04-20T19:49:00Z — 3 tasks, 3 files created (tests/oracle/wilder.py, tests/oracle/mom_rvol.py, tests/oracle/test_oracle_self_consistency.py), 17 self-consistency tests passing, requirements SIG-01..SIG-04 marked complete.
 
