@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: Not started
-status: planning
-last_updated: "2026-04-21T01:06:30.566Z"
+current_plan: 1
+status: executing
+last_updated: "2026-04-21T01:21:56.195Z"
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 11
-  completed_plans: 6
-  percent: 55
+  completed_plans: 7
+  percent: 64
 ---
 
 # STATE — Trading Signals
@@ -22,16 +22,19 @@ progress:
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
 - **Core value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase --phase — 1
+- **Current focus:** Phase 02 — Signal Engine — Sizing, Exits, Pyramiding
 
 ## Current Position
 
+Phase: 02 (Signal Engine — Sizing, Exits, Pyramiding) — EXECUTING
+Plan: 2 of 5
+
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 2
-- **Current Plan:** Not started
+- **Current Plan:** 1
 - **Total Plans:** 6
-- **Status:** Ready to plan
-- **Progress:** [██████████] 100%
+- **Status:** Ready to execute
+- **Progress:** [██████░░░░] 64%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -52,6 +55,7 @@ progress:
 | Phase 01 P04 | 4min | 2 tasks | 2 files |
 | Phase 01 P05 | 4m18s | 2 tasks | 2 files |
 | Phase 01 P06 | 7m6s | 2 tasks | 1 files |
+| Phase 02 P01 | 9m58s | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -79,6 +83,8 @@ progress:
 - Plan 01-05: _make_single_bar_df helper lets threshold-equality tests bypass compute_indicators — tests isolate vote semantics without coupling to indicator math
 - Plan 01-05: per-function imports inside each test (mirror Plan 04 style) + ruff --fix I001 autofix applied as Rule-3 formatting-only deviation
 - Plan 01-06 closed Phase 1: TestDeterminism (19 tests) with oracle-anchored SHA256 (D-14), AST blocklist hex guard (REVIEWS STRONGLY RECOMMENDED), and tokenize-aware 2-space indent evidence check (REVIEWS POLISH). Two Rule-1 plan bugs fixed inline: (1) hash oracle not production because production has ~5e-14 drift from oracle snapshot; (2) indent check needed 2-space-presence evidence (not 4-space absence) since 2-level nesting legitimately has 4 leading spaces in 2-space style.
+- D-11 SPI mini $5/pt, $6 AUD RT propagated to SPEC.md, CLAUDE.md, system_params.py (operator confirmed)
+- system_params.py introduces FORBIDDEN_MODULES_STDLIB_ONLY to block numpy/pandas in Phase 2 pure-math hex (sizing_engine.py, system_params.py)
 
 ### Todos Carried Forward
 
