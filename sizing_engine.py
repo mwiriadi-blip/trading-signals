@@ -15,19 +15,19 @@ signal_engine. Must NOT import state_manager, notifier, dashboard, main, request
 datetime, os, or any I/O/network/clock module.
 '''
 import dataclasses
-import math  # noqa: F401 — used in implementation plans 02-02..02-05
+import math
 
 from signal_engine import FLAT, LONG, SHORT  # noqa: F401 — used in 02-02..02-05
 from system_params import (
   ADX_EXIT_GATE,  # noqa: F401 — used in step() 02-05
   MAX_PYRAMID_LEVEL,  # noqa: F401 — used in check_pyramid 02-03
-  RISK_PCT_LONG,  # noqa: F401 — used in calc_position_size 02-02
-  RISK_PCT_SHORT,  # noqa: F401 — used in calc_position_size 02-02
+  RISK_PCT_LONG,
+  RISK_PCT_SHORT,
   TRAIL_MULT_LONG,  # noqa: F401 — used in get_trailing_stop/check_stop_hit 02-03
   TRAIL_MULT_SHORT,  # noqa: F401 — used in get_trailing_stop/check_stop_hit 02-03
-  VOL_SCALE_MAX,  # noqa: F401 — used in calc_position_size 02-02
-  VOL_SCALE_MIN,  # noqa: F401 — used in calc_position_size 02-02
-  VOL_SCALE_TARGET,  # noqa: F401 — used in calc_position_size 02-02
+  VOL_SCALE_MAX,
+  VOL_SCALE_MIN,
+  VOL_SCALE_TARGET,
   Position,
 )
 
@@ -94,6 +94,23 @@ class StepResult:
 
 
 # =========================================================================
+# Private helpers
+# =========================================================================
+
+
+def _vol_scale(rvol: float) -> float:
+  '''SIZE-03: clip(VOL_SCALE_TARGET / rvol, VOL_SCALE_MIN, VOL_SCALE_MAX).
+
+  D-03: NaN rvol or rvol <= 1e-9 -> VOL_SCALE_MAX (2.0). Returning the ceiling on
+  degenerate input is the sizing-friendly choice — undersize is reflected in
+  n_contracts==0; oversize from a junk RVol would be more dangerous.
+  '''
+  if not math.isfinite(rvol) or rvol <= 1e-9:
+    return VOL_SCALE_MAX
+  return max(VOL_SCALE_MIN, min(VOL_SCALE_MAX, VOL_SCALE_TARGET / rvol))
+
+
+# =========================================================================
 # Public API — stubs (implementations land in Plans 02-02..02-05)
 # =========================================================================
 
@@ -105,17 +122,17 @@ def calc_position_size(
   rvol: float,
   multiplier: float,
 ) -> SizingDecision:
-  '''SIZE-01..05. ATR-based risk sizing with vol-targeting. No max(1,...) floor.
+  '''SIZE-01..05. ATR-based risk sizing with vol-targeting. No floor applied.
 
   risk_pct  = RISK_PCT_LONG (1%) for LONG, RISK_PCT_SHORT (0.5%) for SHORT.
   trail_mult = TRAIL_MULT_LONG (3.0) for LONG, TRAIL_MULT_SHORT (2.0) for SHORT.
   vol_scale  = clip(VOL_SCALE_TARGET / rvol, VOL_SCALE_MIN, VOL_SCALE_MAX).
   stop_dist  = trail_mult * atr * multiplier
   n_raw      = (account * risk_pct / stop_dist) * vol_scale
-  contracts  = int(n_raw)  -- no max(1,...) floor (SIZE-05, CLAUDE.md Operator Decisions)
+  contracts  = int(n_raw)  -- SIZE-05: 0 contracts skips + warns (no floor per operator)
 
   SIZE-03 NaN guard: if rvol is NaN, inf, or <= 1e-9, vol_scale = VOL_SCALE_MAX (2.0).
-  SIZE-05: if contracts == 0, returns SizingDecision(contracts=0, warning='size=0: ...').
+  SIZE-05: if contracts == 0, SizingDecision.warning is a 'size=0: ...' diagnostic string.
 
   Args:
     account:    current account equity in AUD
@@ -127,7 +144,37 @@ def calc_position_size(
   Returns:
     SizingDecision with contracts >= 0 and optional warning string.
   '''
-  raise NotImplementedError('calc_position_size: implement in Plan 02-02')
+  if signal == LONG:
+    risk_pct = RISK_PCT_LONG
+    trail_mult = TRAIL_MULT_LONG
+  elif signal == SHORT:
+    risk_pct = RISK_PCT_SHORT
+    trail_mult = TRAIL_MULT_SHORT
+  else:
+    # FLAT (0) is a caller error; surface as size=0 with a clear warning.
+    return SizingDecision(
+      contracts=0,
+      warning=f'size=0: signal={signal} is not LONG or SHORT — caller must not size FLAT',
+    )
+  vol_scale = _vol_scale(rvol)
+  stop_dist = trail_mult * atr * multiplier
+  if not math.isfinite(stop_dist) or stop_dist <= 0.0:
+    return SizingDecision(
+      contracts=0,
+      warning=(
+        f'size=0: stop_dist={stop_dist} is not positive-finite '
+        f'(atr={atr}, trail_mult={trail_mult}, multiplier={multiplier})'
+      ),
+    )
+  n_raw = (account * risk_pct / stop_dist) * vol_scale
+  n_contracts = int(n_raw)  # truncating int(); SIZE-05 handles contracts==0 (no floor)
+  warning: str | None = None
+  if n_contracts == 0:
+    warning = (
+      f'size=0: account={account:.2f}, atr={atr:.4f}, rvol={rvol:.4f}, '
+      f'vol_scale={vol_scale:.4f}, stop_dist={stop_dist:.4f}, n_raw={n_raw:.6f}'
+    )
+  return SizingDecision(contracts=n_contracts, warning=warning)
 
 
 def get_trailing_stop(
@@ -248,7 +295,11 @@ def compute_unrealised_pnl(
   Returns:
     Unrealised P&L in AUD (can be negative).
   '''
-  raise NotImplementedError('compute_unrealised_pnl: implement in Plan 02-02')
+  direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
+  price_diff = current_price - position['entry_price']
+  gross = direction_mult * price_diff * position['n_contracts'] * multiplier
+  open_cost = cost_aud_open * position['n_contracts']
+  return gross - open_cost
 
 
 def step(
