@@ -62,7 +62,7 @@ class PyramidDecision:
 class ClosedTrade:
   '''Realised trade record populated by step() on close/reversal.
 
-  exit_reason: one of 'signal_exit', 'signal_reversal', 'stop_hit', 'adx_exit'
+  exit_reason: one of 'flat_signal', 'signal_reversal', 'stop_hit', 'adx_exit'
   realised_pnl: gross PnL minus closing-half cost (close-half deducted here;
                 open-half was already deducted in compute_unrealised_pnl)
   '''
@@ -425,6 +425,12 @@ def step(
   NaN guard: if indicators dict contains NaN values, ADX exit uses math.isnan check;
   NaN ATR falls through to individual function NaN guards.
 
+  Data quality contract: step() does NOT guard against NaN bar['high'] or bar['low'].
+  If bar['high'] is NaN, max(prev_peak, NaN) returns NaN and peak_price is persisted as
+  NaN in the output position (same for bar['low'] / trough_price on SHORT). This is a
+  known gap — Phase 3's record_trade / data-fetch layer is responsible for ensuring
+  clean finite OHLC data before calling step().
+
   Args:
     position:      current open position or None (flat)
     bar:           today's OHLC dict: {'open': f, 'high': f, 'low': f, 'close': f}
@@ -500,7 +506,7 @@ def step(
       )
       current_position = None
       # forced_exit stays False: FLAT is voluntary; doesn't suppress next-bar entry.
-    elif new_signal != FLAT and (
+    elif (
       (current_position['direction'] == 'LONG' and new_signal == SHORT)
       or (current_position['direction'] == 'SHORT' and new_signal == LONG)
     ):
