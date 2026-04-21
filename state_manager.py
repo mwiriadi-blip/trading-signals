@@ -274,7 +274,15 @@ def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
   raw = path.read_bytes()
   try:
     state = json.loads(raw)
-  except json.JSONDecodeError:
+  except (json.JSONDecodeError, UnicodeDecodeError):
+    # D-05 narrow catch (Pitfall 4): two cases represent 'bytes on disk are
+    # not parseable JSON':
+    #   - JSONDecodeError: syntactically invalid JSON (e.g., truncated braces)
+    #   - UnicodeDecodeError: bytes aren't decodable as any JSON-supported
+    #     encoding (e.g., b'\x00\xff\x00...' which json.loads attempts to
+    #     autodetect as UTF-16 and fails). Both are ValueError subclasses but
+    #     NEITHER is bare ValueError — Pitfall 4 (bare ValueError masking
+    #     non-corruption bugs like schema mismatch) is still enforced.
     if now is None:
       now = datetime.now(UTC)
     backup_name = _backup_corrupt(path, now)
