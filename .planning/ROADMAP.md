@@ -67,7 +67,11 @@
   3. A deliberately corrupted `state.json` is moved to `state.json.corrupt.<timestamp>` and a fresh state is written, with no exception propagated to the caller
   4. `record_trade(state, trade)` appends to `trade_log` and adjusts `account` consistent with the trade P&L; `update_equity_history` appends `{date, equity}` where equity = account + sum(unrealised)
   5. `reset_state()` reinitialises account to $100,000 with empty positions, trades, and history, and passes the schema-version migration hook (no-op at v1)
-**Plans**: TBD
+**Plans:** 4 plans
+- [ ] 03-01-PLAN.md — Wave 0 BLOCKING scaffold: system_params.py constants (INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE), state_manager.py + tests/test_state_manager.py stubs, AST blocklist extension for I/O hex
+- [ ] 03-02-PLAN.md — Wave 1: _atomic_write + save_state + _migrate + happy-path load_state; TestLoadSave + TestAtomicity + TestSchemaVersion (STATE-02, STATE-04)
+- [ ] 03-03-PLAN.md — Wave 2: reset_state + corruption recovery + append_warning; TestReset + TestCorruptionRecovery + TestWarnings (STATE-01, STATE-03, STATE-07)
+- [ ] 03-04-PLAN.md — Wave 3 (phase gate): _validate_trade + record_trade + update_equity_history; TestRecordTrade (incl. CRITICAL Phase 4 boundary AC) + TestEquityHistory (STATE-05, STATE-06)
 **UI hint**: no
 
 ### Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI
@@ -157,7 +161,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 |-------|----------------|--------|-----------|
 | 1. Signal Engine Core — Indicators & Vote | 6/6 | Complete    | 2026-04-20 |
 | 2. Signal Engine — Sizing, Exits, Pyramiding | 0/5 | Planned | - |
-| 3. State Persistence with Recovery | 0/0 | Not started | - |
+| 3. State Persistence with Recovery | 0/4 | Planned | - |
 | 4. End-to-End Skeleton — Fetch + Orchestrator + CLI | 0/0 | Not started | - |
 | 5. Dashboard | 0/0 | Not started | - |
 | 6. Email Notification | 0/0 | Not started | - |
