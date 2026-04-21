@@ -2,6 +2,7 @@
 
 **Phase:** 04 — End-to-End Skeleton — Fetch + Orchestrator + CLI
 **Created:** 2026-04-21
+**Amended:** 2026-04-22 (D-01 timezone wording — per Phase 4 cross-AI review 04-REVIEWS.md C-3)
 **Discuss mode:** discuss
 **Goal (from ROADMAP.md):** Wire signal_engine, sizing_engine, and state_manager behind a real yfinance fetch. `python main.py --once` reads Yahoo, computes signals for `^AXJO` and `AUDUSD=X`, updates state, prints a structured console summary. No email, no dashboard, no schedule loop yet.
 
@@ -56,9 +57,9 @@ No pending todos matched Phase 4 scope — scope is tightly constrained by ROADM
 ## Fetch isolation & test strategy
 
 - **D-01: New module `data_fetcher.py` at repo root owns all yfinance I/O.**
-  Public API: `fetch_ohlcv(symbol: str, days: int = 400, retries: int = 3, backoff_s: float = 10.0) -> pd.DataFrame`. Returns a DataFrame with columns `[Open, High, Low, Close, Volume]` and a DatetimeIndex in Australia/Perth. Raises `DataFetchError` (custom exception) after retries exhaust.
+  Public API: `fetch_ohlcv(symbol: str, days: int = 400, retries: int = 3, backoff_s: float = 10.0) -> pd.DataFrame`. Returns a DataFrame with columns `[Open, High, Low, Close, Volume]` and a DatetimeIndex **preserved as returned by yfinance (exchange-local tz — `Australia/Sydney` for `^AXJO`, `Europe/London` for `AUDUSD=X`). NO timezone conversion is performed inside `fetch_ohlcv`.** `signal_as_of` is derived downstream in `main.run_daily_check` via `df.index[-1].strftime('%Y-%m-%d')` (which drops the tz) — the resulting string is a market-day calendar label, not a wall-clock timestamp. This is consistent with D-13 (signal_as_of semantics) and 04-RESEARCH.md §Pitfall 3 (tz-conversion across exchanges shifts day boundaries and fires false stale warnings). Raises `DataFetchError` (custom exception) after retries exhaust.
   `data_fetcher.py` is the new I/O hex (analogous to `state_manager.py`). It imports `yfinance`, `requests` (for any bare HTTP fallback), `time` (for sleep), `pandas` (DataFrame), and `system_params` (constants). It MUST NOT import `signal_engine`, `sizing_engine`, `state_manager`, `main`, or `notifier`. The `TestDeterminism::test_forbidden_imports_absent` AST guard in `tests/test_signal_engine.py` gains a `FORBIDDEN_MODULES_DATA_FETCHER` entry covering this.
-  Rationale: matches Phase 3 scaffolding pattern (state_manager.py has same hex-lite stance with its own allow-list). Keeps Phase 4 orchestrator imports clean and gives Phase 7 scheduler a pre-built fetch entry point.
+  Rationale: matches Phase 3 scaffolding pattern (state_manager.py has same hex-lite stance with its own allow-list). Keeps Phase 4 orchestrator imports clean and gives Phase 7 scheduler a pre-built fetch entry point. **Amendment 2026-04-22 (per cross-AI review C-3):** original wording said "DatetimeIndex in Australia/Perth" — amended to the exchange-local-tz semantics above so that D-01 is internally consistent with RESEARCH + D-13. `run_date` (AWST wall-clock, computed via `datetime.now(ZoneInfo('Australia/Perth'))` in `main._compute_run_date`) remains the ONE AWST-anchored timestamp in the run; `signal_as_of` is orthogonal and market-local.
 
 - **D-02: Hybrid test strategy — recorded JSON fixtures + hand-built DataFrames.**
   Canonical happy-path fixture: one committed JSON per instrument at `tests/fixtures/fetch/{symbol_slug}_400d.json` (e.g. `axjo_400d.json`, `audusd_400d.json`) captured by a manually-run `tests/regenerate_fetch_fixtures.py` (mirror of Phase 1's `regenerate_goldens.py`). These are used by one integration-style happy-path test per instrument.
@@ -130,6 +131,8 @@ No pending todos matched Phase 4 scope — scope is tightly constrained by ROADM
   8. `state_manager.save_state(state)` (atomic). Log `[State] state.json saved (account=$X, trades=N, positions=M)`.
   9. Print run summary footer (D-14).
 
+  **AC-1 note (amended 2026-04-22 per cross-AI review):** Inside step 3, the ordering of position-dict mutation (step 3.j) and `record_trade` call (step 3.k) MUST be: call `record_trade` FIRST (which internally sets `state['positions'][instrument] = None` as part of atomically closing the trade), THEN assign `result.position_after` to `state['positions'][state_key]`. This prevents signal-reversal clobber: on a LONG→SHORT reversal `record_trade` would otherwise wipe the freshly-assigned SHORT position. See 04-03-PLAN.md Task 1 for the canonical implementation ordering.
+
   Rationale: one atomic save = all-or-nothing semantics. If anything raises between steps 1–6, state.json is never touched (matches --test read-only guarantee and the "never half-persist" rule). Aligns with Phase 3 D-04 atomicity posture. No new transactional machinery needed — the existing `save_state` call is the commit point.
 
 - **D-12: `main.py` translates `StepResult.closed_trade` → `record_trade` dict. Neither engine imports the other.**
@@ -137,7 +140,7 @@ No pending todos matched Phase 4 scope — scope is tightly constrained by ROADM
   Rationale: preserves hex-lite boundaries (sizing_engine doesn't know state_manager's schema; state_manager doesn't know sizing_engine's dataclasses). Only the orchestrator sees both. Matches Phase 2 D-02 spirit: cross-module translation stays in main.py.
 
 - **D-13: `signal_as_of` is derived from `df.index[-1]` (last-bar date) and stored as ISO `YYYY-MM-DD` string.**
-  Source of truth: `df.index[-1].strftime('%Y-%m-%d')` where `df.index` is a pandas DatetimeIndex. No timezone conversion — use the date component of the last bar as-returned by yfinance. `run_date` is separately computed as `datetime.now(pytz.timezone('Australia/Perth'))`. Both are logged.
+  Source of truth: `df.index[-1].strftime('%Y-%m-%d')` where `df.index` is a pandas DatetimeIndex (exchange-local tz preserved — see D-01). No timezone conversion — use the date component of the last bar as-returned by yfinance. `run_date` is separately computed as `datetime.now(pytz.timezone('Australia/Perth'))`. Both are logged.
   Rationale: yfinance returns bar dates in exchange-local timezone by default; converting to AWST would shift some bar-dates across day boundaries (e.g. a 17:00 EDT Friday AUDUSD bar becomes Saturday in AWST). The bar date is a calendar identifier for the market day, not a timestamp — keep it as-is.
 
 - **D-14: Per-instrument log block + run-summary footer, plain text with `[Prefix]` convention.**

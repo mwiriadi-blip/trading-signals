@@ -1,6 +1,7 @@
 # Roadmap: Trading Signals — SPI 200 & AUD/USD Mechanical System
 
 **Created:** 2026-04-20
+**Amended:** 2026-04-22 (Phase 4 SC-5 wording — per Phase 4 cross-AI review 04-REVIEWS.md C-1)
 **Granularity:** fine
 **Parallelization:** true
 **Coverage:** 78/78 v1 requirements mapped
@@ -83,11 +84,11 @@
   2. A short/empty frame (len < 300) hard-fails the run — no state written, error logged, exit non-zero; stale last-bar is logged as a warning but not fatal
   3. `signal_as_of` (last data-bar date) and `run_date` (Perth clock-now) are both logged on every run and never substituted for each other
   4. `python main.py --test` produces the full computed summary and leaves `state.json` mtime unchanged (structurally separated compute vs persist)
-  5. `python main.py --reset` reinitialises state after confirmation; `python main.py --once` exits cleanly for GHA use; default `python main.py` runs immediately and enters the schedule loop
+  5. `python main.py --reset` reinitialises state after confirmation; `python main.py --once` exits cleanly for GHA use; default `python main.py` runs once and exits in Phase 4 (schedule-loop wiring lands in Phase 7 per SCHED-01/02; `--force-email` and `--test`-email are stubbed in Phase 4 and wired in Phase 6 per NOTF-01)
 **Plans:** 4 plans
-- [ ] 04-01-PLAN.md — Wave 0 BLOCKING scaffold: data_fetcher.py + main.py stubs, tests/test_data_fetcher.py + tests/test_main.py skeletons, tests/regenerate_fetch_fixtures.py + committed JSON fixtures, AST blocklist extension, pytest-freezer pin
-- [ ] 04-02-PLAN.md — Wave 1: data_fetcher.fetch_ohlcv with yfinance retry loop + TestFetch + TestColumnShape (DATA-01/02/03)
-- [ ] 04-03-PLAN.md — Wave 2: run_daily_check D-11 sequence + _closed_trade_to_record + D-08 backward-compat + TestOrchestrator happy-path + TestCLI smoke tests (DATA-04/06, CLI-04/05, ERR-06, D-08/D-12)
+- [ ] 04-01-PLAN.md — Wave 0 BLOCKING scaffold: data_fetcher.py + main.py stubs, tests/test_data_fetcher.py + tests/test_main.py skeletons, tests/regenerate_fetch_fixtures.py + committed JSON fixtures, AST blocklist extension, pytest-freezer pin, REQUIREMENTS.md + ROADMAP.md amendments per Phase 4 cross-AI review
+- [ ] 04-02-PLAN.md — Wave 1: data_fetcher.fetch_ohlcv with yfinance retry loop + TestFetch + TestColumnShape (DATA-01/02/03) + TestColumnShape missing-required-columns test
+- [ ] 04-03-PLAN.md — Wave 2: run_daily_check D-11 sequence + _closed_trade_to_record + D-08 backward-compat + TestOrchestrator happy-path + TestCLI smoke tests (DATA-04/06, CLI-04/05, ERR-06, D-08/D-12, reversal-ordering AC-1)
 - [ ] 04-04-PLAN.md — Wave 3 (PHASE GATE): top-level exception boundary + --reset confirmation + --force-email stub + DATA-05 stale-bar detection + TestCLI CLI-01/02/03 + TestOrchestrator DATA-05/ERR-01 + TestLoggerConfig (Pitfall 4)
 **UI hint**: no
 
@@ -105,7 +106,7 @@
 **UI hint**: no
 
 ### Phase 6: Email Notification
-**Goal**: Send a daily Resend email with signal status, positions, P&L, and an ACTION REQUIRED block when any signal has changed — mobile-responsive, inline-CSS, escaped values, and graceful degradation when Resend is unavailable.
+**Goal**: Send a daily Resend email with signal status, positions, P&L, and an ACTION REQUIRED block when any signal has changed — mobile-responsive, inline-CSS, escaped values, and graceful degradation when Resend is unavailable. Also replaces the Phase 4 `--test` and `--force-email` log-line stubs with real Resend dispatch (CLI-01 `[TEST]`-prefixed email + CLI-03 today's email fed by fresh `run_daily_check` output).
 **Depends on**: Phase 4 (needs state + signals to report)
 **Requirements**: NOTF-01, NOTF-02, NOTF-03, NOTF-04, NOTF-05, NOTF-06, NOTF-07, NOTF-08, NOTF-09
 **Success Criteria** (what must be TRUE):
@@ -114,16 +115,18 @@
   3. When any signal differs from the previous run's, an ACTION REQUIRED block with red border appears at the top of the body
   4. All user-visible values (numbers, dates, position fields) are HTML-escaped; no unescaped `${…}` interpolation present
   5. Missing `RESEND_API_KEY` writes `last_email.html` + console output and exits the notifier cleanly; a 4xx/5xx from Resend logs an error but does not crash the run
+  6. `--force-email` dispatch (CLI-03 Phase 6 completion): `main()` replaces the Phase 4 stub with `rc = run_daily_check(args); if rc == 0: notifier.send_daily_email(...); return rc` — same fresh-compute-then-dispatch pattern as `--once`, but without persisting state when combined with `--test`.
+  7. `--test` email dispatch (CLI-01 Phase 6 completion): same fresh-compute-then-dispatch pattern with a `[TEST]`-prefixed subject; the Phase 4 structural read-only guarantee on `state.json` (no mutation under `--test`) remains intact.
 **Plans**: TBD
 **UI hint**: no
 
 ### Phase 7: Scheduler + GitHub Actions Deployment
-**Goal**: Put the system on autopilot — a GitHub Actions cron workflow runs the app every weekday at 00:00 UTC (08:00 AWST) and commits `state.json` back to the repo; the `schedule` loop path is preserved for Replit/local dev with a weekday gate inside `run_daily_check`.
+**Goal**: Put the system on autopilot — a GitHub Actions cron workflow runs the app every weekday at 00:00 UTC (08:00 AWST) and commits `state.json` back to the repo; the `schedule` loop path is preserved for Replit/local dev with a weekday gate inside `run_daily_check`. Also flips the Phase 4 default-mode behaviour from one-shot to run-once-then-enter-schedule-loop (CLI-05 Phase 7 completion).
 **Depends on**: Phase 6 (needs full outputs working before lights-out)
 **Requirements**: SCHED-01, SCHED-02, SCHED-03, SCHED-04, SCHED-05, SCHED-06, SCHED-07
 **Success Criteria** (what must be TRUE):
   1. `.github/workflows/daily.yml` runs on `cron: '0 0 * * 1-5'` with `permissions: contents: write`, a `concurrency: trading-signals` block, `actions/checkout@v4`, `actions/setup-python@v5`, and `stefanzweifel/git-auto-commit-action@v5` to commit `state.json`
-  2. The default `python main.py` entry point runs an immediate first check then enters the `schedule` loop firing at 00:00 UTC weekdays; `run_daily_check` has an internal weekday gate that no-ops on Sat/Sun even if invoked
+  2. The default `python main.py` entry point runs an immediate first check then enters the `schedule` loop firing at 00:00 UTC weekdays; `run_daily_check` has an internal weekday gate that no-ops on Sat/Sun even if invoked (replaces the Phase 4 default-mode == `--once` behaviour per CLI-05)
   3. `python main.py --once` runs exactly one check and exits cleanly with non-zero on failure — the GHA workflow uses this mode
   4. All secrets (`RESEND_API_KEY`, optional `ANTHROPIC_API_KEY`) are loaded from env vars with `python-dotenv` locally and GitHub Secrets / Replit Secrets in deploy — never committed
   5. Deployment guide documents GitHub Actions as the recommended primary path with Replit Reserved VM + Always On as the documented alternative including its filesystem-persistence caveat
@@ -178,6 +181,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 - **Mapped to phases:** 78/78
 - **Orphans:** 0
 - **Duplicates:** 0
+- **Split requirements (2026-04-22 amendment):** CLI-01 (Phase 4 structural + Phase 6 email), CLI-03 (Phase 4 stub + Phase 6 notifier), CLI-05 (Phase 4 one-shot default + Phase 7 schedule loop) — tracked in REQUIREMENTS.md Traceability table with split phase labels.
 
 ## Operator Decisions Baked In
 
@@ -190,4 +194,5 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 
 ---
 *Roadmap created: 2026-04-20*
+*Amended 2026-04-22: Phase 4 SC-5 wording — default mode is one-shot in Phase 4; schedule-loop wiring lands in Phase 7 (per Phase 4 cross-AI review 04-REVIEWS.md C-1). Phase 6 goal + SC-6/SC-7 extended to cover CLI-01/CLI-03 Resend dispatch. Phase 7 goal + SC-2 extended to cover CLI-05 default-mode flip.*
 *Ready for: `/gsd-plan-phase 1` (or parallel `/gsd-plan-phase 3`)*

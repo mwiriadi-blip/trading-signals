@@ -1,6 +1,7 @@
 # Requirements: Trading Signals — SPI 200 & AUD/USD Mechanical System
 
 **Defined:** 2026-04-20
+**Amended:** 2026-04-22 (CLI-01, CLI-03, CLI-05 Phase 4 ↔ Phase 6/7 split — per Phase 4 cross-AI review 04-REVIEWS.md C-1)
 **Core Value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 
 ## v1 Requirements
@@ -131,11 +132,11 @@ Fine granularity — each requirement is independently testable.
 
 ### CLI Flags
 
-- [ ] **CLI-01**: `python main.py --test` runs a full signal check, prints the report, sends a `[TEST]`-prefixed email, and does NOT mutate `state.json` (enforced by structurally separating compute and persist)
+- [ ] **CLI-01**: `python main.py --test` runs a full signal check, prints the report, sends a `[TEST]`-prefixed email, and does NOT mutate `state.json` (enforced by structurally separating compute and persist). **Phase 4 lands the compute + structural read-only guarantee + a `[Email] --test` stub log line; the actual `[TEST]`-prefixed Resend send is wired in Phase 6 (NOTF-01 dispatch point).** The structural read-only guarantee (no `state.json` mutation on `--test`) is satisfied in Phase 4 and does not change in Phase 6.
 - [ ] **CLI-02**: `python main.py --reset` reinitialises `state.json` after confirmation
-- [ ] **CLI-03**: `python main.py --force-email` sends today's email immediately regardless of schedule
+- [ ] **CLI-03**: `python main.py --force-email` sends today's email immediately regardless of schedule. **Phase 4 parses the flag and logs `[Email] --force-email received; notifier wiring arrives in Phase 6` (stub), honouring the `--test` + `--force-email` combination by running `run_daily_check` first without persist then emitting the stub; Phase 6 replaces the stub with `notifier.send_daily_email()` fed by fresh computed state (same compute path as `--once`).**
 - [ ] **CLI-04**: `python main.py --once` runs one daily check for GitHub Actions mode
-- [ ] **CLI-05**: Default invocation (`python main.py`) runs immediately and then enters the schedule loop
+- [ ] **CLI-05**: Default invocation (`python main.py`) runs immediately and then enters the schedule loop. **Phase 4 lands default-mode == `--once` (runs once and exits; logs `[Sched] One-shot mode (scheduler wiring lands in Phase 7)`); Phase 7 flips default to run-once-then-enter-schedule-loop via the `schedule` library per SCHED-01/02.**
 
 ### Error Handling & Observability
 
@@ -258,11 +259,11 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | SCHED-05 | Phase 7 | Pending |
 | SCHED-06 | Phase 7 | Pending |
 | SCHED-07 | Phase 7 | Pending |
-| CLI-01 | Phase 4 | Pending |
+| CLI-01 | Phase 4 (compute + structural read-only) + Phase 6 (`[TEST]` email wiring) | Pending |
 | CLI-02 | Phase 4 | Pending |
-| CLI-03 | Phase 4 | Pending |
+| CLI-03 | Phase 4 (stub + `--test` combo) + Phase 6 (notifier wiring) | Pending |
 | CLI-04 | Phase 4 | Pending |
-| CLI-05 | Phase 4 | Pending |
+| CLI-05 | Phase 4 (default == one-shot) + Phase 7 (schedule-loop wiring) | Pending |
 | ERR-01 | Phase 4 | Pending |
 | ERR-02 | Phase 8 | Pending |
 | ERR-03 | Phase 8 | Pending |
@@ -274,6 +275,7 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 - v1 requirements: 78 total (DATA 6 + SIG 8 + SIZE 6 + EXIT 9 + PYRA 5 + STATE 7 + NOTF 10 + DASH 9 + SCHED 7 + CLI 5 + ERR 6)
 - Mapped to phases: 78
 - Unmapped: 0
+- Note (2026-04-22): CLI-01, CLI-03, and CLI-05 are split across phases — Phase 4 owns the CLI surface + compute + structural guarantees; Phase 6 owns Resend dispatch (CLI-01 `[TEST]` send + CLI-03 today's email); Phase 7 owns the schedule loop (CLI-05 default-mode loop). Each split is tracked in the per-phase requirement lists; coverage is still 1:1 at the phase-requirement-closure level.
 
 **Per-phase counts:**
 - Phase 1 (Signal Engine Core): 8 reqs
@@ -289,3 +291,4 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 ---
 *Requirements defined: 2026-04-20*
 *Traceability populated: 2026-04-20 (roadmap creation)*
+*Amended 2026-04-22: CLI-01 / CLI-03 / CLI-05 Phase 4 ↔ Phase 6/7 split per Phase 4 cross-AI review (04-REVIEWS.md C-1) — Phase 4 owns CLI surface, compute, and structural read-only guarantee; Phase 6 wires email dispatch; Phase 7 wires schedule loop.*
