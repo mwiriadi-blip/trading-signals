@@ -1,0 +1,17 @@
+{
+  "adx_drop_below_20_while_in_trade": "592bf395a39eccc1bab549258bbd72bcf73ca96147369d2cd0f54d3d54189a23",
+  "long_gap_through_stop": "ed454290700333f2e4a1c081377938542791df0a5c9fce77c84c089ac2010a4d",
+  "long_trail_stop_hit_intraday_low": "1ecb7a91efc4c85095dfa7d3606699c98199ddab0d90c33f038868b55ed0b011",
+  "n_contracts_zero_skip_warning": "3288fba388e897e3f3d0e34e4086b26f6a1e8ada42c7c1efb1b20c943cebb75f",
+  "pyramid_gap_crosses_both_levels_caps_at_1": "c5154ffc86a258e41c1ddafaf07e51b0f7462a47d48cdc3704ae64f94c7ffd67",
+  "short_trail_stop_hit_intraday_high": "314b7b9f182553f3afdfc4ba0d7f79e44a1095dd22fdb680f3511f8342c8f60f",
+  "transition_long_to_flat": "206174ab3e5a548e3e8d01a6695e64d110e2dc4316069adb497f577bb0fc840f",
+  "transition_long_to_long": "56fe259dd71912e535678b64a9766c6cc0482f36836018e0d4ab63a2ec7781d3",
+  "transition_long_to_short": "af2db5aca4a3a3faaec6533b5831fa72be3dea4fc6e55c79839aaf7c874a61d8",
+  "transition_none_to_flat": "8505ee4e39477ffabd0332b028ee5a5c72fcaaf0c642a6291e0208f21fa9909f",
+  "transition_none_to_long": "26b43903718db5017e897e988c5bc57a3b7cad894c82eb4c9f67a318be2e0c7d",
+  "transition_none_to_short": "5707412e95a8613086dda7562aac86ef1ab459299ad81a647ebd526fc0d779c7",
+  "transition_short_to_flat": "68080d7e65e08345ae622bc3d58fb741277dfa10f9f9fd0d7a0501a31c88be06",
+  "transition_short_to_long": "3e230e995c02d36ec44f8325e21921d0b6d04e493795a4a0b6492379a468d96e",
+  "transition_short_to_short": "ea6d8a8958b2e6f60ed30abec5d971781d3cb61dddc5e3eb596d15e4b0c5948d"
+}

@@ -22,6 +22,7 @@ from sizing_engine import (
   check_stop_hit,
   compute_unrealised_pnl,
   get_trailing_stop,
+  step,
 )
 from system_params import Position
 
@@ -831,4 +832,344 @@ class TestEdgeCases:
     assert actual.contracts == 0
     assert actual.warning is not None and actual.warning.startswith('size=0:'), (
       actual.warning
+    )
+
+
+# =========================================================================
+# TestStep — D-10 step() integration: 15 parametrized fixtures + named
+#            invariant tests for D-16/D-17/D-18/D-19/B-5/B-6/A2.
+# =========================================================================
+
+ALL_PHASE2_FIXTURES = TRANSITION_FIXTURES + EDGE_CASE_FIXTURES
+
+
+def _call_step(fix: dict):
+  '''Call step() with inputs from a fixture dict, return StepResult.'''
+  return step(
+    position=fix['prev_position'],
+    bar=fix['bar'],
+    indicators=fix['indicators'],
+    old_signal=fix['old_signal'],
+    new_signal=fix['new_signal'],
+    account=fix['account'],
+    multiplier=fix['multiplier'],
+    cost_aud_open=fix['instrument_cost_aud'] / 2.0,
+  )
+
+
+class TestStep:
+  '''D-10/D-17 step() orchestrator integration tests.
+
+  Parametrized over all 15 Phase 2 fixtures (D-14); each fixture's
+  expected.position_after was populated by the inline _step() oracle in
+  tests/regenerate_phase2_fixtures.py (plan 02-05 Task 2, B-4 dual-maintenance).
+
+  Named tests assert specific invariants per the reviews-revision decisions:
+    D-16: peak/trough update before exit logic; input position NOT mutated
+    D-18: pyramid add applied to position_after (n_contracts + pyramid_level updated)
+    D-19: reversal sizing uses INPUT account (Phase 2 does not mutate account)
+    B-5: stop-hit fixtures fill at stop level, not bar.close
+    B-6: unrealised_pnl computed AFTER pyramid add (post-mutation state)
+    A2:  no new entry on forced-exit day (ADX exit or stop hit)
+  '''
+
+  @pytest.mark.parametrize('fixture_name', ALL_PHASE2_FIXTURES)
+  def test_step_position_after_matches_fixture(self, fixture_name: str) -> None:
+    '''Integration: step() position_after must match expected.position_after for all 15 fixtures.
+
+    This is the primary TestStep gate: if step() misimplements any phase
+    (D-16/D-18/D-19/B-5/A2), the position_after mismatch will surface here.
+    '''
+    fix = _load_phase2_fixture(fixture_name)
+    result = _call_step(fix)
+    exp_pos = fix['expected']['position_after']
+    if exp_pos is None:
+      assert result.position_after is None, (
+        f'{fixture_name}: expected position_after=None, got {result.position_after}'
+      )
+    else:
+      assert result.position_after is not None, (
+        f'{fixture_name}: expected non-null position_after but got None'
+      )
+      for field, expected_val in exp_pos.items():
+        actual_val = result.position_after[field]
+        if isinstance(expected_val, float):
+          assert abs(actual_val - expected_val) < 1e-9, (
+            f'{fixture_name} position_after.{field}: {actual_val} != {expected_val}'
+          )
+        else:
+          assert actual_val == expected_val, (
+            f'{fixture_name} position_after.{field}: {actual_val!r} != {expected_val!r}'
+          )
+
+  @pytest.mark.parametrize('fixture_name', ALL_PHASE2_FIXTURES)
+  def test_step_no_notimplementederror(self, fixture_name: str) -> None:
+    '''step() must not raise NotImplementedError on any of the 15 fixtures.
+    Catches the stub-not-removed regression.'''
+    fix = _load_phase2_fixture(fixture_name)
+    _call_step(fix)  # must not raise
+
+  # --- D-16: input position not mutated; peak_price updated on copy ---
+
+  def test_step_d16_updates_peak_on_copy_not_input(self) -> None:
+    '''D-16: step() updates peak_price on a shallow copy, NOT on the input dict.
+
+    The input position must be unchanged after step() returns. The output
+    position_after reflects the updated peak (bar.high > prev peak).
+    '''
+    fix = _load_phase2_fixture('transition_long_to_long')
+    prev = fix['prev_position']
+    original_peak = prev['peak_price']  # 7050.0
+    result = _call_step(fix)
+    # Input not mutated.
+    assert prev['peak_price'] == original_peak, (
+      f'D-16 violation: input peak_price mutated from {original_peak} '
+      f'to {prev["peak_price"]}'
+    )
+    # Output peak reflects bar.high = 7120.
+    assert result.position_after is not None, 'position_after must be non-null (LONG hold)'
+    assert result.position_after['peak_price'] == fix['bar']['high'], (
+      f'D-16: position_after.peak_price {result.position_after["peak_price"]} '
+      f'should be bar.high {fix["bar"]["high"]}'
+    )
+
+  # --- D-18: pyramid add applied to position_after ---
+
+  def test_step_d18_pyramid_add_applied_to_position_after(self) -> None:
+    '''D-18: after pyramid_decision.add_contracts=1, position_after.n_contracts
+    must equal prev.n_contracts + 1 and position_after.pyramid_level must equal
+    pyramid_decision.new_level.
+
+    Gap fixture: prev.n_contracts=2, pyramid fires -> position_after.n_contracts=3,
+    pyramid_level=1.
+    '''
+    fix = _load_phase2_fixture('pyramid_gap_crosses_both_levels_caps_at_1')
+    prev_n = fix['prev_position']['n_contracts']  # 2
+    result = _call_step(fix)
+    assert result.pyramid_decision is not None, (
+      'D-18: pyramid_decision must be populated for this fixture'
+    )
+    assert result.pyramid_decision.add_contracts == 1, (
+      f'D-12 violation: expected add_contracts=1, got {result.pyramid_decision.add_contracts}'
+    )
+    assert result.position_after is not None, (
+      'D-18: position_after must be non-null when pyramid fires on a held position'
+    )
+    assert result.position_after['n_contracts'] == prev_n + 1, (
+      f'D-18: n_contracts should be {prev_n + 1}, '
+      f'got {result.position_after["n_contracts"]}'
+    )
+    assert result.position_after['pyramid_level'] == result.pyramid_decision.new_level, (
+      f'D-18: pyramid_level {result.position_after["pyramid_level"]} '
+      f'!= pyramid_decision.new_level {result.pyramid_decision.new_level}'
+    )
+
+  # --- D-19: reversal uses INPUT account ---
+
+  def test_step_d19_reversal_uses_input_account(self) -> None:
+    '''D-19: step() sizes the new entry leg with the INPUT account — no mutation.
+
+    The StepResult does not carry an account_after field; Phase 3 owns account
+    state. Using the LONG->SHORT fixture: sizing uses account=100000 (input).
+    The sizing_decision.contracts==0 because the SHORT at atr=55 undersizes —
+    this still confirms the function ran with account=100000.
+    '''
+    fix = _load_phase2_fixture('transition_long_to_short')
+    result = _call_step(fix)
+    # sizing_decision must be populated (entry was attempted, even though size=0).
+    assert result.sizing_decision is not None, (
+      'D-19: sizing_decision must be populated for reversal fixture'
+    )
+    # Account is unchanged (no account_after on StepResult).
+    assert not hasattr(result, 'account_after'), (
+      'D-19 violation: StepResult must not have account_after (Phase 3 owns account)'
+    )
+
+  # --- B-5: stop-hit exits use stop level as fill price, not bar.close ---
+
+  def test_step_b5_long_stop_hit_uses_stop_level_as_exit_price(self) -> None:
+    '''B-5 LONG: stop-hit close fills at stop level (6891.0), not bar.close (6900.0).
+
+    Realised PnL = (6891 - 7000) * 2 * 5 - 3.0 * 2 = -1090 - 6 = -1096.0.
+    If bar.close were used: (6900 - 7000) * 2 * 5 - 6 = -1000 - 6 = -1006.0 (wrong).
+    '''
+    fix = _load_phase2_fixture('long_trail_stop_hit_intraday_low')
+    result = _call_step(fix)
+    assert result.closed_trade is not None, 'B-5: stop hit must produce a closed_trade'
+    assert result.closed_trade.exit_reason == 'stop_hit', (
+      f'B-5: exit_reason {result.closed_trade.exit_reason!r} should be "stop_hit"'
+    )
+    # Stop level = peak(7050) - 3*atr_entry(53) = 7050 - 159 = 6891.0
+    assert abs(result.closed_trade.exit_price - 6891.0) < 1e-9, (
+      f'B-5: exit_price {result.closed_trade.exit_price} should be stop level 6891.0'
+    )
+    expected_pnl = (6891.0 - 7000.0) * 2 * 5 - 3.0 * 2  # -1096.0
+    assert abs(result.closed_trade.realised_pnl - expected_pnl) < 1e-9, (
+      f'B-5: realised_pnl {result.closed_trade.realised_pnl} should be {expected_pnl}'
+    )
+
+  def test_step_b5_short_stop_hit_uses_stop_level_as_exit_price(self) -> None:
+    '''B-5 SHORT: stop-hit close fills at stop level (7056.0), not bar.close (7050.0).
+
+    Realised PnL = -1*(7056 - 7000) * 2 * 5 - 3.0 * 2 = -560 - 6 = -566.0.
+    '''
+    fix = _load_phase2_fixture('short_trail_stop_hit_intraday_high')
+    result = _call_step(fix)
+    assert result.closed_trade is not None, 'B-5 SHORT: stop hit must produce a closed_trade'
+    assert result.closed_trade.exit_reason == 'stop_hit'
+    # Stop level = trough(6950) + 2*atr_entry(53) = 6950 + 106 = 7056.0
+    assert abs(result.closed_trade.exit_price - 7056.0) < 1e-9, (
+      f'B-5 SHORT: exit_price {result.closed_trade.exit_price} should be 7056.0'
+    )
+    expected_pnl = -1.0 * (7056.0 - 7000.0) * 2 * 5 - 3.0 * 2  # -566.0
+    assert abs(result.closed_trade.realised_pnl - expected_pnl) < 1e-9, (
+      f'B-5 SHORT: realised_pnl {result.closed_trade.realised_pnl} should be {expected_pnl}'
+    )
+
+  def test_step_b5_flat_signal_close_still_uses_bar_close(self) -> None:
+    '''B-5 negative: FLAT signal exit uses bar.close (not stop level).
+
+    LONG->FLAT fixture: bar.close=6990, exit_price must be 6990.0.
+    '''
+    fix = _load_phase2_fixture('transition_long_to_flat')
+    result = _call_step(fix)
+    assert result.closed_trade is not None, 'FLAT must produce a closed_trade'
+    assert result.closed_trade.exit_reason == 'flat_signal'
+    assert abs(result.closed_trade.exit_price - fix['bar']['close']) < 1e-9, (
+      f'B-5 negative: flat exit should use bar.close {fix["bar"]["close"]}, '
+      f'got {result.closed_trade.exit_price}'
+    )
+
+  # --- A2: no new entry on forced-exit day ---
+
+  def test_step_no_entry_on_adx_exit_day(self) -> None:
+    '''A2 (RESEARCH): ADX-exit forces close; no new entry fires on the same bar.
+
+    EXIT-05 fixture: adx=18 < 20, new_signal=LONG. Despite LONG signal,
+    sizing_decision must be None (forced exit suppresses entry per A2).
+    '''
+    fix = _load_phase2_fixture('adx_drop_below_20_while_in_trade')
+    result = _call_step(fix)
+    assert result.closed_trade is not None, 'A2: ADX exit must close the position'
+    assert result.closed_trade.exit_reason == 'adx_exit'
+    assert result.sizing_decision is None, (
+      f'A2 violation: sizing_decision should be None on forced ADX-exit day, '
+      f'got {result.sizing_decision}'
+    )
+    assert result.position_after is None, (
+      'A2: position_after must be None (no new entry on forced-exit day)'
+    )
+
+  def test_step_no_entry_on_long_stop_hit(self) -> None:
+    '''A2: LONG stop hit forces close; new_signal=LONG but no new entry fires.'''
+    fix = _load_phase2_fixture('long_trail_stop_hit_intraday_low')
+    result = _call_step(fix)
+    assert result.closed_trade is not None
+    assert result.closed_trade.exit_reason == 'stop_hit'
+    assert result.sizing_decision is None, (
+      'A2 violation: sizing_decision must be None on stop-hit day'
+    )
+    assert result.position_after is None, (
+      'A2: position_after must be None after stop hit (no new entry)'
+    )
+
+  def test_step_no_entry_on_short_stop_hit(self) -> None:
+    '''A2: SHORT stop hit forces close; new_signal=SHORT but no new entry fires.'''
+    fix = _load_phase2_fixture('short_trail_stop_hit_intraday_high')
+    result = _call_step(fix)
+    assert result.closed_trade is not None
+    assert result.closed_trade.exit_reason == 'stop_hit'
+    assert result.sizing_decision is None, (
+      'A2 violation: sizing_decision must be None on stop-hit day'
+    )
+    assert result.position_after is None, (
+      'A2: position_after must be None after stop hit (no new entry)'
+    )
+
+  # --- SIZE-05 warning propagation ---
+
+  def test_step_size_zero_warning_propagates(self) -> None:
+    '''SIZE-05: when new entry sizes to 0 contracts, the warning appears in
+    StepResult.warnings. The position_after stays None (no position opened).'''
+    fix = _load_phase2_fixture('n_contracts_zero_skip_warning')
+    result = _call_step(fix)
+    assert result.position_after is None, 'SIZE-05: no position opened when contracts=0'
+    assert result.sizing_decision is not None, (
+      'SIZE-05: sizing_decision must be populated even when contracts=0'
+    )
+    assert result.sizing_decision.contracts == 0
+    assert result.sizing_decision.warning is not None and (
+      result.sizing_decision.warning.startswith('size=0:')
+    ), f'SIZE-05: warning format wrong: {result.sizing_decision.warning!r}'
+    assert any(w.startswith('size=0:') for w in result.warnings), (
+      f'SIZE-05: size=0 warning must appear in StepResult.warnings: {result.warnings}'
+    )
+
+  # --- B-6: unrealised_pnl is post-pyramid (computed on final n_contracts) ---
+
+  def test_step_b6_unrealised_pnl_is_post_pyramid(self) -> None:
+    '''B-6: step().unrealised_pnl is computed on position_after AFTER pyramid add.
+
+    LONG hold fixture: prev.n_contracts=2; pyramid fires (add=1); position_after.n_contracts=3.
+    unrealised_pnl must be computed with n=3, not n=2.
+
+    Pre-pyramid (n=2): (7110-7000)*2*5 - 3.0*2 = 1100-6 = 1094.0  (fixture unrealised_pnl)
+    Post-pyramid (n=3): (7110-7000)*3*5 - 3.0*3 = 1650-9 = 1641.0
+    '''
+    fix = _load_phase2_fixture('transition_long_to_long')
+    result = _call_step(fix)
+    # Fixture's unrealised_pnl field = pre-pyramid value from individual callable.
+    pre_pyramid_pnl = fix['expected']['unrealised_pnl']  # 1094.0 (n=2)
+    # step() must return the POST-pyramid value (n=3).
+    post_pyramid_pnl = (7110.0 - 7000.0) * 3 * 5 - 3.0 * 3  # 1641.0
+    assert abs(result.unrealised_pnl - post_pyramid_pnl) < 1e-9, (
+      f'B-6: unrealised_pnl {result.unrealised_pnl} should be post-pyramid '
+      f'{post_pyramid_pnl} (not pre-pyramid {pre_pyramid_pnl})'
+    )
+    assert abs(result.unrealised_pnl - pre_pyramid_pnl) > 1.0, (
+      f'B-6 sanity: if pre and post pnl are equal, pyramid was not applied '
+      f'({result.unrealised_pnl} vs {pre_pyramid_pnl})'
+    )
+
+  # --- D-17: step() signature check ---
+
+  def test_step_d17_signature(self) -> None:
+    '''D-17: step() must have all 8 parameters with no defaults on the last 3.
+
+    The four post-D-10 parameters (account, multiplier, cost_aud_open) are
+    required — defaulting them would introduce hidden state coupling.
+    '''
+    import inspect
+    sig = inspect.signature(step)
+    params = list(sig.parameters)
+    assert params == [
+      'position', 'bar', 'indicators', 'old_signal', 'new_signal',
+      'account', 'multiplier', 'cost_aud_open',
+    ], f'D-17: step() parameters mismatch: {params}'
+    # The last 3 must have no default (required args).
+    for name in ('account', 'multiplier', 'cost_aud_open'):
+      p = sig.parameters[name]
+      assert p.default is inspect.Parameter.empty, (
+        f'D-17: step() parameter {name!r} must have no default '
+        f'(got {p.default!r})'
+      )
+
+  # --- Gap-through-stop: B-5 stop-level fill even when gapped through ---
+
+  def test_step_b5_long_gap_through_stop_uses_stop_level(self) -> None:
+    '''B-5 + Pitfall 2: gap-down through stop (open=6800 < stop=6891).
+    exit_price must be the STOP level (6891.0), not bar.close (6790.0),
+    not bar.open (6800.0). Detection only: check_stop_hit returned True.
+    Realised PnL = (6891-7000)*2*5 - 3.0*2 = -1090 - 6 = -1096.0.
+    '''
+    fix = _load_phase2_fixture('long_gap_through_stop')
+    result = _call_step(fix)
+    assert result.closed_trade is not None
+    assert result.closed_trade.exit_reason == 'stop_hit'
+    assert abs(result.closed_trade.exit_price - 6891.0) < 1e-9, (
+      f'B-5 gap: exit_price {result.closed_trade.exit_price} should be stop=6891.0'
+    )
+    expected_pnl = (6891.0 - 7000.0) * 2 * 5 - 3.0 * 2  # -1096.0
+    assert abs(result.closed_trade.realised_pnl - expected_pnl) < 1e-9, (
+      f'B-5 gap: realised_pnl {result.closed_trade.realised_pnl} != {expected_pnl}'
     )

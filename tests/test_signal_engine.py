@@ -453,6 +453,7 @@ class TestEdgeCases:
 # (ast / hashlib / json / re / Path imported at top of file per ruff E402.)
 
 SNAPSHOT_PATH = Path('tests/determinism/snapshot.json')
+PHASE2_SNAPSHOT_PATH = Path('tests/determinism/phase2_snapshot.json')
 SIGNAL_ENGINE_PATH = Path('signal_engine.py')
 TEST_SIGNAL_ENGINE_PATH = Path('tests/test_signal_engine.py')
 # Phase 2 Wave 0: extend AST guard to cover new hex modules (D-07, RESEARCH §Example 5)
@@ -748,6 +749,64 @@ class TestDeterminism:
       + '\nProject convention is 2-space indent (CLAUDE.md). Do NOT run `ruff format` '
       + 'on these files -- ruff 0.6.9 reflows to 4-space. Use .editorconfig '
       + 'indent_size=2 and manual review.'
+    )
+
+  # --- Phase 2 determinism snapshot (D-06) ---
+
+  @pytest.mark.parametrize('fixture_name', [
+    'transition_long_to_long',
+    'transition_long_to_short',
+    'transition_long_to_flat',
+    'transition_short_to_long',
+    'transition_short_to_short',
+    'transition_short_to_flat',
+    'transition_none_to_long',
+    'transition_none_to_short',
+    'transition_none_to_flat',
+    'pyramid_gap_crosses_both_levels_caps_at_1',
+    'adx_drop_below_20_while_in_trade',
+    'long_trail_stop_hit_intraday_low',
+    'short_trail_stop_hit_intraday_high',
+    'long_gap_through_stop',
+    'n_contracts_zero_skip_warning',
+  ])
+  def test_phase2_snapshot_hash_stable(self, fixture_name: str) -> None:
+    '''D-06 Phase 2: SHA256 of each fixture's expected dict matches committed snapshot.
+
+    Re-computes SHA256 from the live fixture file and asserts equality with
+    the entry in tests/determinism/phase2_snapshot.json. This catches:
+      - Accidental fixture mutation (e.g. someone edits position_after by hand)
+      - Regenerator drift (two different implementations producing different bytes)
+      - Encoding differences (separators, sort_keys must match snapshot generation)
+
+    Hashing convention (mirrors tests/regenerate_phase2_fixtures.py):
+      json.dumps(expected, sort_keys=True, separators=(',', ':'), allow_nan=False)
+      -> sha256 hexdigest
+
+    PHASE2_SNAPSHOT_PATH = tests/determinism/phase2_snapshot.json (15 entries, one per
+    fixture name). Re-run tests/regenerate_phase2_fixtures.py + re-generate snapshot
+    when fixture recipes change intentionally.
+    '''
+    import hashlib as _hashlib
+    import json as _json
+
+    snapshot = _json.loads(PHASE2_SNAPSHOT_PATH.read_text())
+    expected_hash = snapshot[fixture_name]
+    fix = _json.loads(
+      (Path('tests/fixtures/phase2') / f'{fixture_name}.json').read_text()
+    )
+    expected = fix['expected']
+    canonical = _json.dumps(
+      expected, sort_keys=True, separators=(',', ':'), allow_nan=False,
+    )
+    actual_hash = _hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+    assert actual_hash == expected_hash, (
+      f'Phase 2 fixture SHA256 drift detected for {fixture_name!r}.\n'
+      f'  expected: {expected_hash}\n'
+      f'  actual:   {actual_hash}\n'
+      f'The fixture was mutated or the snapshot is out of date.\n'
+      f'If intentional: re-run tests/regenerate_phase2_fixtures.py then '
+      f're-generate tests/determinism/phase2_snapshot.json.'
     )
 
   def test_sizing_engine_has_core_public_surface(self) -> None:
