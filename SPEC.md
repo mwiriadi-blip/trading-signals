@@ -51,9 +51,10 @@ This is a **signal-only** app — it does NOT place live trades. It tells me wha
    n_contracts = max(1, int((account × risk_pct / stop_dist) × vol_scale))
    ```
 
-6. **Contract specs:**
-   - SPI: multiplier = $25/point, cost = $30 AUD round-trip, min 1 full contract
-   - AUD/USD: multiplier = $10,000 (mini lot notional), P&L = price_delta × 10000 × n_contracts, cost = $5 AUD round-trip
+6. **Contract specs:** (per Phase 2 D-11 — operator confirmed at /gsd-discuss-phase 2)
+   - SPI 200 mini: multiplier = $5/point, cost = $6 AUD round-trip ($3 on open + $3 on close per D-13), min 1 contract
+   - AUD/USD: multiplier = $10,000 (mini lot notional), P&L = price_delta × 10000 × n_contracts, cost = $5 AUD round-trip ($2.50 on open + $2.50 on close per D-13)
+   - Cost-timing convention: half on open (deducted in `compute_unrealised_pnl`), half on close (deducted in Phase 3 `record_trade`).
 
 7. **Exit rules (check daily):**
    - Signal reversal (new signal ≠ current position direction) → close and reverse/go flat
@@ -87,6 +88,8 @@ This is a **signal-only** app — it does NOT place live trades. It tells me wha
 ## DETAILED MODULE SPECIFICATIONS
 
 ### `signal_engine.py`
+
+> **Phase 2 module split (D-07):** Per Phase 2 plan, sizing/exit/pyramid functions (`get_trailing_stop`, `check_stop_hit`, `calc_position_size`, `compute_unrealised_pnl`, `check_pyramid`) and the `step()` orchestrator wrapper live in a sibling pure-math module `sizing_engine.py`, NOT inside `signal_engine.py`. Per Phase 2 D-17 (reviews-revision pass), the actual implemented signatures are `compute_unrealised_pnl(position, current_price, multiplier, cost_aud_open) -> float` and `step(position, bar, indicators, old_signal, new_signal, account, multiplier, cost_aud_open) -> StepResult` — the function-list signatures below remain authoritative for the OTHER callables; the file location moves and these two signatures expand. Policy constants (RISK_PCT, TRAIL_MULT, VOL_SCALE_*, PYRAMID_TRIGGERS, MAX_PYRAMID_LEVEL, ADX_EXIT_GATE, SPI_MULT, SPI_COST_AUD, AUDUSD_NOTIONAL, AUDUSD_COST_AUD) and the `Position` TypedDict live in `system_params.py` (D-01, D-08).
 
 Functions to implement:
 ```python

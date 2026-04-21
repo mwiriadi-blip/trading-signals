@@ -15,6 +15,7 @@ See [.planning/PROJECT.md](.planning/PROJECT.md) for full context and [SPEC.md](
 - **pytz** — `Australia/Perth` timezone
 - **Chart.js 4.4.6 UMD** (CDN, pinned) — dashboard equity curve
 - **pytest** + **pytest-freezer** — fixture-driven signal tests
+- **Contract specs (per Phase 2 D-11):** SPI 200 mini multiplier = $5/point, $6 AUD round-trip cost; AUD/USD notional = $10,000, $5 AUD round-trip cost. Round-trip is split half on open (in `compute_unrealised_pnl`), half on close (in Phase 3 `record_trade`) per D-13.
 
 **Hand-roll** ATR(14), ADX(20), +DI, -DI, Mom, RVol — no pandas-ta or TA-Lib.
 
@@ -31,9 +32,10 @@ Exact version pins (no `>=`, no `~=`) are maintained in requirements.txt per STA
 
 ## Architecture
 
-Hexagonal-lite. Pure math in `signal_engine.py`, I/O adapters in `state_manager.py`, `notifier.py`, `dashboard.py`. `main.py` is the thin orchestrator with one `run_daily_check()` function.
+Hexagonal-lite. Pure math in `signal_engine.py` (indicators + vote) and `sizing_engine.py` (position sizing, trailing stops, pyramid state machine — added in Phase 2 per D-07); shared constants and `Position` TypedDict in `system_params.py`; I/O adapters in `state_manager.py`, `notifier.py`, `dashboard.py`. `main.py` is the thin orchestrator with one `run_daily_check()` function.
 
 - `signal_engine.py ↔ state_manager.py` must not import each other — all interaction through `main.py`
+- `sizing_engine.py` and `system_params.py` are pure-math/constants modules; same hex-boundary rule applies (no imports of `state_manager`, `notifier`, `dashboard`, `main`, `requests`, `datetime`, `os`, etc.). Enforced by `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` (extended Wave 0 of Phase 2).
 - All pure functions take plain args, return plain values — no `datetime.now()`, no env-var reads inside them
 - `state.json` writes are atomic: tempfile + fsync + `os.replace`
 - `--test` is structurally read-only (enforced by splitting compute and persist)
