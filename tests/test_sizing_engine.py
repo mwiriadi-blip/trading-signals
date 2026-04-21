@@ -31,12 +31,98 @@ SYSTEM_PARAMS_PATH = Path('system_params.py')
 PHASE2_FIXTURES_DIR = Path('tests/fixtures/phase2')
 PHASE2_SNAPSHOT_PATH = Path('tests/determinism/phase2_snapshot.json')
 
+TRANSITION_FIXTURES = [
+  'transition_long_to_long',
+  'transition_long_to_short',
+  'transition_long_to_flat',
+  'transition_short_to_long',
+  'transition_short_to_short',
+  'transition_short_to_flat',
+  'transition_none_to_long',
+  'transition_none_to_short',
+  'transition_none_to_flat',
+]
+
+EDGE_CASE_FIXTURES = [
+  'pyramid_gap_crosses_both_levels_caps_at_1',
+  'adx_drop_below_20_while_in_trade',
+  'long_trail_stop_hit_intraday_low',
+  'short_trail_stop_hit_intraday_high',
+  'long_gap_through_stop',
+  'n_contracts_zero_skip_warning',
+]
+
 
 def _load_phase2_fixture(name: str) -> dict:
   '''Load a Phase 2 JSON scenario fixture.'''
   import json
   path = PHASE2_FIXTURES_DIR / f'{name}.json'
   return json.loads(path.read_text())
+
+
+def _assert_callable_outputs_match_fixture(fix: dict) -> None:
+  '''Shared assertion: walk the `expected` dict; for each non-null field, call the
+  matching individual callable with the fixture's inputs and assert equality.
+
+  Skips fields that are null in `expected` (those represent "not evaluated this
+  cell" and are not asserted). position_after is always skipped here -- it is
+  populated by step() in plan 02-05.
+  '''
+  prev = fix['prev_position']
+  bar = fix['bar']
+  ind = fix['indicators']
+  account = fix['account']
+  multiplier = fix['multiplier']
+  cost_aud_open = fix['instrument_cost_aud'] / 2.0  # D-13 split: half on open
+  exp = fix['expected']
+
+  # 1. sizing_decision (calc_position_size on the new_signal direction)
+  if exp['sizing_decision'] is not None:
+    actual = calc_position_size(
+      account=account, signal=fix['new_signal'],
+      atr=ind['atr'], rvol=ind['rvol'], multiplier=multiplier,
+    )
+    assert actual.contracts == exp['sizing_decision']['contracts'], (
+      f'sizing.contracts mismatch: {actual.contracts} '
+      f'vs {exp["sizing_decision"]["contracts"]}'
+    )
+    assert actual.warning == exp['sizing_decision']['warning'], (
+      f'sizing.warning mismatch:\n  actual: {actual.warning!r}\n'
+      f'  expected: {exp["sizing_decision"]["warning"]!r}'
+    )
+
+  # 2. trail_stop (get_trailing_stop on prev_position)
+  if exp['trail_stop'] is not None:
+    actual_stop = get_trailing_stop(prev, current_price=bar['close'], atr=ind['atr'])
+    assert abs(actual_stop - exp['trail_stop']) < 1e-9, (
+      f'trail_stop: {actual_stop} vs {exp["trail_stop"]}'
+    )
+
+  # 3. stop_hit
+  if exp['stop_hit'] is not None:
+    actual_hit = check_stop_hit(prev, high=bar['high'], low=bar['low'], atr=ind['atr'])
+    assert actual_hit == exp['stop_hit'], (
+      f'stop_hit: {actual_hit} vs {exp["stop_hit"]}'
+    )
+
+  # 4. pyramid_decision
+  if exp['pyramid_decision'] is not None:
+    actual_pyr = check_pyramid(
+      prev, current_price=bar['close'], atr_entry=prev['atr_entry'],
+    )
+    assert actual_pyr == PyramidDecision(**exp['pyramid_decision']), (
+      f'pyramid: {actual_pyr} vs {exp["pyramid_decision"]}'
+    )
+
+  # 5. unrealised_pnl
+  if exp['unrealised_pnl'] is not None:
+    actual_pnl = compute_unrealised_pnl(
+      prev, current_price=bar['close'], multiplier=multiplier,
+      cost_aud_open=cost_aud_open,
+    )
+    assert abs(actual_pnl - exp['unrealised_pnl']) < 1e-9, (
+      f'pnl: {actual_pnl} vs {exp["unrealised_pnl"]}'
+    )
 
 
 def _make_position(
@@ -550,47 +636,90 @@ class TestPyramid:
 # =========================================================================
 
 class TestTransitions:
-  '''Scenario-fixture tests for the 9-cell signal transition truth table.
+  '''9-cell signal-transition truth table -- one named test per cell.
 
-  9 JSON fixtures per D-14/D-05 (tests/fixtures/phase2/transition_*.json).
-  Implementations land in Plan 02-04 (fixtures) + 02-05 (step() wiring).
+  Each test loads the matching JSON fixture (D-14 names) and exercises the
+  individual callables (calc_position_size, get_trailing_stop, check_stop_hit,
+  check_pyramid, compute_unrealised_pnl) per the fixture's `expected` map.
+  step() integration tests live in plan 02-05.
   '''
 
+  @pytest.mark.parametrize('fixture_name', TRANSITION_FIXTURES)
+  def test_fixture_loads_with_canonical_schema(self, fixture_name: str) -> None:
+    '''Schema sanity: every transition fixture has the canonical 9 top-level keys.'''
+    fix = _load_phase2_fixture(fixture_name)
+    expected_keys = {
+      'description', 'prev_position', 'bar', 'indicators', 'account',
+      'old_signal', 'new_signal', 'multiplier', 'instrument_cost_aud', 'expected',
+    }
+    assert expected_keys.issubset(fix.keys()), (
+      f'{fixture_name} missing keys: {expected_keys - fix.keys()}'
+    )
+
+  @pytest.mark.parametrize('fixture_name', TRANSITION_FIXTURES)
+  def test_individual_callables_match_fixture_expected(
+    self, fixture_name: str,
+  ) -> None:
+    '''Truth table: for each fixture, every populated `expected` field must match
+    the matching callable's actual output. Null fields are not asserted.'''
+    fix = _load_phase2_fixture(fixture_name)
+    _assert_callable_outputs_match_fixture(fix)
+
+  # --- Named shortcuts so failures point straight at the broken cell ---
+
   def test_transition_long_to_long(self) -> None:
-    '''LONG->LONG: hold; check stop + pyramid + pnl. No exit/entry.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''LONG hold: pyramid_decision and unrealised_pnl populated; no entry.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_long_to_long'),
+    )
 
   def test_transition_long_to_short(self) -> None:
-    '''EXIT-03: LONG->SHORT — close LONG then open SHORT in one step.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-03: close LONG, then size new SHORT in same step. sizing_decision populated.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_long_to_short'),
+    )
 
   def test_transition_long_to_flat(self) -> None:
-    '''EXIT-01: LONG->FLAT closes the LONG, no new position.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-01: close LONG on FLAT signal; no entry.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_long_to_flat'),
+    )
 
   def test_transition_short_to_long(self) -> None:
-    '''EXIT-04: SHORT->LONG — close SHORT then open LONG in one step.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-04: close SHORT, then size new LONG in same step.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_short_to_long'),
+    )
 
   def test_transition_short_to_short(self) -> None:
-    '''SHORT->SHORT: hold; check stop + pyramid + pnl. No exit/entry.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''SHORT hold: pyramid + unrealised_pnl evaluated.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_short_to_short'),
+    )
 
   def test_transition_short_to_flat(self) -> None:
-    '''EXIT-02: SHORT->FLAT closes the SHORT, no new position.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-02: close SHORT on FLAT signal.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_short_to_flat'),
+    )
 
   def test_transition_none_to_long(self) -> None:
-    '''Flat->LONG: new LONG entry — calc_position_size + open position.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''New LONG entry: sizing_decision populated; no exit fields.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_none_to_long'),
+    )
 
   def test_transition_none_to_short(self) -> None:
-    '''Flat->SHORT: new SHORT entry — calc_position_size + open position.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''New SHORT entry: sizing_decision populated.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_none_to_short'),
+    )
 
   def test_transition_none_to_flat(self) -> None:
-    '''Flat->FLAT: no position, no signal — no action.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''No-position + FLAT: matrix-completeness cell; nothing evaluated.'''
+    _assert_callable_outputs_match_fixture(
+      _load_phase2_fixture('transition_none_to_flat'),
+    )
 
 
 # =========================================================================
@@ -598,32 +727,108 @@ class TestTransitions:
 # =========================================================================
 
 class TestEdgeCases:
-  '''Edge-case scenario tests: EXIT-05, stop hit, PYRA-05 gap, SIZE-05 zero.
-
-  6 JSON fixtures per D-14 (tests/fixtures/phase2/<name>.json).
-  Implementations land in Plan 02-04 (fixtures) + 02-05 (step() wiring).
+  '''6 named edge-case scenario fixtures (D-14). Each test docstring cites the
+  invariant or pitfall the fixture exists to prove.
   '''
 
+  @pytest.mark.parametrize('fixture_name', EDGE_CASE_FIXTURES)
+  def test_edge_fixture_individual_callables_match_expected(
+    self, fixture_name: str,
+  ) -> None:
+    '''Parametrized version of the per-fixture assertion across all 6 edge cases.'''
+    fix = _load_phase2_fixture(fixture_name)
+    _assert_callable_outputs_match_fixture(fix)
+
   def test_pyramid_gap_crosses_both_levels_caps_at_1(self) -> None:
-    '''PYRA-05: gap day where close is past 2*ATR but only 1 contract added (D-12).'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''PYRA-05 / D-12 invariant: gap day past 1xATR AND 2xATR thresholds still
+    returns add_contracts=1 because check_pyramid is stateless single-step.'''
+    fix = _load_phase2_fixture('pyramid_gap_crosses_both_levels_caps_at_1')
+    actual = check_pyramid(
+      fix['prev_position'],
+      current_price=fix['bar']['close'],
+      atr_entry=fix['prev_position']['atr_entry'],
+    )
+    assert actual == PyramidDecision(add_contracts=1, new_level=1), (
+      f'D-12 violation: {actual} should be PyramidDecision(1, 1)'
+    )
 
   def test_adx_drop_below_20_while_in_trade(self) -> None:
-    '''EXIT-05: ADX falls to < 20 during LONG -> close regardless of new_signal.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-05 detection: when indicators.adx < ADX_EXIT_GATE (20.0), the orchestrator
+    must close the position regardless of new_signal. Plan 02-04 exposes this only as
+    a fixture comparison -- the orchestrator decision (close-on-adx-exit) is wired in
+    plan 02-05 step(). Here we assert the indicator value satisfies the EXIT-05
+    precondition and the fixture stop_hit field is False (so the close is ADX-driven).'''
+    from system_params import ADX_EXIT_GATE
+    fix = _load_phase2_fixture('adx_drop_below_20_while_in_trade')
+    assert fix['indicators']['adx'] < ADX_EXIT_GATE, (
+      f'fixture broken: adx={fix["indicators"]["adx"]} should be < '
+      f'ADX_EXIT_GATE={ADX_EXIT_GATE}'
+    )
+    assert fix['expected']['stop_hit'] is False, (
+      'fixture should isolate ADX-exit (stop_hit must be False to prove ADX dominates)'
+    )
 
   def test_long_trail_stop_hit_intraday_low(self) -> None:
-    '''EXIT-08: today LOW is at or below the LONG trailing stop -> position closed.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-08 boundary: peak=7050, atr=53 -> stop=6891. low=6890 (below stop) -> hit.'''
+    fix = _load_phase2_fixture('long_trail_stop_hit_intraday_low')
+    actual_hit = check_stop_hit(
+      fix['prev_position'],
+      high=fix['bar']['high'], low=fix['bar']['low'],
+      atr=fix['indicators']['atr'],
+    )
+    actual_stop = get_trailing_stop(
+      fix['prev_position'],
+      current_price=fix['bar']['close'],
+      atr=fix['indicators']['atr'],
+    )
+    assert actual_hit is True, 'EXIT-08 must fire when low <= stop'
+    assert abs(actual_stop - 6891.0) < 1e-9, f'stop {actual_stop} should be 6891.0'
 
   def test_short_trail_stop_hit_intraday_high(self) -> None:
-    '''EXIT-09: today HIGH is at or above the SHORT trailing stop -> position closed.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''EXIT-09 boundary: trough=6950, atr=53 -> stop=7056. high=7060 -> hit.'''
+    fix = _load_phase2_fixture('short_trail_stop_hit_intraday_high')
+    actual_hit = check_stop_hit(
+      fix['prev_position'],
+      high=fix['bar']['high'], low=fix['bar']['low'],
+      atr=fix['indicators']['atr'],
+    )
+    actual_stop = get_trailing_stop(
+      fix['prev_position'],
+      current_price=fix['bar']['close'],
+      atr=fix['indicators']['atr'],
+    )
+    assert actual_hit is True, 'EXIT-09 must fire when high >= stop'
+    assert abs(actual_stop - 7056.0) < 1e-9, f'stop {actual_stop} should be 7056.0'
 
-  def test_long_gap_through_stop(self) -> None:
-    '''EXIT-08: open gaps below LONG stop; LOW also below stop -> stop detected.'''
-    pytest.skip('implement in Plan 02-04/02-05')
+  def test_long_gap_through_stop_detection_only(self) -> None:
+    '''EXIT-08 + Pitfall 2: gap-down where open=6800 and low=6750, both well below
+    stop=6891. check_stop_hit returns True (detection); the question of FILL PRICE
+    (stop=6891 vs gap-open=6800) is Phase 3 record_trade territory and NOT exposed
+    by check_stop_hit signature.'''
+    import inspect
+    fix = _load_phase2_fixture('long_gap_through_stop')
+    assert check_stop_hit(
+      fix['prev_position'],
+      high=fix['bar']['high'], low=fix['bar']['low'],
+      atr=fix['indicators']['atr'],
+    ) is True
+    # Pitfall 2 structural enforcement: check_stop_hit returns bool, not (bool, float).
+    sig = inspect.signature(check_stop_hit)
+    assert sig.return_annotation is bool, (
+      f'Pitfall 2 violation: return_annotation={sig.return_annotation}, expected bool'
+    )
 
   def test_n_contracts_zero_skip_warning(self) -> None:
-    '''SIZE-05: account+ATR combination yields n_raw < 1 -> SizingDecision(0, warning).'''
-    pytest.skip('implement in Plan 02-04/02-05')
+    '''SIZE-05 + operator no-floor: n_raw=0.667 -> contracts=0 + size=0 warning.
+    Direct end-to-end via the fixture rather than via the unit test in TestSizing,
+    so a regression in the warning string format would surface here too.'''
+    fix = _load_phase2_fixture('n_contracts_zero_skip_warning')
+    actual = calc_position_size(
+      account=fix['account'], signal=fix['new_signal'],
+      atr=fix['indicators']['atr'], rvol=fix['indicators']['rvol'],
+      multiplier=fix['multiplier'],
+    )
+    assert actual.contracts == 0
+    assert actual.warning is not None and actual.warning.startswith('size=0:'), (
+      actual.warning
+    )
