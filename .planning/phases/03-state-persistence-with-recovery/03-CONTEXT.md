@@ -2,6 +2,7 @@
 
 **Gathered:** 2026-04-21 via `/gsd-discuss-phase 3` session
 **Status:** Ready for planning
+**Amended:** 2026-04-21 — added D-17..D-20 from `/gsd-plan-phase 3 --reviews` revision pass
 
 <domain>
 ## Phase Boundary
@@ -54,8 +55,9 @@ Provide a `state_manager.py` module the orchestrator (Phase 4) can rely on to lo
 - **D-07: A corruption-recovery event appends to `state['warnings']` with `source='state_manager'`.**
   Rationale: surfaces in the daily email (Phase 5) per D-13's last-24h filter. Operator sees it next morning. No silent recoveries. Message format: `'recovered from corruption; backup at state.json.corrupt.<ts>'`. Also logs to stderr with `[State]` prefix per CLAUDE.md log convention.
 
-- **D-08: Atomic write protocol — `tempfile.NamedTemporaryFile + fsync(file) + fsync(parent dir) + os.replace`.**
+- **D-08: Atomic write protocol — `tempfile.NamedTemporaryFile + fsync(file) + fsync(parent dir) + os.replace`.** *(amended 2026-04-21 — see D-17 for corrected durability ordering)*
   Rationale: standard atomic-write pattern. fsync the file (data durability), fsync the parent directory (rename durability — important on ext4/xfs), then `os.replace` (atomic on POSIX). Crash mid-write leaves original `state.json` untouched. tempfile name pattern: `state.json.tmp.<pid>` or `tempfile.NamedTemporaryFile(dir='.', delete=False)` — implementation detail.
+  **Amendment (D-17, 2026-04-21):** The relative ordering of parent-dir fsync vs `os.replace` was incorrect in the original phrasing. Per Linux kernel rename guarantees and LWN durability discussions, parent-dir fsync MUST happen AFTER `os.replace` to make the rename itself durable. Atomicity (no torn writes) is preserved by either order, but durability against power loss after the rename is only guaranteed by the post-replace fsync. See D-17 below for the corrected sequence and the RESEARCH.md correction note.
 
 ### `warnings` field design (Area 3)
 
@@ -87,21 +89,81 @@ Provide a `state_manager.py` module the orchestrator (Phase 4) can rely on to lo
 
   **Note:** `gross_pnl` from caller is the price-delta P&L only: `(exit_price - entry_price) * n_contracts * multiplier` for LONG, mirror for SHORT. The orchestrator computes this from the `closed_trade` returned by Phase 2's `step()` and passes it forward. Phase 2's `_close_position` already computes and stores the gross — orchestrator hands it to record_trade as-is.
 
-- **D-15: `record_trade` validates the trade dict shape and raises `ValueError` on missing/wrong fields.**
+  **Amendment (D-20, 2026-04-21):** The trade-dict mutation pattern (`trade['net_pnl'] = net_pnl` then append) was undocumented as part of the contract. D-20 below replaces it with a non-mutating append (`dict(trade, net_pnl=net_pnl)`). Trade_log entries still carry net_pnl; caller's input dict is preserved.
+
+- **D-15: `record_trade` validates the trade dict shape and raises `ValueError` on missing/wrong fields.** *(extended 2026-04-21 — see D-19 for full-field type checks)*
   Rationale: catches integration bugs at the boundary (Phase 4 wire-up). Required fields: `instrument` (str in {'SPI200', 'AUDUSD'}), `direction` ('LONG'|'SHORT'), `entry_date` + `exit_date` (ISO YYYY-MM-DD strings), `entry_price` + `exit_price` + `gross_pnl` (float), `n_contracts` (int > 0), `exit_reason` (str), `multiplier` + `cost_aud` (float). Wrong types or missing keys raise ValueError with a specific message naming the offending field. Phase 4 wire-up tests catch these immediately.
+  **Extension (D-19, 2026-04-21):** Original implementation only validates `instrument`, `direction`, `n_contracts`. D-19 below extends `_validate_trade` to enforce types on the remaining 8 fields (string non-empty for `entry_date`/`exit_date`/`exit_reason`; finite numeric — explicitly rejecting bool — for `entry_price`/`exit_price`/`gross_pnl`/`multiplier`/`cost_aud`).
 
 - **D-16: `record_trade` is NOT idempotent — each call appends.**
   Rationale: simpler contract. Caller (Phase 4 orchestrator) is responsible for calling it exactly once per `step()` result that has `closed_trade is not None`. Orchestrator naturally does this; double-record only happens on explicit caller bug, catchable in code review. Idempotency-by-key approaches (instrument+exit_date) would block legitimate same-day re-open-then-close edge cases (rare but possible) and false-sense-of-safety the caller's responsibility. Idempotency-by-UUID is overengineering for a single-operator daily system.
+
+### Reviews-revision amendments (Area 5)
+
+> **2026-04-21 reviews-revision pass.** Decisions D-17..D-20 below are amendments / extensions to D-08, D-15 produced by `/gsd-plan-phase 3 --reviews` after cross-AI review (Gemini LOW · Codex MEDIUM, 8 actionable items). They lock the conservative / D-05-aligned default for each item flagged as HIGH or MEDIUM in the review.
+
+- **D-17: Atomic write durability ordering — `write → flush/fsync(file) → close → os.replace → fsync(parent dir)`.** *(amends D-08; resolves Codex HIGH #3, 2026-04-21 reviews-revision pass)*
+  Rationale: The parent-directory fsync's purpose is to make the RENAME durable on disk (per Linux kernel rename guarantees, LWN durability discussions). fsync'ing BEFORE the replace means the rename itself isn't on disk yet — defeats the point. Atomicity (no torn writes) is preserved by either order, but durability against power loss AFTER the rename is only guaranteed by the post-replace fsync. This is the canonical durable-write idiom.
+  **Affected:**
+  - `state_manager.py::_atomic_write` — body must perform `os.replace(tmp_path_str, path)` BEFORE the `if os.name == 'posix': ... os.fsync(dir_fd)` block, not after.
+  - `tests/test_state_manager.py::TestAtomicity` — add `test_atomic_write_fsyncs_parent_dir_after_os_replace` that patches both `os.replace` and `os.fsync`, captures call order via a single mock-call list, and asserts `os.replace` is recorded before the parent-dir `os.fsync`.
+  - 02-PLAN.md AC grep checks — currently only enforce presence of `os.replace`, `os.fsync`, POSIX guard. Must additionally enforce post-replace ordering via the new test.
+  - `03-RESEARCH.md` §Pattern 1 (Atomic Write) describes the wrong order — see RESEARCH.md correction note below.
+
+- **D-18: Post-parse semantic validation — `_validate_loaded_state(state)` raises `ValueError` on missing required keys.** *(extends D-05; resolves consensus concern #1, 2026-04-21 reviews-revision pass)*
+  Rationale: D-05 (corrupt = `JSONDecodeError` only) plus D-15 (record_trade raises on bad shape) imply state schema mismatches should also RAISE — bug-surfacing posture, not silent recovery. Gemini's "fill missing keys with defaults" alternative would mask code-side bugs that drop required keys on save (the same risk D-05 was designed to prevent for parse errors). Per D-05's spirit, the right resolution is RAISE.
+  **Concretely:** After `_migrate(state)` in `load_state`, call `_validate_loaded_state(state)`. Helper checks `set(state.keys()) >= REQUIRED_KEYS` where `REQUIRED_KEYS = {'schema_version', 'account', 'last_run', 'positions', 'signals', 'trade_log', 'equity_history', 'warnings'}`. On mismatch raise `ValueError(f'state missing required keys: {sorted(missing)}')`. Do NOT route through corruption recovery (D-05 narrow catch is preserved) — raise propagates to caller (orchestrator handles).
+  **Affected:** 03-PLAN.md (Wave 2 — same plan that owns load_state's corruption branch). Add `_validate_loaded_state` private helper + `test_load_state_valid_json_missing_keys_raises_value_error` in TestLoadSave (or new TestSchemaValidation).
+
+- **D-19: `_validate_trade` extends to all 11 D-15 fields with explicit type checks.** *(extends D-15; resolves consensus concern #2, 2026-04-21 reviews-revision pass)*
+  Rationale: D-15 says "raises ValueError on missing/wrong fields" but the original implementation only validates `instrument`, `direction`, `n_contracts`. Reviewers correctly flag the remaining 8 fields can silently corrupt trade_log. Extension closes that gap.
+  **Concretely:** `_validate_trade` adds (after the existing checks):
+    - `entry_date`, `exit_date`, `exit_reason` → `isinstance(value, str) and len(value) > 0` (non-empty string)
+    - `entry_price`, `exit_price`, `gross_pnl`, `multiplier`, `cost_aud` → `isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)` (Python quirk: `isinstance(True, int)` is True — explicitly reject bool; reject NaN/+inf/-inf via `math.isfinite`)
+  ValueError message names the offending field and value.
+  **Affected:** 04-PLAN.md `_validate_trade` task action + AC + 4-6 new TestRecordTrade tests (representative coverage, not all 8×3 violations): `test_record_trade_raises_on_non_string_entry_date`, `test_record_trade_raises_on_empty_string_exit_reason`, `test_record_trade_raises_on_bool_for_numeric_field`, `test_record_trade_raises_on_nan_gross_pnl`, `test_record_trade_raises_on_inf_cost_aud`, `test_record_trade_raises_on_string_entry_price`. `import math` added to state_manager.py imports if not already present.
+
+- **D-20: `record_trade` does NOT mutate caller's trade dict.** *(amends D-14 trade_log append pattern; resolves Codex MEDIUM #5, 2026-04-21 reviews-revision pass)*
+  Rationale: in-place mutation as documented in 04-PLAN.md is undocumented as part of the contract. Phase 4 reusing the same dict afterwards would be surprised. Codex's suggested refactor is cleaner: append `dict(trade, net_pnl=net_pnl)` to trade_log instead of mutating `trade` then appending. Trade_log entries still carry the computed `net_pnl`; caller's input dict is preserved verbatim. Tiny code change, zero behavioral change for trade_log content, much cleaner contract for Phase 4.
+  **Concretely:** Replace
+  ```
+  trade['net_pnl'] = net_pnl
+  state['trade_log'].append(trade)
+  ```
+  with
+  ```
+  state['trade_log'].append(dict(trade, net_pnl=net_pnl))
+  ```
+  Caller's `trade` dict is unchanged after the call.
+  **Affected:** 04-PLAN.md `record_trade` task action + AC + docstring update + new test `test_record_trade_does_not_mutate_caller_trade_dict` (asserts `'net_pnl' not in trade` after the call).
+
+### Plan tweaks (no CONTEXT.md decision needed; recorded for traceability)
+
+> Bucket B from REVIEWS.md — small plan-only fixes folded into the same revision pass. Listed here for cross-reference; no D-XX decision required.
+
+- **B-1 (resolves Codex MEDIUM #4):** `_backup_corrupt` derives backup name from `path.name` rather than hardcoding `'state.json'`. In 03-PLAN.md Task 1, `backup_name = f'{path.name}.corrupt.{ts}'`. Tests still assert `state.json.corrupt.<ts>` for the canonical path (path.name == 'state.json').
+- **B-2 (resolves Codex MEDIUM #6):** Backup-name collision hardening — change ISO-second timestamp `'%Y%m%dT%H%M%SZ'` to ISO-microsecond `'%Y%m%dT%H%M%S_%fZ'` in `_backup_corrupt`. Eliminates same-second collision risk. Update TestCorruptionRecovery filename-pattern assertion to allow the longer suffix (now matches `state.json.corrupt.20260421T093045_123456Z`).
+- **B-3 (resolves Codex LOW #8):** Document `load_state(missing file)` contract in 02-PLAN.md `load_state` task action + docstring: "If the state file does not exist, returns fresh state from `reset_state()` but does NOT persist it. The orchestrator must explicitly call `save_state(state)` to materialize state.json on first run."
+- **B-4 (resolves Codex LOW #9):** `update_equity_history` minimal validation — in 04-PLAN.md `update_equity_history` task action, add `if not isinstance(date, str) or len(date) != 10: raise ValueError(...)` and `if not math.isfinite(equity): raise ValueError(...)`. Add corresponding TestEquityHistory tests.
+- **B-5 (resolves Gemini LOW):** Document `MAX_WARNINGS = 100` rationale in 03-PLAN.md `append_warning` task action + docstring: "MAX_WARNINGS = 100 is intentionally conservative for v1 daily-cadence (~5 months of warnings if 1/day). A bad-day loop generating 50+ warnings still fits; chronic high-warning regimes should bump the constant in system_params.py rather than expanding the contract here."
+
+### RESEARCH.md correction
+
+> The `03-RESEARCH.md` §Architecture Patterns §Pattern 1 (Atomic Write with Cleanup-on-Failure) describes the durability sequence as `write → flush → fsync(file) → close → fsync(parent dir) → os.replace`. **This ordering is wrong for durability.** The correct canonical idiom (locked into the planner via D-17 above) is:
+>
+> `write → flush → fsync(file) → close → os.replace → fsync(parent dir)`
+>
+> Reason: parent-directory fsync's purpose is to make the rename durable on disk; fsync'ing BEFORE the replace makes the not-yet-renamed temp-file's directory entry durable but leaves the rename itself only in the OS write cache. Atomicity (no torn writes) is preserved by either order — only durability against power loss AFTER the rename differs. RESEARCH.md should be treated as corrected by D-17 wherever it says "fsync parent dir before os.replace"; the planner has authority over the spec at this point.
 
 ### Claude's Discretion
 
 - **Schema version mechanism**: Use `schema_version: int = 1` (top-level int counter, not semver). Migration dict pattern in state_manager.py: `MIGRATIONS = {1: lambda s: s}` (no-op at v1; future migrations land as `MIGRATIONS[2] = lambda s: ...`). On `load_state()`, walk migrations from `state['schema_version']` to current, applying each transform. Auto-migrate forward (recommended for forward-only schema evolution); refusing-on-mismatch is overly defensive for a single-operator system. Save bumps schema_version to current.
 - **Test strategy**: Mirror Phase 1/2 patterns — `tests/test_state_manager.py` with classes `TestLoadSave`, `TestAtomicity`, `TestCorruptionRecovery`, `TestRecordTrade`, `TestEquityHistory`, `TestReset`, `TestWarnings`, `TestSchemaVersion`. Crash-mid-write simulated by mocking `os.replace` to raise mid-call, then asserting original state.json is intact. No determinism snapshot — state.json is a moving target, not an oracle artifact.
 - **State file location**: Repo root (`./state.json`) per SPEC.md FILE STRUCTURE. Already in `.gitignore` per SPEC. GitHub Actions workflow will commit it to a tracking branch per Phase 7 — that's deferred.
-- **AST blocklist extension**: Extend `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` to cover `state_manager.py` with the same forbidden-imports list (signal_engine, sizing_engine, notifier, dashboard, main, requests) — but allow `system_params` (for the `Position` TypedDict and `MAX_WARNINGS` constant). state_manager.py CAN import: stdlib (json, os, tempfile, datetime, pathlib), system_params. State_manager IS the I/O hex — it's the one module allowed to do filesystem I/O.
+- **AST blocklist extension**: Extend `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` to cover `state_manager.py` with the same forbidden-imports list (signal_engine, sizing_engine, notifier, dashboard, main, requests) — but allow `system_params` (for the `Position` TypedDict and `MAX_WARNINGS` constant). state_manager.py CAN import: stdlib (json, os, tempfile, datetime, pathlib, math), system_params. State_manager IS the I/O hex — it's the one module allowed to do filesystem I/O.
 - **Type hints**: Public API fully typed with `dict[str, Any]` returns + named arg types. Internal helpers use explicit types where it helps readability. `Position` TypedDict from `system_params.py` is the typed shape for positions inside state['positions'].
 - **JSON formatting on save**: `json.dumps(..., sort_keys=True, indent=2, allow_nan=False)` — sorted keys for git-friendly diffs; indent=2 for readability; allow_nan=False because state should never contain NaN (would be a bug).
-- **Date format**: ISO `YYYY-MM-DD` per CLAUDE.md conventions. `last_run` and warning dates are date-only (no time component); `state.json.corrupt.<ts>` backup uses ISO 8601 basic format with time + Z (`20260421T093045Z`) for filename uniqueness.
+- **Date format**: ISO `YYYY-MM-DD` per CLAUDE.md conventions. `last_run` and warning dates are date-only (no time component); `state.json.corrupt.<ts>` backup uses ISO 8601 basic format with time + microseconds + Z (`20260421T093045_123456Z` per B-2) for filename uniqueness.
 
 </decisions>
 
@@ -137,6 +199,9 @@ Provide a `state_manager.py` module the orchestrator (Phase 4) can rely on to lo
 
 ### AST blocklist precedent
 - `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` — Phase 1+2 AST blocklist; Phase 3 extends this list to cover `state_manager.py` with appropriate allow-list (system_params OK; signal_engine/sizing_engine/notifier/dashboard/main NOT OK)
+
+### Reviews-revision pass (2026-04-21)
+- `.planning/phases/03-state-persistence-with-recovery/03-REVIEWS.md` — Cross-AI review (Gemini LOW · Codex MEDIUM, 8 actionable items). Source for D-17..D-20 amendments and B-1..B-5 plan tweaks.
 
 </canonical_refs>
 
@@ -211,7 +276,7 @@ Provide a `state_manager.py` module the orchestrator (Phase 4) can rely on to lo
 ### v2 schema (future milestone)
 - **Multi-instrument dynamic position keys** — current state.json positions has fixed keys SPI200 + AUDUSD. v2 might support arbitrary instrument lists. Migration hook (D-04 success criterion / Claude's Discretion above) prepares the structure.
 - **Trade log compression / archival** — trade_log grows unbounded. v2 might rotate to monthly files or compress old entries.
-- **State schema validation library** (jsonschema) — overkill for v1; we hand-validate top-level keys in load_state's "is this state present and valid" check.
+- **State schema validation library** (jsonschema) — overkill for v1; we hand-validate top-level keys in load_state's "is this state present and valid" check (D-18 hand-rolls this for v1).
 
 ### Out-of-Scope Capabilities (mentioned but not Phase 3)
 - **Encrypting state.json** — single-operator local file system; no PII. Not needed in v1.
@@ -223,4 +288,5 @@ Provide a `state_manager.py` module the orchestrator (Phase 4) can rely on to lo
 
 *Phase: 03-state-persistence-with-recovery*
 *Context gathered: 2026-04-21 via `/gsd-discuss-phase 3` — 16 decisions locked across 4 areas (D-01..D-16)*
-*Next step: `/gsd-plan-phase 3`*
+*Amended: 2026-04-21 via `/gsd-plan-phase 3 --reviews` — added D-17..D-20 + B-1..B-5 from cross-AI review (Gemini LOW · Codex MEDIUM)*
+*Next step: `/gsd-plan-phase 3` (revision pass updates 03-01..04-PLAN.md and 03-VALIDATION.md)*
