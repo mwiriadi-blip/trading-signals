@@ -146,6 +146,106 @@ class TestCLI:
       'CLI-05: D-07 one-shot log line missing from default-mode caplog.text'
     )
 
+  # -----------------------------------------------------------------------
+  # Wave 3: CLI-01 / CLI-02 / CLI-03 (04-04-PLAN.md)
+  # -----------------------------------------------------------------------
+
+  def test_test_flag_leaves_state_json_mtime_unchanged(
+      self, tmp_path, monkeypatch) -> None:
+    '''CLI-01: --test must NOT mutate state.json (structural read-only proof).
+
+    Records st_mtime_ns before and after main.main(['--test']); asserts
+    equality. The Wave 2 run_daily_check step 8 guard (if args.test: return
+    before save_state) makes this structural, not behavioural.
+    '''
+    monkeypatch.chdir(tmp_path)
+    # C-4 revision: keep pytest's caplog handler attached by no-op-ing basicConfig.
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    state_json = tmp_path / 'state.json'
+    _seed_fresh_state(state_json)
+    mtime_before = state_json.stat().st_mtime_ns
+    _install_fixture_fetch(monkeypatch)
+
+    rc = main.main(['--test'])
+    mtime_after = state_json.stat().st_mtime_ns
+    assert rc == 0
+    assert mtime_before == mtime_after, (
+      'CLI-01: --test must NOT mutate state.json'
+    )
+
+  def test_reset_with_confirmation_writes_fresh_state(
+      self, tmp_path, monkeypatch) -> None:
+    '''CLI-02 happy path: --reset with RESET_CONFIRM=YES (env bypass) reinits
+    state.json to the reset_state() baseline ($100k, empty trade_log).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    # Seed a non-default state — account != INITIAL, with a fake trade.
+    state = state_manager.reset_state()
+    state['account'] = 42_000.0
+    state['trade_log'] = [{'fake': 'trade'}]
+    state_manager.save_state(state, path=tmp_path / 'state.json')
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+
+    rc = main.main(['--reset'])
+    assert rc == 0
+
+    from system_params import INITIAL_ACCOUNT
+    post = json.loads((tmp_path / 'state.json').read_text())
+    assert post['account'] == INITIAL_ACCOUNT, (
+      f'CLI-02: post-reset account should be ${INITIAL_ACCOUNT}, got {post["account"]}'
+    )
+    assert post['trade_log'] == [], (
+      'CLI-02: post-reset trade_log should be empty'
+    )
+
+  def test_reset_without_confirmation_does_not_write(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''CLI-02 cancel path: --reset with input != 'YES' does NOT mutate state.json
+    and returns exit code 1 (operator cancellation, distinct from argparse=2
+    and success=0).
+    '''
+    caplog.set_level(logging.INFO)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    state_json = tmp_path / 'state.json'
+    _seed_fresh_state(state_json)
+    mtime_before = state_json.stat().st_mtime_ns
+    # Simulate operator typing 'no' at the prompt.
+    monkeypatch.setattr('builtins.input', lambda prompt: 'no')
+
+    rc = main.main(['--reset'])
+    assert rc == 1, (
+      'CLI-02 cancel: expected exit code 1 (operator cancel), got '
+      f'{rc} — must not be 0 (success) or 2 (argparse error).'
+    )
+    assert state_json.stat().st_mtime_ns == mtime_before, (
+      'CLI-02 cancel: state.json mtime must be unchanged after cancellation'
+    )
+    assert '--reset cancelled by operator' in caplog.text, (
+      'CLI-02 cancel: expected [State] --reset cancelled by operator log line'
+    )
+
+  def test_force_email_logs_stub_and_exits_zero(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''CLI-03: --force-email (no --test) emits the Phase 4 stub log line and
+    exits 0; run_daily_check is NOT invoked (the stub path skips compute,
+    unlike the --test + --force-email combo).
+    '''
+    caplog.set_level(logging.INFO)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    # Ensure fetch is installed as a safety net but should NOT be invoked.
+    _install_fixture_fetch(monkeypatch)
+
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert (
+      '[Email] --force-email received; notifier wiring arrives in Phase 6'
+      in caplog.text
+    ), 'CLI-03: Phase 4 stub log line missing from caplog.text'
+
 
 class TestOrchestrator:
   '''D-11 9-step sequence + DATA-04/05/06 + ERR-01/06 + D-08 upgrade +
@@ -436,9 +536,136 @@ class TestOrchestrator:
     # entry_date_pre_close capture: original 2026-04-10, not run_date.
     assert tl['entry_date'] == '2026-04-10'
 
+  # -----------------------------------------------------------------------
+  # Wave 3: DATA-05 stale-bar + ERR-01 fetch failure exit mapping
+  # -----------------------------------------------------------------------
+
+  @pytest.mark.freeze_time('2026-04-21 09:00:03+08:00')
+  def test_stale_bar_appends_warning(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''DATA-05 / D-09: 6d-stale last bar logs [Fetch] WARN and appends
+    ('fetch', <message>) to pending_warnings which the Wave 2 flush loop
+    persists to state['warnings'] via state_manager.append_warning.
+
+    Frozen clock: 2026-04-21 AWST.
+    Hand-built fixture: last bar 2026-04-15 (business days back ~6 days).
+    Threshold: _STALE_THRESHOLD_DAYS = 3.
+    '''
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    state_manager.save_state(
+      state_manager.reset_state(), path=tmp_path / 'state.json',
+    )
+    # 400 rows of synthetic OHLCV ending 2026-04-15 (6 days before frozen
+    # run_date 2026-04-21). Passes DATA-04 300-row floor.
+    idx = pd.date_range(end='2026-04-15', periods=400, freq='B')
+    fake_df = pd.DataFrame(
+      {c: [100.0 + i for i in range(400)]
+       for c in ['Open', 'High', 'Low', 'Close', 'Volume']},
+      index=idx,
+    )
+    monkeypatch.setattr(
+      main.data_fetcher, 'fetch_ohlcv', lambda sym, **kw: fake_df,
+    )
+
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    post = json.loads((tmp_path / 'state.json').read_text())
+    assert len(post['warnings']) >= 1, (
+      'DATA-05: expected at least one queued warning after stale-bar detection'
+    )
+    stale_warnings = [
+      w for w in post['warnings'] if 'stale: signal_as_of=' in w['message']
+    ]
+    assert len(stale_warnings) >= 1, (
+      f'DATA-05: no stale warning found in state[warnings]; got {post["warnings"]!r}'
+    )
+    msg = stale_warnings[-1]['message']
+    assert '6d old' in msg, (
+      f'DATA-05: expected 6d-old in warning message, got {msg!r}'
+    )
+    assert '(threshold=3d)' in msg, (
+      f'DATA-05: expected (threshold=3d) in warning message, got {msg!r}'
+    )
+    assert '[Fetch] WARN' in caplog.text, (
+      'DATA-05: expected [Fetch] WARN log line at WARNING level'
+    )
+
+  def test_fetch_failure_exits_nonzero_no_save_state(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''ERR-01 / D-03: DataFetchError during fetch exits 2 and leaves state.json
+    untouched (no partial writes). Asserts the typed-exception boundary in
+    main() maps DataFetchError → exit 2 AND the [Fetch] ERROR log line.
+    '''
+    caplog.set_level(logging.ERROR)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    state_json = tmp_path / 'state.json'
+    _seed_fresh_state(state_json)
+    mtime_before = state_json.stat().st_mtime_ns
+
+    def always_fail(sym, **_kw):
+      raise DataFetchError('simulated network down')
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', always_fail)
+
+    rc = main.main(['--once'])
+    assert rc == 2, (
+      f'ERR-01: expected exit 2 for DataFetchError, got {rc}'
+    )
+    assert state_json.stat().st_mtime_ns == mtime_before, (
+      'ERR-01: state.json mtime must be unchanged when fetch fails'
+    )
+    assert '[Fetch] ERROR:' in caplog.text, (
+      'ERR-01: expected [Fetch] ERROR: log line'
+    )
+    assert 'simulated network down' in caplog.text, (
+      'ERR-01: expected DataFetchError message to appear in logs'
+    )
+
 
 class TestLoggerConfig:
   '''Pitfall 4: main() configures logging via basicConfig(force=True).
 
   Wave 0 scaffolds; Wave 3 fills body (04-04-PLAN.md).
   '''
+
+  def test_main_configures_logging_with_force_true(
+      self, tmp_path, monkeypatch) -> None:
+    '''Pitfall 4: `main()` calls `logging.basicConfig(..., force=True)`.
+
+    Proof-by-consequence: install a dummy handler on the root logger BEFORE
+    main() runs; assert that after main() returns the dummy is GONE —
+    force=True is the only way that can happen because basicConfig is
+    otherwise a no-op when the root logger already has handlers attached.
+
+    This test deliberately does NOT monkeypatch main.logging.basicConfig
+    (unlike the caplog-asserting tests above per the C-4 strategy) — the
+    whole point here is to verify basicConfig actually runs and applies
+    force=True semantics.
+    '''
+    monkeypatch.chdir(tmp_path)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    class _DummyHandler(logging.Handler):
+      def emit(self, record):
+        pass
+
+    root = logging.getLogger()
+    dummy = _DummyHandler()
+    root.addHandler(dummy)
+    try:
+      main.main(['--test'])
+      assert dummy not in root.handlers, (
+        'Pitfall 4: basicConfig(force=True) should have removed the '
+        'dummy handler installed before main() ran. If the dummy is still '
+        'attached, main() is NOT using force=True.'
+      )
+      assert root.level == logging.INFO, (
+        f'Pitfall 4: expected root level INFO after main(), got {root.level}'
+      )
+    finally:
+      if dummy in root.handlers:
+        root.removeHandler(dummy)
