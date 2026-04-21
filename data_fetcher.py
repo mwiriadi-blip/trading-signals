@@ -75,8 +75,9 @@ def fetch_ohlcv(
 ) -> pd.DataFrame:
   '''DATA-01/02/03: fetch `days` days of daily OHLCV for `symbol`.
 
-  Uses yf.Ticker(symbol).history() NOT yf.download() (see RESEARCH.md
-  §Standard Stack — yf.download returns MultiIndex columns by default).
+  Uses yf.Ticker(symbol).history() — NOT the module-level bulk-download helper
+  (see RESEARCH.md §Standard Stack: that helper returns MultiIndex columns
+  for a single ticker, which breaks the defensive column slice).
 
   Returns:
     DataFrame with exactly columns [Open, High, Low, Close, Volume] and a
