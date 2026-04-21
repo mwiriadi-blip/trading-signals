@@ -541,17 +541,320 @@ class TestRecordTrade:
 
   All arithmetic verified from first principles (no oracle files needed).
   CRITICAL: gross_pnl is RAW price-delta P&L per D-14, NOT realised_pnl.
-  Wave 3 fills this in.
   '''
-  pass
+
+  def _make_open_position(self) -> dict:
+    '''Helper: return a Position-shaped dict for an open SPI200 LONG.'''
+    return {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-01-02',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 7100.0,
+      'trough_price': None, 'atr_entry': 53.0,
+    }
+
+  def test_record_trade_adjusts_account_by_net_pnl(self) -> None:
+    '''D-14: closing_cost_half = 6.0 * 2 / 2 = 6.0; net_pnl = 1000.0 - 6.0 = 994.0.
+
+    Arithmetic from first principles:
+      cost_aud=6.0, n_contracts=2, gross_pnl=1000.0
+      closing_cost_half = 6.0 * 2 / 2 = 6.0
+      net_pnl = 1000.0 - 6.0 = 994.0
+      account = 100_000.0 + 994.0 = 100_994.0
+    '''
+    state = reset_state()
+    state['positions']['SPI200'] = self._make_open_position()
+    trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
+    result = record_trade(state, trade)
+
+    assert result['account'] == 100_994.0, (
+      f'D-14: expected 100_994.0, got {result["account"]}'
+    )
+
+  def test_record_trade_appends_to_trade_log_with_net_pnl(self) -> None:
+    '''STATE-05 / D-13 / D-20: trade-log entry has computed net_pnl;
+    original trade dict (caller's input) is NOT mutated.
+    '''
+    state = reset_state()
+    state['positions']['SPI200'] = self._make_open_position()
+    trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
+    result = record_trade(state, trade)
+
+    assert len(result['trade_log']) == 1
+    logged = result['trade_log'][0]
+    assert logged['net_pnl'] == 994.0, 'D-14: net_pnl in trade_log entry'
+    assert logged['gross_pnl'] == 1000.0, 'original gross_pnl preserved in entry'
+    assert logged['instrument'] == 'SPI200'
+    assert logged['direction'] == 'LONG'
+
+  def test_record_trade_sets_position_to_none(self) -> None:
+    '''D-01 / D-13: positions[instrument] is None after record_trade (atomic close).'''
+    state = reset_state()
+    state['positions']['SPI200'] = self._make_open_position()
+    trade = _make_trade()
+    result = record_trade(state, trade)
+    assert result['positions']['SPI200'] is None, (
+      'D-01/D-13: record_trade must set positions[instrument] = None on close'
+    )
+    # AUDUSD untouched
+    assert result['positions']['AUDUSD'] is None
+
+  def test_record_trade_raises_on_missing_field(self) -> None:
+    '''D-15: ValueError on missing required field, naming the offending key.'''
+    state = reset_state()
+    state['positions']['SPI200'] = self._make_open_position()
+    trade = _make_trade()
+    del trade['gross_pnl']
+    with pytest.raises(ValueError, match='gross_pnl'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_invalid_instrument(self) -> None:
+    '''D-15: ValueError on instrument not in {SPI200, AUDUSD}.'''
+    state = reset_state()
+    trade = _make_trade(instrument='NASDAQ')
+    with pytest.raises(ValueError, match='instrument'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_invalid_direction(self) -> None:
+    '''D-15: ValueError on direction not in {LONG, SHORT}.'''
+    state = reset_state()
+    trade = _make_trade(direction='HOLD')
+    with pytest.raises(ValueError, match='direction'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_zero_or_negative_contracts(self) -> None:
+    '''D-15: n_contracts must be int > 0.'''
+    state = reset_state()
+    # Zero contracts
+    with pytest.raises(ValueError, match='n_contracts'):
+      record_trade(state, _make_trade(n_contracts=0))
+    # Negative contracts
+    with pytest.raises(ValueError, match='n_contracts'):
+      record_trade(state, _make_trade(n_contracts=-1))
+    # Float contracts (not int)
+    with pytest.raises(ValueError, match='n_contracts'):
+      record_trade(state, _make_trade(n_contracts=1.5))
+
+  def test_record_trade_raises_on_non_string_entry_date(self) -> None:
+    '''D-19 (reviews-revision pass): entry_date must be non-empty str.'''
+    state = reset_state()
+    trade = _make_trade()
+    trade['entry_date'] = 20260102  # int instead of str
+    with pytest.raises(ValueError, match='entry_date'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_empty_string_exit_reason(self) -> None:
+    '''D-19 (reviews-revision pass): exit_reason must be NON-EMPTY str.'''
+    state = reset_state()
+    trade = _make_trade()
+    trade['exit_reason'] = ''
+    with pytest.raises(ValueError, match='exit_reason'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_bool_for_numeric_field(self) -> None:
+    '''D-19 (reviews-revision pass): numeric fields must reject bool.
+
+    Python quirk: isinstance(True, int) is True. Without the explicit bool
+    rejection, True would pass the (int|float) type check and silently
+    corrupt arithmetic (gross_pnl=True would compute net_pnl = True - 6.0 = -5).
+    '''
+    state = reset_state()
+    trade = _make_trade()
+    trade['gross_pnl'] = True
+    with pytest.raises(ValueError, match='gross_pnl'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_nan_gross_pnl(self) -> None:
+    '''D-19 (reviews-revision pass): NaN numeric fields raise immediately
+    rather than waiting for save_state's allow_nan=False catch later.
+    '''
+    state = reset_state()
+    trade = _make_trade()
+    trade['gross_pnl'] = float('nan')
+    with pytest.raises(ValueError, match='gross_pnl'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_inf_cost_aud(self) -> None:
+    '''D-19 (reviews-revision pass): infinite numeric fields raise.'''
+    state = reset_state()
+    trade = _make_trade()
+    trade['cost_aud'] = float('inf')
+    with pytest.raises(ValueError, match='cost_aud'):
+      record_trade(state, trade)
+
+  def test_record_trade_raises_on_string_entry_price(self) -> None:
+    '''D-19 (reviews-revision pass): numeric fields reject str values.'''
+    state = reset_state()
+    trade = _make_trade()
+    trade['entry_price'] = '7000.0'  # str instead of numeric
+    with pytest.raises(ValueError, match='entry_price'):
+      record_trade(state, trade)
+
+  def test_record_trade_does_not_mutate_caller_trade_dict(self) -> None:
+    """D-20 (reviews-revision pass): record_trade must NOT mutate the
+    caller's trade dict. The trade_log entry is built via dict(trade,
+    net_pnl=net_pnl) — a shallow copy with net_pnl added — so the
+    caller's input dict is preserved verbatim. Phase 4 can safely reuse
+    the trade dict afterwards.
+    """
+    state = reset_state()
+    state['positions']['SPI200'] = self._make_open_position()
+    trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
+    original_keys = set(trade.keys())
+    original_gross_pnl = trade['gross_pnl']
+
+    result = record_trade(state, trade)
+
+    # D-20: caller's trade dict is unchanged
+    assert 'net_pnl' not in trade, (
+      "D-20: record_trade must NOT add net_pnl to caller's trade dict; "
+      f'trade now has keys: {sorted(trade.keys())}'
+    )
+    assert set(trade.keys()) == original_keys, (
+      f'D-20: trade dict keys must be unchanged; '
+      f'before={sorted(original_keys)}, after={sorted(trade.keys())}'
+    )
+    assert trade['gross_pnl'] == original_gross_pnl, (
+      'D-20: trade dict values must be unchanged'
+    )
+
+    # But the trade_log entry DOES carry net_pnl (it's a separate copy)
+    assert result['trade_log'][0]['net_pnl'] == 994.0, (
+      'D-20: trade_log entry must carry net_pnl (it is a copy of trade '
+      'with net_pnl added)'
+    )
+    assert result['trade_log'][0] is not trade, (
+      "D-20: trade_log entry must be a separate dict object, not the "
+      "caller's trade dict by reference"
+    )
+
+  def test_record_trade_phase_4_boundary_gross_pnl_not_realised_pnl(self) -> None:
+    '''CRITICAL Phase 4 boundary AC (RESEARCH §Pitfall 3 / Open Question 1).
+
+    record_trade expects trade['gross_pnl'] = RAW price-delta P&L:
+      (exit_price - entry_price) * n_contracts * multiplier  (LONG)
+
+    Phase 2's ClosedTrade.realised_pnl is gross MINUS closing-half cost
+    (Phase 2 _close_position already applied that deduction).
+
+    If Phase 4 incorrectly passes ClosedTrade.realised_pnl as gross_pnl,
+    record_trade will deduct the closing-half cost AGAIN, double-counting it.
+
+    This test fixes the contract by exercising both paths with concrete
+    numbers, so a future Phase 4 PR that misuses the boundary breaks this
+    test loudly.
+
+    Concrete example (SPI LONG, 2 contracts, $5/pt mult, $6 RT cost):
+      entry_price = 7000, exit_price = 7100, n_contracts = 2, multiplier = 5.0
+      RAW gross_pnl = (7100 - 7000) * 2 * 5.0 = 1000.0
+      closing_cost_half = 6.0 * 2 / 2 = 6.0
+      CORRECT net_pnl = 1000.0 - 6.0 = 994.0
+      account = 100_000.0 + 994.0 = 100_994.0
+
+      BUG path (if Phase 4 passed realised_pnl as gross_pnl):
+        ClosedTrade.realised_pnl = RAW - closing_cost_half = 1000.0 - 6.0 = 994.0
+        record_trade would compute: net_pnl = 994.0 - 6.0 = 988.0  (WRONG: $6 short)
+        account would become 100_988.0 instead of 100_994.0
+
+    Phase 4 must compute gross_pnl explicitly:
+      gross_pnl = (exit_price - entry_price) * n_contracts * multiplier  for LONG
+      gross_pnl = (entry_price - exit_price) * n_contracts * multiplier  for SHORT
+    and pass THAT to record_trade — NOT ClosedTrade.realised_pnl.
+    '''
+    # CORRECT path: gross_pnl is RAW
+    state = reset_state()
+    state['positions']['SPI200'] = self._make_open_position()
+    correct_trade = _make_trade(
+      entry_price=7000.0, exit_price=7100.0, n_contracts=2,
+      gross_pnl=1000.0,  # RAW: (7100 - 7000) * 2 * 5.0 = 1000.0
+      cost_aud=6.0, multiplier=5.0,
+    )
+    result = record_trade(state, correct_trade)
+    assert result['account'] == 100_994.0, (
+      'CORRECT: gross_pnl=1000.0 (raw) -> net_pnl=994.0 -> account=100_994.0'
+    )
+    assert result['trade_log'][0]['net_pnl'] == 994.0
+
+    # BUG path simulation: if Phase 4 passes realised_pnl (already net of close cost)
+    # as gross_pnl, record_trade double-deducts and account is short by 6.0.
+    # This is the bug Phase 4 MUST avoid.
+    state2 = reset_state()
+    state2['positions']['SPI200'] = self._make_open_position()
+    # Simulate what Phase 2 ClosedTrade.realised_pnl would be:
+    # phase2_realised_pnl = RAW - closing_cost_half = 1000.0 - 6.0 = 994.0
+    phase2_realised_pnl = 994.0
+    bug_trade = _make_trade(
+      entry_price=7000.0, exit_price=7100.0, n_contracts=2,
+      gross_pnl=phase2_realised_pnl,  # WRONG: passing realised_pnl as gross_pnl
+      cost_aud=6.0, multiplier=5.0,
+    )
+    bug_result = record_trade(state2, bug_trade)
+    # The bug: account is understated by exactly closing_cost_half = 6.0
+    assert bug_result['account'] == 100_988.0, (
+      'BUG: passing realised_pnl as gross_pnl double-deducts close cost; '
+      'account becomes 100_988.0 instead of 100_994.0 (short by 6.0). '
+      'Phase 4 MUST compute gross_pnl as RAW price-delta and pass THAT.'
+    )
+    # The bug delta is exactly closing_cost_half — proves the cause
+    assert (
+      (result['account'] - bug_result['account']) ==
+      (correct_trade['cost_aud'] * correct_trade['n_contracts'] / 2)
+    ), 'bug magnitude must equal closing_cost_half'
 
 class TestEquityHistory:
   '''STATE-06 / D-04 / B-4: update_equity_history appends {date, equity}
   after boundary validation (date shape + equity finiteness).
-
-  Wave 3 fills this in.
   '''
-  pass
+
+  def test_update_equity_history_appends_entry(self) -> None:
+    '''STATE-06: append {date, equity} entry to equity_history.'''
+    state = reset_state()
+    result = update_equity_history(state, '2026-04-21', 99_500.0)
+    assert len(result['equity_history']) == 1
+    entry = result['equity_history'][0]
+    assert entry == {'date': '2026-04-21', 'equity': 99_500.0}, (
+      f'STATE-06: entry shape must be {{date, equity}}; got {entry}'
+    )
+
+  def test_update_equity_history_appends_multiple_entries_in_order(self) -> None:
+    '''Multiple appends preserve chronological order.'''
+    state = reset_state()
+    state = update_equity_history(state, '2026-04-19', 99_500.0)
+    state = update_equity_history(state, '2026-04-20', 99_750.0)
+    state = update_equity_history(state, '2026-04-21', 99_000.5)
+    assert len(state['equity_history']) == 3
+    dates = [e['date'] for e in state['equity_history']]
+    equities = [e['equity'] for e in state['equity_history']]
+    assert dates == ['2026-04-19', '2026-04-20', '2026-04-21']
+    assert equities == [99_500.0, 99_750.0, 99_000.5]
+
+  def test_update_equity_history_returns_mutated_state(self) -> None:
+    '''Pattern: all mutation functions return the mutated state for chaining.'''
+    state = reset_state()
+    result = update_equity_history(state, '2026-04-21', 100_000.0)
+    assert result is state, (
+      'update_equity_history must return the same state dict reference'
+    )
+
+  def test_update_equity_history_raises_on_non_string_date(self) -> None:
+    '''B-4 (reviews-revision pass): date must be str (not int / datetime / etc).'''
+    state = reset_state()
+    with pytest.raises(ValueError, match='date'):
+      update_equity_history(state, 20260421, 99_500.0)  # int instead of str
+
+  def test_update_equity_history_raises_on_short_date_string(self) -> None:
+    '''B-4 (reviews-revision pass): date must be str of length 10 (ISO YYYY-MM-DD shape).'''
+    state = reset_state()
+    with pytest.raises(ValueError, match='date'):
+      update_equity_history(state, '2026-04', 99_500.0)  # len 7, not 10
+
+  def test_update_equity_history_raises_on_non_finite_equity(self) -> None:
+    '''B-4 (reviews-revision pass): equity must be finite numeric (rejects NaN, inf, bool).'''
+    state = reset_state()
+    with pytest.raises(ValueError, match='equity'):
+      update_equity_history(state, '2026-04-21', float('nan'))
+    with pytest.raises(ValueError, match='equity'):
+      update_equity_history(state, '2026-04-21', float('inf'))
+    with pytest.raises(ValueError, match='equity'):
+      update_equity_history(state, '2026-04-21', True)  # bool
 
 class TestReset:
   '''STATE-07 / D-01 / D-03: reset_state shape — $100k account, None positions,
