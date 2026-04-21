@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 1
 status: executing
-last_updated: "2026-04-21T01:45:36.054Z"
+last_updated: "2026-04-21T02:02:38.490Z"
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # STATE — Trading Signals
@@ -27,14 +27,14 @@ progress:
 ## Current Position
 
 Phase: 02 (Signal Engine — Sizing, Exits, Pyramiding) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 2
 - **Current Plan:** 1
 - **Total Plans:** 6
 - **Status:** Ready to execute
-- **Progress:** [████████░░] 82%
+- **Progress:** [█████████░] 91%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -58,6 +58,7 @@ Plan: 4 of 5
 | Phase 02 P01 | 9m58s | 3 tasks | 7 files |
 | Phase 02 P02 | 6m34s | 2 tasks | 2 files |
 | Phase 02 P03 | 460s | 2 tasks | 2 files |
+| Phase 02 P04 | 64m | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,9 @@ Plan: 4 of 5
 - D-15 enforced via del atr in get_trailing_stop + check_stop_hit: stop distance uses position['atr_entry'] (entry-ATR anchor), not the atr argument
 - D-12 stateless invariant: check_pyramid evaluates only (level+1)*atr_entry threshold — add_contracts is always 0 or 1 (gap-day cap proven by TestPyramid gap tests)
 - B-1 NaN policy: get_trailing_stop NaN atr_entry->nan; check_stop_hit NaN high/low/atr_entry->False; check_pyramid NaN->hold level (D-03 generalisation)
+- B-4 dual-maintenance accepted for phase2 fixtures: regenerate_phase2_fixtures.py reimplements sizing math inline without importing sizing_engine.py so production bugs surface as fixture mismatches
+- D-15 entry-ATR anchor: fixture helpers pass prev[atr_entry] not today's ATR to trailing stop and stop-hit math
+- D-12 pyramid stateless invariant hardcoded in regenerator: inline assert add_contracts==1 inside pyramid_gap fixture builder catches recipe bugs at generation time
 
 ### Todos Carried Forward
 

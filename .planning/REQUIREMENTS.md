@@ -52,11 +52,16 @@ Fine granularity — each requirement is independently testable.
 
 ### Exit Rules
 
-- [ ] **EXIT-01**: LONG→FLAT closes the open LONG (FLAT means "no position")
-- [ ] **EXIT-02**: SHORT→FLAT closes the open SHORT
-- [ ] **EXIT-03**: LONG→SHORT in one run closes LONG then opens SHORT (two-phase eval: exits before entries)
-- [ ] **EXIT-04**: SHORT→LONG in one run closes SHORT then opens LONG
-- [ ] **EXIT-05**: ADX < 20 while in trade closes the position immediately
+- [x] **EXIT-01
+**: LONG→FLAT closes the open LONG (FLAT means "no position")
+- [x] **EXIT-02
+**: SHORT→FLAT closes the open SHORT
+- [x] **EXIT-03
+**: LONG→SHORT in one run closes LONG then opens SHORT (two-phase eval: exits before entries)
+- [x] **EXIT-04
+**: SHORT→LONG in one run closes SHORT then opens LONG
+- [x] **EXIT-05
+**: ADX < 20 while in trade closes the position immediately
 - [x] **EXIT-06
 **: LONG trailing stop = peak_price − (3 × ATR); peak updates with today's HIGH (intraday)
 - [x] **EXIT-07
