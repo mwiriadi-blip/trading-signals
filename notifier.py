@@ -153,6 +153,102 @@ class ResendError(Exception):
 # Public API stubs — Waves 1 + 2 fill
 # =========================================================================
 
+# =========================================================================
+# Email formatters (D-02) — mirror dashboard semantics with inline style.
+# Email clients strip CSS classes → _fmt_pnl_with_colour_email emits
+# inline style="color:#..." NOT class="...".
+# =========================================================================
+
+def _fmt_em_dash_email() -> str:
+  '''D-02: em-dash glyph for missing/empty cells (U+2014, single char).'''
+  return '—'
+
+
+def _fmt_currency_email(value: float) -> str:
+  '''D-02: $X,XXX.XX with thousands separator; negative prefixed with `-$`.
+
+  Always 2 dp. Locale-independent (PEP 3101 , and . format spec).
+  Matches dashboard._fmt_currency output byte-for-byte.
+  '''
+  if value < 0:
+    return f'-${-value:,.2f}'
+  return f'${value:,.2f}'
+
+
+def _fmt_percent_signed_email(fraction: float) -> str:
+  '''D-02: X.X% with leading sign; for since-inception / today's-change rollups.
+
+  Input is a fraction (0.0123 → +1.2%). Leading + preserved for positive
+  AND zero values — matches dashboard _fmt_percent_signed.
+  '''
+  return f'{fraction * 100:+.1f}%'
+
+
+def _fmt_percent_unsigned_email(fraction: float) -> str:
+  '''D-02: X.X% without leading +; for ADX / RVol display.
+
+  Input is a fraction (0.0123 → 1.2%). Negative values still show the
+  minus sign (f-string :.1f preserves it).
+  '''
+  return f'{fraction * 100:.1f}%'
+
+
+def _fmt_pnl_with_colour_email(value: float) -> str:
+  '''D-02: P&L with inline colour span — LONG green / SHORT red / zero muted.
+
+  Email clients strip CSS classes — this MUST use inline style='...'
+  (NOT class='...'). html.escape applied to BOTH the colour hex
+  (defense-in-depth; hex values are ASCII so no-op but belt-and-braces)
+  AND the body text (numeric output is safe but escape anyway per
+  Phase 5 D-15 leaf discipline).
+
+  Positive: <span style="color:#22c55e">+$1,234.56</span>
+  Negative: <span style="color:#ef4444">-$567.89</span>
+  Zero:     <span style="color:#cbd5e1">$0.00</span>
+  '''
+  if value > 0:
+    colour = _COLOR_LONG
+    body = f'+{_fmt_currency_email(value)}'
+  elif value < 0:
+    colour = _COLOR_SHORT
+    body = _fmt_currency_email(value)
+  else:
+    colour = _COLOR_TEXT_MUTED
+    body = '$0.00'
+  return (
+    f'<span style="color:{html.escape(colour, quote=True)}">'
+    f'{html.escape(body, quote=True)}</span>'
+  )
+
+
+def _fmt_last_updated_email(now: datetime) -> str:
+  '''D-02: AWST wall-clock timestamp for email header.
+
+  C-1 reviews (Phase 5): REJECT naive datetime loudly. Callers MUST
+  pass timezone-aware via PERTH.localize(...) — never datetime(...,
+  tzinfo=PERTH). Mirror of dashboard._fmt_last_updated semantic.
+  '''
+  if now.tzinfo is None:
+    raise ValueError(
+      '_fmt_last_updated_email requires a timezone-aware datetime; '
+      f'got naive datetime={now!r}'
+    )
+  awst = now.astimezone(pytz.timezone('Australia/Perth'))
+  return awst.strftime('%Y-%m-%d %H:%M AWST')
+
+
+def _fmt_instrument_display_email(state_key: str) -> str:
+  '''D-02: state-key → display name lookup (SPI200 → SPI 200).
+
+  Unknown keys pass through unchanged; leaf html.escape in the caller.
+  '''
+  return _INSTRUMENT_DISPLAY_NAMES_EMAIL.get(state_key, state_key)
+
+
+# =========================================================================
+# Signal-change detection + subject/body composition (D-04 / D-06 / D-10)
+# =========================================================================
+
 def _detect_signal_changes(state: dict, old_signals: dict) -> bool:
   '''D-06: True iff any instrument's signal changed from old_signals.
 

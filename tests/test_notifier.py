@@ -194,21 +194,98 @@ class TestComposeBody:
 
 
 class TestFormatters:
-  '''D-02: notifier owns _fmt_currency_email, _fmt_percent_signed_email,
-  _fmt_percent_unsigned_email, _fmt_pnl_with_colour_email, _fmt_em_dash_email,
-  _fmt_last_updated_email, _fmt_instrument_display_email. Wave 1 (06-02) fills.
+  '''D-02: notifier owns 7 _fmt_*_email formatters. Inline style on colour
+  spans (email clients strip CSS classes). Mirror dashboard semantics
+  with _email suffix.
   '''
 
-  def test_scaffold_placeholder_formatters(self) -> None:
-    '''Nyquist Dimension 8: placeholder — Wave 1 fills per-formatter cases.
+  def test_fmt_currency_positive(self) -> None:
+    assert notifier._fmt_currency_email(1234.56) == '$1,234.56'
 
-    Wave 1 (06-02) replaces this with real formatter assertions
-    (currency signs, percent signs, P&L colour spans, em-dash, AWST
-    last-updated, instrument display names).
+  def test_fmt_currency_negative(self) -> None:
+    assert notifier._fmt_currency_email(-1234.56) == '-$1,234.56'
+
+  def test_fmt_currency_zero(self) -> None:
+    assert notifier._fmt_currency_email(0.0) == '$0.00'
+
+  def test_fmt_currency_large(self) -> None:
+    assert notifier._fmt_currency_email(1234567.89) == '$1,234,567.89'
+
+  def test_fmt_percent_signed_positive(self) -> None:
+    assert notifier._fmt_percent_signed_email(0.0123) == '+1.2%'
+
+  def test_fmt_percent_signed_negative(self) -> None:
+    assert notifier._fmt_percent_signed_email(-0.0456) == '-4.6%'
+
+  def test_fmt_percent_signed_zero(self) -> None:
+    assert notifier._fmt_percent_signed_email(0.0) == '+0.0%'
+
+  def test_fmt_percent_unsigned_positive(self) -> None:
+    assert notifier._fmt_percent_unsigned_email(0.0123) == '1.2%'
+
+  def test_fmt_percent_unsigned_negative_shows_minus(self) -> None:
+    assert notifier._fmt_percent_unsigned_email(-0.0123) == '-1.2%'
+
+  def test_fmt_pnl_with_colour_positive_green_with_plus(self) -> None:
+    out = notifier._fmt_pnl_with_colour_email(100.5)
+    assert '<span style="color:#22c55e">' in out
+    assert '+$100.50</span>' in out
+    assert 'class=' not in out  # NO CSS classes — inline style only (D-02)
+
+  def test_fmt_pnl_with_colour_negative_red_no_plus(self) -> None:
+    out = notifier._fmt_pnl_with_colour_email(-50.25)
+    assert '<span style="color:#ef4444">' in out
+    assert '-$50.25</span>' in out
+    # no leading '+' in the body span (negative already has leading '-')
+    body = out.split('>', 1)[1]
+    assert '+' not in body
+
+  def test_fmt_pnl_with_colour_zero_muted(self) -> None:
+    out = notifier._fmt_pnl_with_colour_email(0.0)
+    assert '<span style="color:#cbd5e1">' in out
+    assert '$0.00</span>' in out
+
+  def test_fmt_pnl_with_colour_no_css_class(self) -> None:
+    '''D-02: email clients strip CSS classes — must be inline style only.'''
+    for value in (100.0, -50.0, 0.0):
+      out = notifier._fmt_pnl_with_colour_email(value)
+      assert 'class=' not in out, (
+        f'_fmt_pnl_with_colour_email must NOT emit class attributes; got: {out!r}'
+      )
+
+  def test_fmt_pnl_with_colour_escapes_body(self) -> None:
+    '''Belt-and-braces: html.escape called on output (Phase 5 D-15 discipline).
+
+    Currency format is ASCII-safe so the output equals its escaped form;
+    the assertion proves the contract by comparing against html.escape output.
     '''
-    assert hasattr(notifier, '_EMAIL_FROM'), 'Wave 0 stub must expose _EMAIL_FROM'
-    # Placeholder: Wave 1 fills real formatter assertions
-    pytest.xfail('Wave 1 (06-02) fills TestFormatters cases')
+    out = notifier._fmt_pnl_with_colour_email(0.0)
+    # '$0.00' survives html.escape unchanged but we still route through it
+    assert html.escape('$0.00', quote=True) in out
+
+  def test_fmt_em_dash(self) -> None:
+    assert notifier._fmt_em_dash_email() == '—'
+
+  def test_fmt_last_updated_naive_raises(self) -> None:
+    '''C-1 reviews: naive datetime must raise (prevents pytz LMT bug).'''
+    naive = datetime(2026, 4, 22, 9, 0)
+    with pytest.raises(ValueError, match='naive datetime='):
+      notifier._fmt_last_updated_email(naive)
+
+  def test_fmt_last_updated_awst(self) -> None:
+    aware_awst = FROZEN_NOW  # PERTH.localize(datetime(2026, 4, 22, 9, 0))
+    assert notifier._fmt_last_updated_email(aware_awst) == '2026-04-22 09:00 AWST'
+
+  def test_fmt_last_updated_utc_converts_to_awst(self) -> None:
+    # 01:00 UTC = 09:00 AWST (UTC+8)
+    aware_utc = pytz.UTC.localize(datetime(2026, 4, 22, 1, 0))
+    assert notifier._fmt_last_updated_email(aware_utc) == '2026-04-22 09:00 AWST'
+
+  def test_fmt_instrument_display_spi200(self) -> None:
+    assert notifier._fmt_instrument_display_email('SPI200') == 'SPI 200'
+
+  def test_fmt_instrument_display_audusd(self) -> None:
+    assert notifier._fmt_instrument_display_email('AUDUSD') == 'AUD / USD'
 
 
 class TestSendDispatch:
