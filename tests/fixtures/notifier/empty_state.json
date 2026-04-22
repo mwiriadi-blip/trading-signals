@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "account": 100000.0,
+  "last_run": null,
+  "positions": {
+    "SPI200": null,
+    "AUDUSD": null
+  },
+  "signals": {
+    "SPI200": 0,
+    "AUDUSD": 0
+  },
+  "trade_log": [],
+  "equity_history": [],
+  "warnings": []
+}
