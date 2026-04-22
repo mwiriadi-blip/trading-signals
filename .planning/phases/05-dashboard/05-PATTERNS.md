@@ -609,7 +609,12 @@ def test_dashboard_failure_never_crashes_run(
   # `patch('state_manager.os.replace', side_effect=OSError(...))` idiom.
   def _raise(*args, **kwargs):
     raise RuntimeError('simulated render failure')
-  monkeypatch.setattr('main.dashboard.render_dashboard', _raise)
+  # C-2 reviews: main.py no longer imports dashboard at module top; the
+  # in-helper `import dashboard` reuses sys.modules['dashboard'].
+  # Patch the real module attribute, not `main.dashboard.render_dashboard`
+  # (which does not exist after the C-2 fix).
+  import dashboard as _dashboard_module_for_patch  # noqa: F401
+  monkeypatch.setattr(_dashboard_module_for_patch, 'render_dashboard', _raise)
 
   rc = main.main(['--once'])
   assert rc == 0, 'D-06: dashboard failure must NOT change exit code'
@@ -627,7 +632,7 @@ def test_dashboard_failure_never_crashes_run(
   assert 'RuntimeError' in caplog.text, 'exception type must be in log message'
 ```
 
-**Monkeypatch target rationale** (`'main.dashboard.render_dashboard'`): mirrors `test_state_manager.py:228` `patch('state_manager.os.replace', ...)` — the patch target is the attribute lookup site inside the module under test, not the defining module. Because main.py does `import dashboard`, `main.dashboard.render_dashboard` is the actual lookup. If the executor instead uses `import dashboard` inside the try block (alternative from D-06 insertion above), the target changes to `dashboard.render_dashboard` at global scope. Executor picks; test-file adjusts the monkeypatch target string to match.
+**Monkeypatch target rationale (revised — C-2 reviews):** Per C-2 reviews, `main.py` no longer does `import dashboard` at module top; the import lives INSIDE `_render_dashboard_never_crash` and reuses `sys.modules['dashboard']` on each call. The attribute `main.dashboard` therefore does NOT exist — monkeypatching that string would raise `AttributeError`. The correct pattern is to import the real `dashboard` module in the test and monkeypatch its `render_dashboard` attribute directly (as shown above). Still mirrors the `test_state_manager.py:228` `patch('state_manager.os.replace', ...)` spirit: patch at the attribute lookup site, with the lookup site now being the real module (not main's namespace). Phase 4 precedent for this pattern: `test_reversal_long_to_short_preserves_new_position` already monkeypatches `sizing_engine.step` the same way.
 
 ---
 
