@@ -25,9 +25,12 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 2
+  warning_resolved: 2
   info: 5
   total: 7
-status: issues_found
+status: resolved
+resolved_by: 06-04-PLAN.md (gap closure)
+resolved_at: 2026-04-23
 ---
 
 # Phase 6: Code Review Report
@@ -59,10 +62,11 @@ All 515/515 tests passing and regenerator double-run idempotency confirm the imp
 
 ## Warning
 
-### WR-01: `run_daily_check` docstring claims a `(rc, None, None, None)` failure return path that never executes
+### WR-01: `run_daily_check` docstring claims a `(rc, None, None, None)` failure return path that never executes ✓ RESOLVED in 06-04 (2026-04-23)
 
 **File:** `main.py:441-443`
 **Category:** Code Quality / Documentation drift
+**Resolution:** Docstring reworded per suggested replacement (commit `9832a28`). Sibling comment at `main()` dispatch ladder also updated for consistency. Acceptance greps pass: `(rc, None, None, None)` in main.py → 0; `defense-in-depth` → 2 matches; return sites unchanged (2).
 **Issue:** The docstring states: *"On failure paths where state/old_signals are not yet populated, returns (rc, None, None, None) — the dispatch ladder in main() guards with `if state is not None`."* Inspecting the function body, there is no such return statement. Every failure path (`DataFetchError`, `ShortFrameError`, unexpected `Exception`) propagates up and is caught in `main()` lines 776-783, which returns `int` directly. The function has exactly two `return` statements, both of which return populated 4-tuples (lines 647 and 672).
 
 This means the None-guard at `main.py:765-770` is effectively unreachable under the current implementation — defensive in intent, but the docstring overstates the behaviour. A future refactor that adds a non-exception-based failure path (e.g., early return on a pre-fetch invariant violation) would re-activate the guard. Not a correctness bug, but a docstring contract that diverges from runtime behavior is a trap for future readers.
@@ -78,10 +82,11 @@ This means the None-guard at `main.py:765-770` is effectively unreachable under 
   '''
 ```
 
-### WR-02: Empty-state subject golden has an empty date slot producing visual double-space
+### WR-02: Empty-state subject golden has an empty date slot producing visual double-space ✓ RESOLVED in 06-04 (2026-04-23)
 
 **File:** `tests/fixtures/notifier/golden_empty_subject.txt:1` (and by extension `notifier.py:311-319`)
 **Category:** Edge case / UX
+**Resolution:** `compose_email_subject` now emits `date_label = date_iso if date_iso else 'first run'` (commit `9ede078`). Golden regenerated: `📊 first run — SPI200 FLAT, AUDUSD FLAT — Equity $100,000` (64 bytes, single-space). Pinning test `test_subject_first_run_label_when_no_date_iso` green. Regenerator double-run idempotent — PHASE GATE preserved.
 **Issue:** The committed empty-state subject is `📊  — SPI200 FLAT, AUDUSD FLAT — Equity $100,000` — note the double space between `📊` and `—`. This is because `empty_state.json` has `last_run: null` and int-shape signals (no `as_of_run` key), so the `date_iso` fallback chain in `compose_email_subject` resolves to `''`:
 
 ```python
