@@ -26,6 +26,7 @@ consistently across every main()-invoking caplog-asserting test (see
 import argparse
 import json
 import logging
+import math
 import os  # noqa: F401 — used in Wave 3 CLI-01 mtime check
 from pathlib import Path
 
@@ -429,6 +430,20 @@ class TestOrchestrator:
       # Sanity: real scalars dict from signal_engine.get_latest_indicators.
       assert 'adx' in sig['last_scalars']
       assert 'rvol' in sig['last_scalars']
+      # B-1 revision 2026-04-22 (Phase 5 Wave 0): last_close persisted for
+      # UI-SPEC §Positions table Current-price column.
+      assert 'last_close' in sig, (
+        f'{key}: B-1 revision — last_close missing from signals dict'
+      )
+      assert isinstance(sig['last_close'], float), (
+        f'{key}: last_close must be float, got {type(sig["last_close"]).__name__}'
+      )
+      assert math.isfinite(sig['last_close']), (
+        f'{key}: last_close must be finite, got {sig["last_close"]!r}'
+      )
+      assert sig['last_close'] > 0, (
+        f'{key}: last_close should be positive (fixture fetches produce realistic prices)'
+      )
 
   def test_reversal_long_to_short_preserves_new_position(
       self, tmp_path, monkeypatch) -> None:

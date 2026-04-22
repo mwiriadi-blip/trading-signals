@@ -511,11 +511,14 @@ def run_daily_check(args: argparse.Namespace) -> int:
 
     # 3.o G-2 revision 2026-04-22: signal state update always dict shape
     # AND always carries last_scalars for Phase 5/6 rendering.
+    # B-1 revision 2026-04-22 (Phase 5 Wave 0): last_close added alongside
+    # last_scalars for UI-SPEC §Positions table Current-price column.
     state['signals'][state_key] = {
       'signal': new_signal,
       'signal_as_of': signal_as_of,
       'as_of_run': run_date_iso,
       'last_scalars': scalars,
+      'last_close': bar['close'],
     }
 
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
