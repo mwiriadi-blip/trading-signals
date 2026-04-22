@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Signals — Dashboard</title>
+  <style>
+:root {
+  --color-bg: #0f1117;
+  --color-surface: #161a24;
+  --color-border: #252a36;
+  --color-text: #e5e7eb;
+  --color-text-muted: #cbd5e1;
+  --color-text-dim: #64748b;
+  --color-long: #22c55e;
+  --color-short: #ef4444;
+  --color-flat: #eab308;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  --fs-body: 14px; --fs-label: 12px; --fs-heading: 20px; --fs-display: 28px;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+  cursor: default;
+}
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+header h1 {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+header .subtitle {
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0 16px;
+}
+header .meta {
+  display: inline-flex;
+  gap: 16px;
+  align-items: baseline;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-8);
+}
+header .meta .label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+header .meta .value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+section {
+  margin-bottom: var(--space-8);
+}
+section h2 {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.cards-row {
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+  flex: 1;
+  min-width: 300px;
+}
+.card .eyebrow {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+}
+.card .big-label {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.card .sub {
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+.card .scalars {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+.chart-container {
+  position: relative;
+  /* G-S2 reviews: Fixed height mandatory for Chart.js
+     maintainAspectRatio: false — do NOT optimise away. */
+  height: 320px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}
+.chart-container.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.data-table thead th {
+  text-align: left;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.data-table tbody td {
+  font-size: var(--fs-body);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.data-table tbody td.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.data-table .empty-state {
+  text-align: center;
+  color: var(--color-text-dim);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-6);
+}
+.stat-tile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}
+.stat-tile .label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}
+.stat-tile .value {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+.subtle {
+  font-size: var(--fs-label);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-4);
+}
+footer {
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  margin: 48px 0 24px;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 720px) {
+  .cards-row {
+    flex-direction: column;
+  }
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+</style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" integrity="sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="container">
+<header>
+  <h1>Trading Signals</h1>
+  <p class="subtitle">SPI 200 &amp; AUD/USD mechanical system</p>
+  <p class="meta">
+    <span class="label">Last updated</span>
+    <span class="value">2026-04-22 09:00 AWST</span>
+  </p>
+</header>
+<section aria-labelledby="heading-signals">
+  <h2 id="heading-signals">Signal Status</h2>
+  <div class="cards-row">
+    <article class="card">
+      <p class="eyebrow">SPI 200</p>
+      <p class="big-label" style="color: #22c55e">LONG</p>
+      <p class="sub">Signal as of 2026-04-21</p>
+      <p class="scalars">ADX 32.5  ·  Mom<sub>1</sub> +3.1%  ·  Mom<sub>3</sub> +4.8%  ·  Mom<sub>12</sub> +9.2%  ·  RVol 1.12</p>
+    </article>
+    <article class="card">
+      <p class="eyebrow">AUD / USD</p>
+      <p class="big-label" style="color: #eab308">FLAT</p>
+      <p class="sub">Signal as of 2026-04-21</p>
+      <p class="scalars">ADX 18.3  ·  Mom<sub>1</sub> -0.5%  ·  Mom<sub>3</sub> +0.1%  ·  Mom<sub>12</sub> +1.4%  ·  RVol 0.95</p>
+    </article>
+  </div>
+</section>
+<section aria-labelledby="heading-equity">
+  <h2 id="heading-equity">Equity Curve</h2>
+  <div class="chart-container">
+    <canvas id="equityChart" aria-label="Account equity line chart over time" role="img"></canvas>
+  </div>
+  <script>
+    (function() {
+      const payload = {"data": [99950.0, 100096.82, 100133.63, 100280.45, 100317.27, 100354.08, 100500.9, 100537.72, 100574.53, 100721.35, 100758.17, 100794.98, 100941.8, 100978.62, 101125.43, 101162.25, 101199.07, 101345.88, 101382.7, 101419.52, 101566.33, 101603.15, 101639.97, 101786.78, 101823.6, 101970.42, 102007.23, 102044.05, 102190.87, 102227.68, 102264.5, 102411.31, 102448.13, 102484.95, 102631.76, 102668.58, 102815.4, 102852.21, 102889.03, 103035.85, 103072.66, 103109.48, 103256.3, 103293.11, 103329.93, 103476.75, 103513.56, 103660.38, 103697.2, 103734.01, 103880.83, 103917.65, 103954.46, 104101.28, 104138.1, 104174.91, 104321.73, 104358.55, 104505.36, 104532.18], "labels": ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"]};
+      new Chart(document.getElementById("equityChart"), {
+        type: "line",
+        data: {
+          labels: payload.labels,
+          datasets: [{
+            label: "Account equity",
+            data: payload.data,
+            borderColor: "#22c55e",
+            backgroundColor: "#22c55e",
+            fill: false,
+            tension: 0.1,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4
+          }]
+        },
+        options: {
+          scales: {
+            x: { type: "category",
+               ticks: { color: "#cbd5e1", maxTicksLimit: 10 },
+               grid: { color: "#252a36" } },
+            y: { ticks: { color: "#cbd5e1",
+                         callback: (v) => "$" + v.toLocaleString() }},
+               grid: { color: "#252a36" } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (ctx) => "$" + ctx.parsed.y.toLocaleString() } }
+          },
+          maintainAspectRatio: false,
+          responsive: true
+        }
+      });
+    })();
+  </script>
+</section>
+<section aria-labelledby="heading-positions">
+  <h2 id="heading-positions">Open Positions</h2>
+  <table class="data-table">
+    <caption class="visually-hidden">Open positions with current price, contracts, trail stop, and unrealised P&amp;L</caption>
+    <thead>
+      <tr>
+        <th scope="col">Instrument</th>
+        <th scope="col">Direction</th>
+        <th scope="col">Entry</th>
+        <th scope="col">Current</th>
+        <th scope="col">Contracts</th>
+        <th scope="col">Pyramid</th>
+        <th scope="col">Trail Stop</th>
+        <th scope="col">Unrealised P&amp;L</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SPI 200</td>
+        <td><span style="color: #22c55e">LONG</span></td>
+        <td class="num">$8,000.00</td>
+        <td class="num">$8,085.00</td>
+        <td class="num">2</td>
+        <td class="num">Lvl 0</td>
+        <td class="num">$7,950.00</td>
+        <td class="num"><span style="color: #22c55e">+$844.00</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section aria-labelledby="heading-trades">
+  <h2 id="heading-trades">Closed Trades</h2>
+  <p class="subtle">last 20</p>
+  <table class="data-table">
+    <caption class="visually-hidden">Most recent 20 closed trades, newest first</caption>
+    <thead>
+      <tr>
+        <th scope="col">Closed</th>
+        <th scope="col">Instrument</th>
+        <th scope="col">Direction</th>
+        <th scope="col">Entry → Exit</th>
+        <th scope="col">Contracts</th>
+        <th scope="col">Reason</th>
+        <th scope="col">P&amp;L</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>2026-04-09</td>
+        <td>SPI 200</td>
+        <td><span style="color: #22c55e">LONG</span></td>
+        <td class="num">$7,980.00 → $8,020.00</td>
+        <td class="num">1</td>
+        <td>Signal flat</td>
+        <td class="num"><span style="color: #22c55e">+$197.00</span></td>
+      </tr>
+      <tr>
+        <td>2026-04-04</td>
+        <td>AUD / USD</td>
+        <td><span style="color: #22c55e">LONG</span></td>
+        <td class="num">$0.65 → $0.66</td>
+        <td class="num">1</td>
+        <td>ADX drop</td>
+        <td class="num"><span style="color: #22c55e">+$347.50</span></td>
+      </tr>
+      <tr>
+        <td>2026-03-22</td>
+        <td>SPI 200</td>
+        <td><span style="color: #ef4444">SHORT</span></td>
+        <td class="num">$7,900.00 → $7,950.00</td>
+        <td class="num">1</td>
+        <td>Reversal</td>
+        <td class="num"><span style="color: #ef4444">-$253.00</span></td>
+      </tr>
+      <tr>
+        <td>2026-03-09</td>
+        <td>AUD / USD</td>
+        <td><span style="color: #ef4444">SHORT</span></td>
+        <td class="num">$0.66 → $0.66</td>
+        <td class="num">1</td>
+        <td>Signal flat</td>
+        <td class="num"><span style="color: #22c55e">+$197.50</span></td>
+      </tr>
+      <tr>
+        <td>2026-02-22</td>
+        <td>SPI 200</td>
+        <td><span style="color: #22c55e">LONG</span></td>
+        <td class="num">$7,850.00 → $7,920.00</td>
+        <td class="num">1</td>
+        <td>Stop hit</td>
+        <td class="num"><span style="color: #22c55e">+$347.00</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section aria-labelledby="heading-stats">
+  <h2 id="heading-stats">Key Stats</h2>
+  <div class="stats-grid">
+    <div class="stat-tile">
+      <p class="label">Total Return</p>
+      <p class="value" style="color: #22c55e">+4.5%</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Sharpe</p>
+      <p class="value">22.90</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Max Drawdown</p>
+      <p class="value">0.0%</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Win Rate</p>
+      <p class="value">80.0%</p>
+    </div>
+  </div>
+</section>
+<footer>
+  Signal-only system. Not financial advice.
+</footer>
+  </div>
+</body>
+</html>

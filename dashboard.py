@@ -610,9 +610,20 @@ def _render_signal_cards(state: dict) -> str:
   for state_key, display in _INSTRUMENT_DISPLAY_NAMES.items():
     eyebrow = html.escape(display, quote=True)
     sig_entry = signals.get(state_key)
+    # D-08 upgrade branch (Pitfall 7 from Phase 4): state['signals'][key] may be
+    # either an int (Phase 3 reset_state shape) OR a dict (Phase 4 nested shape).
+    # Rule 1 auto-fix during Wave 2: regenerator hit AttributeError on reset
+    # state fixture which has int shape. Renderer must handle both.
     if sig_entry is None:
       label = html.escape(_fmt_em_dash(), quote=True)
       colour = html.escape(_COLOR_FLAT, quote=True)
+      signal_as_of_line = 'Signal as of never'
+      scalars_line = html.escape(_fmt_em_dash(), quote=True)
+    elif isinstance(sig_entry, int):
+      # Phase 3 int shape: no signal_as_of, no last_scalars — render as FLAT
+      # (or the literal signal value if mapped) with "never" timestamp.
+      label = html.escape(_SIGNAL_LABEL.get(sig_entry, _fmt_em_dash()), quote=True)
+      colour = html.escape(_SIGNAL_COLOUR.get(sig_entry, _COLOR_FLAT), quote=True)
       signal_as_of_line = 'Signal as of never'
       scalars_line = html.escape(_fmt_em_dash(), quote=True)
     else:
