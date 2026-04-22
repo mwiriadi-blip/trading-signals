@@ -77,6 +77,24 @@ STATE_SCHEMA_VERSION: int = 1       # bump on each schema change (STATE-04)
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================
+# Palette constants — Phase 5 + Phase 6 shared (D-02 retrofit)
+# =========================================================================
+# Originally defined in dashboard.py module-level; migrated here so
+# notifier.py can import the same palette without cross-hex import (hex
+# fence D-01). Underscore prefix preserves "shared-implementation-detail"
+# semantics rather than "stable public API".
+
+_COLOR_BG: str = '#0f1117'
+_COLOR_SURFACE: str = '#161a24'
+_COLOR_BORDER: str = '#252a36'
+_COLOR_TEXT: str = '#e5e7eb'
+_COLOR_TEXT_MUTED: str = '#cbd5e1'
+_COLOR_TEXT_DIM: str = '#64748b'
+_COLOR_LONG: str = '#22c55e'
+_COLOR_SHORT: str = '#ef4444'
+_COLOR_FLAT: str = '#eab308'
+
+# =========================================================================
 # Position TypedDict — D-08
 # =========================================================================
 
