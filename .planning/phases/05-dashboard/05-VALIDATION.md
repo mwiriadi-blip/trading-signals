@@ -5,6 +5,8 @@ status: draft
 nyquist_compliant: false
 wave_0_complete: false
 created: 2026-04-22
+revision_pass: 2026-04-22-reviews
+revision_source: 05-REVIEWS.md (C-1 pytz sweep + C-2/C-3/C-5 new test rows)
 ---
 
 # Phase 05 — Validation Strategy
@@ -67,11 +69,17 @@ Each row corresponds to a DASH-* requirement OR a critical locked contract (D-01
 | 05-03-T2 | 03 | 2 | D-03 Atomic write | — | tempfile + fsync + os.replace; mid-write crash leaves existing file intact (Phase 3 D-17 parallel) | unit | `.venv/bin/pytest tests/test_dashboard.py::TestAtomicWrite -x` | ❌ W0 | ⬜ pending |
 | 05-03-T3 | 03 | 2 | D-06 Integration | — | main.run_daily_check() calls dashboard.render_dashboard(state, path, now) AFTER save_state; dashboard.html exists on disk post-run | unit | `.venv/bin/pytest tests/test_main.py::TestOrchestrator::test_run_daily_check_renders_dashboard -x` | ❌ W0 | ⬜ pending |
 | 05-03-T3 | 03 | 2 | D-06 Failure isolation | — | dashboard render failure does NOT crash run; rc==0 even when render raises; log emits [Dashboard] WARN | unit (monkeypatch) | `.venv/bin/pytest tests/test_main.py::TestOrchestrator::test_dashboard_failure_never_crashes_run -x` | ❌ W0 | ⬜ pending |
+| 05-03-T3r | 03 | 2 | D-06 Import-time failure isolation (C-2 reviews) | — | dashboard IMPORT-time failure (syntax error / bad sub-import) does NOT crash run; rc==0; `import dashboard` lives INSIDE `_render_dashboard_never_crash` helper body, NOT at main.py module scope | unit (monkeypatch sys.modules) | `.venv/bin/pytest tests/test_main.py::TestOrchestrator::test_dashboard_import_time_failure_never_crashes_run -x` | ❌ W0 | ⬜ pending |
+| 05-03-T3t | 03 | 2 | CLI-01 --test read-only (C-3 reviews Option A) | — | Pre-created dashboard.html is unchanged (bytes + mtime) after `main.main(['--test'])`; Phase 4 CLI-01 structural read-only contract preserved; dashboard renders ONLY on non-test path | unit | `.venv/bin/pytest tests/test_main.py::TestOrchestrator::test_test_flag_leaves_dashboard_html_mtime_unchanged -x` | ❌ W0 | ⬜ pending |
+| 05-02-T2s | 02 | 1 | DASH-15 XSS signal_as_of (C-5 reviews) | V5 | `_render_signal_cards` escapes `signal_as_of` via html.escape(value, quote=True); payload `<script>alert(1)</script>` renders escaped, never raw | unit | `.venv/bin/pytest tests/test_dashboard.py::TestRenderBlocks::test_signal_card_escapes_signal_as_of -x` | ❌ W0 | ⬜ pending |
+| 05-02-T2u | 02 | 1 | DASH-15 XSS unknown exit_reason (C-5 reviews) | V5 | `_render_trades_table` escapes exit_reason values that miss the display-map via html.escape(value, quote=True); payload `<img src=x onerror=alert(1)>` renders escaped, never raw | unit | `.venv/bin/pytest tests/test_dashboard.py::TestRenderBlocks::test_trades_table_escapes_unknown_exit_reason -x` | ❌ W0 | ⬜ pending |
+| 05-02-T2d | 02 | 1 | DASH-15 XSS positions display fallback (C-5 reviews) | V5 | `_render_positions_table` escapes unknown/state-derived display keys via html.escape(value, quote=True); belt-and-braces per D-15 | unit | `.venv/bin/pytest tests/test_dashboard.py::TestRenderBlocks::test_positions_table_escapes_display_fallback -x` | ❌ W0 | ⬜ pending |
+| 05-03-T1c | 03 | 2 | DASH-02 CLI (C-6 reviews, CONTEXT D-05) | — | `python -m dashboard` is a valid entrypoint — dashboard.py has `if __name__ == '__main__':` block that calls `render_dashboard(load_state(), Path('dashboard.html'))` | unit (substring check) | `.venv/bin/pytest tests/test_dashboard.py -k test_module_main_entrypoint_exists -x` | ❌ W0 | ⬜ pending |
 
 *Status legend: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 *W0 = Wave 0 scaffold creates the test file skeletons; bodies populate across Waves 1/2.*
 
-**Row count:** 24 rows — 9 locked DASH-* requirements each mapped to 1+ named test, plus 3 rows per-locked-decision (D-01 hex, D-06 integration × 2) and B-1 retrofit regression.
+**Row count:** 31 rows — 9 locked DASH-* requirements each mapped to 1+ named test, 3 rows per-locked-decision (D-01 hex, D-06 integration × 2), B-1 retrofit regression, PLUS 7 new rows added in the 2026-04-22-reviews revision: C-2 import-time failure (05-03-T3r), C-3 --test mtime (05-03-T3t), C-5 per-surface escape × 3 (05-02-T2s/T2u/T2d), C-6 python -m dashboard (05-03-T1c).
 
 Each plan's acceptance criteria MUST reference the test name listed above and the exact pytest command MUST be one of the automated commands quoted here — no paraphrase, no renaming.
 
@@ -83,7 +91,7 @@ Each plan's acceptance criteria MUST reference the test name listed above and th
 - [ ] `tests/test_dashboard.py` — new file with 6 test-class skeletons: TestStatsMath, TestFormatters, TestRenderBlocks, TestEmptyState, TestGoldenSnapshot, TestAtomicWrite. Mirror `tests/test_state_manager.py` style (module-level path constants + `_make_state` fixture helper + class-per-concern).
 - [ ] `tests/fixtures/dashboard/` — new directory with `sample_state.json` (mid-campaign: non-empty positions, signals, trade_log, equity_history) + `empty_state.json` (first-run: all empty). Committed.
 - [ ] `tests/fixtures/dashboard/golden.html` + `tests/fixtures/dashboard/golden_empty.html` — committed rendered outputs (regenerated via regenerate script with frozen clock).
-- [ ] `tests/regenerate_dashboard_golden.py` — offline regeneration script (mirror of `tests/regenerate_goldens.py`). Loads fixtures, calls `render_dashboard(state, tmp, now=datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth')))`. Never runs in CI.
+- [ ] `tests/regenerate_dashboard_golden.py` — offline regeneration script (mirror of `tests/regenerate_goldens.py`). Loads fixtures, calls `render_dashboard(state, tmp, now=PERTH.localize(datetime(2026, 4, 22, 9, 0)))` where `PERTH = pytz.timezone('Australia/Perth')`. **C-1 reviews:** `.localize(...)` is mandatory — `tzinfo=pytz.timezone(...)` silently picks the historical LMT offset. Never runs in CI.
 - [ ] `.gitignore` — append `dashboard.html` line (D-03).
 - [ ] `tests/test_signal_engine.py::TestDeterminism` — extend AST blocklist: `DASHBOARD_PATH = Path('dashboard.py')` + `FORBIDDEN_MODULES_DASHBOARD = frozenset({'signal_engine', 'sizing_engine', 'data_fetcher', 'main', 'notifier', 'numpy', 'pandas'})` + new parametrised test `test_dashboard_no_forbidden_imports`. Also extend the 2-space indent guard `covered_paths` list.
 - [ ] **B-1 retrofit in `main.py`** — extend `run_daily_check()` around line 514-519: add `'last_close': float(bar['Close'])` alongside `'last_scalars': scalars` in the signal-state dict write. Update `tests/test_main.py::TestOrchestrator::test_orchestrator_reads_both_int_and_dict_signal_shape` to assert `'last_close' in sig` with numeric check.

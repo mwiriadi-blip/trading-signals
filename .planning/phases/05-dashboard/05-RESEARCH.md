@@ -1,6 +1,8 @@
 # Phase 5: Dashboard - Research
 
 **Researched:** 2026-04-21
+**revision_pass:** 2026-04-22-reviews
+**revision_source:** 05-REVIEWS.md (C-1 pytz localize fix in Pitfall 9 example + §Wave 0 Gaps regenerator line)
 **Domain:** Static HTML dashboard rendering (Python stdlib string builder + Chart.js CDN + inline CSS)
 **Confidence:** HIGH for toolchain + SRI (verified via direct curl); HIGH for stdlib primitives (tested in this session); MEDIUM for golden-snapshot byte-stability guidance (tested at float-ordering level, not cross-OS); HIGH for B-1 retrofit scope (grep + read of current main.py).
 
@@ -584,11 +586,11 @@ This is covered by the Pattern 2 code above; call it out in the plan's "dashboar
 
 ### Pitfall 9: Golden-HTML byte drift from naive-datetime `now`
 
-**What goes wrong:** `render_dashboard(state, path, now=datetime(2026, 4, 22, 9, 0))` (no tzinfo) silently produces a different string than `render_dashboard(state, path, now=datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth')))` because `now.astimezone(pytz.timezone('Australia/Perth'))` on a naive datetime assumes system-local time. Tests that pass in CI (UTC) fail on the operator's laptop (AWST) with golden drift.
+**What goes wrong:** `render_dashboard(state, path, now=datetime(2026, 4, 22, 9, 0))` (no tzinfo) silently produces a different string than `render_dashboard(state, path, now=PERTH.localize(datetime(2026, 4, 22, 9, 0)))` (where `PERTH = pytz.timezone('Australia/Perth')`) because `now.astimezone(PERTH)` on a naive datetime assumes system-local time. Tests that pass in CI (UTC) fail on the operator's laptop (AWST) with golden drift. **C-1 reviews sub-pitfall:** using `datetime(..., tzinfo=pytz.timezone(...))` is ALSO wrong — pytz timezones carry historical transitions, and passing one via `tzinfo=` yields the pre-1895 LMT offset (+07:43:24) for Perth instead of +08:00 AWST. Always use `.localize()`.
 
 **Why it happens:** Naive datetime arithmetic depends on system timezone.
 
-**How to avoid:** UI-SPEC §Format Helper Contracts locks: `_fmt_last_updated(now)` raises `ValueError` on naive datetime. The planner's TestFormatters class should include `test_fmt_last_updated_rejects_naive_datetime`. Regenerator script must instantiate `now = datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth'))`.
+**How to avoid:** UI-SPEC §Format Helper Contracts locks: `_fmt_last_updated(now)` raises `ValueError` on naive datetime. The planner's TestFormatters class should include `test_fmt_last_updated_rejects_naive_datetime`. Regenerator script must instantiate `PERTH = pytz.timezone('Australia/Perth'); now = PERTH.localize(datetime(2026, 4, 22, 9, 0))` (C-1 reviews: `.localize(...)` is the only safe form with pytz — `datetime(..., tzinfo=pytz.timezone(...))` silently produces LMT offsets).
 
 **Warning signs:** `test_golden_snapshot_matches_committed` fails with a 1-character diff in the "Last updated" timestamp.
 
@@ -900,7 +902,7 @@ No `[ASSUMED]` claims in this research. All key facts were verified in-session:
 
 - [ ] `tests/test_dashboard.py` — new file with 6 test-class skeletons (TestStatsMath, TestFormatters, TestRenderBlocks, TestEmptyState, TestGoldenSnapshot, TestAtomicWrite); mirror `tests/test_state_manager.py` scaffolding convention (module-level path constants + `_make_*` fixture helpers + class-per-concern).
 - [ ] `tests/fixtures/dashboard/` directory — new; contains `sample_state.json`, `empty_state.json`, `golden.html`, `golden_empty.html`.
-- [ ] `tests/regenerate_dashboard_golden.py` — new offline script mirror of `tests/regenerate_goldens.py`; loads fixtures, calls `render_dashboard(state, tmp, now=datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth')))`, writes to `tests/fixtures/dashboard/golden*.html`.
+- [ ] `tests/regenerate_dashboard_golden.py` — new offline script mirror of `tests/regenerate_goldens.py`; loads fixtures, calls `render_dashboard(state, tmp, now=PERTH.localize(datetime(2026, 4, 22, 9, 0)))` where `PERTH = pytz.timezone('Australia/Perth')`, writes to `tests/fixtures/dashboard/golden*.html`. **C-1 reviews:** `.localize(...)` is mandatory — `tzinfo=pytz.timezone(...)` picks LMT offsets, not AWST.
 - [ ] `.gitignore` update — append `dashboard.html` (Pitfall 8).
 - [ ] `tests/test_signal_engine.py::TestDeterminism` extension — add `DASHBOARD_PATH = Path('dashboard.py')`, `FORBIDDEN_MODULES_DASHBOARD = frozenset(...)`, and a new parametrised test `test_dashboard_no_forbidden_imports`.
 - [ ] `tests/test_main.py::TestOrchestrator` extension — (a) extend `test_orchestrator_reads_both_int_and_dict_signal_shape` to assert `'last_close' in sig` and `sig['last_close'] == pytest.approx(expected_close)`; (b) add `test_run_daily_check_renders_dashboard` asserting `dashboard.html` exists post-run; (c) add `test_dashboard_failure_never_crashes_run` by monkeypatching `main.dashboard.render_dashboard` to raise and asserting `rc == 0`.

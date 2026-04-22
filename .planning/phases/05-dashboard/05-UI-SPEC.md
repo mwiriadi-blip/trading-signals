@@ -5,8 +5,8 @@ status: draft
 shadcn_initialized: false
 preset: none
 created: 2026-04-22
-revision_pass: 2026-04-22
-revision_source: 05-UI-CHECKER (B-1 wiring fix + F-1/2/3/4 flags)
+revision_pass: 2026-04-22-reviews
+revision_source: 05-REVIEWS.md (C-1 pytz localize sweep across examples; prior revision: 05-UI-CHECKER B-1 wiring fix + F-1/2/3/4 flags)
 ---
 
 # Phase 5 — UI Design Contract

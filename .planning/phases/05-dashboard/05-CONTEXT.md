@@ -3,6 +3,8 @@
 **Phase:** 05 — Dashboard
 **Created:** 2026-04-22
 **Discuss mode:** discuss
+**revision_pass:** 2026-04-22-reviews
+**revision_source:** 05-REVIEWS.md (C-1 pytz localize fix)
 **Goal (from ROADMAP.md):** Render a self-contained `dashboard.html` each run that lets the operator visually verify signal state, open positions, equity history, and recent trades — matching the backtest dark aesthetic.
 
 **Requirements covered:** DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, DASH-07, DASH-08, DASH-09 (9 requirements)
@@ -276,7 +278,7 @@ For the planner (gsd-planner):
   - **Wave 1 (05-02):** fill stats math helpers (`_compute_sharpe`, `_compute_max_drawdown`, `_compute_win_rate`, `_compute_total_return`) + formatters + per-block renderers (`_render_header`, `_render_signal_cards`, `_render_positions_table`, `_render_trades_table`, `_render_key_stats`, `_render_footer`). Populate TestStatsMath + TestFormatters + TestRenderBlocks.
   - **Wave 2 (05-03):** fill `_render_equity_chart_container` (Chart.js inline script) + `_render_html_shell` + `render_dashboard` (atomic write). Populate TestEmptyState + TestAtomicWrite + TestGoldenSnapshot. PHASE GATE.
   - **Wave 3 (05-04) if needed:** integration task — main.py amendment to call `dashboard.render_dashboard(state, out_path, now=run_date)` after save_state. Add a main-level test `test_run_daily_check_renders_dashboard_after_save`. OR fold into Wave 2 if task count allows.
-- Golden HTML snapshot must be frozen-clock-friendly: pass `now=datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth'))` in the regenerator so re-runs produce identical bytes.
+- Golden HTML snapshot must be frozen-clock-friendly: pass `now=PERTH.localize(datetime(2026, 4, 22, 9, 0))` (where `PERTH = pytz.timezone('Australia/Perth')`) in the regenerator so re-runs produce identical bytes. **C-1 reviews fix:** the original phrasing used `datetime(..., tzinfo=pytz.timezone(...))` which silently picks the historical LMT offset (+07:43:24 for Perth pre-1895) instead of +08:00 AWST. Always use `.localize()` for pytz; `tzinfo=` works only for stdlib `zoneinfo.ZoneInfo`.
 - `sample_state.json` fixture should be a realistic mid-campaign state — not empty (so all render blocks have content) and not first-run (empty-state covered separately by TestEmptyState).
 - The AST source-order gate used in Phase 4 (to verify the AC-1 record_trade-before-position-assignment ordering) is NOT needed here — no ordering hazards in dashboard.py.
 

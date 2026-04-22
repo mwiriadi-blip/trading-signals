@@ -1,6 +1,8 @@
 # Phase 5: Dashboard — Pattern Map
 
 **Mapped:** 2026-04-21
+**revision_pass:** 2026-04-22-reviews
+**revision_source:** 05-REVIEWS.md (C-1 pytz localize sweep in test-file + regenerator + clock-injection examples)
 **Files analyzed:** 8 (3 new modules + 4 new fixtures + 4 modified files)
 **Analogs found:** 7 / 8 strong matches; 1 module constant (`_INLINE_CSS`) has no direct analog (first inline-CSS-in-Python module in this repo) — guidance below.
 
@@ -263,7 +265,8 @@ Organized into classes per CONTEXT D-14 (one class per concern dimension):
 
 All tests use tmp_path (pytest built-in) for isolated dashboard.html writes
 — never touch the real ./dashboard.html. Clock-dependent tests inject a
-frozen `now=datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone(...))` so
+frozen `now=PERTH.localize(datetime(2026, 4, 22, 9, 0))` (where
+`PERTH = pytz.timezone('Australia/Perth')`) so
 golden-snapshot bytes are deterministic.
 
 Wave 0 (this commit): empty skeletons with class docstrings and _make_state
@@ -356,8 +359,10 @@ Produces:
   - tests/fixtures/dashboard/golden.html        (committed reference of sample_state.json)
   - tests/fixtures/dashboard/golden_empty.html  (committed reference of empty_state.json)
 
-Frozen clock: pass now=datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone(
-'Australia/Perth')) so re-runs produce byte-identical output and
+Frozen clock: pass now=PERTH.localize(datetime(2026, 4, 22, 9, 0)) where
+PERTH = pytz.timezone('Australia/Perth') (C-1 reviews: `.localize(...)`
+is mandatory — `tzinfo=pytz.timezone(...)` silently picks the historical
+LMT offset, not +08:00 AWST). Byte-identical output so that
 TestGoldenSnapshot can diff bytes exactly.
 
 Git-diff on the golden HTML files IS the design review surface: an
@@ -376,7 +381,10 @@ sys.path.insert(0, str(ROOT))
 from dashboard import render_dashboard  # noqa: E402, I001 — import after sys.path.insert for script-run resolution
 
 FIXTURES_DIR = ROOT / 'tests' / 'fixtures' / 'dashboard'
-FROZEN_NOW = datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth'))
+# C-1 reviews fix: pytz timezones must be applied via .localize(), NOT via
+# tzinfo=. Passing pytz to tzinfo= yields the pre-1895 LMT offset for Perth.
+PERTH = pytz.timezone('Australia/Perth')
+FROZEN_NOW = PERTH.localize(datetime(2026, 4, 22, 9, 0))
 
 SCENARIOS = [
   ('sample_state.json', 'golden.html'),
@@ -778,7 +786,7 @@ The single permitted `except Exception:` is in `main.py`'s D-06 integration bloc
 
 **Source:** `state_manager.py:302-353` (`load_state` accepts `now=None`; default `datetime.now(UTC)`) + `_backup_corrupt` same pattern.
 
-**Apply to:** `dashboard.render_dashboard(state, out_path, now=None)` + `_fmt_last_updated(now)`. Default: `datetime.now(pytz.timezone('Australia/Perth'))` (UI-SPEC §Copywriting Header locks the timezone). Tests inject `datetime(2026, 4, 22, 9, 0, tzinfo=pytz.timezone('Australia/Perth'))` for determinism.
+**Apply to:** `dashboard.render_dashboard(state, out_path, now=None)` + `_fmt_last_updated(now)`. Default: `datetime.now(pytz.timezone('Australia/Perth'))` (UI-SPEC §Copywriting Header locks the timezone — `datetime.now(tz)` with pytz IS safe because `datetime.now(tz)` internally calls `tz.fromutc(utcnow)` which returns the correct current offset, unlike `datetime(..., tzinfo=tz)` construction which picks LMT). Tests inject `PERTH.localize(datetime(2026, 4, 22, 9, 0))` for determinism (C-1 reviews: `.localize()` is the ONLY correct construction form for pytz aware datetimes).
 
 **Divergence from state_manager:** state_manager uses `UTC` default and `zoneinfo` (stdlib); dashboard uses `pytz.timezone('Australia/Perth')` default. This is a deliberate CONTEXT D-01 choice (state_manager internal-stamping vs dashboard user-facing-display). Do not "harmonise" — tests depend on the pytz type.
 
