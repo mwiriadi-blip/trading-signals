@@ -335,9 +335,16 @@ def compose_email_subject(
   equity_dollars = int(round(account))
   equity_str = f'${equity_dollars:,}'
 
+  # WR-02 close (2026-04-22): when date_iso resolves empty (first run —
+  # last_run=null AND no dict-shape as_of_run on any instrument), use
+  # 'first run' as a self-documenting label so the subject never has
+  # a double-space between emoji and em-dash. D-04 template shape
+  # (position of date field in the subject) is preserved.
+  date_label = date_iso if date_iso else 'first run'
+
   # Assembly: [TEST] prefix BEFORE emoji per D-04 line 92.
   core = (
-    f'{emoji} {date_iso} — SPI200 {spi_label}, '
+    f'{emoji} {date_label} — SPI200 {spi_label}, '
     f'AUDUSD {audusd_label} — Equity {equity_str}'
   )
   if is_test:
