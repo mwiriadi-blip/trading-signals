@@ -156,6 +156,126 @@ _INLINE_CSS = f'''
 
 
 # =========================================================================
+# Em-dash constant helper — placed early so _compute_* helpers can reference
+# it for empty-state fallbacks (CONTEXT D-16). Full formatter suite lands in
+# Task 2 of Wave 1 just below this block.
+# =========================================================================
+
+def _fmt_em_dash() -> str:
+  '''UI-SPEC §Format Helper Contracts: single call site for the em-dash empty-value token.'''
+  return '—'
+
+
+# =========================================================================
+# Stats math helpers — CONTEXT D-07 / D-08 / D-09 / D-10
+# =========================================================================
+
+def _compute_sharpe(state: dict) -> str:
+  '''CONTEXT D-07: daily log-returns, rf=0, annualised × √252. Returns em-dash
+  if <30 samples, any non-positive equity (Pitfall 4: math.log domain error),
+  or flat equity / <2 log-returns (Pitfall 3: statistics.stdev needs >= 2 samples).
+  '''
+  equities = [row['equity'] for row in state.get('equity_history', [])]
+  if len(equities) < 30:
+    return _fmt_em_dash()
+  if any(e <= 0 for e in equities):  # Pitfall 4: math.log domain error guard
+    return _fmt_em_dash()
+  log_returns = [math.log(equities[i] / equities[i - 1]) for i in range(1, len(equities))]
+  if len(log_returns) < 2:  # Pitfall 3: statistics.stdev requires >= 2 samples
+    return _fmt_em_dash()
+  mean_r = statistics.mean(log_returns)
+  std_r = statistics.stdev(log_returns)
+  if std_r == 0:  # Pitfall 3 belt-and-braces: degenerate flat streak
+    return _fmt_em_dash()
+  sharpe = (mean_r / std_r) * math.sqrt(252)
+  return f'{sharpe:.2f}'
+
+
+def _compute_max_drawdown(state: dict) -> str:
+  '''CONTEXT D-08: rolling peak-to-trough %. Always <= 0. Empty history → em-dash.'''
+  equities = [row['equity'] for row in state.get('equity_history', [])]
+  if not equities:
+    return _fmt_em_dash()
+  running_max = equities[0]
+  max_dd = 0.0
+  for eq in equities:
+    running_max = max(running_max, eq)
+    if running_max == 0:  # Pitfall 5: guard divide-by-zero on pathological fixture
+      continue
+    dd = (eq - running_max) / running_max  # always <= 0
+    max_dd = min(max_dd, dd)
+  return f'{max_dd * 100:.1f}%'
+
+
+def _compute_win_rate(state: dict) -> str:
+  '''CONTEXT D-09: closed trades with gross_pnl > 0.
+
+  Uses gross_pnl (NOT realised/net_pnl) — industry "win before costs" convention.
+  '''
+  closed = state.get('trade_log', [])
+  if not closed:
+    return _fmt_em_dash()
+  wins = sum(1 for t in closed if t.get('gross_pnl', 0) > 0)
+  return f'{wins / len(closed) * 100:.1f}%'
+
+
+def _compute_total_return(state: dict) -> str:
+  '''CONTEXT D-10: (current_equity - INITIAL_ACCOUNT) / INITIAL_ACCOUNT * 100. Always defined.'''
+  eq_hist = state.get('equity_history', [])
+  if eq_hist:
+    current = eq_hist[-1].get('equity', state.get('account', INITIAL_ACCOUNT))
+  else:
+    current = state.get('account', INITIAL_ACCOUNT)
+  total_return = (current - INITIAL_ACCOUNT) / INITIAL_ACCOUNT
+  return f'{total_return * 100:+.1f}%'  # signed format: '+5.3%', '-2.1%', '+0.0%'
+
+
+# =========================================================================
+# Inline display-math helpers — UI-SPEC §Derived render-time calculations
+# Re-implementation of sizing_engine formulas inline per CONTEXT D-01 hex
+# fence. TestStatsMath::test_unrealised_pnl_matches_sizing_engine locks
+# bit-identical output against sizing_engine.compute_unrealised_pnl on a
+# shared fixture — drift surfaces as a red test.
+# =========================================================================
+
+def _compute_trail_stop_display(position: dict) -> float:
+  '''UI-SPEC §Positions table Trail Stop formula. Anchors on position['atr_entry']
+  (NOT today's ATR — matches sizing_engine D-15 semantics).
+
+  LONG: peak_price - TRAIL_MULT_LONG * atr_entry (fallback: entry_price if peak_price None)
+  SHORT: trough_price + TRAIL_MULT_SHORT * atr_entry (fallback: entry_price if trough_price None)
+  '''
+  atr_entry = position['atr_entry']
+  if position['direction'] == 'LONG':
+    peak = position.get('peak_price') or position['entry_price']
+    return peak - TRAIL_MULT_LONG * atr_entry
+  trough = position.get('trough_price') or position['entry_price']
+  return trough + TRAIL_MULT_SHORT * atr_entry
+
+
+def _compute_unrealised_pnl_display(
+  position: dict, state_key: str, current_close: float | None,
+) -> float | None:
+  '''UI-SPEC §Positions table Unrealised P&L formula. Inline re-implementation
+  of sizing_engine.compute_unrealised_pnl per CONTEXT D-01 hex fence. Returns
+  None when current_close is None (caller renders em-dash).
+
+  Per CLAUDE.md §Operator Decisions / CONTEXT D-13: opening-half cost is
+  deducted here (matches sizing_engine.compute_unrealised_pnl exactly —
+  TestStatsMath::test_unrealised_pnl_matches_sizing_engine locks parity).
+  '''
+  if current_close is None:
+    return None
+  multiplier, cost_aud_round_trip = _CONTRACT_SPECS[state_key]
+  cost_aud_open = cost_aud_round_trip / 2
+  direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
+  price_diff = current_close - position['entry_price']
+  gross = direction_mult * price_diff * position['n_contracts'] * multiplier
+  open_cost = cost_aud_open * position['n_contracts']
+  return gross - open_cost
+
+
+# =========================================================================
 # Private render helpers — Wave 0 stubs; Waves 1/2 fill bodies
 # =========================================================================
 
