@@ -24,9 +24,12 @@ are NEVER substituted for each other — both logged on every run (D-13).
 Wave 0 (argparse skeleton + module constants + bootstrap
 logging.basicConfig(force=True) in main() [Pitfall 4] + stubs for the
 Wave 2 targets) is done. Wave 2 filled run_daily_check + _compute_run_date
-+ _closed_trade_to_record (04-03-PLAN.md). Wave 3 (this commit) adds the
-top-level typed-exception boundary inside main() + _handle_reset +
-_force_email_stub + DATA-05 stale-bar detection (04-04-PLAN.md).
++ _closed_trade_to_record (04-03-PLAN.md). Wave 3 added the top-level
+typed-exception boundary inside main() + _handle_reset + DATA-05
+stale-bar detection (04-04-PLAN.md). Phase 6 Wave 2 (06-03) deleted
+the Phase 4 _force_email_stub and wired _send_email_never_crash via the
+D-15 compute-then-email path — `run_daily_check` now returns a 4-tuple
+(rc, state, old_signals, run_date) consumed by the dispatch ladder.
 '''
 import argparse
 import logging
