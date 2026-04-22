@@ -147,6 +147,72 @@ def _send_email_never_crash(
 
 
 # =========================================================================
+# Phase 7 scheduler helpers — Wave 0 stubs + tz wrapper. Wave 1
+# (07-02-PLAN.md) fills the stub bodies. The _get_process_tzname wrapper
+# is fully functional in Wave 0: Wave 1 uses it in _run_schedule_loop's
+# UTC assertion. Signatures are part of the CONTEXT locked contract
+# (D-01 + D-02) and must not change between Wave 0 and Wave 1.
+# =========================================================================
+
+
+def _get_process_tzname() -> str:
+  '''Return the process-local timezone abbreviation (e.g. "UTC", "AEST").
+
+  Thin wrapper around `time.tzname[0]` so Wave 1's UTC assertion inside
+  `_run_schedule_loop` is patchable in tests without touching the `time`
+  module's attributes (07-REVIEWS.md Codex MEDIUM-fix: `time.tzname` is
+  platform-dependent and not always writable, whereas a module-level
+  function in `main` is always patchable via `monkeypatch.setattr`).
+
+  Production behaviour: identical to `time.tzname[0]`.
+  Test behaviour: `monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')`.
+  '''
+  import time as _time  # LOCAL — keep stdlib import graph tidy
+  return _time.tzname[0]
+
+
+def _run_daily_check_caught(job, args) -> None:
+  '''D-02 (Phase 7 Wave 1): never-crash wrapper for scheduled run_daily_check.
+
+  Third instance of the never-crash pattern after _render_dashboard_never_crash
+  and _send_email_never_crash. Wave 1 fills the body per 07-02-PLAN.md Task 2
+  (typed DataFetchError/ShortFrameError at WARN, catch-all Exception at WARN,
+  rc != 0 WARN).
+
+  Wave 0: stub raises so any accidental call during Wave 0 fails loudly.
+  '''
+  raise NotImplementedError('[Sched] Wave 1 lands body per 07-02-PLAN.md D-02')
+
+
+def _run_schedule_loop(
+  job,
+  args,
+  scheduler=None,
+  sleep_fn=None,
+  tick_budget_s: float = 60.0,
+  max_ticks: int | None = None,
+) -> int:
+  '''D-01 (Phase 7 Wave 1): factored schedule loop driver with injectable fakes.
+
+  Production call: `_run_schedule_loop(run_daily_check, args)` — defaults flow.
+  Test call: `_run_schedule_loop(job, args, scheduler=fake, sleep_fn=list.append,
+  max_ticks=1)` — one tick, no real sleep, no real scheduler thread.
+
+  Wave 1 fills the body per 07-02-PLAN.md Task 3:
+    - local import `import schedule`
+    - assert _get_process_tzname() == 'UTC' (Pitfall 1 mitigation; uses wrapper
+      so tests patch `main._get_process_tzname` instead of `time.tzname`)
+    - lazy-resolve scheduler + sleep_fn
+    - register schedule.every().day.at('00:00').do(_run_daily_check_caught, job, args)
+    - loop while max_ticks is None or ticks < max_ticks
+    - emit `[Sched] scheduler entered; next fire 00:00 UTC (08:00 AWST) Mon–Fri`
+
+  Wave 0: stub raises so any accidental call during Wave 0 fails loudly.
+  '''
+  raise NotImplementedError('[Sched] Wave 1 lands body per 07-02-PLAN.md D-01')
+
+
+# =========================================================================
 # Argparse (D-05, RESEARCH §Example 2)
 # =========================================================================
 
@@ -747,6 +813,12 @@ def main(argv: list[str] | None = None) -> int:
   ERR-04 (crash-email) is Phase 8 scope. Wave 3's `except Exception` ONLY
   logs + returns 1.
   '''
+  # D-06 (Phase 7): load .env into os.environ BEFORE parsing args.
+  # Local import keeps `dotenv` off module-top imports so the AST blocklist
+  # on every non-main module stays meaningful; main.py is the sole consumer.
+  from dotenv import load_dotenv  # noqa: PLC0415 — C-2 local-import pattern
+  load_dotenv()  # no-op when .env absent; env vars take precedence (override=False default)
+
   parser = _build_parser()
   args = parser.parse_args(argv)
   _validate_flag_combo(args, parser)
