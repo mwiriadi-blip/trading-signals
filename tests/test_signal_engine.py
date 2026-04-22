@@ -560,6 +560,8 @@ FORBIDDEN_MODULES_DASHBOARD = frozenset({
   'numpy', 'pandas',
   # Fetch / network — dashboard never touches network (Chart.js loads client-side)
   'yfinance', 'requests',
+  # Phase 7: scheduler + env deps — main.py is their sole consumer
+  'schedule', 'dotenv',
 })
 
 # Phase 6 Wave 0: notifier.py IS the email I/O hex — stdlib (html, json,
@@ -576,6 +578,8 @@ FORBIDDEN_MODULES_NOTIFIER = frozenset({
   'numpy', 'pandas',
   # Fetch libs — notifier never fetches market data
   'yfinance',
+  # Phase 7: scheduler + env deps — main.py is their sole consumer
+  'schedule', 'dotenv',
 })
 
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)

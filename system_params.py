@@ -121,3 +121,12 @@ class Position(TypedDict):
   peak_price: float | None       # LONG: highest HIGH since entry; None for SHORT
   trough_price: float | None     # SHORT: lowest LOW since entry; None for LONG
   atr_entry: float
+
+
+# =========================================================================
+# Phase 7 constants — scheduler loop + weekday gate (D-01, D-03, D-07)
+# =========================================================================
+
+LOOP_SLEEP_S: int = 60                   # tick-budget between schedule.run_pending calls (D-01)
+SCHEDULE_TIME_UTC: str = '00:00'         # 08:00 AWST = 00:00 UTC — passed to schedule.at() (D-07)
+WEEKDAY_SKIP_THRESHOLD: int = 5          # weekday() >= 5 means Sat/Sun (stdlib contract; D-03)
