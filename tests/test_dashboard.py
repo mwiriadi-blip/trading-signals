@@ -479,11 +479,277 @@ class TestRenderBlocks:
   '''Wave 1/2 (VALIDATION rows 05-02-T3 + 05-03-T1): per-block substring
   asserts, palette presence, Chart.js SRI match, no-external-stylesheet,
   </script> injection defence, XSS escape on exit_reason.
+  Wave 1 populates per-block substring + colour + copy + per-surface XSS tests.
   '''
 
-  def test_scaffold_placeholder(self) -> None:
-    '''Wave 0 placeholder — Wave 1/2 populate real tests.'''
-    assert True
+  # --- Header ---
+
+  def test_header_contains_title_and_awst_timestamp(self) -> None:
+    '''UI-SPEC §Header: H1, subtitle (escaped &), Last-updated AWST.'''
+    state = _make_state()
+    output = dashboard._render_header(state, FROZEN_NOW)
+    assert '<h1>Trading Signals</h1>' in output
+    # The '&' in 'SPI 200 & AUD/USD mechanical system' must be escaped to &amp;
+    assert 'SPI 200 &amp; AUD/USD mechanical system' in output
+    assert '2026-04-22 09:00 AWST' in output
+
+  def test_header_uses_render_header_signature(self) -> None:
+    '''_render_header inherits _fmt_last_updated's naive-datetime rejection.'''
+    state = _make_state()
+    with pytest.raises(ValueError, match='timezone-aware'):
+      dashboard._render_header(state, datetime(2026, 4, 22, 9, 0))  # naive
+
+  # --- Signal cards ---
+
+  def test_signal_card_colours(self) -> None:
+    '''VALIDATION row 05-02-T3: LONG=green, SHORT=red, FLAT=gold.'''
+    state = _make_state()
+    state['signals']['SPI200']['signal'] = 1
+    state['signals']['AUDUSD']['signal'] = -1
+    output = dashboard._render_signal_cards(state)
+    assert '#22c55e' in output  # LONG chip
+    assert '#ef4444' in output  # SHORT chip
+
+    state['signals']['SPI200']['signal'] = 0
+    state['signals']['AUDUSD']['signal'] = 0
+    output = dashboard._render_signal_cards(state)
+    assert '#eab308' in output  # FLAT chip
+
+  def test_signal_card_empty_state(self) -> None:
+    '''Missing signal entry: "Signal as of never" + FLAT colour.'''
+    state = _make_state()
+    state['signals'] = {}
+    output = dashboard._render_signal_cards(state)
+    assert 'Signal as of never' in output
+    assert '#eab308' in output  # FLAT colour
+
+  def test_signal_card_displays_instrument_names(self) -> None:
+    '''Display names (not raw state keys).'''
+    state = _make_state()
+    output = dashboard._render_signal_cards(state)
+    assert 'SPI 200' in output
+    assert 'AUD / USD' in output
+
+  def test_signal_card_shows_scalars(self) -> None:
+    '''Scalars: ADX formatted .1f, Mom* as signed percent.'''
+    state = _make_state()
+    state['signals']['SPI200']['last_scalars'] = {
+      'adx': 32.5, 'mom1': 0.031, 'mom3': 0.048, 'mom12': 0.092,
+      'rvol': 1.12, 'atr': 50.0, 'pdi': 28.1, 'ndi': 12.4,
+    }
+    output = dashboard._render_signal_cards(state)
+    assert '32.5' in output  # ADX
+    assert '+3.1%' in output  # Mom1 as signed percent
+
+  def test_signal_card_escapes_signal_as_of(self) -> None:
+    '''C-5 reviews per-surface XSS coverage: signal_as_of value MUST be escaped at leaf.
+
+    Operator-authored state is trusted-by-filesystem but D-15 requires leaf-level
+    escape as belt-and-braces — every state-derived string on every surface.
+    '''
+    state = _make_state()
+    state['signals']['SPI200']['signal_as_of'] = '<script>alert(1)</script>'
+    output = dashboard._render_signal_cards(state)
+    assert '&lt;script&gt;alert(1)&lt;/script&gt;' in output
+    assert '<script>' not in output
+
+  # --- Positions table ---
+
+  def test_positions_table_columns_and_values(self) -> None:
+    '''VALIDATION row 05-02-T3: 8 cols + SPI200 row values from sample_state.json.'''
+    with SAMPLE_STATE_PATH.open('r', encoding='utf-8') as fh:
+      state = json.load(fh)
+    output = dashboard._render_positions_table(state)
+    for header in (
+      'Instrument', 'Direction', 'Entry', 'Current', 'Contracts',
+      'Pyramid', 'Trail Stop', 'Unrealised P&amp;L',
+    ):
+      assert header in output, f'missing header: {header!r}'
+    assert '$8,000.00' in output  # entry
+    assert '$8,085.00' in output  # current (from state['signals']['SPI200']['last_close'])
+    assert '>2<' in output         # contracts cell (use angle brackets to avoid matching other '2')
+    assert 'Lvl 0' in output       # pyramid
+    assert '$7,950.00' in output   # trail stop = 8100 - 3*50
+
+  def test_positions_table_empty_state_colspan_8(self) -> None:
+    '''UI-SPEC F-4: 8-column empty state supersedes stale CONTEXT D-13 colspan="7".'''
+    state = _make_state()
+    state['positions'] = {'SPI200': None, 'AUDUSD': None}
+    output = dashboard._render_positions_table(state)
+    assert 'colspan="8"' in output
+    assert '— No open positions —' in output
+
+  def test_positions_table_last_close_missing_renders_em_dash(self) -> None:
+    '''Position present but last_close=None → Current + Unrealised P&L em-dashed.'''
+    state = _make_state()
+    state['signals']['SPI200']['last_close'] = None
+    output = dashboard._render_positions_table(state)
+    # There should be exactly 2 em-dashes in the SPI200 row: Current + Unrealised.
+    # Use a substring that's unambiguous — the Current column's <td class="num">—</td>.
+    assert '<td class="num">—</td>' in output
+
+  def test_positions_table_escapes_display_fallback(self) -> None:
+    '''C-5 reviews per-surface XSS coverage: unknown instrument key falls back via
+    html.escape at leaf.
+
+    The standard iteration uses _INSTRUMENT_DISPLAY_NAMES which is a fixed constant,
+    but the direction cell, entry price, and all other state-derived cells do flow
+    through html.escape. This test confirms the discipline by injecting an XSS
+    payload into an escapable cell (pyramid level as a crafted string). Since
+    _INSTRUMENT_DISPLAY_NAMES is a locked module constant, the nearest falloff
+    path is the pyramid_level string — which flows through html.escape(f'Lvl {n}').
+    We verify the leaf-escape discipline using a string payload in pyramid_level.
+    '''
+    state = _make_state()
+    state['positions']['SPI200']['pyramid_level'] = '<img src=x onerror=alert(1)>'
+    output = dashboard._render_positions_table(state)
+    assert '&lt;img src=x onerror=alert(1)&gt;' in output
+    assert '<img src=x' not in output
+
+  # --- Trades table ---
+
+  def test_trades_table_slice_and_order(self) -> None:
+    '''VALIDATION row 05-02-T3: 25 trades → render exactly 20 <tbody> rows, newest first.'''
+    state = _make_state(with_trades=5)
+    # Build 25 synthetic trades with unique exit_dates so order is verifiable
+    trades = []
+    for i in range(25):
+      trades.append({
+        'instrument': 'SPI200', 'direction': 'LONG',
+        'entry_date': f'2026-02-{(i % 27) + 1:02d}',
+        'exit_date': f'2026-03-{(i % 27) + 1:02d}',
+        'entry_price': 8000.0 + i, 'exit_price': 8050.0 + i,
+        'gross_pnl': 250.0, 'n_contracts': 1, 'exit_reason': 'flat_signal',
+        'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0,
+      })
+    state['trade_log'] = trades
+    output = dashboard._render_trades_table(state)
+    # Count tbody rows. The thead <tr> and the tbody <tr>s are both '<tr>';
+    # tbody rows are inside <tbody>. Count inside the tbody slice.
+    tbody_start = output.find('<tbody>')
+    tbody_end = output.find('</tbody>')
+    tbody_slice = output[tbody_start:tbody_end]
+    tr_count = tbody_slice.count('<tr>')
+    assert tr_count == 20, f'expected 20 tbody rows, got {tr_count}'
+    # Newest-first: trades[-1] is the last trade pushed; its exit_date is '2026-03-25'
+    # (i=24 → (24 % 27) + 1 = 25). The FIRST rendered row should reference this date.
+    first_tr_start = tbody_slice.find('<tr>')
+    first_tr_end = tbody_slice.find('</tr>', first_tr_start)
+    first_row = tbody_slice[first_tr_start:first_tr_end]
+    assert '2026-03-25' in first_row, f'first row should be newest; got {first_row!r}'
+
+  def test_trades_table_empty_state_colspan_7(self) -> None:
+    '''Empty trade_log → colspan="7" placeholder.'''
+    state = _make_state()
+    state['trade_log'] = []
+    output = dashboard._render_trades_table(state)
+    assert 'colspan="7"' in output
+    assert '— No closed trades yet —' in output
+
+  def test_trades_table_exit_reason_display_map(self) -> None:
+    '''Mapped exit_reasons render as display text, not raw keys.'''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [
+      {'instrument': 'SPI200', 'direction': 'LONG', 'entry_date': '2026-02-01',
+       'exit_date': '2026-02-07', 'entry_price': 8000.0, 'exit_price': 8050.0,
+       'gross_pnl': 250.0, 'n_contracts': 1, 'exit_reason': 'flat_signal',
+       'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0},
+      {'instrument': 'AUDUSD', 'direction': 'SHORT', 'entry_date': '2026-02-08',
+       'exit_date': '2026-02-14', 'entry_price': 0.66, 'exit_price': 0.658,
+       'gross_pnl': 200.0, 'n_contracts': 1, 'exit_reason': 'signal_reversal',
+       'multiplier': 10000.0, 'cost_aud': 5.0, 'net_pnl': 197.5},
+      {'instrument': 'SPI200', 'direction': 'LONG', 'entry_date': '2026-02-15',
+       'exit_date': '2026-02-22', 'entry_price': 7900.0, 'exit_price': 7920.0,
+       'gross_pnl': 100.0, 'n_contracts': 1, 'exit_reason': 'stop_hit',
+       'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 97.0},
+      {'instrument': 'AUDUSD', 'direction': 'LONG', 'entry_date': '2026-02-23',
+       'exit_date': '2026-03-01', 'entry_price': 0.65, 'exit_price': 0.655,
+       'gross_pnl': 500.0, 'n_contracts': 1, 'exit_reason': 'adx_exit',
+       'multiplier': 10000.0, 'cost_aud': 5.0, 'net_pnl': 497.5},
+    ]
+    output = dashboard._render_trades_table(state)
+    assert 'Signal flat' in output
+    assert 'Reversal' in output
+    assert 'Stop hit' in output
+    assert 'ADX drop' in output
+    # Raw keys MUST NOT appear as displayed text
+    assert 'flat_signal' not in output
+    assert 'signal_reversal' not in output
+
+  def test_escape_applied_to_exit_reason(self) -> None:
+    '''VALIDATION row 05-02-T2 XSS test: mapped exit reasons get escaped at leaf.
+
+    Even a known-key exit_reason passes through html.escape; if the payload
+    were injected into a known-map value, the leaf escape catches it. This
+    test specifically exercises a <script> payload.
+    '''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [
+      {'instrument': 'SPI200', 'direction': 'LONG', 'entry_date': '2026-02-01',
+       'exit_date': '2026-02-07', 'entry_price': 8000.0, 'exit_price': 8050.0,
+       'gross_pnl': 250.0, 'n_contracts': 1,
+       'exit_reason': '<script>alert(1)</script>',
+       'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0},
+    ]
+    output = dashboard._render_trades_table(state)
+    assert '&lt;script&gt;alert(1)&lt;/script&gt;' in output
+    assert '<script>alert(1)</script>' not in output
+
+  def test_trades_table_escapes_unknown_exit_reason(self) -> None:
+    '''C-5 reviews per-surface XSS coverage: unknown exit_reason (display-map miss)
+    falls through html.escape at leaf.'''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [
+      {'instrument': 'SPI200', 'direction': 'LONG', 'entry_date': '2026-02-01',
+       'exit_date': '2026-02-07', 'entry_price': 8000.0, 'exit_price': 8050.0,
+       'gross_pnl': 250.0, 'n_contracts': 1,
+       'exit_reason': '<img src=x onerror=alert(1)>',
+       'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0},
+    ]
+    output = dashboard._render_trades_table(state)
+    assert '&lt;img src=x onerror=alert(1)&gt;' in output
+    assert '<img src=x' not in output
+
+  # --- Key stats block ---
+
+  def test_key_stats_block(self) -> None:
+    '''VALIDATION row 05-02-T3: 4 labels + computed values on sample_state.'''
+    with SAMPLE_STATE_PATH.open('r', encoding='utf-8') as fh:
+      state = json.load(fh)
+    output = dashboard._render_key_stats(state)
+    for label in ('Total Return', 'Sharpe', 'Max Drawdown', 'Win Rate'):
+      assert label in output, f'missing label: {label!r}'
+    # Sample state fixture ends at equity=104532.18 → +4.5% total return
+    assert '+4.5%' in output
+    # Sample state has 60 equity rows (monotonic increase) → 0.0% max DD
+    assert '0.0%' in output
+    # 5 trades with gross_pnl [350, 200, -250, 350, 200] → 4/5 = 80.0% win rate
+    assert '80.0%' in output
+
+  def test_key_stats_total_return_coloured(self) -> None:
+    '''Tile 1 (Total Return) coloured — positive green, negative red, zero muted.'''
+    # Positive
+    state = _make_state(with_equity=1, with_trades=0, with_positions=False, with_signals=False)
+    state['equity_history'] = [{'date': '2026-01-01', 'equity': 105_000.0}]
+    output = dashboard._render_key_stats(state)
+    assert '#22c55e' in output
+
+    # Negative
+    state['equity_history'] = [{'date': '2026-01-01', 'equity': 95_000.0}]
+    output = dashboard._render_key_stats(state)
+    assert '#ef4444' in output
+
+    # Zero
+    state['equity_history'] = [{'date': '2026-01-01', 'equity': 100_000.0}]
+    output = dashboard._render_key_stats(state)
+    assert '#cbd5e1' in output
+
+  # --- Footer ---
+
+  def test_footer_disclaimer(self) -> None:
+    '''Exact copy per UI-SPEC §Footer disclaimer.'''
+    output = dashboard._render_footer()
+    assert 'Signal-only system. Not financial advice.' in output
 
 
 class TestEmptyState:
