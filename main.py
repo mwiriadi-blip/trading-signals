@@ -438,9 +438,13 @@ def run_daily_check(
   run_date) 4-tuple so main() can dispatch email without re-reading state
   or re-reading the clock. --test path returns (0, state_in_memory,
   old_signals, run_date) WITHOUT calling save_state — CLI-01 structural
-  read-only contract preserved. On failure paths where state/old_signals
-  are not yet populated, returns (rc, None, None, None) — the dispatch
-  ladder in main() guards with `if state is not None`.
+  read-only contract preserved.
+
+  On the happy path returns (0, state, old_signals, run_date).
+  On failure, exceptions (DataFetchError, ShortFrameError, or anything
+  unexpected) propagate up and are caught by main()'s typed-exception
+  boundary. The None-guard in main()'s dispatch ladder is
+  defense-in-depth for any future non-exception failure return.
   '''
   # Step 1: opening log line. D-07: one-shot mode acknowledgement emitted
   # BEFORE the per-symbol loop so CLI-04/CLI-05 smoke tests see the line
@@ -758,9 +762,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.force_email or args.test:
       # D-15 Phase 6: shared compute-then-email path. --test structurally
       # skips save_state inside run_daily_check; --force-email persists.
-      # Both invoke the email with is_test=args.test. Fix 10 None-guard:
-      # run_daily_check may return (rc, None, None, None) on failure paths —
-      # only dispatch email when all three post-run values are populated.
+      # Both invoke the email with is_test=args.test. Fix 10 None-guard is
+      # defense-in-depth for any future non-exception failure return from
+      # run_daily_check — today all failure paths propagate exceptions to
+      # the typed-exception boundary below, so the guard is not reachable.
       rc, state, old_signals, run_date = run_daily_check(args)
       if (
         rc == 0
