@@ -151,6 +151,35 @@ class TestComposeSubject:
     subject = compose_email_subject(state, {'^AXJO': None, 'AUDUSD=X': None})
     assert '2026-04-22' in subject
 
+  def test_subject_first_run_label_when_no_date_iso(self) -> None:
+    '''WR-02 close (2026-04-22): when empty_state has last_run=null AND
+    legacy int-shape signals (no as_of_run), the subject MUST NOT emit a
+    double-space between emoji and em-dash. Fallback label is the literal
+    'first run' token per 06-REVIEW.md WR-02 recommendation.
+
+    This is the operator's very first email after setup, so the label
+    should be self-documenting. D-04 template shape preserved:
+      {emoji} {date_or_label} — SPI200 {SIG}, AUDUSD {SIG} — Equity ${X,XXX}
+    '''
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    subject = compose_email_subject(
+      state,
+      {'^AXJO': None, 'AUDUSD=X': None},
+      is_test=False,
+    )
+    # D-04 + D-06: 📊 emoji for first-run; NEW 'first run' label.
+    assert subject == (
+      '📊 first run — SPI200 FLAT, AUDUSD FLAT — Equity $100,000'
+    ), (
+      f'WR-02: empty-state subject must use "first run" label '
+      f'(not empty date); got: {subject!r}'
+    )
+    # Belt-and-braces: the cosmetic double-space MUST be gone.
+    assert '📊  —' not in subject, (
+      f'WR-02: double-space between emoji and em-dash must not appear; '
+      f'got: {subject!r}'
+    )
+
 
 class TestDetectSignalChanges:
   '''D-06: first-run-as-no-change helper. Private but tested directly.'''
