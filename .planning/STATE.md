@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 1
+current_plan: 2
 status: executing
-last_updated: "2026-04-22T23:09:50.132Z"
+last_updated: "2026-04-22T23:51:08.989Z"
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 29
-  completed_plans: 26
-  percent: 90
+  completed_plans: 27
+  percent: 93
 ---
 
 # STATE — Trading Signals
@@ -22,19 +22,19 @@ progress:
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
 - **Core value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 06 — email-notification
+- **Current focus:** Phase 07 — scheduler-github-actions-deployment
 
 ## Current Position
 
-Phase: 06 (email-notification) — EXECUTING
-Plan: 1 of 3
+Phase: 07 (scheduler-github-actions-deployment) — EXECUTING
+Plan: 2 of 3
 
 - **Milestone:** v1 — Mechanical Signal System
-- **Phase:** 5 (complete) → next 6 (Email Notification)
-- **Current Plan:** 1
+- **Phase:** 6 (complete) → 7 (Scheduler + GitHub Actions Deployment)
+- **Current Plan:** 2
 - **Total Plans:** 3
-- **Status:** Executing Phase 06
-- **Progress:** [██████████] 100%
+- **Status:** Executing Phase 7 (Plan 01 complete, Plan 02 next)
+- **Progress:** [█████████░] 93%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -60,6 +60,7 @@ Plan: 1 of 3
 | Phase 02 P03 | 460s | 2 tasks | 2 files |
 | Phase 02 P04 | 64m | 2 tasks | 19 files |
 | Phase 02 P05 | 14 | 3 tasks | 20 files |
+| Phase 07 P01 | ~8min | 2 tasks tasks | 6 files files |
 
 ## Accumulated Context
 
@@ -101,6 +102,11 @@ Plan: 1 of 3
 - D-18: pyramid application uses dict spread pattern for grep-auditable AC compliance
 - A2: is_forced_exit flag prevents new sizing on ADX-drop or stop-hit days
 - B-4: regenerator oracle reimplements step() inline without importing sizing_engine (dual-maintenance by design)
+- Phase 7 Wave 0: PyYAML pinned even though only Wave 2 consumes, per 07-REVIEWS.md Consensus MEDIUM — avoids transitive-dep reliance in Wave 2 static-YAML acceptance test
+- Phase 7 Wave 0: _get_process_tzname wrapper in main.py instead of monkeypatching time.tzname, per 07-REVIEWS.md Codex MEDIUM — platform-portable test-patchability
+- Phase 7 Wave 0: load_dotenv() shipped LIVE at top of main() (not stubbed) — idempotent and side-effect-neutral when .env absent
+- Phase 7 Wave 0: Phase 4 '[Sched] One-shot mode' log line PRESERVED; Wave 1 deletes alongside tests/test_main.py:129,146 update in same plan (Pitfall 3 atomic-test-transition)
+- Phase 7 Wave 0 deviation (Rule 1): plan's automated check used schedule.__version__/dotenv.__version__ attrs (not exposed); switched to importlib.metadata.version for verification
 
 ### Todos Carried Forward
 

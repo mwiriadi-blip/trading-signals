@@ -122,13 +122,17 @@ Fine granularity — each requirement is independently testable.
 
 ### Scheduler & Deployment
 
-- [ ] **SCHED-01**: Scheduler fires at 08:00 AWST (00:00 UTC) weekdays Mon–Fri
-- [ ] **SCHED-02**: Initial run executes immediately on process start (before schedule loop)
-- [ ] **SCHED-03**: `run_daily_check` has an internal weekday gate (does not execute on Sat/Sun even if invoked)
+- [x] **SCHED-01
+**: Scheduler fires at 08:00 AWST (00:00 UTC) weekdays Mon–Fri
+- [x] **SCHED-02
+**: Initial run executes immediately on process start (before schedule loop)
+- [x] **SCHED-03
+**: `run_daily_check` has an internal weekday gate (does not execute on Sat/Sun even if invoked)
 - [ ] **SCHED-04**: `--once` flag runs a single daily check and exits (used by GitHub Actions)
 - [ ] **SCHED-05**: Primary deployment is GitHub Actions: `.github/workflows/daily.yml` with `cron: '0 0 * * 1-5'`, `permissions: contents: write`, `concurrency: trading-signals`, and commit-back of `state.json` via `stefanzweifel/git-auto-commit-action@v5`
 - [ ] **SCHED-06**: Alternative deployment is Replit Always On (Reserved VM), documented with filesystem-persistence caveat
-- [ ] **SCHED-07**: All secrets loaded from env vars (`.env` locally, GitHub Secrets / Replit Secrets in deploy)
+- [x] **SCHED-07
+**: All secrets loaded from env vars (`.env` locally, GitHub Secrets / Replit Secrets in deploy)
 
 ### CLI Flags
 
@@ -136,7 +140,8 @@ Fine granularity — each requirement is independently testable.
 - [ ] **CLI-02**: `python main.py --reset` reinitialises `state.json` after confirmation
 - [ ] **CLI-03**: `python main.py --force-email` sends today's email immediately regardless of schedule. **Phase 4 parses the flag and logs `[Email] --force-email received; notifier wiring arrives in Phase 6` (stub), honouring the `--test` + `--force-email` combination by running `run_daily_check` first without persist then emitting the stub; Phase 6 replaces the stub with `notifier.send_daily_email()` fed by fresh computed state (same compute path as `--once`).**
 - [ ] **CLI-04**: `python main.py --once` runs one daily check for GitHub Actions mode
-- [ ] **CLI-05**: Default invocation (`python main.py`) runs immediately and then enters the schedule loop. **Phase 4 lands default-mode == `--once` (runs once and exits; logs `[Sched] One-shot mode (scheduler wiring lands in Phase 7)`); Phase 7 flips default to run-once-then-enter-schedule-loop via the `schedule` library per SCHED-01/02.**
+- [x] **CLI-05**: Default invocation (`python main.py`) runs immediately and then enters the schedule loop. **Phase 4 lands default-mode == `--once` (runs once and exits; logs `[Sched] One-shot mode (scheduler wiring lands in Phase 7)`); Phase 7 flips default to run-once-then-enter-schedule-loop via the `schedule` library per SCHED-01
+/02.**
 
 ### Error Handling & Observability
 
