@@ -80,13 +80,6 @@ from state_manager import (
   load_state,  # noqa: F401 — CLI convenience path; prod uses caller-supplied state
 )
 from system_params import (  # noqa: F401 — Wave 1 contract specs + trail multipliers; Phase 6 Wave 0 palette retrofit
-  AUDUSD_COST_AUD,
-  AUDUSD_NOTIONAL,
-  INITIAL_ACCOUNT,
-  SPI_COST_AUD,
-  SPI_MULT,
-  TRAIL_MULT_LONG,
-  TRAIL_MULT_SHORT,
   _COLOR_BG,
   _COLOR_BORDER,
   _COLOR_FLAT,
@@ -96,6 +89,13 @@ from system_params import (  # noqa: F401 — Wave 1 contract specs + trail mult
   _COLOR_TEXT,
   _COLOR_TEXT_DIM,
   _COLOR_TEXT_MUTED,
+  AUDUSD_COST_AUD,
+  AUDUSD_NOTIONAL,
+  INITIAL_ACCOUNT,
+  SPI_COST_AUD,
+  SPI_MULT,
+  TRAIL_MULT_LONG,
+  TRAIL_MULT_SHORT,
 )
 
 # =========================================================================

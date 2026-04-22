@@ -1,5 +1,6 @@
 state.json
 dashboard.html
+last_email.html
 .env
 .venv/
 __pycache__/
