@@ -1,0 +1,368 @@
+{
+  "account": 104532.18,
+  "equity_history": [
+    {
+      "date": "2026-02-02",
+      "equity": 99950.0
+    },
+    {
+      "date": "2026-02-03",
+      "equity": 100096.82
+    },
+    {
+      "date": "2026-02-04",
+      "equity": 100133.63
+    },
+    {
+      "date": "2026-02-05",
+      "equity": 100280.45
+    },
+    {
+      "date": "2026-02-06",
+      "equity": 100317.27
+    },
+    {
+      "date": "2026-02-09",
+      "equity": 100354.08
+    },
+    {
+      "date": "2026-02-10",
+      "equity": 100500.9
+    },
+    {
+      "date": "2026-02-11",
+      "equity": 100537.72
+    },
+    {
+      "date": "2026-02-12",
+      "equity": 100574.53
+    },
+    {
+      "date": "2026-02-13",
+      "equity": 100721.35
+    },
+    {
+      "date": "2026-02-16",
+      "equity": 100758.17
+    },
+    {
+      "date": "2026-02-17",
+      "equity": 100794.98
+    },
+    {
+      "date": "2026-02-18",
+      "equity": 100941.8
+    },
+    {
+      "date": "2026-02-19",
+      "equity": 100978.62
+    },
+    {
+      "date": "2026-02-20",
+      "equity": 101125.43
+    },
+    {
+      "date": "2026-02-23",
+      "equity": 101162.25
+    },
+    {
+      "date": "2026-02-24",
+      "equity": 101199.07
+    },
+    {
+      "date": "2026-02-25",
+      "equity": 101345.88
+    },
+    {
+      "date": "2026-02-26",
+      "equity": 101382.7
+    },
+    {
+      "date": "2026-02-27",
+      "equity": 101419.52
+    },
+    {
+      "date": "2026-03-02",
+      "equity": 101566.33
+    },
+    {
+      "date": "2026-03-03",
+      "equity": 101603.15
+    },
+    {
+      "date": "2026-03-04",
+      "equity": 101639.97
+    },
+    {
+      "date": "2026-03-05",
+      "equity": 101786.78
+    },
+    {
+      "date": "2026-03-06",
+      "equity": 101823.6
+    },
+    {
+      "date": "2026-03-09",
+      "equity": 101970.42
+    },
+    {
+      "date": "2026-03-10",
+      "equity": 102007.23
+    },
+    {
+      "date": "2026-03-11",
+      "equity": 102044.05
+    },
+    {
+      "date": "2026-03-12",
+      "equity": 102190.87
+    },
+    {
+      "date": "2026-03-13",
+      "equity": 102227.68
+    },
+    {
+      "date": "2026-03-16",
+      "equity": 102264.5
+    },
+    {
+      "date": "2026-03-17",
+      "equity": 102411.31
+    },
+    {
+      "date": "2026-03-18",
+      "equity": 102448.13
+    },
+    {
+      "date": "2026-03-19",
+      "equity": 102484.95
+    },
+    {
+      "date": "2026-03-20",
+      "equity": 102631.76
+    },
+    {
+      "date": "2026-03-23",
+      "equity": 102668.58
+    },
+    {
+      "date": "2026-03-24",
+      "equity": 102815.4
+    },
+    {
+      "date": "2026-03-25",
+      "equity": 102852.21
+    },
+    {
+      "date": "2026-03-26",
+      "equity": 102889.03
+    },
+    {
+      "date": "2026-03-27",
+      "equity": 103035.85
+    },
+    {
+      "date": "2026-03-30",
+      "equity": 103072.66
+    },
+    {
+      "date": "2026-03-31",
+      "equity": 103109.48
+    },
+    {
+      "date": "2026-04-01",
+      "equity": 103256.3
+    },
+    {
+      "date": "2026-04-02",
+      "equity": 103293.11
+    },
+    {
+      "date": "2026-04-03",
+      "equity": 103329.93
+    },
+    {
+      "date": "2026-04-06",
+      "equity": 103476.75
+    },
+    {
+      "date": "2026-04-07",
+      "equity": 103513.56
+    },
+    {
+      "date": "2026-04-08",
+      "equity": 103660.38
+    },
+    {
+      "date": "2026-04-09",
+      "equity": 103697.2
+    },
+    {
+      "date": "2026-04-10",
+      "equity": 103734.01
+    },
+    {
+      "date": "2026-04-13",
+      "equity": 103880.83
+    },
+    {
+      "date": "2026-04-14",
+      "equity": 103917.65
+    },
+    {
+      "date": "2026-04-15",
+      "equity": 103954.46
+    },
+    {
+      "date": "2026-04-16",
+      "equity": 104101.28
+    },
+    {
+      "date": "2026-04-17",
+      "equity": 104138.1
+    },
+    {
+      "date": "2026-04-20",
+      "equity": 104174.91
+    },
+    {
+      "date": "2026-04-21",
+      "equity": 104321.73
+    },
+    {
+      "date": "2026-04-22",
+      "equity": 104358.55
+    },
+    {
+      "date": "2026-04-23",
+      "equity": 104505.36
+    },
+    {
+      "date": "2026-04-24",
+      "equity": 104532.18
+    }
+  ],
+  "last_run": "2026-04-21",
+  "positions": {
+    "AUDUSD": null,
+    "SPI200": {
+      "atr_entry": 50.0,
+      "direction": "LONG",
+      "entry_date": "2026-04-10",
+      "entry_price": 8000.0,
+      "n_contracts": 2,
+      "peak_price": 8100.0,
+      "pyramid_level": 0,
+      "trough_price": null
+    }
+  },
+  "schema_version": 1,
+  "signals": {
+    "AUDUSD": {
+      "as_of_run": "2026-04-21T09:00:00+08:00",
+      "last_close": 0.6502,
+      "last_scalars": {
+        "adx": 18.3,
+        "atr": 0.0042,
+        "mom1": -0.005,
+        "mom12": 0.014,
+        "mom3": 0.001,
+        "ndi": 21.2,
+        "pdi": 19.0,
+        "rvol": 0.95
+      },
+      "signal": 0,
+      "signal_as_of": "2026-04-21"
+    },
+    "SPI200": {
+      "as_of_run": "2026-04-21T09:00:00+08:00",
+      "last_close": 8085.0,
+      "last_scalars": {
+        "adx": 32.5,
+        "atr": 50.0,
+        "mom1": 0.031,
+        "mom12": 0.092,
+        "mom3": 0.048,
+        "ndi": 12.4,
+        "pdi": 28.1,
+        "rvol": 1.12
+      },
+      "signal": 1,
+      "signal_as_of": "2026-04-21"
+    }
+  },
+  "trade_log": [
+    {
+      "cost_aud": 6.0,
+      "direction": "LONG",
+      "entry_date": "2026-02-15",
+      "entry_price": 7850.0,
+      "exit_date": "2026-02-22",
+      "exit_price": 7920.0,
+      "exit_reason": "stop_hit",
+      "gross_pnl": 350.0,
+      "instrument": "SPI200",
+      "multiplier": 5.0,
+      "n_contracts": 1,
+      "net_pnl": 347.0
+    },
+    {
+      "cost_aud": 5.0,
+      "direction": "SHORT",
+      "entry_date": "2026-03-02",
+      "entry_price": 0.66,
+      "exit_date": "2026-03-09",
+      "exit_price": 0.658,
+      "exit_reason": "flat_signal",
+      "gross_pnl": 200.0,
+      "instrument": "AUDUSD",
+      "multiplier": 10000.0,
+      "n_contracts": 1,
+      "net_pnl": 197.5
+    },
+    {
+      "cost_aud": 6.0,
+      "direction": "SHORT",
+      "entry_date": "2026-03-15",
+      "entry_price": 7900.0,
+      "exit_date": "2026-03-22",
+      "exit_price": 7950.0,
+      "exit_reason": "signal_reversal",
+      "gross_pnl": -250.0,
+      "instrument": "SPI200",
+      "multiplier": 5.0,
+      "n_contracts": 1,
+      "net_pnl": -253.0
+    },
+    {
+      "cost_aud": 5.0,
+      "direction": "LONG",
+      "entry_date": "2026-03-28",
+      "entry_price": 0.652,
+      "exit_date": "2026-04-04",
+      "exit_price": 0.6555,
+      "exit_reason": "adx_exit",
+      "gross_pnl": 350.0,
+      "instrument": "AUDUSD",
+      "multiplier": 10000.0,
+      "n_contracts": 1,
+      "net_pnl": 347.5
+    },
+    {
+      "cost_aud": 6.0,
+      "direction": "LONG",
+      "entry_date": "2026-04-05",
+      "entry_price": 7980.0,
+      "exit_date": "2026-04-09",
+      "exit_price": 8020.0,
+      "exit_reason": "flat_signal",
+      "gross_pnl": 200.0,
+      "instrument": "SPI200",
+      "multiplier": 5.0,
+      "n_contracts": 1,
+      "net_pnl": 197.0
+    }
+  ],
+  "warnings": [],
+  "wins": 0
+}
