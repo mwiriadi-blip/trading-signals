@@ -120,7 +120,10 @@
   5. Missing `RESEND_API_KEY` writes `last_email.html` + console output and exits the notifier cleanly; a 4xx/5xx from Resend logs an error but does not crash the run
   6. `--force-email` dispatch (CLI-03 Phase 6 completion): `main()` replaces the Phase 4 stub with `rc = run_daily_check(args); if rc == 0: notifier.send_daily_email(...); return rc` — same fresh-compute-then-dispatch pattern as `--once`, but without persisting state when combined with `--test`.
   7. `--test` email dispatch (CLI-01 Phase 6 completion): same fresh-compute-then-dispatch pattern with a `[TEST]`-prefixed subject; the Phase 4 structural read-only guarantee on `state.json` (no mutation under `--test`) remains intact.
-**Plans**: TBD
+**Plans:** 3 plans
+- [ ] 06-01-PLAN.md — Wave 0 scaffold: notifier.py stub + palette retrofit (dashboard→system_params) + AST blocklist extension (FORBIDDEN_MODULES_NOTIFIER) + tests/test_notifier.py 6-class skeleton + 3 JSON fixtures + 3 placeholder HTML goldens + regenerator script + .env.example + .gitignore last_email.html
+- [ ] 06-02-PLAN.md — Wave 1 render + format: compose_email_subject (D-04) + compose_email_body (D-07/D-10 7 sections + D-11 ACTION REQUIRED red-border block) + _detect_signal_changes (D-06) + 7 email formatters + TestComposeSubject/TestDetectSignalChanges/TestFormatters/TestComposeBody (~50 tests) + XSS escape hardening (NOTF-09)
+- [ ] 06-03-PLAN.md — Wave 2 PHASE GATE dispatch + integration: _post_to_resend retry loop (429 retryable per RESEARCH §1; 400/401/403/422 fail-fast) + send_daily_email never-crash + _atomic_write_html + main.py _send_email_never_crash + run_daily_check 4-tuple return + TestSendDispatch/TestResendPost/TestGoldenEmail + TestCLI force-email/test-flag integration + TestEmailNeverCrash + 3 committed byte-stable golden HTML snapshots (regenerator double-run idempotent)
 **UI hint**: no
 
 ### Phase 7: Scheduler + GitHub Actions Deployment
