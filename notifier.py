@@ -113,6 +113,28 @@ _CONTRACT_SPECS_EMAIL = {
   'AUDUSD': (AUDUSD_NOTIONAL, AUDUSD_COST_AUD),
 }
 
+# D-05: state_key → yfinance symbol for old_signals dict lookup (old_signals
+# is keyed by yfinance symbol per main.py pre-run capture).
+_STATE_KEY_TO_YF_SYMBOL = {
+  'SPI200': '^AXJO',
+  'AUDUSD': 'AUDUSD=X',
+}
+
+# D-04: signal int → display label (bare words, no emoji).
+_SIGNAL_LABELS_EMAIL = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
+
+# D-04 / UI-SPEC §Color: signal int → inline hex colour for coloured spans.
+_SIGNAL_COLOUR_EMAIL = {1: _COLOR_LONG, -1: _COLOR_SHORT, 0: _COLOR_FLAT}
+
+# UI-SPEC §6 closed-trades: exit_reason raw → display copy. Unknown values
+# pass through verbatim (html.escape at leaf render site).
+_EXIT_REASON_DISPLAY_EMAIL = {
+  'flat_signal': 'Signal flat',
+  'signal_reversal': 'Reversal',
+  'stop_hit': 'Stop hit',
+  'adx_exit': 'ADX drop',
+}
+
 
 # =========================================================================
 # Exception class (Wave 2 raises; Wave 0 just defines)
@@ -131,13 +153,93 @@ class ResendError(Exception):
 # Public API stubs — Waves 1 + 2 fill
 # =========================================================================
 
+def _detect_signal_changes(state: dict, old_signals: dict) -> bool:
+  '''D-06: True iff any instrument's signal changed from old_signals.
+
+  First-run case (old_signals[yf_sym] is None) is treated as NO CHANGE
+  per D-06 — there is no baseline to compare against; emitting 🔴 on
+  first run would be noise.
+
+  Handles BOTH Phase 3 reset_state int shape AND Phase 4 D-08 dict
+  shape for state['signals'][state_key] per Phase 4 Pitfall 7.
+  '''
+  signals = state.get('signals', {})
+  for state_key, yf_sym in _STATE_KEY_TO_YF_SYMBOL.items():
+    old = old_signals.get(yf_sym)
+    raw = signals.get(state_key)
+    if raw is None:
+      new = 0
+    elif isinstance(raw, int):
+      new = raw
+    else:
+      new = raw.get('signal', 0)
+    if old is not None and old != new:
+      return True
+  return False
+
+
 def compose_email_subject(
   state: dict,
   old_signals: dict,
   is_test: bool = False,
 ) -> str:
-  '''Wave 1 (06-02) fills per D-04. See CONTEXT D-04.'''
-  raise NotImplementedError('Wave 1 (06-02): compose_email_subject per D-04')
+  '''D-04 subject template:
+
+    {emoji} {YYYY-MM-DD} — SPI200 {SIG}, AUDUSD {SIG} — Equity ${X,XXX}
+
+  Emoji per D-04:
+    🔴 (U+1F534) when _detect_signal_changes is True.
+    📊 (U+1F4CA) when unchanged OR first-run (D-06).
+  [TEST] prefix (with trailing space) BEFORE emoji when is_test=True.
+
+  Date from state['signals'][<any_key>]['as_of_run'] (ISO YYYY-MM-DD);
+  falls back to state['last_run'] if signals are legacy int shape OR
+  missing as_of_run.
+
+  Equity = int(round(state['account'])) formatted with thousands
+  separator and no cents.
+
+  Signal labels: bare LONG / SHORT / FLAT (D-04 — no emoji in signal slot).
+  '''
+  any_changed = _detect_signal_changes(state, old_signals)
+  emoji = '🔴' if any_changed else '📊'
+
+  # Date: prefer dict-shape as_of_run; fall back to state['last_run'].
+  signals = state.get('signals', {})
+  date_iso: str | None = None
+  for state_key in ('SPI200', 'AUDUSD'):
+    raw = signals.get(state_key)
+    if isinstance(raw, dict) and raw.get('as_of_run'):
+      date_iso = raw['as_of_run']
+      break
+  if date_iso is None:
+    date_iso = state.get('last_run') or ''
+
+  # Signal labels: both instruments. Handles int + dict shapes.
+  def _extract_signal(state_key: str) -> int:
+    raw = signals.get(state_key)
+    if raw is None:
+      return 0
+    if isinstance(raw, int):
+      return raw
+    return raw.get('signal', 0)
+
+  spi_label = _SIGNAL_LABELS_EMAIL.get(_extract_signal('SPI200'), 'FLAT')
+  audusd_label = _SIGNAL_LABELS_EMAIL.get(_extract_signal('AUDUSD'), 'FLAT')
+
+  # Equity: int(round(account)) → $X,XXX (no cents, thousands separator).
+  account = float(state.get('account', 0.0))
+  equity_dollars = int(round(account))
+  equity_str = f'${equity_dollars:,}'
+
+  # Assembly: [TEST] prefix BEFORE emoji per D-04 line 92.
+  core = (
+    f'{emoji} {date_iso} — SPI200 {spi_label}, '
+    f'AUDUSD {audusd_label} — Equity {equity_str}'
+  )
+  if is_test:
+    return f'[TEST] {core}'
+  return core
 
 
 def compose_email_body(

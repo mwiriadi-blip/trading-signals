@@ -69,17 +69,112 @@ FROZEN_NOW = PERTH.localize(datetime(2026, 4, 22, 9, 0))
 
 class TestComposeSubject:
   '''D-04 subject template: {emoji} YYYY-MM-DD — SPI200 SIG, AUDUSD SIG — Equity $X,XXX.
-  Wave 1 (06-02) fills 6 cases: change day (🔴), no-change day (📊), [TEST] prefix
+
+  6 cases covering change day (🔴), no-change day (📊), [TEST] prefix
   ordering, first-run (📊 per D-06), equity rounding, empty state.
   '''
 
-  def test_scaffold_placeholder_compose_subject(self) -> None:
-    '''Nyquist Dimension 8: placeholder for NOTF-02 — passes via
-    pytest.raises(NotImplementedError). Wave 1 (06-02) replaces this
-    with real compose_email_subject cases.
-    '''
-    with pytest.raises(NotImplementedError, match='Wave 1'):
-      compose_email_subject({}, {}, is_test=False)
+  def test_change_day_emoji(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    subject = compose_email_subject(state, old_signals, is_test=False)
+    # 🔴 on any change; equity rounded to whole dollar (101234.56 → 101235)
+    assert subject.startswith('🔴 2026-04-22 — '), (
+      f'D-04 change-day emoji must be 🔴 and date 2026-04-22; got: {subject!r}'
+    )
+    assert 'SPI200 SHORT' in subject
+    assert 'AUDUSD LONG' in subject
+    assert '$101,235' in subject
+    assert '📊' not in subject
+
+  def test_no_change_day_emoji(self) -> None:
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    subject = compose_email_subject(state, old_signals, is_test=False)
+    assert subject.startswith('📊 '), (
+      f'D-04 no-change emoji must be 📊; got: {subject!r}'
+    )
+    assert 'SPI200 LONG' in subject
+    assert 'AUDUSD FLAT' in subject
+    assert '🔴' not in subject
+
+  def test_test_prefix_order(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    subject = compose_email_subject(state, old_signals, is_test=True)
+    # D-04: [TEST] BEFORE emoji
+    assert subject.startswith('[TEST] 🔴 '), (
+      f'D-04: [TEST] must precede emoji; got: {subject!r}'
+    )
+
+  def test_first_run_no_previous_signal(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    old_signals = {'^AXJO': None, 'AUDUSD=X': None}
+    subject = compose_email_subject(state, old_signals, is_test=False)
+    # D-06: first-run = NO CHANGE → 📊
+    assert subject.startswith('📊 '), (
+      f'D-06: first-run must use 📊 emoji; got: {subject!r}'
+    )
+    # empty_state.json has account=100000.0 → $100,000
+    assert '$100,000' in subject
+
+  def test_equity_rounding(self) -> None:
+    # Craft state with sub-dollar account to exercise round-half semantics
+    state = {
+      'account': 99999.49,
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'equity_history': [],
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'trade_log': [],
+      'warnings': [],
+      'schema_version': 1,
+      'last_run': '2026-04-22',
+    }
+    subject_low = compose_email_subject(state, {'^AXJO': None, 'AUDUSD=X': None})
+    assert '$99,999' in subject_low, f'99999.49 rounds DOWN; got: {subject_low!r}'
+
+    state['account'] = 99999.50
+    subject_high = compose_email_subject(state, {'^AXJO': None, 'AUDUSD=X': None})
+    # Python banker's rounding: round(99999.50) = 100000 (round-half-to-even)
+    assert '$100,000' in subject_high, f'99999.50 rounds UP; got: {subject_high!r}'
+
+  def test_date_from_state_signals_as_of_run(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    # Fixture has as_of_run='2026-04-22'
+    subject = compose_email_subject(state, {'^AXJO': None, 'AUDUSD=X': None})
+    assert '2026-04-22' in subject
+
+
+class TestDetectSignalChanges:
+  '''D-06: first-run-as-no-change helper. Private but tested directly.'''
+
+  def test_detect_change_spi200_long_to_short(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    old = {'^AXJO': 1, 'AUDUSD=X': 0}
+    assert notifier._detect_signal_changes(state, old) is True
+
+  def test_detect_no_change_all_match(self) -> None:
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old = {'^AXJO': 1, 'AUDUSD=X': 0}
+    assert notifier._detect_signal_changes(state, old) is False
+
+  def test_detect_first_run_none_baseline(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    old = {'^AXJO': None, 'AUDUSD=X': None}
+    assert notifier._detect_signal_changes(state, old) is False
+
+  def test_detect_mixed_first_run_partial(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    # SPI200=-1 (state) / SPI200=None (old — no baseline, skipped);
+    # AUDUSD=1 (state) / AUDUSD=0 (old, CHANGED) → True
+    old = {'^AXJO': None, 'AUDUSD=X': 0}
+    assert notifier._detect_signal_changes(state, old) is True
+
+  def test_detect_legacy_int_signal_shape(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    # empty_state.json has legacy int signals (SPI200=0, AUDUSD=0)
+    old = {'^AXJO': 1, 'AUDUSD=X': 0}
+    assert notifier._detect_signal_changes(state, old) is True
 
 
 class TestComposeBody:
