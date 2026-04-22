@@ -5,7 +5,10 @@ status: human_needed
 pass_rate: 16/16 automated must-haves verified
 score: 6/7 success criteria automated (SC-1 live Resend delivery requires human operator)
 overrides_applied: 0
-re_verification: null
+re_verification:
+  date: 2026-04-23
+  trigger: gap closure 06-04 (WR-01 + WR-02 from 06-REVIEW.md)
+  result: "Cosmetic gaps closed. Full suite: 516 passed (was 515 + 1 new pinning test). Regenerator double-run idempotent — PHASE GATE preserved. Status remains human_needed; live Resend delivery (SC-1) still operator-gated. All 3 HUMAN-UAT items carry over unchanged."
 
 must_haves_summary:
   truths_verified: 16
@@ -200,23 +203,19 @@ SC-1 (live Resend delivery), visual mobile rendering for SC-2, and subject-emoji
 
 ## Known Issues
 
-Two non-blocking warnings were flagged by the Phase 6 code review (`06-REVIEW.md`). Both are cosmetic and do **not** affect the phase goal. Carried forward as known debt.
+Two non-blocking warnings were flagged by the Phase 6 code review (`06-REVIEW.md`). **Both resolved in gap-closure plan 06-04 (2026-04-23).**
 
-### WR-01: `run_daily_check` docstring overstates failure-return behaviour
+### WR-01: `run_daily_check` docstring overstates failure-return behaviour ✓ RESOLVED
 
-- **File/Line:** `main.py:441-443`
+- **File/Line:** `main.py:441-443` (original); docstring reworded in commit `9832a28`
 - **Category:** Code Quality / Documentation drift
-- **Issue:** Docstring claims the function returns `(rc, None, None, None)` on failure paths. In practice, all failure paths propagate exceptions (`DataFetchError`, `ShortFrameError`, `Exception`) that are caught in `main()`'s try/except at L776-783. The function has exactly two `return` statements, both returning fully-populated 4-tuples. The None-guard at `main.py:765-770` is therefore effectively unreachable today (defense-in-depth for future non-exception failure paths).
-- **Impact:** None — correctness is unaffected; runtime behavior is correct. Future readers might be misled by the docstring.
-- **Fix deferred:** Reword docstring to reflect that exceptions propagate and the None-guard is defense-in-depth.
+- **Resolution:** Docstring reworded to reflect that exceptions propagate (caught by `main()`'s typed-exception boundary) and the None-guard at `main.py:765-770` is defense-in-depth for any future non-exception failure return. Acceptance greps pass: `(rc, None, None, None)` in main.py → 0; `defense-in-depth` → 2 matches; 2 return sites unchanged.
 
-### WR-02: Empty-state subject golden has cosmetic double-space on first-run
+### WR-02: Empty-state subject golden has cosmetic double-space on first-run ✓ RESOLVED
 
-- **File/Line:** `tests/fixtures/notifier/golden_empty_subject.txt:1` (and `notifier.py:311-319` + L340)
+- **File/Line:** `tests/fixtures/notifier/golden_empty_subject.txt:1` + `notifier.py:311-345`; fix in commit `9ede078`
 - **Category:** Edge case / UX
-- **Issue:** `golden_empty_subject.txt` contains `📊  — SPI200 FLAT, AUDUSD FLAT — Equity $100,000` (note double space between emoji and em-dash). Triggered when `empty_state.json` has `last_run: null` and legacy int-shape signals (no `as_of_run`), causing `date_iso` to resolve to empty string. Subject f-string at L340 then emits `f'{emoji} {date_iso} — ...'` = `📊  — ...`.
-- **Impact:** Cosmetic; visible only on very first run before state.json has a `last_run` value. Operator-level aesthetic issue; doesn't break delivery, rendering, or any test.
-- **Fix deferred:** Either render `first run` as a clearer token when `date_iso` is empty, or accept as a known edge case.
+- **Resolution:** `compose_email_subject` now emits `date_label = date_iso if date_iso else 'first run'`, and the f-string uses `{date_label}`. Golden regenerated: `📊 first run — SPI200 FLAT, AUDUSD FLAT — Equity $100,000` (64 bytes, single-space, explicit first-run token). New pinning test `test_subject_first_run_label_when_no_date_iso` in `TestComposeSubject` locks the behaviour. Regenerator double-run idempotent — PHASE GATE preserved. Other 5 goldens byte-identical.
 
 ---
 
