@@ -14,7 +14,7 @@
 - [ ] **Phase 2: Signal Engine — Sizing, Exits, Pyramiding** — Pure-math position sizing (skip-if-zero), exit rules (intraday H/L), and pyramid state machine, fixture-tested
 - [x] **Phase 3: State Persistence with Recovery** — `state_manager.py` with atomic writes, corruption recovery, and schema versioning (completed 2026-04-21)
 - [x] **Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI** — Live yfinance fetch, `main.py` orchestrator, CLI flags, structured logs (completed 2026-04-22)
-- [ ] **Phase 5: Dashboard** — Static `dashboard.html` with Chart.js equity curve, positions, trades, key stats
+- [x] **Phase 5: Dashboard** — Static `dashboard.html` with Chart.js equity curve, positions, trades, key stats (completed 2026-04-22)
 - [ ] **Phase 6: Email Notification** — Resend HTML email with ACTION REQUIRED block, mobile-responsive dark theme, graceful degradation
 - [ ] **Phase 7: Scheduler + GitHub Actions Deployment** — `cron 0 0 * * 1-5` GHA workflow with state commit-back, Replit alternative documented
 - [ ] **Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account** — Warning persistence, stale-state banner, top-level crash path, corrupt-state recovery surfaced to operator, configurable starting account + per-instrument contract-size tiers (CONF-01/02 folded in 2026-04-22)
@@ -102,10 +102,10 @@
   3. Open positions table shows entry, current, contracts, pyramid level, trail stop, and unrealised P&L; closed-trades table shows the last 20 trades
   4. Key stats block computes total return, Sharpe, max drawdown, and win rate from `equity_history` + `trade_log`
   5. "Last updated" timestamp is rendered in AWST (Australia/Perth)
-**Plans:** 3 plans
-- [ ] 05-01-PLAN.md — Wave 0 BLOCKING scaffold: dashboard.py stub module + palette/Chart.js SRI constants + _INLINE_CSS scaffold; tests/test_dashboard.py 6-class skeleton; tests/fixtures/dashboard/ (sample_state.json + empty_state.json + placeholder goldens); tests/regenerate_dashboard_golden.py; AST blocklist extension (FORBIDDEN_MODULES_DASHBOARD); B-1 retrofit in main.py:514-519 (add last_close to signal dict) + test_main.py extension
-- [ ] 05-02-PLAN.md — Wave 1: stats math (Sharpe/MaxDD/WinRate/TotalReturn) + inline unrealised-P&L + trail-stop display math (hex-safe re-impl) + 6 formatters (currency/percent/P&L colour/em-dash/AWST last-updated) + 6 per-block renderers (header/signal_cards/positions_table/trades_table/key_stats/footer); populate TestStatsMath + TestFormatters + TestRenderBlocks
-- [ ] 05-03-PLAN.md — Wave 2 (PHASE GATE): Chart.js container with SRI + </script> injection defence + HTML shell + atomic write (mirror state_manager._atomic_write) + render_dashboard public API + full _INLINE_CSS stylesheet; regenerate golden fixtures (byte-stable double-run); D-06 main.py integration (never-crash try/except) + 2 orchestrator tests (render-happens + failure-isolated); populate TestEmptyState + TestGoldenSnapshot + TestAtomicWrite
+**Plans:** 3/3 plans complete
+- [x] 05-01-PLAN.md — Wave 0 BLOCKING scaffold: dashboard.py stub module + palette/Chart.js SRI constants + _INLINE_CSS scaffold; tests/test_dashboard.py 6-class skeleton; tests/fixtures/dashboard/ (sample_state.json + empty_state.json + placeholder goldens); tests/regenerate_dashboard_golden.py; AST blocklist extension (FORBIDDEN_MODULES_DASHBOARD); B-1 retrofit in main.py:514-519 (add last_close to signal dict) + test_main.py extension
+- [x] 05-02-PLAN.md — Wave 1: stats math (Sharpe/MaxDD/WinRate/TotalReturn) + inline unrealised-P&L + trail-stop display math (hex-safe re-impl) + 6 formatters (currency/percent/P&L colour/em-dash/AWST last-updated) + 6 per-block renderers (header/signal_cards/positions_table/trades_table/key_stats/footer); populate TestStatsMath + TestFormatters + TestRenderBlocks
+- [x] 05-03-PLAN.md — Wave 2 (PHASE GATE): Chart.js container with SRI + </script> injection defence + HTML shell + atomic write (mirror state_manager._atomic_write) + render_dashboard public API + full _INLINE_CSS stylesheet; regenerate golden fixtures (byte-stable double-run); D-06 main.py integration (never-crash try/except) + 4 orchestrator tests (render-happens + runtime-failure-isolated + import-time-failure-isolated + --test mtime invariant); populate TestEmptyState + TestGoldenSnapshot + TestAtomicWrite
 **UI hint**: no
 
 ### Phase 6: Email Notification
