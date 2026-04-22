@@ -639,6 +639,173 @@ class TestOrchestrator:
       'ERR-01: expected DataFetchError message to appear in logs'
     )
 
+  # =========================================================================
+  # Phase 5 D-06 dashboard integration tests (05-03-PLAN Task 3)
+  # =========================================================================
+
+  @pytest.mark.freeze_time('2026-04-22 09:00:03+08:00')
+  def test_run_daily_check_renders_dashboard(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-06 Phase 5: run_daily_check calls dashboard.render_dashboard AFTER
+    save_state; dashboard.html exists on disk post-run (VALIDATION row 05-03-T3).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    dashboard_html = tmp_path / 'dashboard.html'
+    assert dashboard_html.exists(), (
+      'D-06: dashboard.html must exist on disk after run_daily_check succeeds'
+    )
+    # Smoke-check: valid HTML + palette bg + SRI.
+    content = dashboard_html.read_text()
+    assert content.startswith('<!DOCTYPE html>'), 'must be well-formed HTML'
+    assert '#0f1117' in content, 'DASH-09: palette bg must be present'
+    assert 'sha384-MH1axGwz' in content, 'DASH-02: Chart.js SRI must be present'
+
+  def test_dashboard_failure_never_crashes_run(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''D-06: if dashboard.render_dashboard raises at CALL TIME, run_daily_check
+    logs at WARNING and returns 0. State was already saved — cosmetic failure
+    must not abort the run (VALIDATION row 05-03-T3).
+
+    C-2 reviews: covers the CALL-TIME failure branch. Import-time failures
+    are covered by test_dashboard_import_time_failure_never_crashes_run
+    below, which monkeypatches sys.modules so the in-helper `import
+    dashboard` raises instead of the render call.
+    '''
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    # Force render_dashboard to raise at CALL TIME.
+    # C-2 reviews: monkeypatch target is `dashboard.render_dashboard` (the
+    # module attribute on the real dashboard module — the in-helper `import
+    # dashboard` reuses sys.modules['dashboard']). NOT
+    # `main.dashboard.render_dashboard`, which does not exist once the
+    # module-top import is removed per C-2.
+    import dashboard as _dashboard_module_for_patch
+
+    def _raise(*args, **kwargs):
+      raise RuntimeError('simulated render failure')
+    monkeypatch.setattr(_dashboard_module_for_patch, 'render_dashboard', _raise)
+
+    rc = main.main(['--once'])
+    assert rc == 0, 'D-06: dashboard failure must NOT change exit code'
+
+    # State was saved (pre-render step); dashboard was not.
+    state_json = tmp_path / 'state.json'
+    assert state_json.exists(), 'state.json must exist (saved pre-dashboard)'
+    assert not (tmp_path / 'dashboard.html').exists(), (
+      'dashboard.html must NOT exist — render was forced to raise'
+    )
+    # WARNING log with [Dashboard] prefix + exception class name.
+    assert '[Dashboard] render failed' in caplog.text, (
+      'D-06: failure must log at WARNING with [Dashboard] prefix'
+    )
+    assert 'RuntimeError' in caplog.text, 'exception type must be in log message'
+
+  def test_dashboard_import_time_failure_never_crashes_run(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''C-2 reviews: an import-time error in dashboard.py (syntax error,
+    missing sub-import, etc.) MUST be caught by the same `except Exception`
+    that catches runtime render failures. The in-helper `import dashboard`
+    statement makes this possible.
+
+    Strategy: replace sys.modules['dashboard'] with an object whose
+    attribute access raises. When `_render_dashboard_never_crash` runs
+    `import dashboard`, Python reloads via the fake, and when the helper
+    tries to reach `dashboard.render_dashboard`, attribute access fails —
+    the try/except catches, and the run completes with rc == 0.
+
+    If this test ever fails, the most likely cause is that a regression
+    moved `import dashboard` back to main.py module scope — fix by moving
+    it back inside the helper (C-2 reviews).
+    '''
+    import sys
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    class _BrokenDashboard:
+      def __getattr__(self, name):
+        raise ImportError(
+          f'simulated import-time failure: cannot access {name!r}'
+        )
+    original = sys.modules.get('dashboard')
+    sys.modules['dashboard'] = _BrokenDashboard()
+    try:
+      rc = main.main(['--once'])
+    finally:
+      if original is not None:
+        sys.modules['dashboard'] = original
+      else:
+        sys.modules.pop('dashboard', None)
+
+    assert rc == 0, (
+      'C-2 reviews: dashboard IMPORT-time failure must NOT change exit code'
+    )
+    # State must still be on disk — save_state runs before the dashboard call.
+    assert (tmp_path / 'state.json').exists(), (
+      'state.json must exist (saved pre-dashboard)'
+    )
+    assert not (tmp_path / 'dashboard.html').exists(), (
+      'dashboard.html must NOT exist — import was forced to fail'
+    )
+    assert '[Dashboard] render failed' in caplog.text, (
+      'C-2 reviews: import-time failure must log the same way as '
+      'runtime failure — single WARN line under [Dashboard] prefix'
+    )
+
+  @pytest.mark.freeze_time('2026-04-22 09:00:03+08:00')
+  def test_test_flag_leaves_dashboard_html_mtime_unchanged(
+      self, tmp_path, monkeypatch) -> None:
+    '''C-3 reviews: --test is STRUCTURALLY read-only per CLI-01 + CLAUDE.md.
+    Dashboard renders ONLY on the non-test path. This test mirrors
+    test_test_flag_leaves_state_json_mtime_unchanged from Phase 4 but for
+    the dashboard.html artefact.
+
+    Pre-create dashboard.html with known bytes; run --test; assert the
+    file is unchanged (same mtime + same bytes).
+    '''
+    import time as _time
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    # Pre-populate dashboard.html so we have a baseline mtime + bytes.
+    dash = tmp_path / 'dashboard.html'
+    original_bytes = b'<!DOCTYPE html><html><body>ORIGINAL</body></html>'
+    dash.write_bytes(original_bytes)
+    original_mtime = dash.stat().st_mtime
+
+    # Wait ~1.1s so any filesystem mtime bump from a mis-placed render
+    # call would be detectable (most filesystems mtime is 1s resolution).
+    _time.sleep(1.1)
+
+    rc = main.main(['--test'])
+    assert rc == 0
+
+    # C-3 contract: dashboard.html untouched under --test.
+    assert dash.exists(), 'dashboard.html must still exist'
+    assert dash.read_bytes() == original_bytes, (
+      'C-3 reviews: --test must NOT rewrite dashboard.html — '
+      'rendering is a disk mutation forbidden by CLI-01 structural read-only.'
+    )
+    assert dash.stat().st_mtime == original_mtime, (
+      'C-3 reviews: --test must NOT bump dashboard.html mtime — '
+      'rendering is a disk mutation forbidden by CLI-01 structural read-only.'
+    )
+
 
 class TestLoggerConfig:
   '''Pitfall 4: main() configures logging via basicConfig(force=True).
