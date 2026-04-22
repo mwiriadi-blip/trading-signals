@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "account": 101234.56,
+  "last_run": "2026-04-22",
+  "positions": {
+    "SPI200": {
+      "direction": "SHORT",
+      "entry_price": 8285.0,
+      "entry_date": "2026-04-22",
+      "n_contracts": 1,
+      "pyramid_level": 0,
+      "peak_price": null,
+      "trough_price": 8285.0,
+      "atr_entry": 50.0
+    },
+    "AUDUSD": {
+      "direction": "LONG",
+      "entry_price": 0.6502,
+      "entry_date": "2026-04-22",
+      "n_contracts": 5,
+      "pyramid_level": 0,
+      "peak_price": 0.6502,
+      "trough_price": null,
+      "atr_entry": 0.0042
+    }
+  },
+  "signals": {
+    "SPI200": {
+      "signal": -1,
+      "signal_as_of": "2026-04-21",
+      "as_of_run": "2026-04-22",
+      "last_scalars": {
+        "adx": 32.5,
+        "atr": 50.0,
+        "mom1": -0.031,
+        "mom3": -0.048,
+        "mom12": -0.092,
+        "ndi": 28.1,
+        "pdi": 12.4,
+        "rvol": 1.12
+      },
+      "last_close": 8285.0
+    },
+    "AUDUSD": {
+      "signal": 1,
+      "signal_as_of": "2026-04-21",
+      "as_of_run": "2026-04-22",
+      "last_scalars": {
+        "adx": 27.3,
+        "atr": 0.0042,
+        "mom1": 0.025,
+        "mom3": 0.031,
+        "mom12": 0.045,
+        "ndi": 14.0,
+        "pdi": 29.1,
+        "rvol": 0.95
+      },
+      "last_close": 0.6502
+    }
+  },
+  "trade_log": [
+    {"instrument": "SPI200", "direction": "LONG", "entry_date": "2026-03-10", "exit_date": "2026-03-20", "entry_price": 7800.0, "exit_price": 7920.0, "gross_pnl": 600.0, "n_contracts": 1, "exit_reason": "signal_reversal", "multiplier": 5.0, "cost_aud": 6.0, "net_pnl": 594.0},
+    {"instrument": "AUDUSD", "direction": "SHORT", "entry_date": "2026-03-22", "exit_date": "2026-04-01", "entry_price": 0.6620, "exit_price": 0.6550, "gross_pnl": 70.0, "n_contracts": 3, "exit_reason": "stop_hit", "multiplier": 10000.0, "cost_aud": 5.0, "net_pnl": 65.0},
+    {"instrument": "SPI200", "direction": "LONG", "entry_date": "2026-04-05", "exit_date": "2026-04-12", "entry_price": 7950.0, "exit_price": 8100.0, "gross_pnl": 750.0, "n_contracts": 1, "exit_reason": "signal_reversal", "multiplier": 5.0, "cost_aud": 6.0, "net_pnl": 744.0},
+    {"instrument": "AUDUSD", "direction": "LONG", "entry_date": "2026-04-14", "exit_date": "2026-04-18", "entry_price": 0.6480, "exit_price": 0.6465, "gross_pnl": -15.0, "n_contracts": 2, "exit_reason": "adx_exit", "multiplier": 10000.0, "cost_aud": 5.0, "net_pnl": -20.0},
+    {"instrument": "SPI200", "direction": "LONG", "entry_date": "2026-04-15", "exit_date": "2026-04-22", "entry_price": 8204.5, "exit_price": 8285.0, "gross_pnl": 402.5, "n_contracts": 2, "exit_reason": "signal_reversal", "multiplier": 5.0, "cost_aud": 6.0, "net_pnl": 396.5}
+  ],
+  "equity_history": [
+    {"date": "2026-02-01", "equity": 100000.0},
+    {"date": "2026-02-15", "equity": 100250.0},
+    {"date": "2026-03-01", "equity": 100400.0},
+    {"date": "2026-03-15", "equity": 100550.0},
+    {"date": "2026-04-01", "equity": 100700.0},
+    {"date": "2026-04-15", "equity": 100900.0},
+    {"date": "2026-04-21", "equity": 101000.0},
+    {"date": "2026-04-22", "equity": 101234.56}
+  ],
+  "warnings": []
+}

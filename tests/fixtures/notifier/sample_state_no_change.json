@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "account": 101234.56,
+  "last_run": "2026-04-22",
+  "positions": {
+    "SPI200": {
+      "direction": "LONG",
+      "entry_price": 8100.0,
+      "entry_date": "2026-04-15",
+      "n_contracts": 2,
+      "pyramid_level": 0,
+      "peak_price": 8300.0,
+      "trough_price": null,
+      "atr_entry": 45.0
+    },
+    "AUDUSD": null
+  },
+  "signals": {
+    "SPI200": {
+      "signal": 1,
+      "signal_as_of": "2026-04-21",
+      "as_of_run": "2026-04-22",
+      "last_scalars": {
+        "adx": 32.5,
+        "atr": 50.0,
+        "mom1": 0.031,
+        "mom3": 0.048,
+        "mom12": 0.092,
+        "ndi": 12.4,
+        "pdi": 28.1,
+        "rvol": 1.12
+      },
+      "last_close": 8285.0
+    },
+    "AUDUSD": {
+      "signal": 0,
+      "signal_as_of": "2026-04-21",
+      "as_of_run": "2026-04-22",
+      "last_scalars": {
+        "adx": 18.3,
+        "atr": 0.0042,
+        "mom1": -0.005,
+        "mom3": 0.001,
+        "mom12": 0.014,
+        "ndi": 21.2,
+        "pdi": 19.0,
+        "rvol": 0.95
+      },
+      "last_close": 0.6502
+    }
+  },
+  "trade_log": [
+    {"instrument": "SPI200", "direction": "LONG", "entry_date": "2026-03-10", "exit_date": "2026-03-20", "entry_price": 7800.0, "exit_price": 7920.0, "gross_pnl": 600.0, "n_contracts": 1, "exit_reason": "signal_reversal", "multiplier": 5.0, "cost_aud": 6.0, "net_pnl": 594.0},
+    {"instrument": "AUDUSD", "direction": "SHORT", "entry_date": "2026-03-22", "exit_date": "2026-04-01", "entry_price": 0.6620, "exit_price": 0.6550, "gross_pnl": 70.0, "n_contracts": 3, "exit_reason": "stop_hit", "multiplier": 10000.0, "cost_aud": 5.0, "net_pnl": 65.0},
+    {"instrument": "SPI200", "direction": "LONG", "entry_date": "2026-04-05", "exit_date": "2026-04-12", "entry_price": 7950.0, "exit_price": 8100.0, "gross_pnl": 750.0, "n_contracts": 1, "exit_reason": "signal_reversal", "multiplier": 5.0, "cost_aud": 6.0, "net_pnl": 744.0}
+  ],
+  "equity_history": [
+    {"date": "2026-04-20", "equity": 101150.0},
+    {"date": "2026-04-21", "equity": 101200.0},
+    {"date": "2026-04-22", "equity": 101234.56}
+  ],
+  "warnings": []
+}

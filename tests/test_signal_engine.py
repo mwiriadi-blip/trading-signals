@@ -472,6 +472,10 @@ TEST_MAIN_PATH = Path('tests/test_main.py')
 DASHBOARD_PATH = Path('dashboard.py')
 TEST_DASHBOARD_PATH = Path('tests/test_dashboard.py')
 REGENERATE_DASHBOARD_GOLDEN_PATH = Path('tests/regenerate_dashboard_golden.py')
+# Phase 6 Wave 0: add notifier.py to AST guard
+NOTIFIER_PATH = Path('notifier.py')
+TEST_NOTIFIER_PATH = Path('tests/test_notifier.py')
+REGENERATE_NOTIFIER_GOLDEN_PATH = Path('tests/regenerate_notifier_golden.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
@@ -556,6 +560,22 @@ FORBIDDEN_MODULES_DASHBOARD = frozenset({
   'numpy', 'pandas',
   # Fetch / network — dashboard never touches network (Chart.js loads client-side)
   'yfinance', 'requests',
+})
+
+# Phase 6 Wave 0: notifier.py IS the email I/O hex — stdlib (html, json,
+# logging, os, time, tempfile, datetime, pathlib) + pytz + requests
+# (Resend HTTPS) + state_manager (load_state convenience path) +
+# system_params (palette + contract specs) ARE allowed. But it must NOT
+# import sibling hexes (signal_engine, sizing_engine, data_fetcher,
+# dashboard, main) or heavy scientific stack (numpy, pandas) or fetch
+# libs (yfinance).
+FORBIDDEN_MODULES_NOTIFIER = frozenset({
+  # Sibling hexes — notifier.py is a peer, never imports them
+  'signal_engine', 'sizing_engine', 'data_fetcher', 'dashboard', 'main',
+  # Heavy scientific stack (notifier does no numeric work beyond f-string format)
+  'numpy', 'pandas',
+  # Fetch libs — notifier never fetches market data
+  'yfinance',
 })
 
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
@@ -855,6 +875,31 @@ class TestDeterminism:
       f'Allowed: stdlib (html, json, math, os, statistics, tempfile, datetime, '
       f'pathlib, logging) + pytz + state_manager + system_params. Dashboard IS '
       f'the render I/O hex — that is its PURPOSE.'
+    )
+
+  @pytest.mark.parametrize('module_path', [NOTIFIER_PATH])
+  def test_notifier_no_forbidden_imports(self, module_path: Path) -> None:
+    '''Phase 6 Wave 0: notifier.py must not import sibling hexes, numpy,
+    pandas, or yfinance. It IS allowed to import stdlib (html, json,
+    logging, os, time, tempfile, datetime, pathlib) + pytz + requests +
+    state_manager (load_state, CLI path only) + system_params (palette +
+    contract specs).
+
+    Structural enforcement of CLAUDE.md §Architecture hexagonal-lite for
+    notifier: sibling-hex blocklists ALREADY forbid notifier
+    (FORBIDDEN_MODULES, FORBIDDEN_MODULES_STATE_MANAGER,
+    FORBIDDEN_MODULES_DATA_FETCHER, FORBIDDEN_MODULES_DASHBOARD); this
+    test closes the symmetric boundary — notifier cannot import them
+    either.
+    '''
+    imports = _top_level_imports(module_path)
+    leaked = imports & FORBIDDEN_MODULES_NOTIFIER
+    assert not leaked, (
+      f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
+      f'notifier.py must not import sibling hexes (signal_engine, sizing_engine, '
+      f'data_fetcher, dashboard, main), numpy, pandas, or yfinance. '
+      f'Allowed: stdlib + pytz + requests + state_manager + system_params. '
+      f'notifier IS the email I/O hex — that is its PURPOSE.'
     )
 
   def test_signal_engine_has_core_public_surface(self) -> None:

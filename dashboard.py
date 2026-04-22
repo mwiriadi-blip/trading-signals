@@ -79,7 +79,16 @@ import pytz  # noqa: F401 — Wave 1 Australia/Perth localisation
 from state_manager import (
   load_state,  # noqa: F401 — CLI convenience path; prod uses caller-supplied state
 )
-from system_params import (  # noqa: F401 — Wave 1 contract specs + trail multipliers
+from system_params import (  # noqa: F401 — Wave 1 contract specs + trail multipliers; Phase 6 Wave 0 palette retrofit
+  _COLOR_BG,
+  _COLOR_BORDER,
+  _COLOR_FLAT,
+  _COLOR_LONG,
+  _COLOR_SHORT,
+  _COLOR_SURFACE,
+  _COLOR_TEXT,
+  _COLOR_TEXT_DIM,
+  _COLOR_TEXT_MUTED,
   AUDUSD_COST_AUD,
   AUDUSD_NOTIONAL,
   INITIAL_ACCOUNT,
@@ -94,21 +103,6 @@ from system_params import (  # noqa: F401 — Wave 1 contract specs + trail mult
 # =========================================================================
 
 logger = logging.getLogger(__name__)
-
-
-# =========================================================================
-# Palette constants — UI-SPEC §Color (locked, do NOT retune)
-# =========================================================================
-
-_COLOR_BG = '#0f1117'
-_COLOR_SURFACE = '#161a24'
-_COLOR_BORDER = '#252a36'
-_COLOR_TEXT = '#e5e7eb'
-_COLOR_TEXT_MUTED = '#cbd5e1'
-_COLOR_TEXT_DIM = '#64748b'
-_COLOR_LONG = '#22c55e'
-_COLOR_SHORT = '#ef4444'
-_COLOR_FLAT = '#eab308'
 
 
 # =========================================================================
