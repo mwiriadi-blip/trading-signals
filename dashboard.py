@@ -156,14 +156,81 @@ _INLINE_CSS = f'''
 
 
 # =========================================================================
-# Em-dash constant helper — placed early so _compute_* helpers can reference
-# it for empty-state fallbacks (CONTEXT D-16). Full formatter suite lands in
-# Task 2 of Wave 1 just below this block.
+# Formatters — UI-SPEC §Format Helper Contracts + CONTEXT D-16
+# _fmt_em_dash is placed first so _compute_* helpers can reference it for
+# empty-state fallbacks. All formatters are pure (no state arg, no clock
+# read, no side effects). _fmt_last_updated rejects naive datetimes per
+# RESEARCH Pitfall 9 (naive now silently produces different bytes per CI
+# runner timezone, breaking golden-snapshot determinism).
 # =========================================================================
 
 def _fmt_em_dash() -> str:
   '''UI-SPEC §Format Helper Contracts: single call site for the em-dash empty-value token.'''
   return '—'
+
+
+def _fmt_currency(value: float) -> str:
+  '''UI-SPEC §Format Helper Contracts: $1,234.56 / -$567.89 / $0.00.
+
+  Always 2 dp. Negative uses leading -$, NEVER parentheses. No K/M/B suffix.
+  '''
+  if value < 0:
+    return f'-${-value:,.2f}'
+  return f'${value:,.2f}'
+
+
+def _fmt_percent_signed(fraction: float) -> str:
+  '''UI-SPEC §Format Helper Contracts: +5.3% / -12.5% / +0.0%.
+
+  Input is a fraction (0.053 → +5.3%). Signed zero renders as '+0.0%'.
+  '''
+  return f'{fraction * 100:+.1f}%'
+
+
+def _fmt_percent_unsigned(fraction: float) -> str:
+  '''UI-SPEC §Format Helper Contracts: 58.3% / 12.5%. Input is a fraction.'''
+  return f'{fraction * 100:.1f}%'
+
+
+def _fmt_pnl_with_colour(value: float) -> str:
+  '''UI-SPEC §Format Helper Contracts + CONTEXT D-16: P&L span coloured by sign.
+
+  Positive: <span style="color: #22c55e">+$1,234.56</span>
+  Negative: <span style="color: #ef4444">-$567.89</span>
+  Zero:     <span style="color: #cbd5e1">$0.00</span>
+
+  Belt-and-braces html.escape on both colour + body (numeric formats already safe;
+  the escape keeps reviewer scan trivial per D-15).
+  '''
+  if value > 0:
+    colour = _COLOR_LONG
+    body = f'+{_fmt_currency(value)}'
+  elif value < 0:
+    colour = _COLOR_SHORT
+    body = _fmt_currency(value)
+  else:
+    colour = _COLOR_TEXT_MUTED
+    body = '$0.00'
+  return (
+    f'<span style="color: {html.escape(colour, quote=True)}">'
+    f'{html.escape(body, quote=True)}</span>'
+  )
+
+
+def _fmt_last_updated(now: datetime) -> str:
+  '''UI-SPEC §Format Helper Contracts + DASH-08: YYYY-MM-DD HH:MM AWST.
+
+  Raises ValueError on naive datetime (RESEARCH Pitfall 9: a naive now silently
+  produces different bytes per CI runner timezone, breaking golden-snapshot
+  determinism). Always applies Australia/Perth via astimezone → strftime.
+  '''
+  if now.tzinfo is None:
+    raise ValueError(
+      '_fmt_last_updated requires a timezone-aware datetime; '
+      f'got naive datetime={now!r}'
+    )
+  awst = now.astimezone(pytz.timezone('Australia/Perth'))
+  return awst.strftime('%Y-%m-%d %H:%M AWST')
 
 
 # =========================================================================

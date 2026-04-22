@@ -380,9 +380,99 @@ class TestFormatters:
   naive-datetime rejection (Pitfall 9).
   '''
 
-  def test_scaffold_placeholder(self) -> None:
-    '''Wave 0 placeholder — Wave 1/2 populate real tests.'''
-    assert True
+  # --- _fmt_currency ---
+
+  def test_fmt_currency_positive(self) -> None:
+    assert dashboard._fmt_currency(1234.56) == '$1,234.56'
+
+  def test_fmt_currency_negative(self) -> None:
+    '''Negative uses leading -$, NOT parentheses (UI-SPEC §Format Helper Contracts).'''
+    assert dashboard._fmt_currency(-567.89) == '-$567.89'
+
+  def test_fmt_currency_zero(self) -> None:
+    '''Always 2 dp, never collapses to "$0".'''
+    assert dashboard._fmt_currency(0.0) == '$0.00'
+
+  def test_fmt_currency_large(self) -> None:
+    '''Thousands separator, no K/M suffix.'''
+    assert dashboard._fmt_currency(100000.0) == '$100,000.00'
+
+  def test_fmt_currency_small_fraction(self) -> None:
+    '''Small negative fractions keep the 2dp + leading -$.'''
+    assert dashboard._fmt_currency(-0.01) == '-$0.01'
+
+  # --- _fmt_percent_signed ---
+
+  def test_fmt_percent_signed_positive(self) -> None:
+    '''Input 0.053 → "+5.3%".'''
+    assert dashboard._fmt_percent_signed(0.053) == '+5.3%'
+
+  def test_fmt_percent_signed_negative(self) -> None:
+    '''Input -0.125 → "-12.5%".'''
+    assert dashboard._fmt_percent_signed(-0.125) == '-12.5%'
+
+  def test_fmt_percent_signed_zero(self) -> None:
+    '''Python +.1f on 0.0 yields "+0.0%" — UI-SPEC locks this behaviour.'''
+    assert dashboard._fmt_percent_signed(0.0) == '+0.0%'
+
+  # --- _fmt_percent_unsigned ---
+
+  def test_fmt_percent_unsigned_positive(self) -> None:
+    assert dashboard._fmt_percent_unsigned(0.583) == '58.3%'
+
+  def test_fmt_percent_unsigned_negative(self) -> None:
+    '''Max DD uses unsigned format but negative sign appears naturally from negative input.'''
+    assert dashboard._fmt_percent_unsigned(-0.125) == '-12.5%'
+
+  # --- _fmt_pnl_with_colour ---
+
+  def test_fmt_pnl_with_colour_positive(self) -> None:
+    '''Positive → LONG green, "+" prefix.'''
+    result = dashboard._fmt_pnl_with_colour(1234.56)
+    assert '#22c55e' in result
+    assert '+$1,234.56' in result
+
+  def test_fmt_pnl_with_colour_negative(self) -> None:
+    '''Negative → SHORT red, leading -$.'''
+    result = dashboard._fmt_pnl_with_colour(-567.89)
+    assert '#ef4444' in result
+    assert '-$567.89' in result
+
+  def test_fmt_pnl_with_colour_zero(self) -> None:
+    '''Zero → muted colour, no "+" or "-" prefix.'''
+    result = dashboard._fmt_pnl_with_colour(0.0)
+    assert '#cbd5e1' in result
+    assert '$0.00' in result
+    assert '+$0.00' not in result
+    assert '-$0.00' not in result
+
+  # --- _fmt_em_dash ---
+
+  def test_fmt_em_dash(self) -> None:
+    '''Single U+2014 codepoint.'''
+    result = dashboard._fmt_em_dash()
+    assert result == '—'
+    assert len(result) == 1
+    assert ord(result) == 0x2014
+
+  # --- _fmt_last_updated ---
+
+  def test_fmt_last_updated_awst(self) -> None:
+    '''VALIDATION row 05-02-T2 AWST test. C-1 reviews: use PERTH.localize(...) —
+    datetime(..., tzinfo=pytz.timezone(...)) silently picks historical LMT offset
+    (+07:43:24 for Perth pre-1895) instead of +08:00 AWST.'''
+    now = PERTH.localize(datetime(2026, 4, 22, 9, 0))
+    assert dashboard._fmt_last_updated(now) == '2026-04-22 09:00 AWST'
+
+  def test_fmt_last_updated_rejects_naive_datetime(self) -> None:
+    '''RESEARCH Pitfall 9: naive datetime silently breaks golden-snapshot byte stability.'''
+    with pytest.raises(ValueError, match='timezone-aware'):
+      dashboard._fmt_last_updated(datetime(2026, 4, 22, 9, 0))  # no tzinfo
+
+  def test_fmt_last_updated_converts_utc_to_awst(self) -> None:
+    '''Perth is UTC+8, no DST. 01:00 UTC → 09:00 AWST.'''
+    utc_now = datetime(2026, 4, 22, 1, 0, tzinfo=pytz.UTC)
+    assert dashboard._fmt_last_updated(utc_now) == '2026-04-22 09:00 AWST'
 
 
 class TestRenderBlocks:
