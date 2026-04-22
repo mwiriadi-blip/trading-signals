@@ -1,17 +1,14 @@
 '''Phase 6 test suite: notifier compose + dispatch + formatters + goldens + never-crash.
 
-Organized into 6 classes per D-03 (one class per concern dimension):
+Organized into 7 classes per D-03 (one class per concern dimension):
   TestComposeSubject — D-04 subject template + emoji + [TEST] prefix + first-run + equity rounding
+  TestDetectSignalChanges — D-06 first-run-as-no-change helper
   TestComposeBody    — D-10 7-section body + ACTION REQUIRED + palette inline + XSS escape
   TestFormatters     — _fmt_*_email parity with dashboard formatters (currency, percent, pnl, etc.)
   TestSendDispatch   — send_daily_email RESEND_API_KEY paths + never-crash semantics
   TestResendPost     — _post_to_resend retry loop + 429 special-case + 4xx fail-fast
+  TestAtomicWriteHtml — _atomic_write_html tempfile + fsync + os.replace (D-13 + C-7)
   TestGoldenEmail    — byte-equal HTML snapshots (3 fixtures → 3 goldens)
-
-Wave 0 (this commit): one placeholder test per class that passes
-structurally via pytest.xfail or pytest.raises(NotImplementedError) —
-Nyquist Dimension 8 gate. Waves 1/2 fill in real test bodies against
-the stub notifier module.
 
 All tests use pytest's tmp_path for isolated email output — never write to the real
 ./last_email.html. Clock determinism via FROZEN_NOW module constant (no freezer
@@ -24,18 +21,20 @@ for Perth pre-1895) instead of the wall-clock AWST (+08:00) we want.
 Use PERTH.localize(...) — always.
 '''
 import html  # noqa: F401 — Wave 1 TestComposeBody escape assertions
-import json  # noqa: F401 — Wave 1/2 fixture loading
+import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import (
-  patch,  # noqa: F401 — Wave 2 TestResendPost / TestSendDispatch patch targets
+  patch,  # noqa: F401 — legacy alias (monkeypatch now preferred)
 )
 
 import pytest
 import pytz
+import requests
 
-import notifier  # noqa: F401 — module must import cleanly at Wave 0 (stub)
-from notifier import (  # noqa: F401 — stub imports; Waves 1/2 exercise real bodies
+import notifier
+from notifier import (  # noqa: F401 — re-exported for convenience in tests
   compose_email_body,
   compose_email_subject,
   send_daily_email,
@@ -657,52 +656,554 @@ class TestFormatters:
     assert notifier._fmt_instrument_display_email('AUDUSD') == 'AUD / USD'
 
 
-class TestSendDispatch:
-  '''D-13 + NOTF-07 + NOTF-08: send_daily_email never-crash semantics.
-  RESEND_API_KEY-missing → last_email.html fallback; 5xx logs + returns 0;
-  unexpected exceptions logged + returns 0. Wave 2 (06-03) fills.
+# =========================================================================
+# TestResendPost helpers — module-level _FakeResp factory used by many cases
+# =========================================================================
+
+class _FakeResp:
+  '''Minimal stand-in for requests.Response used by TestResendPost monkeypatches.
+
+  Fields: status_code, text. raise_for_status() raises HTTPError on 5xx+429
+  and no-ops otherwise — mirror of real requests behaviour for the subset
+  of codes _post_to_resend cares about.
   '''
 
-  def test_scaffold_placeholder_send_dispatch(self) -> None:
-    '''Nyquist Dimension 8: placeholder for NOTF-07, NOTF-08 — passes
-    via pytest.raises(NotImplementedError). Wave 2 (06-03) replaces
-    this with real send_daily_email cases.
-    '''
-    with pytest.raises(NotImplementedError, match='Wave 2'):
-      send_daily_email({}, {}, FROZEN_NOW, is_test=False)
+  def __init__(self, status_code: int, text: str = 'ok') -> None:
+    self.status_code = status_code
+    self.text = text
+
+  def raise_for_status(self) -> None:
+    if self.status_code == 429 or self.status_code >= 500:
+      raise requests.exceptions.HTTPError(
+        f'{self.status_code}', response=self,
+      )
 
 
 class TestResendPost:
   '''D-12 + RESEARCH §1: _post_to_resend retry loop — 4xx (≠ 429) fail-fast;
-  429/5xx/Timeout/ConnectionError retry with flat 10s backoff up to 3×.
-  Wave 2 (06-03) fills via monkeypatch on notifier.requests.post.
+  429/5xx/Timeout/ConnectionError retry with flat backoff up to 3×.
+
+  Monkeypatch target: notifier.requests.post (never the real HTTPS endpoint).
+  backoff_s=0 keeps tests <1s.
   '''
 
-  def test_scaffold_placeholder_resend_post(self) -> None:
-    '''Nyquist Dimension 8: placeholder for NOTF-01 — passes via
-    pytest.raises(NotImplementedError). Wave 2 (06-03) replaces this
-    with real _post_to_resend cases.
-    '''
-    with pytest.raises(NotImplementedError, match='Wave 2'):
+  def test_post_url_and_auth_header(self, monkeypatch) -> None:
+    '''POST URL + headers + JSON payload shape (RESEARCH §1).'''
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append({'url': url, **kw})
+      return _FakeResp(200, '{"id":"uuid"}')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier._post_to_resend(
+      'test_key_xyz', 'from@x.com', 'recipient@x.com',
+      '🔴 subject', '<html/>',
+      timeout_s=5, retries=1, backoff_s=0,
+    )
+    assert len(captured) == 1
+    call = captured[0]
+    assert call['url'] == 'https://api.resend.com/emails'
+    assert call['headers']['Authorization'] == 'Bearer test_key_xyz'
+    assert call['headers']['Content-Type'] == 'application/json'
+    assert call['timeout'] == (5, 5), (
+      'Fix 2: requests.post timeout must be (connect, read) tuple not scalar'
+    )
+    payload = call['json']
+    assert payload['from'] == 'from@x.com'
+    assert payload['to'] == ['recipient@x.com']
+    assert payload['subject'] == '🔴 subject'
+    assert payload['html'] == '<html/>'
+
+  def test_success_200_returns_none(self, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(200, 'ok')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    result = notifier._post_to_resend(
+      'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+      timeout_s=1, retries=3, backoff_s=0,
+    )
+    assert result is None
+    assert len(calls) == 1, 'no retries needed on 200'
+
+  @pytest.mark.parametrize('status', [400, 401, 403, 422])
+  def test_4xx_fails_fast(self, monkeypatch, status) -> None:
+    '''4xx (except 429) fails fast with no retries — raises ResendError.'''
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(status, f'{status} body')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError, match=f'4xx from Resend: {status}'):
       notifier._post_to_resend(
-        'fake_key', 'from@x', 'to@y', 'subj', '<html/>',
-        timeout_s=1, retries=1, backoff_s=0,
+        'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
       )
+    assert len(calls) == 1, '4xx must fail fast — no retries'
+
+  def test_429_IS_retried(self, monkeypatch) -> None:
+    '''RESEARCH §1: 429 IS retryable per Resend — special-case BEFORE 4xx band.'''
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(429 if len(calls) < 3 else 200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    result = notifier._post_to_resend(
+      'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+      timeout_s=1, retries=3, backoff_s=0,
+    )
+    assert result is None, 'succeeds on 3rd attempt'
+    assert len(calls) == 3
+
+  def test_429_retries_exhausted_raises(self, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(429)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError, match='retries exhausted'):
+      notifier._post_to_resend(
+        'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
+      )
+    assert len(calls) == 3
+
+  def test_5xx_500_retries_then_success(self, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(500 if len(calls) == 1 else 200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    result = notifier._post_to_resend(
+      'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+      timeout_s=1, retries=3, backoff_s=0,
+    )
+    assert result is None
+    assert len(calls) == 2
+
+  def test_5xx_500_retries_exhausted_raises(self, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(500)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError, match='retries exhausted'):
+      notifier._post_to_resend(
+        'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
+      )
+    assert len(calls) == 3
+
+  def test_timeout_retries_then_raises(self, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      raise requests.exceptions.Timeout('slow')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError, match='retries exhausted'):
+      notifier._post_to_resend(
+        'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
+      )
+    assert len(calls) == 3
+
+  def test_connection_error_retries_then_raises(self, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      raise requests.exceptions.ConnectionError('refused')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError, match='retries exhausted'):
+      notifier._post_to_resend(
+        'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
+      )
+    assert len(calls) == 3
+
+  def test_api_key_NOT_in_error_body(self, monkeypatch) -> None:
+    '''T-06-02: even if Resend echoes the Authorization header back in the
+    4xx body, the raised ResendError must NOT contain the raw api_key.
+    '''
+    api_key = 'test_key_xyz_NEVER_LEAK'
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(401, f'unauthorized: Bearer {api_key}')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError) as exc_info:
+      notifier._post_to_resend(
+        api_key, 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
+      )
+    msg = str(exc_info.value)
+    assert '401' in msg
+    assert api_key not in msg, f'T-06-02 leak: raw api_key in error: {msg!r}'
+
+  def test_api_key_redacted_in_4xx_error_body(self, monkeypatch) -> None:
+    '''Fix 1 (HIGH): api_key actively redacted from 4xx error body.
+
+    Craft a fake 4xx response whose .text contains the literal api_key
+    (simulating Resend echoing the Authorization header back in its error
+    body). Assert the raised ResendError message:
+      - contains '4xx from Resend: 401'
+      - contains '[REDACTED]'
+      - does NOT contain the raw key
+    '''
+    api_key = 'test_key_xyz'
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(401, f'Bearer {api_key} not authorized')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError) as exc_info:
+      notifier._post_to_resend(
+        api_key, 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=3, backoff_s=0,
+      )
+    msg = str(exc_info.value)
+    assert '4xx from Resend: 401' in msg
+    assert '[REDACTED]' in msg, f'Fix 1: expected [REDACTED] in 4xx body; got: {msg!r}'
+    assert api_key not in msg, f'Fix 1 leak: api_key in 4xx body: {msg!r}'
+
+  def test_api_key_redacted_in_retries_exhausted(self, monkeypatch) -> None:
+    '''Fix 1 (HIGH): redaction also applies to the retries-exhausted branch.
+
+    Monkeypatch requests.post to raise ConnectionError whose message
+    embeds the literal api_key. Assert the final ResendError message
+    contains [REDACTED] and NOT the raw key.
+    '''
+    api_key = 'test_key_xyz'
+
+    def _fake_post(*a, **kw):
+      raise requests.exceptions.ConnectionError(
+        f'refused with token {api_key} embedded',
+      )
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    with pytest.raises(notifier.ResendError) as exc_info:
+      notifier._post_to_resend(
+        api_key, 'a@b.c', 'c@d.e', 'subj', '<html/>',
+        timeout_s=1, retries=2, backoff_s=0,
+      )
+    msg = str(exc_info.value)
+    assert 'retries exhausted' in msg
+    assert '[REDACTED]' in msg, (
+      f'Fix 1: expected [REDACTED] in retries-exhausted msg; got: {msg!r}'
+    )
+    assert api_key not in msg, (
+      f'Fix 1 leak: api_key in retries-exhausted msg: {msg!r}'
+    )
+
+  def test_timeout_tuple_5_connect_read(self, monkeypatch) -> None:
+    '''Fix 2 (MEDIUM): requests.post called with timeout=(5, timeout_s) tuple.
+
+    Prevents hung DNS/TCP handshake from consuming the full read budget.
+    '''
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append({'url': url, **kw})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier._post_to_resend(
+      'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
+      timeout_s=30, retries=1, backoff_s=0,
+    )
+    assert captured[0]['timeout'] == (5, 30), (
+      f'Fix 2: expected (5, 30) tuple; got {captured[0]["timeout"]!r}'
+    )
+
+
+class TestSendDispatch:
+  '''D-13 + NOTF-07 + NOTF-08: send_daily_email never-crash semantics.
+  RESEND_API_KEY-missing → last_email.html fallback; 5xx logs + returns 0;
+  unexpected exceptions logged + returns 0.
+  '''
+
+  def test_missing_api_key_writes_last_email_html(
+      self, tmp_path, monkeypatch) -> None:
+    '''NOTF-08: missing RESEND_API_KEY → write last_email.html + return 0.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('RESEND_API_KEY', raising=False)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert rc == 0
+    last = tmp_path / 'last_email.html'
+    assert last.exists(), 'NOTF-08: must write last_email.html when key missing'
+    assert last.read_text(encoding='utf-8').startswith('<!DOCTYPE html>')
+
+  def test_missing_api_key_logs_warn(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('RESEND_API_KEY', raising=False)
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    assert '[Email] WARN RESEND_API_KEY missing' in caplog.text
+
+  def test_5xx_exhausted_returns_zero_and_logs(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''NOTF-07: 5xx retries-exhausted logs [Email] WARN + returns 0 (never raises).'''
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key_5xx')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(500)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    # Monkeypatch retry constants to speed test
+    monkeypatch.setattr('notifier._RESEND_BACKOFF_S', 0)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert rc == 0
+    assert '[Email] WARN send failed' in caplog.text
+
+  def test_4xx_returns_zero_and_logs(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key_4xx')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(400, 'validation_error')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert rc == 0
+    assert '[Email] WARN send failed' in caplog.text
+    assert '4xx from Resend: 400' in caplog.text
+
+  def test_unexpected_exception_swallowed(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''Belt-and-braces: ANY unexpected Exception from _post_to_resend is swallowed.'''
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key_unexp')
+
+    def _raise_unexpected(*a, **kw):
+      raise ValueError('unexpected failure')
+
+    monkeypatch.setattr(notifier, '_post_to_resend', _raise_unexpected)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert rc == 0
+    assert '[Email] WARN unexpected failure: ValueError' in caplog.text
+
+  def test_success_logs_info(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    caplog.set_level(logging.INFO)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key_success_xyz')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(200, '{"id":"uuid"}')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert rc == 0
+    assert '[Email] sent to' in caplog.text
+
+  def test_respects_signals_email_to_env_override(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'custom@example.com')
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append({'url': url, **kw})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert captured[0]['json']['to'] == ['custom@example.com']
+
+  def test_uses_fallback_recipient_when_signals_email_to_unset(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-14 Option C: _EMAIL_TO_FALLBACK == 'mwiriadi@gmail.com' when env unset.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.delenv('SIGNALS_EMAIL_TO', raising=False)
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append({'url': url, **kw})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert captured[0]['json']['to'] == ['mwiriadi@gmail.com']
+
+
+class TestAtomicWriteHtml:
+  '''D-13 + C-7 reviews: atomic disk write for last_email.html fallback.
+
+  Mirror of tests/test_dashboard.py::TestAtomicWrite (lines 930-971).
+  '''
+
+  def test_atomic_write_creates_file(self, tmp_path) -> None:
+    dest = tmp_path / 'last_email.html'
+    notifier._atomic_write_html('<html/>', dest)
+    assert dest.exists()
+    assert dest.read_text(encoding='utf-8') == '<html/>'
+    # No stray tempfiles left in the parent dir.
+    tmp_files = list(tmp_path.glob('*.tmp'))
+    assert tmp_files == [], f'unexpected tempfiles left: {tmp_files}'
+
+  def test_atomic_write_survives_oserror(self, tmp_path, monkeypatch) -> None:
+    '''Monkeypatch notifier.os.replace to raise; assert tempfile cleaned up.
+
+    Mirror of test_dashboard.py::TestAtomicWrite::test_tempfile_cleaned_up_on_failure.
+    '''
+    dest = tmp_path / 'last_email.html'
+
+    def _boom(*a, **kw):
+      raise OSError('simulated replace failure')
+
+    monkeypatch.setattr('notifier.os.replace', _boom)
+    with pytest.raises(OSError, match='simulated'):
+      notifier._atomic_write_html('<html/>', dest)
+    tmp_files = list(tmp_path.glob('*.tmp'))
+    assert tmp_files == [], f'tempfile cleanup failed: {tmp_files}'
+
+  def test_atomic_write_lf_newlines(self, tmp_path) -> None:
+    '''C-7 reviews: `newline='\\n'` prevents platform CRLF translation.'''
+    dest = tmp_path / 'last_email.html'
+    notifier._atomic_write_html('line1\nline2\n', dest)
+    raw = dest.read_bytes()
+    assert b'\r\n' not in raw, 'C-7: newline=\\n must prevent CRLF translation'
+    assert raw == b'line1\nline2\n'
 
 
 class TestGoldenEmail:
   '''D-03 phase gate: byte-equal HTML snapshots for 3 scenarios (with_change,
-  no_change, empty). Wave 2 (06-03) regenerates goldens + asserts byte-equal.
-  Double-run idempotency: `python tests/regenerate_notifier_golden.py`
+  no_change, empty). Double-run idempotency:
+    python tests/regenerate_notifier_golden.py
   run twice produces zero git diff on tests/fixtures/notifier/.
   '''
 
-  def test_scaffold_placeholder_golden_with_change(self) -> None:
-    '''Nyquist Dimension 8: placeholder — Wave 2 regenerates goldens.
+  def test_golden_with_change_matches_committed(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    golden = GOLDEN_WITH_CHANGE_PATH.read_text(encoding='utf-8')
+    assert rendered == golden, (
+      'compose_email_body drifted from golden_with_change.html. '
+      'If change intentional: run '
+      '`.venv/bin/python tests/regenerate_notifier_golden.py` and re-commit.'
+    )
 
-    Wave 2 (06-03) replaces this with byte-equal assertion against
-    tests/fixtures/notifier/golden_with_change.html.
-    '''
-    assert GOLDEN_WITH_CHANGE_PATH.exists(), 'Wave 0 placeholder must exist'
-    # Placeholder: Wave 2 fills real byte-equal assertion
-    pytest.xfail('Wave 2 (06-03) fills TestGoldenEmail byte-equal assertions')
+  def test_golden_no_change_matches_committed(self) -> None:
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    golden = GOLDEN_NO_CHANGE_PATH.read_text(encoding='utf-8')
+    assert rendered == golden, (
+      'compose_email_body drifted from golden_no_change.html. '
+      'Re-run tests/regenerate_notifier_golden.py and re-commit.'
+    )
+
+  def test_golden_empty_matches_committed(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    old_signals = {'^AXJO': None, 'AUDUSD=X': None}
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    golden = GOLDEN_EMPTY_PATH.read_text(encoding='utf-8')
+    assert rendered == golden, (
+      'compose_email_body drifted from golden_empty.html. '
+      'Re-run tests/regenerate_notifier_golden.py and re-commit.'
+    )
+
+  @pytest.mark.parametrize('golden_path', [
+    GOLDEN_WITH_CHANGE_PATH, GOLDEN_NO_CHANGE_PATH, GOLDEN_EMPTY_PATH,
+  ])
+  def test_golden_starts_with_doctype(self, golden_path) -> None:
+    content = golden_path.read_text(encoding='utf-8')
+    assert content.startswith('<!DOCTYPE html>'), (
+      f'{golden_path} is not a valid HTML document (placeholder?)'
+    )
+
+  @pytest.mark.parametrize('golden_path', [
+    GOLDEN_WITH_CHANGE_PATH, GOLDEN_NO_CHANGE_PATH, GOLDEN_EMPTY_PATH,
+  ])
+  def test_golden_has_lf_line_endings(self, golden_path) -> None:
+    '''C-7 reviews: `newline='\\n'` prevents platform CRLF translation.'''
+    raw = golden_path.read_bytes()
+    assert b'\r\n' not in raw, (
+      f'{golden_path} has CRLF line endings — byte-stability broken on Windows'
+    )
+
+  def test_with_change_golden_contains_action_required(self) -> None:
+    content = GOLDEN_WITH_CHANGE_PATH.read_text(encoding='utf-8')
+    assert 'ACTION REQUIRED' in content
+
+  def test_no_change_golden_absent_action_required(self) -> None:
+    content = GOLDEN_NO_CHANGE_PATH.read_text(encoding='utf-8')
+    assert 'ACTION REQUIRED' not in content
+
+  def test_empty_golden_absent_action_required(self) -> None:
+    content = GOLDEN_EMPTY_PATH.read_text(encoding='utf-8')
+    assert 'ACTION REQUIRED' not in content, (
+      'D-06: first-run / no-previous-signal MUST NOT show ACTION REQUIRED'
+    )
+
+  def test_golden_with_change_subject_matches_committed(self) -> None:
+    '''Fix 8 (LOW): subject goldens under phase-gate rigour.'''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    rendered = compose_email_subject(state, old_signals, is_test=False)
+    golden = (NOTIFIER_FIXTURE_DIR / 'golden_with_change_subject.txt').read_text(
+      encoding='utf-8',
+    ).rstrip('\n')
+    assert rendered == golden, (
+      f'compose_email_subject drifted from golden_with_change_subject.txt. '
+      f'Re-run tests/regenerate_notifier_golden.py and re-commit. '
+      f'got={rendered!r} expected={golden!r}'
+    )
+
+  def test_golden_no_change_subject_matches_committed(self) -> None:
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
+    rendered = compose_email_subject(state, old_signals, is_test=False)
+    golden = (NOTIFIER_FIXTURE_DIR / 'golden_no_change_subject.txt').read_text(
+      encoding='utf-8',
+    ).rstrip('\n')
+    assert rendered == golden, (
+      f'compose_email_subject drifted from golden_no_change_subject.txt. '
+      f'got={rendered!r} expected={golden!r}'
+    )
+
+  def test_golden_empty_subject_matches_committed(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    old_signals = {'^AXJO': None, 'AUDUSD=X': None}
+    rendered = compose_email_subject(state, old_signals, is_test=False)
+    golden = (NOTIFIER_FIXTURE_DIR / 'golden_empty_subject.txt').read_text(
+      encoding='utf-8',
+    ).rstrip('\n')
+    assert rendered == golden, (
+      f'compose_email_subject drifted from golden_empty_subject.txt. '
+      f'got={rendered!r} expected={golden!r}'
+    )

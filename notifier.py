@@ -45,22 +45,19 @@ raising NotImplementedError. Wave 1 fills compose_email_subject +
 compose_email_body + formatters. Wave 2 fills _post_to_resend +
 send_daily_email + _atomic_write_html + dispatch wiring.
 '''
-import html  # noqa: F401 — Wave 1 per-surface escape at leaf render sites
-import json  # noqa: F401 — Wave 2 last_email.html fallback
+import html
 import logging
-import os  # noqa: F401 — Wave 2 RESEND_API_KEY read + atomic write
-import tempfile  # noqa: F401 — Wave 2 _atomic_write_html
-import time  # noqa: F401 — Wave 2 _post_to_resend retry backoff
-from datetime import datetime  # noqa: F401 — Wave 1 compose_email_body clock arg
-from pathlib import Path  # noqa: F401 — Wave 2 last_email.html path
+import os
+import tempfile
+import time
+from datetime import datetime
+from pathlib import Path
 
-import pytz  # noqa: F401 — Wave 1 AWST localisation parity with dashboard
-import requests  # noqa: F401 — Wave 2 Resend HTTPS POST
+import pytz
+import requests
 
-from state_manager import (
-  load_state,  # noqa: F401 — CLI convenience path only (python -m notifier)
-)
-from system_params import (  # noqa: F401 — Wave 1 contract specs + palette
+from state_manager import load_state
+from system_params import (
   _COLOR_BG,
   _COLOR_BORDER,
   _COLOR_FLAT,
@@ -97,6 +94,16 @@ _EMAIL_TO_FALLBACK = 'mwiriadi@gmail.com'  # operator-confirmed fallback (Option
 _RESEND_TIMEOUT_S = 30
 _RESEND_RETRIES = 3
 _RESEND_BACKOFF_S = 10
+
+# D-12 retry-eligible transient exceptions (mirror data_fetcher:40-44).
+# 429 + 5xx raise HTTPError via resp.raise_for_status() and flow through
+# this tuple into the retry branch. 4xx (other than 429) fails fast with
+# ResendError directly (no HTTPError raise, no retry).
+_RESEND_RETRY_EXCEPTIONS = (
+  requests.exceptions.Timeout,
+  requests.exceptions.ConnectionError,
+  requests.exceptions.HTTPError,
+)
 
 
 # =========================================================================
@@ -1017,19 +1024,47 @@ def compose_email_body(
   )
 
 
-def send_daily_email(
-  state: dict,
-  old_signals: dict,
-  now: datetime,
-  is_test: bool = False,
-) -> int:
-  '''Wave 2 (06-03) fills per D-13 + D-14. NEVER raises (NOTF-07/NOTF-08).'''
-  raise NotImplementedError('Wave 2 (06-03): send_daily_email per D-13')
+def _atomic_write_html(data: str, path: Path) -> None:
+  '''Mirror of state_manager._atomic_write + dashboard._atomic_write_html.
 
+  D-13 durability sequence:
+    1. write data to tempfile in same directory as target
+    2. flush + fsync(tempfile.fileno()) — data durable on disk
+    3. close tempfile (NamedTemporaryFile context exit)
+    4. os.replace(tempfile, target) — atomic rename
+    5. fsync(parent dir fd) on POSIX — rename itself durable on disk
 
-# =========================================================================
-# Private helpers — Wave 2 fills
-# =========================================================================
+  C-7 reviews (Phase 5): `newline='\\n'` on tempfile forces LF regardless
+  of platform — text-mode default on Windows translates \\n → \\r\\n
+  which would drift committed goldens (byte-stability gate).
+  '''
+  parent = path.parent
+  tmp_path_str: str | None = None
+  try:
+    with tempfile.NamedTemporaryFile(
+      dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
+      newline='\n',  # C-7: force LF regardless of platform
+    ) as tmp:
+      tmp_path_str = tmp.name
+      tmp.write(data)
+      tmp.flush()
+      os.fsync(tmp.fileno())
+    # D-17: os.replace BEFORE parent-dir fsync (rename durability).
+    os.replace(tmp_path_str, path)
+    if os.name == 'posix':
+      dir_fd = os.open(str(parent), os.O_RDONLY)
+      try:
+        os.fsync(dir_fd)
+      finally:
+        os.close(dir_fd)
+    tmp_path_str = None  # success: do not delete in finally
+  finally:
+    if tmp_path_str is not None:
+      try:
+        os.unlink(tmp_path_str)
+      except FileNotFoundError:
+        pass
+
 
 def _post_to_resend(
   api_key: str,
@@ -1041,20 +1076,141 @@ def _post_to_resend(
   retries: int = _RESEND_RETRIES,
   backoff_s: int = _RESEND_BACKOFF_S,
 ) -> None:
-  '''Wave 2 (06-03) fills per D-12 + RESEARCH §1 (429 special-case).'''
-  raise NotImplementedError('Wave 2 (06-03): _post_to_resend retry loop')
+  '''POST to Resend with retry-on-transient (D-12 + RESEARCH §1).
+
+  Mirrors data_fetcher.fetch_ohlcv retry policy. 4xx except 429 fails fast;
+  429 + 5xx + network errors retry up to `retries` times with flat
+  `backoff_s` sleep (RESEARCH §1 — 429 IS retryable per Resend guidance).
+
+  Raises ResendError after retries exhaust OR on non-retryable 4xx
+  (400/401/403/422/etc., but NOT 429).
+
+  REVIEWS.md Fix 1 (HIGH): api_key MUST be actively redacted from any
+  error message built from resp.text OR an exception repr. We replace the
+  literal api_key with '[REDACTED]' before raising — defense-in-depth
+  against Resend echoing the Authorization header back in its error body.
+
+  REVIEWS.md Fix 2 (MEDIUM): timeout uses tuple (5, timeout_s) — 5s
+  connect-phase + `timeout_s` read-phase. Prevents hung DNS/TCP handshake
+  from consuming the full read budget.
+  '''
+  payload = {
+    'from': from_addr,
+    'to': [to_addr],
+    'subject': subject,
+    'html': html_body,
+  }
+  headers = {
+    'Authorization': f'Bearer {api_key}',
+    'Content-Type': 'application/json',
+  }
+  last_err: Exception | None = None
+  for attempt in range(1, retries + 1):
+    try:
+      resp = requests.post(
+        'https://api.resend.com/emails',
+        headers=headers,
+        json=payload,
+        timeout=(5, timeout_s),  # Fix 2: (connect, read) tuple
+      )
+      # RESEARCH §1: 429 IS retryable per Resend — special-case BEFORE
+      # the 4xx fail-fast band. Raise HTTPError → caught by the retry
+      # branch below.
+      if resp.status_code == 429:
+        raise requests.exceptions.HTTPError('429 rate-limit', response=resp)
+      if 400 <= resp.status_code < 500:
+        # Fix 1 (T-06-02): truncate AND redact api_key from any echo.
+        safe_body = resp.text[:200]
+        if api_key:
+          safe_body = safe_body.replace(api_key, '[REDACTED]')
+        raise ResendError(
+          f'4xx from Resend: {resp.status_code} {safe_body}',
+        )
+      resp.raise_for_status()  # 5xx → HTTPError → retry branch
+      return
+    except _RESEND_RETRY_EXCEPTIONS as e:
+      last_err = e
+      logger.warning(
+        '[Email] Resend attempt %d/%d failed: %s: %s',
+        attempt, retries, type(e).__name__, e,
+      )
+      if attempt < retries:
+        time.sleep(backoff_s)
+  # Fix 1 (T-06-02): redact api_key from exhausted-retries message too —
+  # last_err.__str__ may include response bodies or header echoes.
+  err_repr = f'{type(last_err).__name__}: {last_err}'
+  if api_key:
+    err_repr = err_repr.replace(api_key, '[REDACTED]')
+  raise ResendError(
+    f'retries exhausted after {retries} attempts; last error: {err_repr[:200]}',
+  ) from last_err
 
 
-def _atomic_write_html(data: str, path: Path) -> None:
-  '''Wave 2 (06-03) fills — duplicate of dashboard._atomic_write_html per D-13.'''
-  raise NotImplementedError('Wave 2 (06-03): _atomic_write_html (dashboard mirror)')
+def send_daily_email(
+  state: dict,
+  old_signals: dict,
+  now: datetime,
+  is_test: bool = False,
+) -> int:
+  '''Public dispatch. NEVER raises. Returns 0 on success OR graceful degradation.
+
+  NOTF-01: POSTs to Resend via _post_to_resend when RESEND_API_KEY present.
+  NOTF-07: Resend API failure logs error, does NOT crash — returns 0.
+  NOTF-08: Missing RESEND_API_KEY → write last_email.html + log WARN + return 0.
+
+  Recipient: os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK).
+  '''
+  subject = compose_email_subject(state, old_signals, is_test=is_test)
+  html_body = compose_email_body(state, old_signals, now)
+
+  api_key = os.environ.get('RESEND_API_KEY')
+  if not api_key:
+    # NOTF-08 fallback: write last_email.html for operator preview.
+    last_email_path = Path('last_email.html')
+    try:
+      _atomic_write_html(html_body, last_email_path)
+    except Exception as e:
+      # Belt-and-braces: even the fallback write must not crash the run.
+      logger.warning(
+        '[Email] WARN unexpected failure: %s: %s', type(e).__name__, e,
+      )
+      return 0
+    logger.warning(
+      '[Email] WARN RESEND_API_KEY missing — wrote %s (fallback)',
+      last_email_path,
+    )
+    return 0
+
+  to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
+  try:
+    _post_to_resend(api_key, _EMAIL_FROM, to_addr, subject, html_body)
+    logger.info('[Email] sent to %s subject=%r', to_addr, subject)
+  except ResendError as e:
+    # NOTF-07: log + continue; no crash.
+    logger.warning('[Email] WARN send failed: %s', e)
+  except Exception as e:
+    # Belt-and-braces: ANY unexpected exception logged not propagated.
+    # The ONLY place this codebase allows a bare Exception catch — email
+    # delivery is not worth crashing the daily run (state already saved).
+    logger.warning(
+      '[Email] WARN unexpected failure: %s: %s', type(e).__name__, e,
+    )
+  return 0
 
 
 # =========================================================================
-# CLI entrypoint stub — Wave 2 wires
+# CLI entrypoint — operator preview (python -m notifier)
 # =========================================================================
 
 if __name__ == '__main__':
-  # Operator-only preview: python -m notifier. Wave 2 wires to load_state
-  # + send_daily_email with is_test=True. Wave 0 just exits cleanly.
-  raise NotImplementedError('Wave 2 (06-03): CLI entrypoint wiring')
+  # Operator-only preview: python -m notifier.
+  # Loads current state.json, sends [TEST]-prefixed email with no baseline.
+  # If RESEND_API_KEY unset, writes last_email.html (NOTF-08) and exits 0.
+  import sys
+
+  logging.basicConfig(level=logging.INFO, format='%(message)s')
+  _state = load_state()
+  _old_signals: dict = {'^AXJO': None, 'AUDUSD=X': None}
+  _now = datetime.now(pytz.timezone('Australia/Perth'))
+  _rc = send_daily_email(_state, _old_signals, _now, is_test=True)
+  sys.exit(_rc)

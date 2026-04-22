@@ -227,25 +227,167 @@ class TestCLI:
       'CLI-02 cancel: expected [State] --reset cancelled by operator log line'
     )
 
-  def test_force_email_logs_stub_and_exits_zero(
+  # -----------------------------------------------------------------------
+  # Phase 6 Wave 2 (06-03): CLI-03 real dispatch + CLI-01 email-on-test.
+  # Replaces the Phase 4 `test_force_email_logs_stub_and_exits_zero` test.
+  # -----------------------------------------------------------------------
+
+  def test_force_email_sends_live_email(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''CLI-03: --force-email (no --test) emits the Phase 4 stub log line and
-    exits 0; run_daily_check is NOT invoked (the stub path skips compute,
-    unlike the --test + --force-email combo).
+    '''CLI-03 Phase 6: --force-email invokes notifier.send_daily_email
+    with post-run state + run_date. Phase 4 stub is replaced.
     '''
     caplog.set_level(logging.INFO)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
     _seed_fresh_state(tmp_path / 'state.json')
-    # Ensure fetch is installed as a safety net but should NOT be invoked.
     _install_fixture_fetch(monkeypatch)
+
+    sent: list[tuple] = []
+
+    def _fake_send(state, old_signals, run_date, is_test=False):
+      sent.append((state, old_signals, run_date, is_test))
+      return 0
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
+
+    rc = main.main(['--force-email'])
+    assert rc == 0, '--force-email must exit 0 on success'
+    assert len(sent) == 1, '--force-email must invoke send_daily_email exactly once'
+    _state, _old_signals, _run_date, is_test = sent[0]
+    assert is_test is False, '--force-email alone must pass is_test=False'
+
+  def test_force_email_captures_post_run_state(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-05 capture: the state passed to send_daily_email is post-compute
+    (dict-shape signals with last_scalars + last_close), proving the dispatch
+    happens AFTER run_daily_check mutates state['signals'].
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    captured: list[dict] = []
+
+    def _fake_send(state, old_signals, run_date, is_test=False):
+      captured.append(state)
+      return 0
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
 
     rc = main.main(['--force-email'])
     assert rc == 0
-    assert (
-      '[Email] --force-email received; notifier wiring arrives in Phase 6'
-      in caplog.text
-    ), 'CLI-03: Phase 4 stub log line missing from caplog.text'
+    assert len(captured) == 1
+    state = captured[0]
+    # Post-compute D-08 dict shape: last_scalars + last_close present.
+    sig = state['signals']['SPI200']
+    assert isinstance(sig, dict), (
+      f'D-05: expected post-compute dict shape; got {type(sig).__name__}'
+    )
+    assert 'last_scalars' in sig and 'last_close' in sig, (
+      'D-05: state passed to email must be post-compute (G-2 + B-1 fields present)'
+    )
+
+  def test_test_flag_sends_test_prefixed_email_no_state_mutation(
+      self, tmp_path, monkeypatch) -> None:
+    '''CLI-01 Phase 6: --test sends [TEST] email AND state.json mtime unchanged.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    state_json = tmp_path / 'state.json'
+    _seed_fresh_state(state_json)
+    mtime_before = state_json.stat().st_mtime_ns
+    _install_fixture_fetch(monkeypatch)
+
+    sent: list[bool] = []
+
+    def _fake_send(state, old_signals, run_date, is_test=False):
+      sent.append(is_test)
+      return 0
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
+
+    rc = main.main(['--test'])
+    mtime_after = state_json.stat().st_mtime_ns
+    assert rc == 0
+    assert mtime_before == mtime_after, (
+      'CLI-01: --test must NOT mutate state.json'
+    )
+    assert sent == [True], '--test must call send_daily_email with is_test=True'
+
+  def test_force_email_and_test_combined(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-05 + D-15: --force-email --test runs compute-then-email with is_test=True
+    AND does NOT persist state (CLI-01 structural lock preserved).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    state_json = tmp_path / 'state.json'
+    _seed_fresh_state(state_json)
+    mtime_before = state_json.stat().st_mtime_ns
+    _install_fixture_fetch(monkeypatch)
+
+    sent: list[bool] = []
+
+    def _fake_send(state, old_signals, run_date, is_test=False):
+      sent.append(is_test)
+      return 0
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
+
+    rc = main.main(['--force-email', '--test'])
+    assert rc == 0
+    assert sent == [True]
+    assert state_json.stat().st_mtime_ns == mtime_before, (
+      'CLI-01: --force-email --test must NOT mutate state.json'
+    )
+
+  def test_default_mode_does_NOT_send_email(
+      self, tmp_path, monkeypatch) -> None:
+    '''CLI-05 default / CLI-04 --once: no email dispatch — only --force-email
+    or --test trigger the email per D-15.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    sent: list[int] = []
+
+    def _fail_if_called(*a, **kw):
+      sent.append(1)
+      raise AssertionError('default mode must NOT invoke send_daily_email')
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email', _fail_if_called)
+
+    rc = main.main([])
+    assert rc == 0
+    assert sent == [], 'default mode must NOT invoke send_daily_email'
+
+  def test_once_mode_does_NOT_send_email(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    sent: list[int] = []
+
+    def _fail_if_called(*a, **kw):
+      sent.append(1)
+      raise AssertionError('--once must NOT invoke send_daily_email')
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email', _fail_if_called)
+
+    rc = main.main(['--once'])
+    assert rc == 0
+    assert sent == []
 
 
 class TestOrchestrator:
@@ -524,7 +666,8 @@ class TestOrchestrator:
     fake_step.calls = 0
     monkeypatch.setattr(main.sizing_engine, 'step', fake_step)
 
-    rc = main.run_daily_check(_make_args(once=True))
+    # Phase 6 D-05 refactor: run_daily_check now returns 4-tuple.
+    rc, _state, _old_signals, _run_date = main.run_daily_check(_make_args(once=True))
     assert rc == 0
 
     post = json.loads(state_json.read_text())
@@ -804,6 +947,121 @@ class TestOrchestrator:
     assert dash.stat().st_mtime == original_mtime, (
       'C-3 reviews: --test must NOT bump dashboard.html mtime — '
       'rendering is a disk mutation forbidden by CLI-01 structural read-only.'
+    )
+
+
+class TestEmailNeverCrash:
+  '''D-15 + NOTF-07 + NOTF-08: email dispatch failures never crash the run.
+
+  Mirror of TestOrchestrator::test_dashboard_failure_never_crashes_run (runtime)
+  and ::test_dashboard_import_time_failure_never_crashes_run (import-time).
+  '''
+
+  def test_email_runtime_failure_never_crashes_run(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''D-15: if notifier.send_daily_email raises at CALL TIME, main returns 0
+    and caplog has `[Email] send failed`. State was already saved.
+    '''
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    import notifier as _notifier_module
+
+    def _raise(*args, **kwargs):
+      raise RuntimeError('simulated send failure')
+
+    monkeypatch.setattr(_notifier_module, 'send_daily_email', _raise)
+
+    rc = main.main(['--force-email'])
+    assert rc == 0, 'D-15: email failure must NOT change exit code'
+    assert '[Email] send failed' in caplog.text
+    assert 'RuntimeError' in caplog.text
+
+  def test_email_import_time_failure_never_crashes_run(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''C-2 reviews: import-time notifier failure MUST be caught by the same
+    `except Exception` that catches runtime dispatch failures. The in-helper
+    `import notifier` statement makes this possible.
+
+    Strategy: replace sys.modules['notifier'] with an object whose attribute
+    access raises ImportError. When `_send_email_never_crash` runs
+    `import notifier`, Python reloads via the fake; attribute access on
+    `notifier.send_daily_email` fails; the try/except catches; rc == 0.
+    '''
+    import sys
+    caplog.set_level(logging.WARNING)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    class _BrokenNotifier:
+      def __getattr__(self, name):
+        raise ImportError(
+          f'simulated import-time failure: cannot access {name!r}',
+        )
+
+    original = sys.modules.get('notifier')
+    sys.modules['notifier'] = _BrokenNotifier()
+    try:
+      rc = main.main(['--force-email'])
+    finally:
+      if original is not None:
+        sys.modules['notifier'] = original
+      else:
+        sys.modules.pop('notifier', None)
+
+    assert rc == 0, 'C-2: import-time notifier failure must NOT crash'
+    assert '[Email] send failed' in caplog.text
+
+
+class TestRunDailyCheckTupleReturn:
+  '''Phase 6 D-05 + RESEARCH §9: run_daily_check returns 4-tuple
+  (rc, state, old_signals, run_date).
+  '''
+
+  def test_run_daily_check_returns_4_tuple(
+      self, tmp_path, monkeypatch) -> None:
+    from datetime import datetime as _dt
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    result = main.run_daily_check(_make_args(once=True))
+    assert isinstance(result, tuple), (
+      f'expected tuple return; got {type(result).__name__}'
+    )
+    assert len(result) == 4, f'expected 4-tuple; got len={len(result)}'
+    rc, state, old_signals, run_date = result
+    assert rc == 0
+    assert isinstance(state, dict), 'state must be a dict on success path'
+    assert isinstance(old_signals, dict), 'old_signals must be a dict'
+    assert isinstance(run_date, _dt)
+    assert run_date.tzinfo is not None, 'run_date must be timezone-aware'
+
+  def test_run_daily_check_test_mode_returns_in_memory_state(
+      self, tmp_path, monkeypatch) -> None:
+    '''--test early-return: state is non-None (in-memory compute output);
+    state.json mtime unchanged.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    state_json = tmp_path / 'state.json'
+    _seed_fresh_state(state_json)
+    mtime_before = state_json.stat().st_mtime_ns
+    _install_fixture_fetch(monkeypatch)
+
+    rc, state, old_signals, run_date = main.run_daily_check(_make_args(test=True))
+    assert rc == 0
+    assert state is not None, '--test must return the in-memory post-compute state'
+    assert old_signals is not None
+    assert run_date is not None
+    assert state_json.stat().st_mtime_ns == mtime_before, (
+      'CLI-01: --test early-return must NOT call save_state'
     )
 
 

@@ -24,9 +24,12 @@ are NEVER substituted for each other — both logged on every run (D-13).
 Wave 0 (argparse skeleton + module constants + bootstrap
 logging.basicConfig(force=True) in main() [Pitfall 4] + stubs for the
 Wave 2 targets) is done. Wave 2 filled run_daily_check + _compute_run_date
-+ _closed_trade_to_record (04-03-PLAN.md). Wave 3 (this commit) adds the
-top-level typed-exception boundary inside main() + _handle_reset +
-_force_email_stub + DATA-05 stale-bar detection (04-04-PLAN.md).
++ _closed_trade_to_record (04-03-PLAN.md). Wave 3 added the top-level
+typed-exception boundary inside main() + _handle_reset + DATA-05
+stale-bar detection (04-04-PLAN.md). Phase 6 Wave 2 (06-03) deleted
+the Phase 4 _force_email_stub and wired _send_email_never_crash via the
+D-15 compute-then-email path — `run_daily_check` now returns a 4-tuple
+(rc, state, old_signals, run_date) consumed by the dispatch ladder.
 '''
 import argparse
 import logging
@@ -113,6 +116,37 @@ def _render_dashboard_never_crash(state: dict, out_path: Path, now: datetime) ->
 
 
 # =========================================================================
+# Email integration (Phase 6 D-15) — mirror of _render_dashboard_never_crash
+# =========================================================================
+
+def _send_email_never_crash(
+  state: dict,
+  old_signals: dict,
+  run_date: datetime,
+  is_test: bool = False,
+) -> None:
+  '''D-15 + NOTF-07/NOTF-08: email dispatch never crashes the run.
+
+  C-2 reviews (Phase 5 precedent): `import notifier` lives INSIDE the
+  helper body (not at module top) so import-time errors in notifier.py
+  — syntax errors, bad sub-imports, circular-import bugs — are caught
+  by the SAME `except Exception` that catches runtime dispatch failures.
+  Without this, an import-time notifier error takes down main.py at
+  module load time, before the helper even runs.
+
+  The ONLY place in this codebase where `except Exception:` is correct —
+  alongside _render_dashboard_never_crash. NOTF-07 + NOTF-08: email
+  failures NEVER crash the workflow. State is already saved; dashboard
+  already rendered. Never abort the run on a send failure.
+  '''
+  try:
+    import notifier  # local import — C-2 isolates import-time failures
+    notifier.send_daily_email(state, old_signals, run_date, is_test=is_test)
+  except Exception as e:
+    logger.warning('[Email] send failed: %s: %s', type(e).__name__, e)
+
+
+# =========================================================================
 # Argparse (D-05, RESEARCH §Example 2)
 # =========================================================================
 
@@ -137,7 +171,7 @@ def _build_parser() -> argparse.ArgumentParser:
   p.add_argument(
     '--force-email', action='store_true',
     help="Send today's email immediately (CLI-03). "
-         'Phase 4: logs stub; wiring arrives in Phase 6.',
+         'Phase 6: runs full compute then dispatches via notifier.send_daily_email.',
   )
   p.add_argument(
     '--once', action='store_true',
@@ -348,7 +382,9 @@ def _format_run_summary_footer(
 # Orchestrator (Wave 2 fills body)
 # =========================================================================
 
-def run_daily_check(args: argparse.Namespace) -> int:
+def run_daily_check(
+  args: argparse.Namespace,
+) -> tuple[int, dict | None, dict | None, datetime | None]:
   '''D-11 daily orchestration sequence (9 steps):
     1. load_state (Phase 3)
     2. compute run_date (AWST wall-clock via _compute_run_date)
@@ -397,6 +433,14 @@ def run_daily_check(args: argparse.Namespace) -> int:
   G-2 revision 2026-04-22: state['signals'][state_key] update includes
   last_scalars=scalars so Phase 5 (dashboard) and Phase 6 (email) can
   render ADX/Mom/RVol for the current signal without re-fetching.
+
+  Phase 6 refactor (D-05 + RESEARCH §9): returns (rc, state, old_signals,
+  run_date) 4-tuple so main() can dispatch email without re-reading state
+  or re-reading the clock. --test path returns (0, state_in_memory,
+  old_signals, run_date) WITHOUT calling save_state — CLI-01 structural
+  read-only contract preserved. On failure paths where state/old_signals
+  are not yet populated, returns (rc, None, None, None) — the dispatch
+  ladder in main() guards with `if state is not None`.
   '''
   # Step 1: opening log line. D-07: one-shot mode acknowledgement emitted
   # BEFORE the per-symbol loop so CLI-04/CLI-05 smoke tests see the line
@@ -412,6 +456,18 @@ def run_daily_check(args: argparse.Namespace) -> int:
 
   # Step 2: load state.
   state = state_manager.load_state()
+
+  # D-05 (Phase 6): capture old_signals BEFORE the per-symbol loop mutates
+  # state['signals']. Keyed by yfinance symbol per notifier's expectation.
+  # Handles BOTH Phase 3 int-shape AND Phase 4 D-08 dict-shape per Pitfall 7.
+  old_signals: dict = {
+    yf_sym: (
+      state['signals'].get(state_key, {}).get('signal')
+      if isinstance(state['signals'].get(state_key), dict)
+      else state['signals'].get(state_key)
+    )
+    for state_key, yf_sym in SYMBOL_MAP.items()
+  }
 
   # Step 3: per-symbol loop — fetch + indicators + signal + size + persist.
   trades_recorded = 0
@@ -588,7 +644,7 @@ def run_daily_check(args: argparse.Namespace) -> int:
       warnings=len(pending_warnings),
       state_saved=False,
     )
-    return 0
+    return 0, state, old_signals, run_date
 
   # Step 9: atomic save_state + success footer.
   state_manager.save_state(state)
@@ -613,7 +669,7 @@ def run_daily_check(args: argparse.Namespace) -> int:
     warnings=len(pending_warnings),
     state_saved=True,
   )
-  return 0
+  return 0, state, old_signals, run_date
 
 
 # =========================================================================
@@ -654,28 +710,6 @@ def _handle_reset() -> int:
   return 0
 
 
-def _force_email_stub() -> int:
-  '''CLI-03: Phase 4 stub — logs an [Email] line and returns 0.
-
-  Phase 6 replaces this with the Resend notifier dispatch. The planned
-  Phase 6 shape (C-8 revision 2026-04-22 per 04-REVIEWS.md) is:
-
-    rc = run_daily_check(args)
-    if rc == 0:
-      notifier.send_daily_email(state, signals, positions)
-    return rc
-
-  The --test + --force-email combination ALREADY lands the
-  compute-then-dispatch pattern in Phase 4 (see main()'s dispatch ladder:
-  if args.force_email and args.test: run_daily_check(args); _force_email_stub()).
-  Phase 6 generalises the same fresh-compute-then-dispatch shape to the
-  non-test path so operators get fresh data in the "send today's email
-  right now" flow.
-  '''
-  logger.info('[Email] --force-email received; notifier wiring arrives in Phase 6')
-  return 0
-
-
 # =========================================================================
 # Entry point
 # =========================================================================
@@ -688,18 +722,19 @@ def main(argv: list[str] | None = None) -> int:
   plugins may have already added handlers to the root logger; without
   force=True the call is a silent no-op and our format/stream are ignored.
 
-  Dispatch ladder (D-05 / D-06 / D-07):
+  Dispatch ladder (D-05 / D-06 / D-07 / D-15):
     - --reset  → _handle_reset() (D-05: mutually exclusive with other flags;
                  enforced by _validate_flag_combo pre-parse).
-    - --force-email + --test → run_daily_check(args) first (no save_state
-                 due to --test), then _force_email_stub().
-    - --force-email (no --test) → _force_email_stub() alone (no compute).
-    - --once | default | --test alone → run_daily_check(args) (D-07: default
-                 == --once in Phase 4; scheduler loop lands Phase 7).
+    - --force-email OR --test → run_daily_check(args) (with --test
+                 structurally skipping save_state per CLI-01); then
+                 _send_email_never_crash(state, old_signals, run_date,
+                 is_test=args.test). Phase 6 wiring: --test alone now
+                 sends a [TEST]-prefixed email (previously logged only).
+    - --once | default → run_daily_check(args) (no email). D-07 default
+                 == --once in Phase 4; scheduler loop lands Phase 7.
 
   Exit-code mapping (Wave 3):
-    0 — run_daily_check returned 0 (happy path) OR --reset confirmed OR
-        --force-email stub.
+    0 — run_daily_check returned 0 (happy path) OR --reset confirmed.
     1 — operator cancelled --reset (returned from _handle_reset);
         OR unexpected Exception bubbled into the catch-all.
     2 — DataFetchError / ShortFrameError — data-layer failure (ERR-01 /
@@ -720,14 +755,24 @@ def main(argv: list[str] | None = None) -> int:
   try:
     if args.reset:
       return _handle_reset()
-    if args.force_email:
-      # D-05: --test + --force-email is allowed. --test runs full compute
-      # structurally-read-only; --force-email-alone skips compute (Phase 4
-      # stub only; Phase 6 will generalise compute-then-dispatch per C-8).
-      rc = run_daily_check(args) if args.test else 0
-      stub_rc = _force_email_stub()
-      return rc if rc != 0 else stub_rc
-    return run_daily_check(args)
+    if args.force_email or args.test:
+      # D-15 Phase 6: shared compute-then-email path. --test structurally
+      # skips save_state inside run_daily_check; --force-email persists.
+      # Both invoke the email with is_test=args.test. Fix 10 None-guard:
+      # run_daily_check may return (rc, None, None, None) on failure paths —
+      # only dispatch email when all three post-run values are populated.
+      rc, state, old_signals, run_date = run_daily_check(args)
+      if (
+        rc == 0
+        and state is not None
+        and old_signals is not None
+        and run_date is not None
+      ):
+        _send_email_never_crash(state, old_signals, run_date, is_test=args.test)
+      return rc
+    # Default / --once path: no email.
+    rc, _state, _old_signals, _run_date = run_daily_check(args)
+    return rc
   except (DataFetchError, ShortFrameError) as e:
     logger.error('[Fetch] ERROR: %s', e)
     return 2
