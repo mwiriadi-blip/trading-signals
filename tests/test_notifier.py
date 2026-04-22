@@ -40,6 +40,14 @@ from notifier import (  # noqa: F401 — stub imports; Waves 1/2 exercise real b
   compose_email_subject,
   send_daily_email,
 )
+from system_params import (
+  AUDUSD_COST_AUD,
+  AUDUSD_NOTIONAL,
+  SPI_COST_AUD,
+  SPI_MULT,
+  TRAIL_MULT_LONG,
+  TRAIL_MULT_SHORT,
+)
 
 # =========================================================================
 # Module-level path + fixture constants
@@ -180,17 +188,378 @@ class TestDetectSignalChanges:
 class TestComposeBody:
   '''D-07/D-08/D-10/D-11: 7-section HTML body, ACTION REQUIRED conditional,
   palette inline, XSS escape on state-derived strings, mobile markup.
-  Wave 1 (06-02) fills section-order + ACTION REQUIRED + first-run + XSS + formatters.
-  Wave 2 (06-03) adds byte-equal goldens.
+
+  Section-order, inline-CSS, ACTION REQUIRED, first-run, XSS, subsection
+  presence, header subtitle + signal-as-of (Fix 6), exact Trail Stop +
+  Unrealised P&L (Fix 3), same-run double-close scan (Fix 4).
   '''
 
-  def test_scaffold_placeholder_compose_body(self) -> None:
-    '''Nyquist Dimension 8: placeholder for NOTF-03..06, NOTF-09 —
-    passes via pytest.raises(NotImplementedError). Wave 1 (06-02)
-    replaces this with real compose_email_body cases.
+  # -----------------------------------------------------------------
+  # Structural: DOCTYPE, section order, inline CSS, mobile markers
+  # -----------------------------------------------------------------
+
+  def test_body_has_doctype_and_html(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert body.startswith('<!DOCTYPE html>'), f'expected DOCTYPE prefix; got: {body[:32]!r}'
+    assert body.endswith('</html>\n'), f'expected </html>\\n suffix; got: {body[-32:]!r}'
+
+  def test_body_sections_in_d10_order(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    idx_title = body.index('Trading Signals')
+    idx_signal = body.index('Signal Status')
+    idx_positions = body.index('Open Positions')
+    # html.escape(quote=True) renders ' as &#x27; and & as &amp;
+    # so "Today's P&L" becomes "Today&#x27;s P&amp;L"
+    for needle in ('Today&#x27;s P&amp;L', "Today's P&amp;L", "Today's P&L"):
+      if needle in body:
+        idx_pnl = body.index(needle)
+        break
+    else:
+      raise AssertionError(f'Today\'s P&L heading not found; body excerpt: {body[:200]!r}')
+    idx_trades = body.index('Last 5 Closed Trades')
+    idx_footer = body.index('Not financial advice')
+    assert idx_title < idx_signal < idx_positions < idx_pnl < idx_trades < idx_footer, (
+      f'D-10 section order violated: title={idx_title} signal={idx_signal} '
+      f'positions={idx_positions} pnl={idx_pnl} trades={idx_trades} footer={idx_footer}'
+    )
+
+  def test_body_no_style_block(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '<style>' not in body
+    assert '</style>' not in body
+
+  def test_body_no_media_query(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '@media' not in body
+
+  def test_body_has_palette_inline_bg(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '#0f1117' in body
+
+  def test_body_has_max_width_600(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'max-width:600px' in body
+
+  def test_body_has_viewport_meta(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in body
+
+  def test_body_has_role_presentation(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'role="presentation"' in body
+
+  def test_body_has_bgcolor_belt_and_braces(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'bgcolor="#0f1117"' in body
+
+  def test_compose_body_naive_datetime_raises(self) -> None:
+    '''T-06-04: naive datetime rejected at body-composer entry (C-1 reviews).'''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    naive = datetime(2026, 4, 22, 9, 0)
+    with pytest.raises(ValueError, match='naive datetime='):
+      compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, naive)
+
+  # -----------------------------------------------------------------
+  # ACTION REQUIRED conditional + copy (D-06, D-11)
+  # -----------------------------------------------------------------
+
+  def test_action_required_present_on_change(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'ACTION REQUIRED' in body
+    assert 'border-left:4px solid #ef4444' in body
+
+  def test_action_required_absent_on_no_change(self) -> None:
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'ACTION REQUIRED' not in body
+
+  def test_action_required_absent_on_first_run(self) -> None:
+    '''D-06: first-run (all old None) is NO CHANGE — ACTION REQUIRED omitted.'''
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    assert 'ACTION REQUIRED' not in body
+
+  def test_action_required_contains_per_instrument_diffs(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    # SPI200 diff: LONG → SHORT; AUDUSD diff: FLAT → LONG.
+    # Slice to the ACTION REQUIRED section so we're testing the diff region.
+    ar_start = body.index('ACTION REQUIRED')
+    ar_end = body.index('Signal Status')
+    ar_region = body[ar_start:ar_end]
+    assert 'SPI 200' in ar_region
+    assert 'AUD / USD' in ar_region
+
+  def test_action_required_contains_close_position_copy(self) -> None:
+    '''D-11 close-position copy sourced from trade_log[-1] (SPI200 close today).'''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    # Fixture trade_log[-1] is SPI200 LONG close on 2026-04-22 with
+    # n_contracts=2, entry_price=8204.5 → "(2 contracts @ entry $8,204.50)"
+    assert 'Close existing LONG position (2 contracts @ entry $8,204.50)' in body
+
+  def test_action_required_uses_unicode_arrow(self) -> None:
+    '''Fix 5: raw Unicode → (U+2192), never &rarr; HTML entity.'''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '→' in body
+    assert '&rarr;' not in body
+
+  # -----------------------------------------------------------------
+  # Empty-state / first-run rendering
+  # -----------------------------------------------------------------
+
+  def test_empty_state_renders_no_open_positions(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    assert 'No open positions' in body
+
+  def test_empty_state_equity_is_initial_account(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    # empty_state.json has account=100000.0, equity_history=[]
+    assert '$100,000.00' in body
+
+  def test_empty_state_renders_no_closed_trades(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    assert 'No closed trades' in body
+
+  # -----------------------------------------------------------------
+  # XSS escape (T-06-03)
+  # -----------------------------------------------------------------
+
+  def test_xss_escape_on_exit_reason(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    state['trade_log'][-1]['exit_reason'] = '<script>alert(1)</script>'
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '<script>alert(1)</script>' not in body
+    assert '&lt;script&gt;alert(1)&lt;/script&gt;' in body
+
+  def test_xss_escape_on_instrument_value(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    state['trade_log'][-1]['instrument'] = '<script>x</script>'
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '<script>x</script>' not in body
+    assert '&lt;script&gt;x&lt;/script&gt;' in body
+
+  def test_xss_escape_on_direction_value(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    state['positions']['SPI200']['direction'] = '<img src=x onerror=y>'
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert '<img src=x onerror=y>' not in body
+    assert '&lt;img src=x onerror=y&gt;' in body
+
+  # -----------------------------------------------------------------
+  # Subsection presence (NOTF-04)
+  # -----------------------------------------------------------------
+
+  def test_has_header_section(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Trading Signals' in body
+
+  def test_has_signal_status_section(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Signal Status' in body
+
+  def test_has_positions_section(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Open Positions' in body
+
+  def test_has_todays_pnl_section(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    # html.escape(quote=True) renders ' as &#x27; and & as &amp;
+    # so "Today's P&L" appears as "Today&#x27;s P&amp;L" in the body.
+    assert (
+      'Today&#x27;s P&amp;L' in body
+      or "Today's P&amp;L" in body
+      or "Today's P&L" in body
+    )
+
+  def test_has_running_equity_section(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Running equity' in body or 'Running Equity' in body
+
+  def test_has_closed_trades_section(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Last 5 Closed Trades' in body
+
+  def test_has_footer_disclaimer(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Not financial advice' in body
+
+  # -----------------------------------------------------------------
+  # Fix 6: header subtitle + signal-as-of (UI-SPEC §1)
+  # -----------------------------------------------------------------
+
+  def test_header_contains_project_subtitle(self) -> None:
+    '''UI-SPEC §1: subtitle line `SPI 200 & AUD/USD mechanical system`.
+
+    Rendered with html.escape so & becomes &amp;. Accept the escaped form
+    (leaf-discipline per Phase 5 D-15).
     '''
-    with pytest.raises(NotImplementedError, match='Wave 1'):
-      compose_email_body({}, {}, FROZEN_NOW)
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'SPI 200 &amp; AUD/USD mechanical system' in body or \
+           'SPI 200 & AUD/USD mechanical system' in body
+
+  def test_header_contains_signal_as_of(self) -> None:
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert 'Signal as of' in body
+
+  # -----------------------------------------------------------------
+  # Fix 3: Trail Stop + Unrealised P&L exact-value assertions
+  # -----------------------------------------------------------------
+
+  def test_positions_trail_stop_long_exact_value(self) -> None:
+    '''Fix 3: LONG trail = peak_price - TRAIL_MULT_LONG * atr_entry.
+
+    AUDUSD LONG fixture: peak_price=0.6502, atr_entry=0.0042.
+    Expected: 0.6502 - 3.0 * 0.0042 = 0.6376. Currency format: $0.64.
+    '''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    audusd_pos = state['positions']['AUDUSD']
+    expected_trail = audusd_pos['peak_price'] - TRAIL_MULT_LONG * audusd_pos['atr_entry']
+    # _fmt_currency_email uses 2dp — AUDUSD rendering accepts this per UI-SPEC
+    expected_str = f'${expected_trail:,.2f}'
+    assert expected_str in body, (
+      f'Fix 3: LONG trail stop {expected_str} (={expected_trail}) missing from body; '
+      f'TRAIL_MULT_LONG={TRAIL_MULT_LONG}'
+    )
+
+  def test_positions_trail_stop_short_exact_value(self) -> None:
+    '''Fix 3: SHORT trail = trough_price + TRAIL_MULT_SHORT * atr_entry.
+
+    SPI200 SHORT fixture: trough_price=8285.0, atr_entry=50.0.
+    Expected: 8285.0 + 2.0 * 50.0 = 8385.00. Currency: $8,385.00.
+    '''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    spi_pos = state['positions']['SPI200']
+    expected_trail = spi_pos['trough_price'] + TRAIL_MULT_SHORT * spi_pos['atr_entry']
+    expected_str = f'${expected_trail:,.2f}'
+    assert expected_str in body, (
+      f'Fix 3: SHORT trail stop {expected_str} (={expected_trail}) missing from body; '
+      f'TRAIL_MULT_SHORT={TRAIL_MULT_SHORT}'
+    )
+
+  def test_positions_unrealised_pnl_audusd_long_with_half_cost(self) -> None:
+    '''Fix 3 + D-13: unrealised P&L includes opening-half-cost × n_contracts.
+
+    AUDUSD LONG fixture: entry=last_close=0.6502, n_contracts=5,
+    notional=10000.0, cost_aud=5.0 (round-trip).
+    Opening half-cost = cost_aud/2 * n_contracts = 2.5 * 5 = 12.5.
+    gross = (0.6502-0.6502) * 5 * 10000 = 0.0.
+    unrealised = 0.0 - 12.5 = -12.50.
+    Rendered via _fmt_pnl_with_colour_email → SHORT red span with -$12.50.
+    '''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    pos = state['positions']['AUDUSD']
+    current = state['signals']['AUDUSD']['last_close']
+    gross = (current - pos['entry_price']) * AUDUSD_NOTIONAL * pos['n_contracts']
+    open_cost = (AUDUSD_COST_AUD / 2) * pos['n_contracts']
+    expected_pnl = gross - open_cost
+    # expected_pnl is -12.5 → rendered via _fmt_pnl_with_colour_email
+    expected_span = notifier._fmt_pnl_with_colour_email(expected_pnl)
+    assert expected_span in body, (
+      f'Fix 3: AUDUSD unrealised P&L span missing; expected {expected_span!r} '
+      f'(pnl={expected_pnl})'
+    )
+
+  def test_positions_unrealised_pnl_spi200_short_with_half_cost(self) -> None:
+    '''Fix 3 + D-13: SPI200 SHORT fixture unrealised P&L.
+
+    SPI200 SHORT: entry=last_close=8285.0, n_contracts=1, multiplier=5.0,
+    cost_aud=6.0. Opening half-cost = 3.0 * 1 = 3.0.
+    gross = (8285.0 - 8285.0) * 1 * 5 = 0.0 (SHORT flips sign).
+    unrealised = 0.0 - 3.0 = -3.00.
+    '''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    pos = state['positions']['SPI200']
+    current = state['signals']['SPI200']['last_close']
+    # SHORT: profit when current < entry → direction_mult = -1
+    gross = -1.0 * (current - pos['entry_price']) * SPI_MULT * pos['n_contracts']
+    open_cost = (SPI_COST_AUD / 2) * pos['n_contracts']
+    expected_pnl = gross - open_cost
+    # expected_pnl is -3.0 → rendered via _fmt_pnl_with_colour_email
+    expected_span = notifier._fmt_pnl_with_colour_email(expected_pnl)
+    assert expected_span in body, (
+      f'Fix 3: SPI200 unrealised P&L span missing; expected {expected_span!r} '
+      f'(pnl={expected_pnl})'
+    )
+
+  # -----------------------------------------------------------------
+  # Fix 4: _closed_position_for_instrument_on scans last 3 records
+  # -----------------------------------------------------------------
+
+  def test_closed_position_finds_both_instruments_on_same_run_date(self) -> None:
+    '''Fix 4: widen scan to last-3 to support same-run double-close.
+
+    Craft a state where trade_log[-1] is AUDUSD close on 2026-04-22 AND
+    trade_log[-2] is SPI200 close on 2026-04-22. Both lookups must find
+    their respective records — proves the scan reaches past [-1].
+    '''
+    state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
+    # tail [-1] already SPI200 close today; append AUDUSD close today so
+    # SPI200 is now at [-2] and AUDUSD is at [-1].
+    state['trade_log'].append({
+      'instrument': 'AUDUSD',
+      'direction': 'SHORT',
+      'entry_date': '2026-04-15',
+      'exit_date': '2026-04-22',
+      'entry_price': 0.6550,
+      'exit_price': 0.6502,
+      'gross_pnl': 48.0,
+      'n_contracts': 3,
+      'exit_reason': 'signal_reversal',
+      'multiplier': 10000.0,
+      'cost_aud': 5.0,
+      'net_pnl': 43.0,
+    })
+    audusd_record = notifier._closed_position_for_instrument_on(
+      state, 'AUDUSD', '2026-04-22',
+    )
+    spi200_record = notifier._closed_position_for_instrument_on(
+      state, 'SPI200', '2026-04-22',
+    )
+    assert audusd_record is not None, 'AUDUSD tail record should be found'
+    assert audusd_record['instrument'] == 'AUDUSD'
+    assert audusd_record['exit_date'] == '2026-04-22'
+    assert spi200_record is not None, 'SPI200 at [-2] should be found by scanning last 3'
+    assert spi200_record['instrument'] == 'SPI200'
+    assert spi200_record['exit_date'] == '2026-04-22'
+
+  def test_closed_position_returns_none_when_no_match(self) -> None:
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    # No trade_log entry has exit_date == 2026-04-22 in the no-change fixture
+    result = notifier._closed_position_for_instrument_on(state, 'SPI200', '2026-04-22')
+    assert result is None
+
+  def test_closed_position_returns_none_on_empty_log(self) -> None:
+    state = json.loads(EMPTY_STATE_PATH.read_text())
+    result = notifier._closed_position_for_instrument_on(state, 'SPI200', '2026-04-22')
+    assert result is None
 
 
 class TestFormatters:
