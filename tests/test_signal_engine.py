@@ -468,6 +468,10 @@ DATA_FETCHER_PATH = Path('data_fetcher.py')
 TEST_DATA_FETCHER_PATH = Path('tests/test_data_fetcher.py')
 MAIN_PATH = Path('main.py')
 TEST_MAIN_PATH = Path('tests/test_main.py')
+# Phase 5 Wave 0: add dashboard.py to AST guard
+DASHBOARD_PATH = Path('dashboard.py')
+TEST_DASHBOARD_PATH = Path('tests/test_dashboard.py')
+REGENERATE_DASHBOARD_GOLDEN_PATH = Path('tests/regenerate_dashboard_golden.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
@@ -538,6 +542,20 @@ FORBIDDEN_MODULES_MAIN = frozenset({
   'yfinance',
   'requests',
   'pandas',
+})
+
+# Phase 5 Wave 0: dashboard.py IS the render I/O hex — stdlib (html, json, math,
+# os, statistics, tempfile, datetime, pathlib, logging) + pytz + state_manager
+# (load_state) + system_params ARE allowed. But it must NOT import sibling
+# hexes (signal_engine, sizing_engine, data_fetcher, notifier, main) or heavy
+# scientific stack (numpy, pandas) or network/fetch libs (yfinance, requests).
+FORBIDDEN_MODULES_DASHBOARD = frozenset({
+  # Sibling hexes — dashboard.py is a peer, never imports them
+  'signal_engine', 'sizing_engine', 'data_fetcher', 'notifier', 'main',
+  # Heavy scientific stack (stdlib statistics + math are sufficient per D-07)
+  'numpy', 'pandas',
+  # Fetch / network — dashboard never touches network (Chart.js loads client-side)
+  'yfinance', 'requests',
 })
 
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
@@ -815,6 +833,30 @@ class TestDeterminism:
       f'the orchestrator — it imports the hex modules, not their internals.'
     )
 
+  @pytest.mark.parametrize('module_path', [DASHBOARD_PATH])
+  def test_dashboard_no_forbidden_imports(self, module_path: Path) -> None:
+    '''Phase 5 Wave 0: dashboard.py must not import sibling hexes, numpy,
+    pandas, yfinance, or requests. It IS allowed to import stdlib (html, json,
+    math, os, statistics, tempfile, datetime, pathlib, logging) + pytz +
+    state_manager (for load_state, CLI path only) + system_params (palette
+    constants + INITIAL_ACCOUNT + TRAIL_MULT_*).
+
+    Structural enforcement of CLAUDE.md §Architecture hexagonal-lite for
+    dashboard: sibling-hex blocklists ALREADY forbid dashboard (FORBIDDEN_MODULES,
+    FORBIDDEN_MODULES_STATE_MANAGER, FORBIDDEN_MODULES_DATA_FETCHER); this test
+    closes the symmetric boundary — dashboard cannot import them either.
+    '''
+    imports = _top_level_imports(module_path)
+    leaked = imports & FORBIDDEN_MODULES_DASHBOARD
+    assert not leaked, (
+      f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
+      f'dashboard.py must not import sibling hexes (signal_engine, sizing_engine, '
+      f'data_fetcher, notifier, main), numpy, pandas, yfinance, or requests. '
+      f'Allowed: stdlib (html, json, math, os, statistics, tempfile, datetime, '
+      f'pathlib, logging) + pytz + state_manager + system_params. Dashboard IS '
+      f'the render I/O hex — that is its PURPOSE.'
+    )
+
   def test_signal_engine_has_core_public_surface(self) -> None:
     '''Public API contract: compute_indicators, get_signal, get_latest_indicators,
     LONG, SHORT, FLAT all importable.
@@ -863,6 +905,9 @@ class TestDeterminism:
       TEST_DATA_FETCHER_PATH,   # Phase 4 Wave 0
       MAIN_PATH,                # Phase 4 Wave 0
       TEST_MAIN_PATH,           # Phase 4 Wave 0
+      DASHBOARD_PATH,                      # Phase 5 Wave 0
+      TEST_DASHBOARD_PATH,                 # Phase 5 Wave 0
+      REGENERATE_DASHBOARD_GOLDEN_PATH,    # Phase 5 Wave 0
     ]
     missing_2space_files = []
     for path in covered_paths:
