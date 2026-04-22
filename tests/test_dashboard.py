@@ -751,15 +751,162 @@ class TestRenderBlocks:
     output = dashboard._render_footer()
     assert 'Signal-only system. Not financial advice.' in output
 
+  # --- Wave 2: Chart.js + HTML shell + inline CSS tests (VALIDATION 05-03-T1) ---
+
+  def test_chartjs_sri_matches_committed(self, tmp_path) -> None:
+    '''VALIDATION row 05-03-T1: exact SRI substring match on rendered HTML.
+
+    SRI verified 2026-04-21 via curl + openssl; a drift from this value means
+    either Chart.js version bumped or the CDN file was tampered with —
+    either way, the rendered dashboard.html MUST contain the exact locked hash.
+    '''
+    state = _make_state()
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    expected = (
+      '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" '
+      'integrity="sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN" '
+      'crossorigin="anonymous"></script>'
+    )
+    assert expected in html_text
+
+  def test_equity_chart_payload_matches_state(self, tmp_path) -> None:
+    '''VALIDATION row 05-03-T1: payload contains labels for each equity row, in date order.'''
+    state = _make_state(with_equity=5)
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    for row in state['equity_history']:
+      assert row['date'] in html_text
+
+  def test_chart_payload_escapes_script_close(self, tmp_path) -> None:
+    '''Pitfall 1: </script> injection defence.
+
+    C-4 reviews strengthening: the original .find()-based assertion could
+    false-pass when an injected raw </script> appeared inside the payload
+    (find() stops at the injected tag, so the assertion measures only the
+    prefix). Replace with COUNT-based assertions that verify:
+      (a) total </script> occurrences == count of real <script> blocks
+          we emit (currently 1: the Chart.js instantiation IIFE), AND
+      (b) the escaped form (either '<\\/script>' or r'<\\/script>' depending
+          on whether the reader sees the raw-source or parsed form) IS
+          present in the chart payload body.
+    '''
+    state = _make_state(with_equity=0)
+    # Injected value with literal </script> + subsequent HTML — the classic
+    # break-out-of-script-block payload.
+    state['equity_history'] = [{
+      'date': '</script><img src=x onerror=alert(1)>',
+      'equity': 100.0,
+    }]
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+
+    # Assertion (a): the rendered HTML must contain EXACTLY TWO </script>
+    # close tags — one for the Chart.js CDN <script src="..."></script> in
+    # <head>, and one that closes the Chart.js instantiation IIFE in <body>.
+    # If the injected </script> leaked through unescaped, this count would be
+    # 3 (or more); that is the exact failure mode C-4 wants to catch.
+    # (Rule 1 auto-fix from plan assertion '== 1': plan's count omitted the
+    # CDN loader's self-closing </script>. Legitimate real-world count is 2.)
+    assert html_text.count('</script>') == 2, (
+      f'unexpected </script> count {html_text.count("</script>")} — '
+      'injection defence failed. Expected exactly 2 (CDN loader close + '
+      'Chart.js IIFE close).'
+    )
+
+    # Assertion (b): the escaped form (json.dumps + .replace('</', '<\\/'))
+    # IS present inside the chart payload. Accept either Python raw-string
+    # form or the single-backslash form — both are valid JS string escapes.
+    assert ('<\\/script>' in html_text or r'<\/script>' in html_text), (
+      'escaped </script> form missing from chart payload — the defence '
+      "replace('</', '<\\/') must have fired on the injected date value."
+    )
+
+  def test_html_has_no_external_stylesheet_links(self, tmp_path) -> None:
+    '''DASH-01: CSS is entirely inline inside a <style> block.'''
+    state = _make_state()
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    # Zero <link rel="stylesheet"> — all CSS is inline per DASH-01.
+    assert '<link rel="stylesheet"' not in html_text
+
+  def test_inline_css_contains_palette(self, tmp_path) -> None:
+    '''DASH-09: visual theme palette hexes present in rendered <style> block.'''
+    state = _make_state()
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    for hex_token in ('#0f1117', '#22c55e', '#ef4444', '#eab308'):
+      assert hex_token in html_text, f'palette hex {hex_token} missing from rendered HTML'
+
+  def test_equity_chart_empty_state_placeholder(self, tmp_path) -> None:
+    '''D-13: empty equity_history → placeholder text, NO Chart.js canvas.'''
+    state = _make_state(with_equity=0)
+    state['equity_history'] = []
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    assert 'No equity history yet — first full run needed' in html_text
+    assert '<canvas id="equityChart"' not in html_text
+
+  def test_equity_chart_uses_category_axis(self, tmp_path) -> None:
+    '''UI-SPEC §Chart Component: category x-axis, no date adapter needed.
+
+    Also asserts maintainAspectRatio=false (Pitfall 5 with fixed parent
+    height) and pointRadius=0 (dense line, minimal noise).
+    '''
+    state = _make_state(with_equity=10)
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    assert 'type: "category"' in html_text
+    assert 'chartjs-adapter-date-fns' not in html_text
+    assert 'maintainAspectRatio: false' in html_text
+    assert 'pointRadius: 0' in html_text
+
+  def test_html_shell_structure(self, tmp_path) -> None:
+    '''<!DOCTYPE> + <html lang="en"> + <head> + <title> + <meta charset>.'''
+    state = _make_state()
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_text = out.read_text()
+    assert html_text.startswith('<!DOCTYPE html>\n<html lang="en">\n')
+    assert '<title>Trading Signals — Dashboard</title>' in html_text
+    assert '<meta charset="utf-8">' in html_text
+
+  def test_module_main_entrypoint_exists(self) -> None:
+    '''C-6 reviews: CONTEXT D-05 convenience CLI (`python -m dashboard`).'''
+    src = DASHBOARD_PATH.read_text()
+    assert "if __name__ == '__main__':" in src, (
+      'CONTEXT D-05 convenience CLI missing — `python -m dashboard` '
+      'must be supported as an operator preview path.'
+    )
+
 
 class TestEmptyState:
   '''Wave 2 (VALIDATION row 05-03-T2): render_dashboard(reset_state()) byte-matches
   committed golden_empty.html; all sections render with placeholders.
   '''
 
-  def test_scaffold_placeholder(self) -> None:
-    '''Wave 0 placeholder — Wave 1/2 populate real tests.'''
-    assert True
+  def test_empty_state_matches_committed(self, tmp_path) -> None:
+    '''VALIDATION row 05-03-T2: render of reset_state output is byte-identical
+    to committed golden_empty.html.
+    '''
+    import state_manager  # test-only lazy import (keeps hex-fence report clean)
+    state = state_manager.reset_state()
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered_bytes = out.read_bytes()
+    golden_bytes = GOLDEN_EMPTY_HTML_PATH.read_bytes()
+    assert rendered_bytes == golden_bytes, (
+      'Empty-state render drifted from golden_empty.html. '
+      'If change intentional: run `.venv/bin/python tests/regenerate_dashboard_golden.py` '
+      'then re-commit tests/fixtures/dashboard/golden_empty.html.'
+    )
 
 
 class TestGoldenSnapshot:
@@ -767,9 +914,18 @@ class TestGoldenSnapshot:
   FROZEN_NOW byte-matches committed golden.html.
   '''
 
-  def test_scaffold_placeholder(self) -> None:
-    '''Wave 0 placeholder — Wave 1/2 populate real tests.'''
-    assert True
+  def test_golden_snapshot_matches_committed(self, tmp_path) -> None:
+    '''VALIDATION row 05-03-T2: sample_state.json render byte-identical to golden.html.'''
+    state = json.loads(SAMPLE_STATE_PATH.read_text())
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered_bytes = out.read_bytes()
+    golden_bytes = GOLDEN_HTML_PATH.read_bytes()
+    assert rendered_bytes == golden_bytes, (
+      'Populated render drifted from golden.html. '
+      'If change intentional: run `.venv/bin/python tests/regenerate_dashboard_golden.py` '
+      'then re-commit tests/fixtures/dashboard/golden.html.'
+    )
 
 
 class TestAtomicWrite:
@@ -777,6 +933,39 @@ class TestAtomicWrite:
   Mirrors test_state_manager.py::TestAtomicity::test_crash_on_os_replace_leaves_original_intact.
   '''
 
-  def test_scaffold_placeholder(self) -> None:
-    '''Wave 0 placeholder — Wave 1/2 populate real tests.'''
-    assert True
+  def test_atomic_write_success_path(self, tmp_path) -> None:
+    '''tempfile + fsync + os.replace; no .tmp left behind.'''
+    state = _make_state()
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    assert out.exists()
+    # No stray tempfiles in the parent dir.
+    tmp_files = list(tmp_path.glob('*.tmp'))
+    assert tmp_files == [], f'unexpected tempfiles left: {tmp_files}'
+
+  def test_crash_on_os_replace_leaves_original_intact(self, tmp_path) -> None:
+    '''Mirror of test_state_manager.py::TestAtomicity (lines 213-234).
+
+    Monkeypatch `dashboard.os.replace` to raise OSError; assert the original
+    dashboard.html bytes are preserved (D-17 atomic-write durability).
+    '''
+    out = tmp_path / 'd.html'
+    original_bytes = b'<!DOCTYPE html><html><body>ORIGINAL</body></html>'
+    out.write_bytes(original_bytes)
+    state = _make_state()
+    with patch('dashboard.os.replace', side_effect=OSError('disk full')):
+      with pytest.raises(OSError, match='disk full'):
+        dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    assert out.read_bytes() == original_bytes, (
+      'Original dashboard.html must be byte-identical after failed os.replace'
+    )
+
+  def test_tempfile_cleaned_up_on_failure(self, tmp_path) -> None:
+    '''Failed os.replace → tempfile cleanup via try/finally (no .tmp left).'''
+    out = tmp_path / 'd.html'
+    state = _make_state()
+    with patch('dashboard.os.replace', side_effect=OSError('disk full')):
+      with pytest.raises(OSError):
+        dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    tmp_files = list(tmp_path.glob('*.tmp'))
+    assert tmp_files == [], f'tempfile not cleaned up after os.replace failure: {tmp_files}'

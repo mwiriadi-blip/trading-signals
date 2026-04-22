@@ -156,7 +156,206 @@ _INLINE_CSS = f'''
   --fs-body: 14px; --fs-label: 12px; --fs-heading: 20px; --fs-display: 28px;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }}
-/* Wave 2 fills layout, typography, tables, cards, chart, stats, footer, visually-hidden. */
+body {{
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+  cursor: default;
+}}
+.container {{
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}}
+header h1 {{
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0 0 8px;
+}}
+header .subtitle {{
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0 16px;
+}}
+header .meta {{
+  display: inline-flex;
+  gap: 16px;
+  align-items: baseline;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-8);
+}}
+header .meta .label {{
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}}
+header .meta .value {{
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}}
+section {{
+  margin-bottom: var(--space-8);
+}}
+section h2 {{
+  font-size: var(--fs-heading);
+  font-weight: 600;
+  margin: 0 0 16px;
+}}
+.cards-row {{
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}}
+.card {{
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+  flex: 1;
+  min-width: 300px;
+}}
+.card .eyebrow {{
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+}}
+.card .big-label {{
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}}
+.card .sub {{
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}}
+.card .scalars {{
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0;
+}}
+.chart-container {{
+  position: relative;
+  /* G-S2 reviews: Fixed height mandatory for Chart.js
+     maintainAspectRatio: false — do NOT optimise away. */
+  height: 320px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}}
+.chart-container.empty-state {{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+}}
+.data-table {{
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}}
+.data-table thead th {{
+  text-align: left;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}}
+.data-table tbody td {{
+  font-size: var(--fs-body);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}}
+.data-table tbody tr:last-child td {{
+  border-bottom: none;
+}}
+.data-table tbody td.num {{
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}}
+.data-table .empty-state {{
+  text-align: center;
+  color: var(--color-text-dim);
+}}
+.stats-grid {{
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-6);
+}}
+.stat-tile {{
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}}
+.stat-tile .label {{
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}}
+.stat-tile .value {{
+  font-size: var(--fs-display);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}}
+.subtle {{
+  font-size: var(--fs-label);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-4);
+}}
+footer {{
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  margin: 48px 0 24px;
+}}
+.visually-hidden {{
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}}
+@media (max-width: 720px) {{
+  .cards-row {{
+    flex-direction: column;
+  }}
+  .stats-grid {{
+    grid-template-columns: repeat(2, 1fr);
+  }}
+  .container {{
+    padding-left: 16px;
+    padding-right: 16px;
+  }}
+}}
 '''
 
 
@@ -664,13 +863,161 @@ def _render_footer() -> str:
 
 
 def _render_equity_chart_container(state: dict) -> str:
-  '''UI-SPEC §Chart Component — Chart.js canvas + inline script (DASH-04).'''
-  raise NotImplementedError('Wave 2: fills per UI-SPEC §Chart Component + RESEARCH §Pattern 2')
+  '''DASH-04 / CONTEXT D-11 / UI-SPEC §Chart Component. Category x-axis.
+
+  JSON payload injection defence (Pitfall 1): json.dumps + .replace('</', '<\\/').
+
+  D-13 empty state: if equity_history is empty, render a placeholder <div>
+  rather than an instantiated Chart.js canvas (avoids a blank chart band
+  with no indication of why).
+  '''
+  equity_history = state.get('equity_history', [])
+  if not equity_history:
+    return (
+      '<section aria-labelledby="heading-equity">\n'
+      '  <h2 id="heading-equity">Equity Curve</h2>\n'
+      '  <div class="chart-container empty-state">'
+      'No equity history yet — first full run needed'
+      '</div>\n'
+      '</section>\n'
+    )
+  # Build labels + data as plain lists, then JSON-serialise with
+  # <script>-close injection defence (Pitfall 1) and byte-stable dict
+  # ordering (Pitfall 2).
+  labels = [row['date'] for row in equity_history]
+  data = [float(row['equity']) for row in equity_history]
+  payload = json.dumps(
+    {'labels': labels, 'data': data},
+    ensure_ascii=False,
+    sort_keys=True,    # Pitfall 2: byte-stable dict order
+    allow_nan=False,   # G-1 reviews: stray NaN must fail loudly rather than
+                       # emit invalid JSON that Chart.js renders as a blank line
+  ).replace('</', '<\\/')
+  return (
+    '<section aria-labelledby="heading-equity">\n'
+    '  <h2 id="heading-equity">Equity Curve</h2>\n'
+    '  <div class="chart-container">\n'
+    '    <canvas id="equityChart" '
+    'aria-label="Account equity line chart over time" role="img"></canvas>\n'
+    '  </div>\n'
+    '  <script>\n'
+    '    (function() {\n'
+    f'      const payload = {payload};\n'
+    '      new Chart(document.getElementById("equityChart"), {\n'
+    '        type: "line",\n'
+    '        data: {\n'
+    '          labels: payload.labels,\n'
+    '          datasets: [{\n'
+    '            label: "Account equity",\n'
+    '            data: payload.data,\n'
+    f'            borderColor: "{_COLOR_LONG}",\n'
+    f'            backgroundColor: "{_COLOR_LONG}",\n'
+    '            fill: false,\n'
+    '            tension: 0.1,\n'
+    '            borderWidth: 2,\n'
+    '            pointRadius: 0,\n'
+    '            pointHoverRadius: 4\n'
+    '          }]\n'
+    '        },\n'
+    '        options: {\n'
+    '          scales: {\n'
+    f'            x: {{ type: "category",\n'
+    f'               ticks: {{ color: "{_COLOR_TEXT_MUTED}", maxTicksLimit: 10 }},\n'
+    f'               grid: {{ color: "{_COLOR_BORDER}" }} }},\n'
+    f'            y: {{ ticks: {{ color: "{_COLOR_TEXT_MUTED}",\n'
+    '                         callback: (v) => "$" + v.toLocaleString() }},\n'
+    f'               grid: {{ color: "{_COLOR_BORDER}" }} }}\n'
+    '          },\n'
+    '          plugins: {\n'
+    '            legend: { display: false },\n'
+    '            tooltip: { callbacks: { label: (ctx) => "$" + ctx.parsed.y.toLocaleString() } }\n'
+    '          },\n'
+    '          maintainAspectRatio: false,\n'
+    '          responsive: true\n'
+    '        }\n'
+    '      });\n'
+    '    })();\n'
+    '  </script>\n'
+    '</section>\n'
+  )
 
 
 def _render_html_shell(body: str) -> str:
-  '''UI-SPEC §Component Hierarchy — <!DOCTYPE> + <head> + Chart.js script + inline CSS + <body>.'''
-  raise NotImplementedError('Wave 2: fills per RESEARCH §Pattern 2')
+  '''UI-SPEC §Component Hierarchy — <!DOCTYPE> + <head> + Chart.js script + inline CSS + <body>.
+
+  Chart.js 4.4.6 loads in <head> with SRI; the inline chart-instantiation
+  <script> is IN the body (emitted by _render_equity_chart_container).
+  Single-file, inline CSS, no external stylesheet (DASH-01).
+  '''
+  return (
+    '<!DOCTYPE html>\n'
+    '<html lang="en">\n'
+    '<head>\n'
+    '  <meta charset="utf-8">\n'
+    '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
+    '  <title>Trading Signals — Dashboard</title>\n'
+    f'  <style>{_INLINE_CSS}</style>\n'
+    f'  <script src="{_CHARTJS_URL}" '
+    f'integrity="{_CHARTJS_SRI}" crossorigin="anonymous"></script>\n'
+    '</head>\n'
+    '<body>\n'
+    '  <div class="container">\n'
+    f'{body}'
+    '  </div>\n'
+    '</body>\n'
+    '</html>\n'
+  )
+
+
+# =========================================================================
+# Atomic write — Phase 3 D-17 mirror of state_manager._atomic_write
+# =========================================================================
+
+def _atomic_write_html(data: str, path: Path) -> None:
+  '''Mirror of state_manager._atomic_write (Phase 3 D-17 post-replace parent-dir fsync).
+
+  Durability sequence:
+    1. write data to tempfile in same directory as target
+    2. flush + fsync(tempfile.fileno())  — data durable on disk
+    3. close tempfile (NamedTemporaryFile context exit)
+    4. os.replace(tempfile, target)      — atomic rename
+    5. fsync(parent dir fd) on POSIX     — rename itself durable on disk
+
+  Tempfile cleanup: try/finally unlinks the tempfile if any step before
+  os.replace raises. On success, tmp_path_str is set to None so the finally
+  clause is a no-op.
+
+  C-7 reviews: `newline='\\n'` on the tempfile forces LF regardless of
+  platform — text-mode default on Windows translates `\\n` -> `\\r\\n`
+  which would drift the committed goldens (byte-stability gate).
+  '''
+  parent = path.parent
+  tmp_path_str = None
+  try:
+    with tempfile.NamedTemporaryFile(
+      dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
+      newline='\n',  # C-7 reviews: force LF regardless of platform
+    ) as tmp:
+      tmp_path_str = tmp.name
+      tmp.write(data)
+      tmp.flush()
+      os.fsync(tmp.fileno())
+    # tempfile is now closed (NamedTemporaryFile context exit)
+    # D-17: os.replace BEFORE parent-dir fsync (rename durability)
+    os.replace(tmp_path_str, path)
+    if os.name == 'posix':
+      dir_fd = os.open(str(parent), os.O_RDONLY)
+      try:
+        os.fsync(dir_fd)
+      finally:
+        os.close(dir_fd)
+    tmp_path_str = None  # success: do not delete in finally
+  finally:
+    if tmp_path_str is not None:
+      try:
+        os.unlink(tmp_path_str)
+      except FileNotFoundError:
+        pass
 
 
 # =========================================================================
@@ -682,7 +1029,39 @@ def render_dashboard(
   out_path: Path = Path('dashboard.html'),
   now: datetime | None = None,
 ) -> None:
-  '''Public API (CONTEXT D-01). Writes dashboard.html atomically.'''
-  raise NotImplementedError(
-    'Wave 2: concatenates body blocks + _render_html_shell + _atomic_write_html',
+  '''Public API per CONTEXT D-01. Writes dashboard.html atomically; never mutates state.
+
+  Block order MUST match UI-SPEC §Component Hierarchy Rendering-order rule:
+  header → signal cards → equity chart → positions table → closed trades →
+  key stats → footer.
+
+  C-1 reviews: when `now` is None, construct AWST wall-clock via
+  PERTH.localize(datetime.now()) — NEVER via `datetime(..., tzinfo=PERTH)`
+  which silently adopts the historical LMT offset (+07:43:24 for Perth
+  pre-1895).
+  '''
+  if now is None:
+    perth = pytz.timezone('Australia/Perth')
+    now = datetime.now(perth)
+  logger.info('[Dashboard] rendering to %s', out_path)
+  body = (
+    _render_header(state, now)
+    + _render_signal_cards(state)
+    + _render_equity_chart_container(state)
+    + _render_positions_table(state)
+    + _render_trades_table(state)
+    + _render_key_stats(state)
+    + _render_footer()
   )
+  html_str = _render_html_shell(body)
+  _atomic_write_html(html_str, out_path)
+  logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
+
+
+if __name__ == '__main__':
+  # C-6 reviews: CONTEXT D-05 convenience CLI. `python -m dashboard` loads
+  # the current state.json and renders dashboard.html using the current
+  # AWST wall-clock. Never used by CI; operator-only preview path.
+  # render_dashboard(now=None) defaults to PERTH.localize-equivalent
+  # datetime.now(PERTH), so we just pass load_state() and a default path.
+  render_dashboard(load_state(), Path('dashboard.html'))
