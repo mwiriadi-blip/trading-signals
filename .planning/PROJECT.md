@@ -2,96 +2,107 @@
 
 ## What This Is
 
-A Python application that runs a mechanical trend-following trading system for two instruments — SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`) — by fetching daily OHLCV data, computing signals, persisting state, rendering a dashboard, and emailing a daily report every weekday morning Perth time. It is a **signal-only** tool for one user (Marc) — it never places live trades, it tells the operator what the system says they should be doing and tracks hypothetical P&L against a $100,000 starting account.
+A **shipped** Python CLI (v1.0, 2026-04-24) that runs a mechanical trend-following trading system for two instruments — SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`) — via GitHub Actions cron at 08:00 AWST weekdays. It fetches daily OHLCV data, computes ATR/ADX/momentum-vote signals, sizes positions with trailing-stop + pyramiding, persists state atomically with corruption recovery, renders an HTML dashboard, emails the operator via Resend, and handles crashes with a last-ditch crash-email boundary. **Signal-only** — it never places live trades; it tells the operator what the system says they should be doing and tracks hypothetical P&L against a configurable starting account (default $100k).
 
 ## Core Value
 
-Deliver an accurate, reproducible daily signal and actionable instruction ("close LONG / open SHORT / hold") to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
+Deliver an accurate, reproducible daily signal and actionable instruction ("close LONG / open SHORT / hold") to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts. **Validated in v1.0.**
 
 ## Requirements
 
 ### Validated
 
-(None yet — ship to validate)
+All 80 v1 requirements verified in v1.0 (see [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md)):
 
-### Active
+- ✓ **DATA (6)** — yfinance fetch, 400-day window, 3x retry, stale-data detection — v1.0
+- ✓ **SIG (8)** — ATR(14), ADX(20), +DI, -DI, Mom1/3/12, RVol(20), 2-of-3 vote gated by ADX≥25 — v1.0
+- ✓ **SIZE (6)** — vol-targeted sizing (1% LONG / 0.5% SHORT), skip-if-zero (no `max(1,…)` floor) — v1.0
+- ✓ **EXIT (9)** — signal reversal, ADX<20 drop-out, trailing-stop hit (intraday H/L), 9-cell transition matrix — v1.0
+- ✓ **PYRA (5)** — pyramid up to 3 contracts at +1×ATR and +2×ATR thresholds, gap-day capped — v1.0
+- ✓ **STATE (7)** — atomic tempfile+fsync+os.replace writes, `_migrate` chain, corruption recovery — v1.0
+- ✓ **NOTF (10)** — Resend HTML email, two-tier banner (critical vs routine), subject `[!]` prefix, warning carry-over, always-write last_email.html — v1.0
+- ✓ **DASH (9)** — static dashboard.html with Chart.js 4.4.6 UMD SRI-pinned equity curve, positions, trades, key stats — v1.0
+- ✓ **SCHED (7)** — GHA cron `0 0 * * 1-5`, UTC-assertion, `_run_schedule_loop`, `timeout-minutes: 10` cap — v1.0
+- ✓ **CLI (5)** — `--once`, `--reset`, `--test`, `--force-email`, `--initial-account`, `--spi-contract`, `--audusd-contract` — v1.0
+- ✓ **ERR (6)** — per-job never-crash (Layer A), outer crash-email boundary (Layer B), corrupt-state recovery, stale-state banner, Resend 5xx logged + warning-tracked, structured console logs — v1.0 (ERR-01 spec reconciled Phase 9: data-fetch errors log + exit rc=2, no email)
+- ✓ **CONF (2)** — `--initial-account` float with `math.isfinite` guard, per-instrument contract tiers (`spi-mini/spi-standard/spi-full` × `audusd-standard/audusd-mini`), `_resolved_contracts` runtime materialisation — v1.0
 
-- [ ] Fetch daily OHLCV for `^AXJO` and `AUDUSD=X` via yfinance (400-day window, retry 3x on failure)
-- [ ] Compute indicators on daily close: ATR(14) Wilder, ADX(20) Wilder with +DI/-DI, Mom1/Mom3/Mom12, RVol(20) annualised
-- [ ] Generate signal using 2-of-3 multi-timeframe momentum vote gated by ADX>=25 (LONG / SHORT / FLAT)
-- [ ] Size positions with ATR-based stop and vol-targeting (risk 1.0% LONG / 0.5% SHORT, trail 3.0x/2.0x ATR)
-- [ ] Honour contract specs: SPI $25/point $30 cost round-trip; AUD/USD $10,000 notional $5 cost round-trip
-- [ ] Apply exit rules daily: signal reversal, ADX<20 drop-out, trailing stop hit
-- [ ] Pyramid up to 3 contracts at +1×ATR and +2×ATR unrealised profit thresholds
-- [ ] Persist state to `state.json` with account, positions, signals, trade log, equity history
-- [ ] Send daily HTML email via Resend with signal status, positions, P&L, and ACTION REQUIRED block on signal change
-- [ ] Generate `dashboard.html` each run with Chart.js equity curve, open positions, last 20 trades, key stats
-- [ ] Run on a daily schedule (08:00 AWST / 00:00 UTC) on weekdays
-- [ ] Support `--test`, `--reset`, and `--force-email` CLI flags
-- [ ] Handle Yahoo Finance failures, Resend failures, and corrupted state.json gracefully
-- [ ] Emit structured console logs that are readable in Replit/GitHub Actions output
+### Active (v1.1+ candidates)
 
-### Out of Scope
+None committed. Candidates from v1.0 deferred tech debt:
 
-- Live order execution — this is signal-only; Marc places trades manually
-- Any instruments beyond SPI 200 and AUD/USD — adding more is a future milestone
-- Intraday data / tick-level signals — daily close only
-- Backtesting UI — the app only runs forward; backtests were done separately
-- Multi-user accounts / auth — single-operator tool, Resend API key and Replit Secrets are the only gate
-- React / Vue / any SPA framework — dashboard is a single static HTML file
-- Database — all state lives in one `state.json` file
-- Financial advice / regulatory disclosures — footer disclaimer only
+- [ ] F1 full-chain integration test harness (single test exercising fetch → signals → sizing → dashboard → email unmocked)
+- [ ] Holiday-calendar-aware staleness threshold (avoid false-positive red banner after Mon-holiday Tuesdays)
+- [ ] Thread-safe `_LAST_LOADED_STATE` cache (only matters if parallel-run features appear)
+- [ ] ruff F401 cleanup in notifier.py (19 pre-existing warnings)
+- [ ] Phase 7 IN-02 README badge `${{GITHUB_REPOSITORY}}` literal placeholder fix (forker-only)
+- [ ] Phase 7 IN-03 TestWeekdayGate fake returning None (test-quality polish)
+- [ ] Phase 6 HUMAN-UAT completion (3 operator scenarios — email-rendering visual checks)
+- [ ] Phase 5 + Phase 6 VERIFICATION.md human_needed items (dashboard + email real-world visual verification)
+
+### Out of Scope (v1.0 validated)
+
+- Live order execution — signal-only; Marc places trades manually. **Hard constraint.**
+- Any instruments beyond SPI 200 and AUD/USD — adding more is a v2+ milestone.
+- Intraday data / tick-level signals — daily close only.
+- Backtesting UI — the app only runs forward.
+- Multi-user accounts / auth — single-operator tool.
+- React / Vue / any SPA framework — dashboard is a single static HTML file.
+- Database — all state lives in one `state.json` file.
+- Financial advice / regulatory disclosures — footer disclaimer only.
 
 ## Context
 
-- **User:** Marc (Perth, AWST UTC+8 year-round, no DST) — runs Carbon Bookkeeping, already has Resend configured with verified sender `signals@carbonbookkeeping.com.au`.
-- **Prior work:** Backtests with the same dark aesthetic (Chart.js, `#0f1117` background, green LONG / red SHORT / gold FLAT palette) already exist — the dashboard must match.
-- **Deployment target:** Replit (with Always On) as primary; GitHub Actions with cron `0 22 * * 1-5` (8am AEST approximation — spec note: use `0 0 * * 1-5` for Perth 8am AWST) as the free fallback. Both are in scope for the docs/deployment guide.
-- **State persistence:** Replit filesystem persists between runs when Always On is active; in GitHub Actions mode, the workflow commits `state.json` back to the repo.
-- **Schedule window:** Scheduler fires once daily at 08:00 AWST; immediate first-run on process start for verification.
-- **Timezones matter:** Spec mentions both AEST (22:00 UTC → 8am AEST) and AWST (00:00 UTC → 8am AWST). Marc is in Perth — schedule on `00:00` UTC. Dates/times in email/dashboard/console use AWST via pytz `Australia/Perth`.
+- **Shipped:** v1.0 on 2026-04-24 after 4 days of work (~5,800 source LOC Python, 662 tests, 250 commits, 9 phases).
+- **User:** Marc (Perth, AWST UTC+8 year-round, no DST) — runs Carbon Bookkeeping, Resend configured with verified sender `signals@carbonbookkeeping.com.au`.
+- **Architecture:** Hexagonal-lite. Pure-math modules (`signal_engine`, `sizing_engine`, `system_params`) with AST-enforced forbidden-imports blocklist. I/O adapters (`state_manager`, `notifier`, `dashboard`) with no cross-imports. `main.py` is the sole orchestrator.
+- **Deployment:** GitHub Actions is the PRIMARY path (cron `0 0 * * 1-5` UTC = 08:00 AWST Mon-Fri, with `timeout-minutes: 10` runaway-run cap per Phase 9). Replit Always On documented as alternative.
+- **State persistence:** GHA commits `state.json` back to the repo each run; Replit filesystem persists if Always On is active.
+- **Testing:** 662 tests passing, 0 failing. `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` AST-walks hex modules to enforce boundary invariants.
+- **Known deferred UAT:** 4 operator-facing visual checks (dashboard rendering, Gmail email rendering) recorded in STATE.md §Deferred Items — cannot be automated in GSD session.
 
 ## Constraints
 
-- **Tech stack**: Python 3.11+, `yfinance`, `pandas`, `numpy`, `requests`, `schedule`, `python-dotenv`, `pytz` — no other frameworks, no Flask/Django/FastAPI.
-- **Email transport**: Resend HTTPS API only (already configured for Carbon Bookkeeping). No SMTP/Nodemailer.
+- **Tech stack**: Python 3.11.8, `yfinance 1.2.0`, `pandas 2.3.3`, `numpy 2.0.2`, `requests`, `schedule`, `python-dotenv`, `pytz`, `pytest 8.3.3`, `pytest-freezer`, `ruff 0.6.9` — all version-pinned in `requirements.txt`.
+- **Email transport**: Resend HTTPS API only. No SMTP.
 - **Storage**: Single `state.json` file. No SQLite/Postgres/Redis.
-- **Dashboard**: One self-contained `dashboard.html` with inline CSS and CDN Chart.js. No build step.
+- **Dashboard**: Single self-contained `dashboard.html` with inline CSS and CDN Chart.js 4.4.6 (SRI-pinned). No build step.
 - **Email rendering**: Inline CSS only — email clients strip `<style>` blocks. Must render on mobile.
-- **Determinism**: Daily signal output must be reproducible from `state.json` + Yahoo data for the same date.
-- **Signal-only**: Never expose any hook or flag that would place a live trade. Hard constraint.
-- **Secrets**: All credentials via `.env` locally or Replit Secrets — never committed. `state.json` is gitignored locally, committed only by GitHub Actions workflow when running in that mode.
-- **Schedule**: 08:00 Perth time weekdays — `schedule.every().day.at("00:00")` UTC is the canonical line.
-- **Error budget**: App must never crash silently. All errors caught, logged, and surfaced in the next email as a warning.
+- **Determinism**: Daily signal output reproducible from `state.json` + Yahoo data for the same date.
+- **Signal-only**: No hook or flag places a live trade. Hard constraint.
+- **Secrets**: All credentials via `.env` locally or GitHub Secrets — never committed. `state.json` is gitignored locally, committed only by the GHA workflow.
+- **Schedule**: 08:00 Perth time weekdays — `cron "0 0 * * 1-5"` UTC.
+- **Error budget**: App must never crash silently. All errors caught, logged, and surfaced in the next email as a warning (except `DataFetchError`/`ShortFrameError` which log + exit rc=2 — deliberate, per ERR-01 Phase 9 amendment).
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Python + yfinance + Resend | User already on Resend; Python has mature TA libs; runs on Replit/GHA with no infra | — Pending |
-| Single `state.json` file | Simplicity, portability across Replit and GitHub Actions | — Pending |
-| Perth time (AWST) schedule | Marc is in Perth — no DST simplifies cron | — Pending |
-| ATR + vol-target sizing | Matches the backtested system exactly | — Pending |
-| Static `dashboard.html` with Chart.js CDN | Zero build step, matches prior backtest aesthetic | — Pending |
-| Signal-only, no live trading | Explicit user directive — risk mitigation | — Pending |
-| Deployment: Replit primary, GitHub Actions fallback | Replit needs paid plan for Always On; GHA free alternative via cron | — Pending |
+| Python + yfinance + Resend | User already on Resend; Python has mature TA libs; runs on Replit/GHA with no infra | ✓ Good |
+| Single `state.json` file | Simplicity, portability across Replit and GitHub Actions | ✓ Good |
+| Perth time (AWST) schedule, cron `0 0 * * 1-5` UTC | Marc is in Perth — no DST simplifies cron | ✓ Good |
+| ATR + vol-target sizing, `n_contracts == 0` skips trade (no floor) | Matches the backtested system exactly; 0-floor silently breaches risk budget on small accounts | ✓ Good |
+| Static `dashboard.html` with Chart.js CDN (SRI-pinned) | Zero build step, matches prior backtest aesthetic; SRI prevents CDN tampering | ✓ Good |
+| Signal-only, no live trading | Explicit user directive — risk mitigation | ✓ Good |
+| GitHub Actions PRIMARY (Replit alternative) | Replit Autoscale doesn't guarantee filesystem persistence and kills `schedule` loops; GHA is free, stateless-by-design, and commits `state.json` back | ✓ Good |
+| Hexagonal-lite: signal_engine ↔ state_manager no cross-import; main sole orchestrator | Keeps pure-math modules testable in isolation; AST blocklist enforces at CI time | ✓ Good |
+| Two-tier email banner (critical vs routine) + `[!]` subject prefix | Critical banners (stale-state, corrupt-recovery) always visible at top; routine warnings compact | ✓ Good (Phase 8) |
+| `_LAST_LOADED_STATE` module cache for crash-email state summary | Gives crash email access to last-loaded state without threading state through the scheduler | ⚠️ Revisit if parallel runs appear (v2) |
+| Underscore-prefix persistence rule (`_resolved_contracts`, `_stale_info`) | Runtime-only keys auto-stripped by `save_state`; new convention | ✓ Good (Phase 8 D-14) |
+| ERR-01 data-fetch errors log + exit rc=2, no email | Transient yfinance/network errors are expected; emailing on every blip is noise | ✓ Good (Phase 9 spec amendment) |
+| Trailing stops use intraday HIGH/LOW (peak updates + hit detection) | Consistent intraday convention matches how the backtest was built | ✓ Good |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
 
-**After each phase transition** (via `/gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
-
 **After each milestone** (via `/gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
+1. Validated section: shipped requirements marked with v version reference
+2. Active section: new candidates for next milestone
+3. Out of Scope audit: reasons still valid?
+4. Context: LOC, tech stack, user feedback themes, known issues
+5. Key Decisions: outcomes updated (✓ Good, ⚠️ Revisit, — Pending)
 
 ---
-*Last updated: 2026-04-20 after initialization*
+
+*Last updated: 2026-04-24 after v1.0 milestone shipped*

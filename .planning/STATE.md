@@ -144,6 +144,19 @@ None.
 
 - Requirements count reconciliation: prompt stated 67 v1 requirements; REQUIREMENTS.md contains 78 across 11 categories. All 78 are mapped. Verify at Phase 1 kickoff that the operator's intent matches.
 
+## Deferred Items
+
+Items acknowledged and deferred at v1.0 milestone close on 2026-04-24:
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260421-723-add-oracle-hash-comment-test-compute-ind | missing |
+| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial |
+| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | human_needed |
+| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | human_needed |
+
+These items require operator eyeballing (real Gmail inbox check, visual dashboard inspection) that cannot be automated in a GSD session. Programmatic verification is complete (662 tests passing, 80/80 requirements verified, 9/9 phases closed, all SCs PASS). Can be resolved post-tag by the operator; does not block milestone archive.
+
 ## Session Continuity
 
 - **Last action:** Executed Plan 01-06 (final gate) — appended TestDeterminism class (19 tests) to `tests/test_signal_engine.py` (409 → 649 lines). 16 SHA256 snapshot tests lock the oracle bit-level trust anchor (D-14) against committed snapshot.json; test_forbidden_imports_absent AST-walks signal_engine.py against the FORBIDDEN_MODULES blocklist (REVIEWS STRONGLY RECOMMENDED); test_no_four_space_indent uses tokenize-aware 2-space-evidence check (REVIEWS POLISH / Gemini). Two Rule-1 plan bugs fixed inline: (1) hash oracle not production because production has ~5e-14 drift from oracle snapshot; (2) indent check needed 2-space-presence evidence (not 4-space absence) since nested code legitimately has 4 leading spaces in 2-space style. 99/99 full suite green; ruff clean; regenerate_goldens.py idempotent. Requirements SIG-01..SIG-08 all marked complete. Commit: 14d3ecd (test Task 1, Task 2 verification-only).
