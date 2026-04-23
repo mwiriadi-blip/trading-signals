@@ -138,7 +138,7 @@ def _send_email_never_crash(
   old_signals: dict,
   run_date: datetime,
   is_test: bool = False,
-) -> 'object | None':
+) -> 'object':
   '''D-15 + NOTF-07/NOTF-08 + Phase 8 D-08 consumer bridge.
 
   C-2 reviews (Phase 5 precedent): `import notifier` lives INSIDE the
@@ -148,10 +148,16 @@ def _send_email_never_crash(
   Without this, an import-time notifier error takes down main.py at
   module load time, before the helper even runs.
 
-  Phase 8 D-08: returns the notifier.SendStatus verbatim; caller
-  (_dispatch_email_and_maintain_warnings) translates ok=False into a
-  state_manager.append_warning. On an import-time or pre-SendStatus
-  exception, returns None; caller treats that as a dispatch failure.
+  Phase 8 D-08: returns the notifier.SendStatus verbatim on the happy
+  path; caller (_dispatch_email_and_maintain_warnings) translates
+  ok=False into a state_manager.append_warning.
+
+  Phase 8 IN-04: on import-time or pre-SendStatus exception, also
+  returns a SendStatus(ok=False, reason='<ExceptionType>: <msg>')
+  sentinel so the contract is "always returns a SendStatus-shaped
+  value". _dispatch_email_and_maintain_warnings keeps the historical
+  `if status is None` guard as belt-and-suspenders for any future
+  regression (truly impossible today).
 
   The ONLY place in this codebase where `except Exception:` is correct —
   alongside _render_dashboard_never_crash. NOTF-07 + NOTF-08: email
@@ -163,7 +169,19 @@ def _send_email_never_crash(
     return notifier.send_daily_email(state, old_signals, run_date, is_test=is_test)
   except Exception as e:
     logger.warning('[Email] send failed: %s: %s', type(e).__name__, e)
-    return None
+    # IN-04: import-time or pre-SendStatus exception — return a
+    # SendStatus sentinel instead of None. Local import matches the
+    # C-2 pattern used for notifier itself (and falls back to returning
+    # None only if THAT import also fails — caller's `status is None`
+    # guard handles that pathological case).
+    try:
+      from notifier import SendStatus  # noqa: PLC0415 — C-2 local import
+      return SendStatus(
+        ok=False,
+        reason=f'{type(e).__name__}: {e}'[:200],
+      )
+    except Exception:
+      return None
 
 
 # =========================================================================
@@ -317,6 +335,12 @@ def _dispatch_email_and_maintain_warnings(
   #     import-time or pre-SendStatus exception. Operator must
   #     see this on the next run, so append a dedicated warning
   #     rather than silently skipping.
+  #     Phase 8 IN-04 amendment (2026-04-23, iteration 2):
+  #     _send_email_never_crash now returns a SendStatus(ok=False,
+  #     reason='<ExcType>: <msg>') sentinel on exception, so this
+  #     branch is belt-and-suspenders for a truly pathological case
+  #     (SendStatus itself fails to import). Kept green for the
+  #     existing R2 regression test and defense-in-depth.
   if status is None:
     state_manager.append_warning(
       state, source='notifier',
