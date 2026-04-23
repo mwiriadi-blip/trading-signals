@@ -199,14 +199,12 @@ def _build_crash_state_summary(state: 'dict | None') -> str:
   '''
   if state is None:
     return '(state not loaded — crash before load_state)'
-  sig_spi = state.get('signals', {}).get('^AXJO', {})
-  sig_aud = state.get('signals', {}).get('AUDUSD=X', {})
-  # signals may also be keyed by state_key (SPI200 / AUDUSD) instead of
-  # yfinance symbol, depending on where the crash occurred mid-flow.
-  if not sig_spi:
-    sig_spi = state.get('signals', {}).get('SPI200', {})
-  if not sig_aud:
-    sig_aud = state.get('signals', {}).get('AUDUSD', {})
+  # Phase 8 IN-01: state['signals'] is canonically keyed by state_key
+  # ('SPI200' / 'AUDUSD') per Phase 3 reset_state and run_daily_check's
+  # write pattern. The earlier yfinance-keyed lookup branch was dead code
+  # (state is never dual-keyed mid-flow); removed for clarity.
+  sig_spi = state.get('signals', {}).get('SPI200', {})
+  sig_aud = state.get('signals', {}).get('AUDUSD', {})
   sig_spi_val = sig_spi.get('signal') if isinstance(sig_spi, dict) else sig_spi
   sig_aud_val = sig_aud.get('signal') if isinstance(sig_aud, dict) else sig_aud
   label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
