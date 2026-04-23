@@ -161,13 +161,24 @@
 - [ ] 08-03-PLAN.md — Wave 3 orchestrator + CLI + dashboard: main SendStatus consumer + _dispatch_email_and_maintain_warnings (D-02 clear flow) + _maybe_append_staleness_warning + tier-resolution pass-through to sizing_engine.step + argparse --initial-account/--spi-contract/--audusd-contract + _validate_flag_combo relaxation + _handle_reset Q&A/preview/non-TTY guard + _stdin_isatty wrapper + _build_crash_state_summary + _send_crash_email outer boundary wrapper + dashboard._compute_total_return D-16 baseline + TestResetFlags/TestResetInteractive/TestResetPreview/TestResetNonTTY/TestCrashEmailBoundary/TestCrashEmailLayerB/TestTotalReturnInitialAccount (ALL 7 Phase 8 requirements integrated)
 **UI hint**: no
 
+### Phase 9: Milestone v1.0 Gap Closure
+**Goal**: Close the tech-debt items surfaced by `v1.0-MILESTONE-AUDIT.md` before archiving v1.0 — reconcile ERR-01 spec text with the locked no-email-on-data-error design, bulk-sync REQUIREMENTS.md traceability checkboxes to reflect the 79/80 verified state, and land Phase 7 IN-01 carry-over (GHA `timeout-minutes: 10`) so runaway jobs are bounded.
+**Depends on**: Phase 8 (final v1 polish — documentation-only except for the 1-line GHA change)
+**Requirements**: ERR-01 (spec amendment only; no code change)
+**Success Criteria** (what must be TRUE):
+  1. REQUIREMENTS.md ERR-01 row text no longer claims "sends an error email" on yfinance failure — updated to match implemented behavior: "logs `[Fetch] ERROR`, exits rc=2, does NOT email (deliberate — transient data-fetch errors do not warrant operator inbox churn; only unhandled exceptions trigger Layer-B crash email)". The existing `tests/test_main.py::test_data_fetch_error_does_not_fire_crash_email` remains green as the locked-behavior guard.
+  2. REQUIREMENTS.md traceability table reflects actual completion state: all 80 requirements checked `[x]` (including ERR-01 per updated wording); coverage count at top of file shows "Mapped to phases: 80/80, Verified: 80/80".
+  3. `.github/workflows/daily.yml` has `timeout-minutes: 10` on the daily-check job so an unbounded run cannot consume GHA minutes indefinitely. Existing `tests/test_scheduler.py::TestGHAWorkflow` regression-checks the workflow YAML.
+**Plans**: TBD
+**UI hint**: no
+
 ## Phase Dependencies (build order)
 
 ```
 Phase 1 ─┐
          ├─► Phase 2 ─┐
 Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
-         │            │            │            ├─► Phase 7 ─► Phase 8
+         │            │            │            ├─► Phase 7 ─► Phase 8 ─► Phase 9
          │            │            └─► Phase 6 ─┘
          └────────────┘
 ```
@@ -188,7 +199,8 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 | 5. Dashboard | 0/0 | Not started | - |
 | 6. Email Notification | 0/0 | Not started | - |
 | 7. Scheduler + GitHub Actions Deployment | 3/3 | Complete    | 2026-04-23 |
-| 8. Hardening — Warning Carry-over, Stale Banner, Crash Email | 0/0 | Not started | - |
+| 8. Hardening — Warning Carry-over, Stale Banner, Crash Email | 3/3 | Complete    | 2026-04-23 |
+| 9. Milestone v1.0 Gap Closure | 0/0 | Not started | - |
 
 ## Coverage Validation
 
@@ -197,6 +209,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 - **Orphans:** 0
 - **Duplicates:** 0
 - **Split requirements (2026-04-22 amendment):** CLI-01 (Phase 4 structural + Phase 6 email), CLI-03 (Phase 4 stub + Phase 6 notifier), CLI-05 (Phase 4 one-shot default + Phase 7 schedule loop) — tracked in REQUIREMENTS.md Traceability table with split phase labels.
+- **Phase 9 gap closure (2026-04-24 amendment):** ERR-01 assignment adjusted — spec-text reconciliation only (no new code; locks the existing "data errors don't email" design into the spec). Milestone audit flagged `tech_debt` status; Phase 9 resolves the flagged items before archive.
 
 ## Operator Decisions Baked In
 
