@@ -101,10 +101,18 @@ class TestCLI:
   smoke tests (CLI-04, CLI-05).
   '''
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_once_flag_runs_single_check(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''CLI-04: `main.main(['--once'])` returns 0, emits the [Sched] One-shot
-    mode log line, and calls fetch exactly twice (SPI200 + AUDUSD).
+    '''CLI-04 / Phase 7: `main.main(['--once'])` returns 0, calls fetch
+    exactly twice (SPI200 + AUDUSD), and does NOT enter the schedule loop.
+
+    Phase 7 D-05: deprecated `[Sched] One-shot mode` log line is gone from
+    run_daily_check. --once also does NOT enter the schedule loop, so the
+    new `[Sched] scheduler entered` log line also does NOT fire (CLI-04
+    contract: --once stays one-shot).
+
+    freeze_time pins Mon so the weekday gate doesn't short-circuit.
     '''
     caplog.set_level(logging.INFO)
     monkeypatch.chdir(tmp_path)
@@ -126,25 +134,58 @@ class TestCLI:
     assert len(fetch_calls) == 2, (
       f'CLI-04: expected exactly 2 fetch calls (one per symbol), got {fetch_calls}'
     )
-    assert '[Sched] One-shot mode (scheduler wiring lands in Phase 7)' in caplog.text, (
-      'CLI-04: D-07 one-shot log line missing from caplog.text'
+    # Phase 7 D-05: deprecated `[Sched] One-shot mode` log line deleted from
+    # run_daily_check. --once does NOT enter the schedule loop, so the NEW
+    # `[Sched] scheduler entered` line ALSO does NOT fire (CLI-04 contract:
+    # --once stays one-shot).
+    assert '[Sched] scheduler entered' not in caplog.text, (
+      'CLI-04: --once must NOT enter the schedule loop'
+    )
+    assert 'One-shot mode (scheduler wiring lands in Phase 7)' not in caplog.text, (
+      'Phase 7 D-05: Phase 4 stub log line must be deleted from run_daily_check'
     )
 
-  def test_default_mode_runs_once_and_logs_schedule_stub(
+  def test_default_mode_enters_schedule_loop(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''CLI-05 / D-07: default `main.main([])` behaves identically to --once in
-    Phase 4 (scheduler wiring lands in Phase 7).
+    '''Phase 7 D-05 / CLI-05: default `main.main([])` runs an immediate first
+    check then enters the schedule loop.
+
+    Injects fakes for _run_daily_check_caught AND _run_schedule_loop so the
+    test doesn't hang in the infinite loop. Records call order to verify
+    D-04 (immediate first run BEFORE loop entry).
+
+    07-REVIEWS.md Codex MEDIUM-fix: patches `main._get_process_tzname` (the
+    Wave 0 wrapper) rather than `time.tzname` directly. The fake loop never
+    actually checks the tzname (it's a no-op), but patching the wrapper
+    keeps the test defensive if someone later removes the fake.
     '''
+    monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')
     caplog.set_level(logging.INFO)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
     _seed_fresh_state(tmp_path / 'state.json')
     _install_fixture_fetch(monkeypatch)
 
+    call_order: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+      main, '_run_daily_check_caught',
+      lambda job, args: call_order.append(('caught', job.__name__)),
+    )
+
+    def _fake_loop(job, args):
+      call_order.append(('loop', job.__name__))
+      return 0
+
+    monkeypatch.setattr(main, '_run_schedule_loop', _fake_loop)
+
     rc = main.main([])
     assert rc == 0
-    assert '[Sched] One-shot mode (scheduler wiring lands in Phase 7)' in caplog.text, (
-      'CLI-05: D-07 one-shot log line missing from default-mode caplog.text'
+    assert call_order == [
+      ('caught', 'run_daily_check'),
+      ('loop', 'run_daily_check'),
+    ], 'D-04: immediate first-run must precede loop entry'
+    assert 'One-shot mode (scheduler wiring lands in Phase 7)' not in caplog.text, (
+      'Phase 7 D-05: Phase 4 stub log line must be deleted from run_daily_check'
     )
 
   # -----------------------------------------------------------------------
@@ -350,11 +391,19 @@ class TestCLI:
       self, tmp_path, monkeypatch) -> None:
     '''CLI-05 default / CLI-04 --once: no email dispatch — only --force-email
     or --test trigger the email per D-15.
+
+    Phase 7 update: default mode now enters the schedule loop. Stub out
+    _run_schedule_loop so the test doesn't hang, and patch
+    main._get_process_tzname per 07-REVIEWS.md Codex MEDIUM-fix (defense
+    in-depth; fake loop is a no-op but wrapper patch keeps test portable).
     '''
+    monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
     _seed_fresh_state(tmp_path / 'state.json')
     _install_fixture_fetch(monkeypatch)
+    # Phase 7: stub the schedule loop so test doesn't hang.
+    monkeypatch.setattr(main, '_run_schedule_loop', lambda job, args: 0)
 
     sent: list[int] = []
 
