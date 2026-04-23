@@ -969,3 +969,43 @@ class TestAtomicWrite:
         dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     tmp_files = list(tmp_path.glob('*.tmp'))
     assert tmp_files == [], f'tempfile not cleaned up after os.replace failure: {tmp_files}'
+
+
+# =========================================================================
+# Phase 8 Task 3 — dashboard total-return uses state['initial_account'] baseline
+# =========================================================================
+
+
+class TestTotalReturnInitialAccount:
+  '''D-16 (Phase 8) + CONF-01: _compute_total_return reads state
+  ['initial_account'] as the baseline; falls back to INITIAL_ACCOUNT
+  when the key is absent (defense-in-depth for pre-Phase-8 state).
+  '''
+
+  def test_custom_initial_account_50k_account_75k_returns_plus_50pct(self) -> None:
+    '''initial=50k, account=75k, empty equity_history → '+50.0%'.'''
+    state = {
+      'initial_account': 50_000.0,
+      'account': 75_000.0,
+      'equity_history': [],
+    }
+    assert dashboard._compute_total_return(state) == '+50.0%'
+
+  def test_custom_initial_account_100k_account_50k_returns_minus_50pct(self) -> None:
+    '''initial=100k, account=50k, empty equity_history → '-50.0%'.'''
+    state = {
+      'initial_account': 100_000.0,
+      'account': 50_000.0,
+      'equity_history': [],
+    }
+    assert dashboard._compute_total_return(state) == '-50.0%'
+
+  def test_missing_initial_account_falls_back_to_INITIAL_ACCOUNT(self) -> None:
+    '''No initial_account key → fallback to INITIAL_ACCOUNT baseline
+    (100k); account==100k gives '+0.0%'.
+    '''
+    state = {
+      'account': 100_000.0,
+      'equity_history': [],
+    }
+    assert dashboard._compute_total_return(state) == '+0.0%'

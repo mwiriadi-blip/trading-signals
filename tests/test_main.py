@@ -1490,3 +1490,433 @@ class TestResetNonTTY:
       '--audusd-contract', 'audusd-standard',
     ])
     assert rc == 0
+
+
+# =========================================================================
+# Phase 8 Task 3 — crash-email boundary + warning-carry-over flow
+# =========================================================================
+
+
+class TestCrashEmailBoundary:
+  '''Phase 8 D-05/D-06/D-07 + R1 review amendment: crash-email boundary
+  on main()'s outer except Exception; Layer B coverage.
+  '''
+
+  def test_build_crash_state_summary_contains_core_sections(self) -> None:
+    '''Test 1: signals + account + positions sections present; trade_log /
+    equity_history / warnings excluded per D-06 bound.
+    '''
+    state = {
+      'signals': {'^AXJO': {'signal': 1}, 'AUDUSD=X': {'signal': 0}},
+      'account': 100_000.0,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'trade_log': [{'fake': 'trade'}] * 500,
+      'equity_history': [{'date': '2026-01-01', 'equity': 99_000.0}] * 100,
+      'warnings': [{'date': '2026-04-21', 'source': 'x', 'message': 'y'}] * 50,
+    }
+    s = main._build_crash_state_summary(state)
+    assert 'signals:' in s
+    assert 'account:' in s
+    assert 'positions:' in s
+    assert 'trade_log' not in s
+    assert 'equity_history' not in s
+    assert 'warnings' not in s
+
+  def test_build_crash_state_summary_state_none_returns_placeholder(self) -> None:
+    '''Test 2: state=None → sentinel placeholder string.'''
+    s = main._build_crash_state_summary(None)
+    assert s == '(state not loaded — crash before load_state)'
+
+  def test_build_crash_state_summary_renders_open_positions(self) -> None:
+    '''Test 3: open SPI200 LONG renders as "SPI200: LONG 2@7200.0"; FLAT
+    AUDUSD renders as "AUDUSD: (none)".
+    '''
+    state = {
+      'signals': {'^AXJO': {'signal': 1}, 'AUDUSD=X': {'signal': 0}},
+      'account': 100_000.0,
+      'positions': {
+        'SPI200': {
+          'direction': 'LONG', 'n_contracts': 2, 'entry_price': 7200.0,
+        },
+        'AUDUSD': None,
+      },
+    }
+    s = main._build_crash_state_summary(state)
+    assert 'SPI200: LONG 2@7200' in s
+    assert 'AUDUSD: (none)' in s
+
+  def test_send_crash_email_wrapper_calls_notifier(
+      self, monkeypatch) -> None:
+    '''Test 4: happy path — wrapper imports notifier locally, calls
+    send_crash_email, returns status.
+    '''
+    import notifier
+
+    calls: list = []
+
+    def _fake(exc, summary, now=None):
+      calls.append((exc, summary, now))
+      return notifier.SendStatus(ok=True, reason=None)
+
+    monkeypatch.setattr(notifier, 'send_crash_email', _fake)
+    exc = RuntimeError('boom')
+    result = main._send_crash_email(exc, state=None)
+    assert result is not None
+    assert calls and calls[0][0] is exc
+
+  def test_send_crash_email_wrapper_swallows_errors(
+      self, monkeypatch, caplog) -> None:
+    '''Test 5: notifier raises → wrapper logs + returns None, never raises.'''
+    import notifier
+
+    def _raise(*a, **kw):
+      raise RuntimeError('notifier exploded')
+
+    monkeypatch.setattr(notifier, 'send_crash_email', _raise)
+    caplog.set_level(logging.ERROR)
+    result = main._send_crash_email(RuntimeError('boom'))
+    assert result is None
+    assert 'crash-email dispatch wrapper failed' in caplog.text
+
+  def test_layer_b_once_mode_unexpected_exception_fires_crash_email(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''Test 6: --once + RuntimeError → main returns 1, _send_crash_email
+    invoked.
+    '''
+    caplog.set_level(logging.ERROR)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+
+    def _raise(args):
+      raise RuntimeError('boom')
+
+    monkeypatch.setattr(main, 'run_daily_check', _raise)
+    recorded: list = []
+    monkeypatch.setattr(main, '_send_crash_email',
+                        lambda exc, state=None, now=None: recorded.append((exc, state)))
+    rc = main.main(['--once'])
+    assert rc == 1
+    assert len(recorded) == 1
+    assert isinstance(recorded[0][0], RuntimeError)
+
+  def test_layer_b_default_mode_assertion_error_fires_crash_email(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 7: default (loop) mode + AssertionError in _run_schedule_loop
+    → main returns 1, _send_crash_email invoked.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    # Short-circuit immediate first run.
+    monkeypatch.setattr(main, '_run_daily_check_caught', lambda j, a: None)
+    monkeypatch.setattr('dotenv.load_dotenv', lambda *a, **kw: False)
+
+    def _raise(*a, **kw):
+      raise AssertionError('utc tz fail')
+
+    monkeypatch.setattr(main, '_run_schedule_loop', _raise)
+    recorded: list = []
+    monkeypatch.setattr(main, '_send_crash_email',
+                        lambda exc, state=None, now=None: recorded.append((exc, state)))
+    rc = main.main([])
+    assert rc == 1
+    assert len(recorded) == 1
+    assert isinstance(recorded[0][0], AssertionError)
+
+  def test_data_fetch_error_does_not_fire_crash_email(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 8: DataFetchError → exit 2; crash-email NOT called.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    def _raise(args):
+      raise DataFetchError('simulated fetch down')
+
+    monkeypatch.setattr(main, 'run_daily_check', _raise)
+    called: list = []
+    monkeypatch.setattr(main, '_send_crash_email',
+                        lambda exc, state=None, now=None: called.append(exc))
+    rc = main.main(['--once'])
+    assert rc == 2
+    assert called == []
+
+  def test_short_frame_error_does_not_fire_crash_email(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 9: ShortFrameError → exit 2; crash-email NOT called.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    def _raise(args):
+      raise ShortFrameError('too few bars')
+
+    monkeypatch.setattr(main, 'run_daily_check', _raise)
+    called: list = []
+    monkeypatch.setattr(main, '_send_crash_email',
+                        lambda exc, state=None, now=None: called.append(exc))
+    rc = main.main(['--once'])
+    assert rc == 2
+    assert called == []
+
+  def test_crash_email_dispatch_failure_does_not_mask_exit_code(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''Test 10: _send_crash_email raises → main still returns 1; caplog
+    shows both messages.
+    '''
+    caplog.set_level(logging.ERROR)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+
+    def _raise(args):
+      raise RuntimeError('boom')
+
+    def _crash_raise(*a, **kw):
+      raise ValueError('network down')
+
+    monkeypatch.setattr(main, 'run_daily_check', _raise)
+    monkeypatch.setattr(main, '_send_crash_email', _crash_raise)
+    rc = main.main(['--once'])
+    assert rc == 1
+    assert 'unexpected crash' in caplog.text
+    assert 'crash-email dispatch also failed' in caplog.text
+
+  def test_layer_a_per_job_error_does_not_fire_crash_email(
+      self, monkeypatch, caplog) -> None:
+    '''Test 11: _run_daily_check_caught absorbs per-job errors; no
+    crash-email fires.
+    '''
+    caplog.set_level(logging.WARNING)
+
+    def _raise(args):
+      raise RuntimeError('per-job boom')
+
+    called: list = []
+    monkeypatch.setattr(main, '_send_crash_email',
+                        lambda exc, state=None, now=None: called.append(exc))
+    main._run_daily_check_caught(_raise, argparse.Namespace())
+    assert '[Sched] unexpected error caught' in caplog.text
+    assert called == []
+
+  def test_crash_email_includes_last_loaded_state(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 12 (review-driven R1 — SC-3 completeness): after a successful
+    run_daily_check populates _LAST_LOADED_STATE, a subsequent crash in
+    run_daily_check receives state=_LAST_LOADED_STATE in _send_crash_email.
+    The built summary contains 'account:' AND 'signals:' AND is NOT the
+    sentinel placeholder.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    # Seed state.json with known non-default values.
+    seed = state_manager.reset_state()
+    seed['account'] = 42_000.0
+    state_manager.save_state(seed, path=tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    # First call: successful run to populate _LAST_LOADED_STATE.
+    main._LAST_LOADED_STATE = None
+    import notifier
+    monkeypatch.setattr(
+      notifier, 'send_daily_email',
+      lambda s, o, r, is_test=False: notifier.SendStatus(ok=True, reason=None),
+    )
+    rc, *_ = main.run_daily_check(_make_args(once=True))
+    assert rc == 0
+    assert main._LAST_LOADED_STATE is not None
+    cached = main._LAST_LOADED_STATE
+
+    # Now monkeypatch run_daily_check to raise RuntimeError. The outer
+    # except should pass the cached state to _send_crash_email.
+    recorded: list = []
+    monkeypatch.setattr(main, 'run_daily_check',
+                        lambda args: (_ for _ in ()).throw(RuntimeError('post-load boom')))
+    monkeypatch.setattr(
+      main, '_send_crash_email',
+      lambda exc, state=None, now=None: recorded.append(state),
+    )
+    rc2 = main.main(['--once'])
+    assert rc2 == 1
+    assert len(recorded) == 1
+    received = recorded[0]
+    # Received state must be the cached state — not None (SC-3).
+    assert received is cached
+    # _build_crash_state_summary on the cached state must NOT render the
+    # sentinel placeholder and must include signal + account.
+    summary = main._build_crash_state_summary(received)
+    assert 'state not loaded' not in summary
+    assert 'account:' in summary
+    assert 'signals:' in summary
+
+
+class TestWarningCarryOverFlow:
+  '''Phase 8 B1 canonical ordering + W3 save count + _stale_info pop.'''
+
+  @pytest.fixture
+  def _ctx(self, tmp_path, monkeypatch):
+    '''Shared setup: cwd, logging mute, seeded state.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    return tmp_path, monkeypatch
+
+  def test_dispatch_ok_clears_warnings_no_append(self, monkeypatch) -> None:
+    '''Dispatch ok=True → warnings cleared, no append.'''
+    import notifier
+    from datetime import datetime, timezone
+
+    state = {'warnings': [{'date': '2026-04-22', 'source': 's', 'message': 'old'}]}
+    monkeypatch.setattr(main, '_send_email_never_crash',
+                        lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+    monkeypatch.setattr('state_manager.save_state', lambda s, path=None: None)
+    now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
+    main._dispatch_email_and_maintain_warnings(
+      state, {}, now, is_test=False, persist=True,
+    )
+    assert state['warnings'] == []
+
+  def test_dispatch_failed_5xx_warning_B_present_after_clear(self, monkeypatch) -> None:
+    '''B1 ordering evidence: existing warning A cleared, new B appended.'''
+    import notifier
+    from datetime import datetime, timezone
+
+    state = {'warnings': [{'date': '2026-04-22', 'source': 'A', 'message': 'warn-A'}]}
+    monkeypatch.setattr(main, '_send_email_never_crash',
+                        lambda *a, **kw: notifier.SendStatus(ok=False, reason='500'))
+    monkeypatch.setattr('state_manager.save_state', lambda s, path=None: None)
+    now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
+    main._dispatch_email_and_maintain_warnings(
+      state, {}, now, is_test=False, persist=True,
+    )
+    assert len(state['warnings']) == 1
+    assert state['warnings'][0]['source'] == 'notifier'
+    assert '500' in state['warnings'][0]['message']
+
+  def test_dispatch_no_api_key_does_not_append_notifier_warning(self, monkeypatch) -> None:
+    '''SendStatus(ok=True, reason='no_api_key') → no notifier-warning append.'''
+    import notifier
+    from datetime import datetime, timezone
+
+    state = {'warnings': []}
+    monkeypatch.setattr(main, '_send_email_never_crash',
+                        lambda *a, **kw: notifier.SendStatus(ok=True, reason='no_api_key'))
+    monkeypatch.setattr('state_manager.save_state', lambda s, path=None: None)
+    now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
+    main._dispatch_email_and_maintain_warnings(
+      state, {}, now, is_test=False, persist=True,
+    )
+    assert state['warnings'] == []
+
+  def test_dispatch_persist_false_skips_mutation(self, monkeypatch) -> None:
+    '''persist=False (--test) → no save, warnings untouched, _stale_info popped.'''
+    import notifier
+    from datetime import datetime, timezone
+
+    state = {
+      'warnings': [{'date': '2026-04-22', 'source': 's', 'message': 'old'}],
+      '_stale_info': {'days_stale': 5, 'last_run_date': '2026-04-18'},
+    }
+    saves: list = []
+    monkeypatch.setattr(main, '_send_email_never_crash',
+                        lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+    monkeypatch.setattr('state_manager.save_state',
+                        lambda s, path=None: saves.append(s))
+    now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
+    main._dispatch_email_and_maintain_warnings(
+      state, {}, now, is_test=True, persist=False,
+    )
+    assert state['warnings'] == [
+      {'date': '2026-04-22', 'source': 's', 'message': 'old'}
+    ]
+    assert '_stale_info' not in state
+    assert saves == [], 'persist=False must NOT call save_state'
+
+  def test_happy_path_save_state_called_exactly_twice(
+      self, _ctx, monkeypatch) -> None:
+    '''W3: full run_daily_check → _dispatch_email_and_maintain_warnings
+    happy path → state_manager.save_state called EXACTLY 2 times.
+    '''
+    tmp_path, _ = _ctx
+    import notifier
+    monkeypatch.setattr(
+      notifier, 'send_daily_email',
+      lambda s, o, r, is_test=False: notifier.SendStatus(ok=True, reason=None),
+    )
+
+    save_calls: list = []
+    import state_manager as _sm
+    orig_save = _sm.save_state
+
+    def _recording_save(state, path=None):
+      save_calls.append(dict(state))
+      if path:
+        return orig_save(state, path=path)
+      return orig_save(state)
+
+    monkeypatch.setattr('state_manager.save_state', _recording_save)
+    # --force-email triggers the dispatch helper. run_daily_check saves once
+    # (step 9); _dispatch_email_and_maintain_warnings saves once (post-dispatch).
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert len(save_calls) == 2, (
+      f'W3: expected 2 saves per run, got {len(save_calls)}'
+    )
+
+  def test_stale_info_popped_before_save(self, monkeypatch) -> None:
+    '''B3: _stale_info is popped BEFORE save — the state dict passed to
+    save_state does not contain _stale_info.
+    '''
+    import notifier
+    from datetime import datetime, timezone
+
+    state = {
+      'warnings': [],
+      '_stale_info': {'days_stale': 5, 'last_run_date': '2026-04-18'},
+    }
+    save_key_snapshots: list = []
+
+    def _recording_save(state, path=None):
+      save_key_snapshots.append(list(state.keys()))
+
+    monkeypatch.setattr(main, '_send_email_never_crash',
+                        lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+    monkeypatch.setattr('state_manager.save_state', _recording_save)
+    now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
+    main._dispatch_email_and_maintain_warnings(
+      state, {}, now, is_test=False, persist=True,
+    )
+    assert save_key_snapshots, 'save_state must be called on persist=True'
+    assert all('_stale_info' not in keys for keys in save_key_snapshots), (
+      '_stale_info must not be present in state when save_state is called'
+    )
+    assert '_stale_info' not in state
+
+  def test_dispatch_status_none_appends_warning(self, monkeypatch) -> None:
+    '''Review-driven R2 (Codex MEDIUM silent-skip): _send_email_never_crash
+    returns None (notifier import failure) → notifier-sourced warning
+    appended with "import or runtime error" in the message.
+    '''
+    from datetime import datetime, timezone
+
+    state = {'warnings': []}
+    save_snapshots: list = []
+
+    def _recording_save(state, path=None):
+      save_snapshots.append([dict(w) for w in state.get('warnings', [])])
+
+    monkeypatch.setattr(main, '_send_email_never_crash',
+                        lambda *a, **kw: None)
+    monkeypatch.setattr('state_manager.save_state', _recording_save)
+    now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
+    main._dispatch_email_and_maintain_warnings(
+      state, {}, now, is_test=False, persist=True,
+    )
+    assert len(state['warnings']) == 1
+    w = state['warnings'][0]
+    assert w['source'] == 'notifier'
+    assert 'import or runtime error' in w['message']
+    # Verify clear_warnings ran BEFORE the append — at save time, warnings
+    # list contains ONLY the new entry, not any legacy entries.
+    assert len(save_snapshots) == 1
+    assert len(save_snapshots[0]) == 1
+    assert save_snapshots[0][0]['source'] == 'notifier'

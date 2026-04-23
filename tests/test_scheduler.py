@@ -656,3 +656,61 @@ class TestDeployDocs:
     assert 100 <= count <= 250, (
       f'D-15: docs/DEPLOY.md length {count} outside sane range [100, 250]'
     )
+
+
+# =========================================================================
+# Phase 8 Task 3 — crash-email Layer B integration
+# =========================================================================
+
+
+class TestCrashEmailLayerB:
+  '''Phase 8 D-05/D-06/D-07: unhandled exceptions in the schedule-loop
+  driver propagate to main()'s outer except and fire the crash-email
+  dispatch; Layer A (per-job) is unchanged and does NOT fire crash mail.
+  '''
+
+  def test_assertion_error_in_loop_driver_propagates_to_main_catch_all(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-05/D-07: AssertionError from the loop driver (e.g. UTC tz check)
+    is caught by main()'s outer except → crash-email dispatch invoked.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr(main_module, '_get_process_tzname', lambda: 'AEST')
+    monkeypatch.setattr(main_module, '_run_daily_check_caught',
+                        lambda j, a: None)
+    monkeypatch.setattr('dotenv.load_dotenv', lambda *a, **kw: False)
+
+    recorded: list = []
+    monkeypatch.setattr(
+      main_module, '_send_crash_email',
+      lambda exc, state=None, now=None: recorded.append((exc, state)),
+    )
+    rc = main_module.main([])
+    assert rc == 1
+    assert len(recorded) == 1
+    assert isinstance(recorded[0][0], AssertionError)
+
+  def test_layer_a_per_job_error_does_not_fire_crash_email(
+      self, monkeypatch, caplog) -> None:
+    '''D-02/D-05: per-job errors absorbed by _run_daily_check_caught do
+    NOT reach main()'s outer except; crash-email NOT fired.
+    '''
+    caplog.set_level(logging.WARNING)
+
+    def _raising_job(args):
+      raise RuntimeError('per-job boom')
+
+    called: list = []
+    monkeypatch.setattr(
+      main_module, '_send_crash_email',
+      lambda exc, state=None, now=None: called.append(exc),
+    )
+    main_module._run_daily_check_caught(_raising_job, argparse.Namespace())
+    # Layer A caught + logged + loop continues.
+    assert any(
+      'unexpected error caught' in r.message and '[Sched]' in r.message
+      for r in caplog.records
+    )
+    # Crash email NOT invoked — Layer A is not a crash.
+    assert called == []

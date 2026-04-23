@@ -167,6 +167,79 @@ def _send_email_never_crash(
 
 
 # =========================================================================
+# Phase 8 D-05/D-06/D-07 crash-email helpers — outer safety net
+# =========================================================================
+
+def _build_crash_state_summary(state: 'dict | None') -> str:
+  '''D-06 (Phase 8): build bounded text/plain state summary for crash
+  email body. Excludes trade_log, equity_history, warnings (would
+  leak thousands of lines in a crash mail; operator has dashboard.html
+  for forensic recovery).
+
+  On `state is None` (crash before load_state) returns a short
+  placeholder so the crash email still has a concrete state block.
+  '''
+  if state is None:
+    return '(state not loaded — crash before load_state)'
+  sig_spi = state.get('signals', {}).get('^AXJO', {})
+  sig_aud = state.get('signals', {}).get('AUDUSD=X', {})
+  # signals may also be keyed by state_key (SPI200 / AUDUSD) instead of
+  # yfinance symbol, depending on where the crash occurred mid-flow.
+  if not sig_spi:
+    sig_spi = state.get('signals', {}).get('SPI200', {})
+  if not sig_aud:
+    sig_aud = state.get('signals', {}).get('AUDUSD', {})
+  sig_spi_val = sig_spi.get('signal') if isinstance(sig_spi, dict) else sig_spi
+  sig_aud_val = sig_aud.get('signal') if isinstance(sig_aud, dict) else sig_aud
+  label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
+  sig_spi_str = label.get(sig_spi_val, '(none)')
+  sig_aud_str = label.get(sig_aud_val, '(none)')
+  account = state.get('account', 0.0)
+  positions = state.get('positions', {})
+
+  def _pos_line(symbol: str) -> str:
+    p = positions.get(symbol)
+    if not p:
+      return f'{symbol}: (none)'
+    return (
+      f'{symbol}: {p.get("direction")} '
+      f'{p.get("n_contracts")}@{p.get("entry_price")}'
+    )
+
+  lines = [
+    f'signals: SPI200={sig_spi_str}, AUDUSD={sig_aud_str}',
+    f'account: ${account:,.2f}',
+    'positions:',
+    f'  {_pos_line("SPI200")}',
+    f'  {_pos_line("AUDUSD")}',
+  ]
+  return '\n'.join(lines)
+
+
+def _send_crash_email(
+  exc: BaseException,
+  state: 'dict | None' = None,
+  now: 'datetime | None' = None,
+) -> 'object | None':
+  '''D-05/D-06/D-07 (Phase 8): bridge to notifier.send_crash_email.
+
+  Local notifier import (C-2 precedent) so a notifier import-time
+  failure is captured here rather than inside main()'s except block.
+  Never raises.
+  '''
+  try:
+    import notifier
+    summary = _build_crash_state_summary(state)
+    return notifier.send_crash_email(exc, summary, now=now)
+  except Exception as e:
+    logger.error(
+      '[Email] ERROR: crash-email dispatch wrapper failed: %s: %s',
+      type(e).__name__, e,
+    )
+    return None
+
+
+# =========================================================================
 # Phase 8 D-02/D-08 + B1 revision: warning carry-over dispatch helper
 # =========================================================================
 
@@ -1243,6 +1316,25 @@ def main(argv: list[str] | None = None) -> int:
     logger.error(
       '[Sched] ERROR: unexpected crash: %s: %s', type(e).__name__, e,
     )
+    # D-05 / D-06 / D-07 (Phase 8): fire one last crash email before exit.
+    # Reuses notifier.send_crash_email retry loop per D-07. Wrapped in a
+    # nested try/except so a crash-email dispatch failure does NOT mask
+    # the original error's exit code.
+    try:
+      # Review-driven amendment (2026-04-23, Codex MEDIUM on SC-3):
+      # read the module-level _LAST_LOADED_STATE cache written by
+      # run_daily_check. If the crash occurred BEFORE load_state
+      # ever returned (e.g. import failure inside _run_schedule_loop),
+      # _LAST_LOADED_STATE is still None, and _build_crash_state_summary
+      # renders the graceful '(state not loaded — crash before load_state)'
+      # placeholder. Otherwise the crash email includes the
+      # signals/account/positions summary required by ROADMAP SC-3.
+      _send_crash_email(e, state=_LAST_LOADED_STATE)
+    except Exception as crash_email_err:
+      logger.error(
+        '[Email] ERROR: crash-email dispatch also failed: %s: %s',
+        type(crash_email_err).__name__, crash_email_err,
+      )
     return 1
 
 
