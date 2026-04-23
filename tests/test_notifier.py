@@ -970,12 +970,16 @@ class TestSendDispatch:
 
   def test_missing_api_key_writes_last_email_html(
       self, tmp_path, monkeypatch) -> None:
-    '''NOTF-08: missing RESEND_API_KEY → write last_email.html + return 0.'''
+    '''NOTF-08: missing RESEND_API_KEY → write last_email.html + return
+    SendStatus(ok=True, reason='no_api_key') — graceful degradation is not
+    a failure (Phase 8 D-02).
+    '''
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv('RESEND_API_KEY', raising=False)
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
-    assert rc == 0
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is True
+    assert result.reason == 'no_api_key'
     last = tmp_path / 'last_email.html'
     assert last.exists(), 'NOTF-08: must write last_email.html when key missing'
     assert last.read_text(encoding='utf-8').startswith('<!DOCTYPE html>')
@@ -991,7 +995,10 @@ class TestSendDispatch:
 
   def test_5xx_exhausted_returns_zero_and_logs(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''NOTF-07: 5xx retries-exhausted logs [Email] WARN + returns 0 (never raises).'''
+    '''NOTF-07 + Phase 8 D-08: 5xx retries-exhausted logs [Email] WARN and
+    returns SendStatus(ok=False, reason=...) (never raises). Orchestrator
+    translates into append_warning for next-run surfacing.
+    '''
     caplog.set_level(logging.WARNING)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('RESEND_API_KEY', 'test_key_5xx')
@@ -1003,12 +1010,14 @@ class TestSendDispatch:
     # Monkeypatch retry constants to speed test
     monkeypatch.setattr('notifier._RESEND_BACKOFF_S', 0)
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
-    assert rc == 0
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason is not None
     assert '[Email] WARN send failed' in caplog.text
 
   def test_4xx_returns_zero_and_logs(
       self, tmp_path, monkeypatch, caplog) -> None:
+    '''Phase 8 D-08: 4xx fails fast → SendStatus(ok=False, reason=...).'''
     caplog.set_level(logging.WARNING)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('RESEND_API_KEY', 'test_key_4xx')
@@ -1018,14 +1027,17 @@ class TestSendDispatch:
 
     monkeypatch.setattr('notifier.requests.post', _fake_post)
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
-    assert rc == 0
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason is not None
     assert '[Email] WARN send failed' in caplog.text
     assert '4xx from Resend: 400' in caplog.text
 
   def test_unexpected_exception_swallowed(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''Belt-and-braces: ANY unexpected Exception from _post_to_resend is swallowed.'''
+    '''Belt-and-braces: ANY unexpected Exception from _post_to_resend is
+    swallowed and surfaces as SendStatus(ok=False, reason=...) (Phase 8 D-08).
+    '''
     caplog.set_level(logging.WARNING)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('RESEND_API_KEY', 'test_key_unexp')
@@ -1035,12 +1047,14 @@ class TestSendDispatch:
 
     monkeypatch.setattr(notifier, '_post_to_resend', _raise_unexpected)
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
-    assert rc == 0
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason is not None and 'ValueError' in result.reason
     assert '[Email] WARN unexpected failure: ValueError' in caplog.text
 
   def test_success_logs_info(
       self, tmp_path, monkeypatch, caplog) -> None:
+    '''Phase 8 D-08: 200 OK → SendStatus(ok=True, reason=None).'''
     caplog.set_level(logging.INFO)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('RESEND_API_KEY', 'test_key_success_xyz')
@@ -1050,8 +1064,9 @@ class TestSendDispatch:
 
     monkeypatch.setattr('notifier.requests.post', _fake_post)
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    rc = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
-    assert rc == 0
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is True
+    assert result.reason is None
     assert '[Email] sent to' in caplog.text
 
   def test_respects_signals_email_to_env_override(
@@ -1236,3 +1251,618 @@ class TestGoldenEmail:
       f'compose_email_subject drifted from golden_empty_subject.txt. '
       f'got={rendered!r} expected={golden!r}'
     )
+
+
+# =========================================================================
+# Phase 8 Plan 02 Task 3 — 6 new test classes
+# =========================================================================
+
+def _build_phase8_base_state(
+  last_run: str | None = '2026-04-22',
+  warnings: list | None = None,
+  stale_info: dict | None = None,
+) -> dict:
+  '''Minimal state fixture for Phase 8 Task 3 banner + dispatch tests.
+
+  Mirrors the shape produced by state_manager.reset_state + Phase 8 D-14
+  (_resolved_contracts materialised after load_state) enough for
+  _render_header_email + send_daily_email + compose_email_subject.
+  '''
+  state: dict = {
+    'schema_version': 2,
+    'account': 100000.0,
+    'last_run': last_run,
+    'positions': {'SPI200': None, 'AUDUSD': None},
+    'signals': {
+      '^AXJO': {'signal': 0, 'signal_as_of': '2026-04-22', 'last_close': 7500.0},
+      'AUDUSD=X': {'signal': 0, 'signal_as_of': '2026-04-22', 'last_close': 0.65},
+      'SPI200': {'signal': 0, 'signal_as_of': '2026-04-22', 'last_close': 7500.0},
+      'AUDUSD': {'signal': 0, 'signal_as_of': '2026-04-22', 'last_close': 0.65},
+    },
+    'trade_log': [],
+    'equity_history': [],
+    'warnings': warnings if warnings is not None else [],
+    'initial_account': 100000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
+  }
+  if stale_info is not None:
+    state['_stale_info'] = stale_info
+  return state
+
+
+class TestHeaderBanner:
+  '''Phase 8 Plan 02 Task 3 — D-01 two-tier banner + D-03 age filter with
+  B2 + B3 + B4 revisions: critical bypass (stale transient + corrupt prefix)
+  vs routine age-filter; hero card verbatim preservation.
+  '''
+
+  def test_no_warnings_no_stale_no_banner(self) -> None:
+    state = _build_phase8_base_state(warnings=[])
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert 'border-left:4px solid #ef4444' not in out
+    assert 'border-left:4px solid #eab308' not in out
+    assert 'from prior run' not in out
+    assert 'Trading Signals</h1>' in out
+
+  def test_stale_state_banner_red_border_via_stale_info(self) -> None:
+    # B3: staleness is a transient _stale_info dict set by orchestrator —
+    # NOT stored in state['warnings'] (would be dropped by age filter).
+    state = _build_phase8_base_state(
+      warnings=[],
+      stale_info={'days_stale': 3, 'last_run_date': '2026-04-20'},
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert 'border-left:4px solid #ef4444' in out
+    assert 'Stale state' in out
+    assert '3 days' in out
+    assert 'from prior run' not in out  # no routine row when no routine warnings
+
+  def test_corrupt_reset_banner_gold_border_age_bypass(self) -> None:
+    # B2 + B3: classifier matches the EXISTING 'recovered from corruption'
+    # prefix produced by state_manager.load_state (UNCHANGED per Plan 01 I1).
+    # Age filter BYPASSED — date may not match prior_run_date.
+    state = _build_phase8_base_state(
+      warnings=[{
+        # Date is EARLIER than last_run='2026-04-22' — would be dropped
+        # by routine age filter, but critical classifier age-bypasses.
+        'date': '2026-04-19',
+        'source': 'state_manager',
+        'message': 'recovered from corruption; backup at state.json.bak.20260419T120000Z',
+      }],
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert 'border-left:4px solid #eab308' in out
+    assert 'State was reset' in out
+
+  def test_corrupt_reset_warning_not_in_routine_row(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[{
+        'date': '2026-04-22',  # even on prior_run_date, corrupt is critical not routine
+        'source': 'state_manager',
+        'message': 'recovered from corruption; backup at x',
+      }],
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    # Critical banner present
+    assert 'State was reset' in out
+    # NOT duplicated as routine
+    assert 'from prior run' not in out
+
+  def test_routine_warning_compact_row_singular(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[{
+        'date': '2026-04-22',
+        'source': 'sizing_engine',
+        'message': 'size=0: vol_scale clip',
+      }],
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert '1 warning from prior run' in out
+    assert 'size=0: vol_scale clip' in out
+    assert 'border-left:4px solid #ef4444' not in out
+
+  def test_routine_warnings_compact_row_plural(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[
+        {'date': '2026-04-22', 'source': 'sizing_engine', 'message': 'size=0 spi'},
+        {'date': '2026-04-22', 'source': 'sizing_engine', 'message': 'size=0 audusd'},
+        {'date': '2026-04-22', 'source': 'notifier',      'message': 'prev send failed'},
+      ],
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert '3 warnings from prior run' in out
+    assert 'size=0 spi' in out
+    assert 'size=0 audusd' in out
+    assert 'prev send failed' in out
+
+  def test_routine_age_filter_ignores_old_warnings(self) -> None:
+    state = _build_phase8_base_state(
+      last_run='2026-04-22',
+      warnings=[
+        {'date': '2026-04-19', 'source': 'sizing_engine', 'message': 'old warn A'},
+        {'date': '2026-04-20', 'source': 'sizing_engine', 'message': 'old warn B'},
+      ],
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert 'from prior run' not in out
+    assert 'old warn A' not in out
+    assert 'old warn B' not in out
+
+  def test_age_filter_handles_missing_last_run(self) -> None:
+    state = _build_phase8_base_state(last_run=None, warnings=[])
+    state['last_run'] = None  # ensure explicit None
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert 'from prior run' not in out
+    assert 'border-left:4px solid #ef4444' not in out
+    assert 'Trading Signals</h1>' in out
+
+  def test_banner_message_xss_escaped(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[{
+        'date': '2026-04-22',
+        'source': 'sizing_engine',
+        'message': '<script>alert(1)</script>',
+      }],
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert '<script>' not in out
+    assert '&lt;script&gt;' in out or '&#x3C;script&#x3E;' in out.lower()
+
+  def test_stale_info_message_xss_escaped(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[],
+      stale_info={'days_stale': 3, 'last_run_date': '<script>XSS</script>'},
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert '<script>' not in out
+    assert '&lt;script&gt;' in out or '&#x3C;script&#x3E;' in out.lower()
+
+  def test_both_critical_stale_and_routine_in_same_run(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[
+        {'date': '2026-04-22', 'source': 'sizing_engine', 'message': 'size=0 spi'},
+        {'date': '2026-04-22', 'source': 'sizing_engine', 'message': 'size=0 audusd'},
+      ],
+      stale_info={'days_stale': 4, 'last_run_date': '2026-04-18'},
+    )
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    # Both present
+    assert 'border-left:4px solid #ef4444' in out
+    assert 'Stale state' in out
+    assert '2 warnings from prior run' in out
+
+  def test_hero_card_markup_preserved(self) -> None:
+    # B4: _render_hero_card_email extraction verbatim — the key markup
+    # 'Trading Signals</h1>' and the subtitle must remain. Also assert
+    # it appears exactly once in the render (no duplication).
+    state = _build_phase8_base_state(warnings=[])
+    out = notifier._render_header_email(state, FROZEN_NOW)
+    assert 'Trading Signals</h1>' in out
+    assert 'mechanical system' in out.lower() or 'mechanical system' in out
+    assert out.count('Trading Signals</h1>') == 1
+
+
+class TestSubjectCriticalPrefix:
+  '''Phase 8 D-04 + B3: `[!]` subject prefix driven by _has_critical_banner.'''
+
+  def test_subject_plain_when_no_critical_banner(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[{'date': '2026-04-22', 'source': 'sizing_engine', 'message': 'size=0'}],
+    )
+    subj = compose_email_subject(
+      state, {'^AXJO': 0, 'AUDUSD=X': 0},
+      has_critical_banner=False,
+    )
+    assert not subj.startswith('[!]')
+
+  def test_subject_has_bang_prefix_on_stale_info(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[],
+      stale_info={'days_stale': 3, 'last_run_date': '2026-04-19'},
+    )
+    assert notifier._has_critical_banner(state) is True
+    subj = compose_email_subject(
+      state, {'^AXJO': 0, 'AUDUSD=X': 0},
+      has_critical_banner=True,
+    )
+    assert subj.startswith('[!] ')
+
+  def test_subject_has_bang_prefix_on_corrupt_reset_even_old_date(self) -> None:
+    # B2 + B3: corrupt warning dated 5 days before last_run → still critical
+    # via the prefix classifier (age-bypass).
+    state = _build_phase8_base_state(
+      last_run='2026-04-22',
+      warnings=[{
+        'date': '2026-04-17',
+        'source': 'state_manager',
+        'message': 'recovered from corruption; backup at x',
+      }],
+    )
+    assert notifier._has_critical_banner(state) is True
+    subj = compose_email_subject(
+      state, {'^AXJO': 0, 'AUDUSD=X': 0},
+      has_critical_banner=True,
+    )
+    assert subj.startswith('[!] ')
+
+  def test_test_prefix_before_bang_prefix(self) -> None:
+    state = _build_phase8_base_state(
+      warnings=[],
+      stale_info={'days_stale': 3, 'last_run_date': '2026-04-19'},
+    )
+    subj = compose_email_subject(
+      state, {'^AXJO': 0, 'AUDUSD=X': 0},
+      is_test=True, has_critical_banner=True,
+    )
+    assert subj.startswith('[TEST] [!] ')
+
+  def test_routine_only_stale_in_old_date_not_critical(self) -> None:
+    # B3 — an old routine warning is NOT critical even though
+    # the routine age filter also drops it.
+    state = _build_phase8_base_state(
+      last_run='2026-04-22',
+      warnings=[{
+        'date': '2026-04-17',
+        'source': 'sizing_engine',
+        'message': 'old size=0',
+      }],
+    )
+    assert notifier._has_critical_banner(state) is False
+
+
+class TestSendDispatchStatusTuple:
+  '''Phase 8 D-08 + NOTF-07/NOTF-08: send_daily_email SendStatus return shape.'''
+
+  def test_missing_api_key_returns_ok_with_no_api_key_reason(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('RESEND_API_KEY', raising=False)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is True
+    assert result.reason == 'no_api_key'
+    assert (tmp_path / 'last_email.html').exists()
+
+  def test_200_response_returns_ok_with_none_reason(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k200')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is True
+    assert result.reason is None
+    assert (tmp_path / 'last_email.html').exists()
+
+  def test_5xx_returns_ok_false_with_status_in_reason(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k5xx')
+    monkeypatch.setattr('notifier._RESEND_BACKOFF_S', 0)
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(500)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason is not None
+    assert '500' in result.reason
+
+  def test_4xx_returns_ok_false_with_status_in_reason(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k4xx')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(400, 'validation_error body')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason is not None
+    assert '400' in result.reason
+
+  def test_unexpected_exception_caught_returns_ok_false(
+      self, tmp_path, monkeypatch) -> None:
+    # Monkeypatch compose_email_body to raise RuntimeError — reason starts
+    # with 'compose_body_failed:' per T-08-11 mitigation.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'kboom')
+
+    def _boom(*a, **kw):
+      raise RuntimeError('boom')
+
+    monkeypatch.setattr('notifier.compose_email_body', _boom)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason is not None
+    assert result.reason.startswith('compose_body_failed:')
+
+
+class TestLastEmailAlwaysWritten:
+  '''Phase 8 D-02: last_email.html written on EVERY dispatch path.'''
+
+  def test_last_email_written_on_200(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert (tmp_path / 'last_email.html').exists()
+
+  def test_last_email_written_on_500(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setattr('notifier._RESEND_BACKOFF_S', 0)
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(500)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert (tmp_path / 'last_email.html').exists()
+
+  def test_last_email_written_on_400(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(400, 'bad')
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert (tmp_path / 'last_email.html').exists()
+
+  def test_last_email_written_on_missing_api_key(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('RESEND_API_KEY', raising=False)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert (tmp_path / 'last_email.html').exists()
+
+  def test_last_email_write_failure_does_not_block_dispatch(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+
+    def _raise_on_write(*a, **kw):
+      raise OSError('disk full')
+
+    monkeypatch.setattr('notifier._atomic_write_html', _raise_on_write)
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    # Disk failure was logged but dispatch proceeded.
+    assert result.ok is True
+    assert result.reason is None
+
+
+class TestCrashEmail:
+  '''Phase 8 D-05/D-06/D-07: send_crash_email text/plain dispatch.'''
+
+  def test_crash_email_subject_format(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    # FROZEN_NOW is 2026-04-22 09:00 AWST — date-only should be 2026-04-22
+    status = notifier.send_crash_email(
+      RuntimeError('x'), 'summary', now=FROZEN_NOW,
+    )
+    assert status.ok is True
+    assert len(captured) == 1
+    subj = captured[0]['subject']
+    assert subj.startswith('[CRASH] Trading Signals — ')
+    assert '2026-04-22' in subj
+
+  def test_crash_email_body_contains_required_sections(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    # Raise + catch to populate __traceback__ for a realistic traceback.
+    try:
+      raise RuntimeError('boom-inside')
+    except RuntimeError as e:
+      notifier.send_crash_email(
+        e, 'signals: SPI=FLAT\naccount: $100000.00', now=FROZEN_NOW,
+      )
+    assert len(captured) == 1
+    body = captured[0]['text']
+    assert 'Timestamp:' in body
+    assert 'Exception:' in body
+    assert 'RuntimeError' in body
+    assert 'Traceback:' in body
+    assert 'State summary:' in body
+    assert 'signals: SPI=FLAT' in body
+    assert '$100000.00' in body
+
+  def test_crash_email_body_is_text_plain_not_html(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier.send_crash_email(ValueError('v'), 'sum', now=FROZEN_NOW)
+    payload = captured[0]
+    assert 'text' in payload
+    assert 'html' not in payload
+    assert '<html>' not in payload['text']
+    assert '<body>' not in payload['text']
+
+  def test_crash_email_retries_on_500_then_succeeds(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+    monkeypatch.setattr('notifier._RESEND_BACKOFF_S', 0)
+    calls: list[int] = []
+
+    def _fake_post(*a, **kw):
+      calls.append(1)
+      return _FakeResp(500 if len(calls) == 1 else 200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    status = notifier.send_crash_email(RuntimeError('x'), 'sum', now=FROZEN_NOW)
+    assert status.ok is True
+    assert len(calls) == 2
+
+  def test_crash_email_gives_up_after_3_retries(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+    monkeypatch.setattr('notifier._RESEND_BACKOFF_S', 0)
+
+    def _fake_post(*a, **kw):
+      return _FakeResp(500)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    status = notifier.send_crash_email(RuntimeError('x'), 'sum', now=FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason is not None
+    # Retries-exhausted message contains the 500 status somewhere
+    assert '500' in status.reason or 'HTTPError' in status.reason
+
+  def test_crash_email_missing_api_key_returns_ok_false_no_api_key(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('RESEND_API_KEY', raising=False)
+    status = notifier.send_crash_email(RuntimeError('x'), 'sum', now=FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'no_api_key'
+
+  def test_crash_email_never_raises_on_unexpected_exception(
+      self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+
+    def _raise(*a, **kw):
+      raise ValueError('unexpected')
+
+    monkeypatch.setattr('notifier._post_to_resend', _raise)
+    status = notifier.send_crash_email(RuntimeError('x'), 'sum', now=FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason is not None
+    assert 'ValueError' in status.reason
+
+  def test_crash_email_state_summary_not_escaped_text_plain(
+      self, tmp_path, monkeypatch) -> None:
+    '''text/plain body is NOT html-escaped — caller's <tag> characters pass through.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RESEND_API_KEY', 'k')
+    monkeypatch.setenv('SIGNALS_EMAIL_TO', 'op@x.com')
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier.send_crash_email(RuntimeError('x'), 'literal <tag>', now=FROZEN_NOW)
+    body = captured[0]['text']
+    assert '<tag>' in body
+    # NOT escaped because text/plain; confirms no html.escape leak in body assembly
+    assert '&lt;tag&gt;' not in body
+
+
+class TestPostToResendContentType:
+  '''Phase 8 D-07 / D-08: _post_to_resend accepts html_body OR text_body.'''
+
+  def test_post_to_resend_html_only_payload(self, monkeypatch) -> None:
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier._post_to_resend(
+      'k', 'f@x.com', 't@x.com', 'subj',
+      html_body='<p>hi</p>', text_body=None, backoff_s=0,
+    )
+    payload = captured[0]
+    assert payload['html'] == '<p>hi</p>'
+    assert 'text' not in payload
+
+  def test_post_to_resend_text_only_payload(self, monkeypatch) -> None:
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier._post_to_resend(
+      'k', 'f@x.com', 't@x.com', 'subj',
+      html_body=None, text_body='plain', backoff_s=0,
+    )
+    payload = captured[0]
+    assert payload['text'] == 'plain'
+    assert 'html' not in payload
+
+  def test_post_to_resend_both_payload(self, monkeypatch) -> None:
+    captured: list[dict] = []
+
+    def _fake_post(url, **kw):
+      captured.append(kw.get('json') or {})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+    notifier._post_to_resend(
+      'k', 'f@x.com', 't@x.com', 'subj',
+      html_body='<p>hi</p>', text_body='plain', backoff_s=0,
+    )
+    payload = captured[0]
+    assert payload['html'] == '<p>hi</p>'
+    assert payload['text'] == 'plain'
+
+  def test_post_to_resend_neither_raises_value_error(self) -> None:
+    with pytest.raises(ValueError, match='html_body OR text_body'):
+      notifier._post_to_resend(
+        'k', 'f@x.com', 't@x.com', 'subj',
+        html_body=None, text_body=None, backoff_s=0,
+      )
