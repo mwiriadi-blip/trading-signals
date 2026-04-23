@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 2
 status: executing
-last_updated: "2026-04-22T23:51:08.989Z"
+last_updated: "2026-04-23T00:10:24.078Z"
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 29
-  completed_plans: 27
-  percent: 93
+  completed_plans: 28
+  percent: 97
 ---
 
 # STATE — Trading Signals
@@ -27,14 +27,14 @@ progress:
 ## Current Position
 
 Phase: 07 (scheduler-github-actions-deployment) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 6 (complete) → 7 (Scheduler + GitHub Actions Deployment)
 - **Current Plan:** 2
 - **Total Plans:** 3
-- **Status:** Executing Phase 7 (Plan 01 complete, Plan 02 next)
-- **Progress:** [█████████░] 93%
+- **Status:** Ready to execute
+- **Progress:** [██████████] 97%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -61,6 +61,7 @@ Plan: 2 of 3
 | Phase 02 P04 | 64m | 2 tasks | 19 files |
 | Phase 02 P05 | 14 | 3 tasks | 20 files |
 | Phase 07 P01 | ~8min | 2 tasks tasks | 6 files files |
+| Phase 07 P07-02 | ~20min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,10 @@ Plan: 2 of 3
 - Phase 7 Wave 0: load_dotenv() shipped LIVE at top of main() (not stubbed) — idempotent and side-effect-neutral when .env absent
 - Phase 7 Wave 0: Phase 4 '[Sched] One-shot mode' log line PRESERVED; Wave 1 deletes alongside tests/test_main.py:129,146 update in same plan (Pitfall 3 atomic-test-transition)
 - Phase 7 Wave 0 deviation (Rule 1): plan's automated check used schedule.__version__/dotenv.__version__ attrs (not exposed); switched to importlib.metadata.version for verification
+- Phase 7 Wave 1: main() dispatch amendment moved from Task 2 B3 into Task 1 GREEN so TestImmediateFirstRun could pass in Task 1 as planned (Rule 3)
+- Phase 7 Wave 1: _FakeScheduler.day fixed to @property to match real schedule library .every().day access (Wave 0 scaffold bug — Rule 1)
+- Phase 7 Wave 1: Monday weekday-gate test uses committed fetch fixtures rather than plan-specified None-recorder (main.py has no None-guard — Rule 1 plan design flaw)
+- Phase 7 Wave 1: test_default_mode_does_NOT_send_email patched alongside the two plan-named test_main.py tests (Phase 7 default dispatch broke it too — Pitfall 3 sibling, Rule 3)
 
 ### Todos Carried Forward
 

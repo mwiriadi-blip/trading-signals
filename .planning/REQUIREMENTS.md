@@ -128,7 +128,8 @@ Fine granularity — each requirement is independently testable.
 **: Initial run executes immediately on process start (before schedule loop)
 - [x] **SCHED-03
 **: `run_daily_check` has an internal weekday gate (does not execute on Sat/Sun even if invoked)
-- [ ] **SCHED-04**: `--once` flag runs a single daily check and exits (used by GitHub Actions)
+- [x] **SCHED-04
+**: `--once` flag runs a single daily check and exits (used by GitHub Actions)
 - [ ] **SCHED-05**: Primary deployment is GitHub Actions: `.github/workflows/daily.yml` with `cron: '0 0 * * 1-5'`, `permissions: contents: write`, `concurrency: trading-signals`, and commit-back of `state.json` via `stefanzweifel/git-auto-commit-action@v5`
 - [ ] **SCHED-06**: Alternative deployment is Replit Always On (Reserved VM), documented with filesystem-persistence caveat
 - [x] **SCHED-07
