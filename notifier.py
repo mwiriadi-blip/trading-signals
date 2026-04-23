@@ -459,6 +459,7 @@ def _compute_trail_stop_email(position: dict) -> float:
 
 def _compute_unrealised_pnl_email(
   position: dict, state_key: str, current_close: float | None,
+  state: dict | None = None,
 ) -> float | None:
   '''Inline re-impl of sizing_engine.compute_unrealised_pnl — hex-fence per D-01.
 
@@ -467,10 +468,28 @@ def _compute_unrealised_pnl_email(
 
   LONG:  gross = (current - entry) * n * multiplier; pnl = gross - cost_open*n
   SHORT: gross = (entry - current) * n * multiplier; pnl = gross - cost_open*n
+
+  Phase 8 WR-01 fix: prefer the operator-selected tier values from
+  state['_resolved_contracts'][state_key]; fall back to the module-level
+  _CONTRACT_SPECS_EMAIL defaults when state is None or lacks
+  _resolved_contracts (pre-Phase-8 state shape or non-load_state callers
+  like unit tests that build state dicts directly). Mirrors D-17
+  resolved-tier flow.
   '''
   if current_close is None:
     return None
-  multiplier, cost_aud_round_trip = _CONTRACT_SPECS_EMAIL[state_key]
+  resolved = None
+  if state is not None:
+    resolved = state.get('_resolved_contracts', {}).get(state_key)
+  if resolved is not None:
+    multiplier = resolved['multiplier']
+    cost_aud_round_trip = resolved['cost_aud']
+  else:
+    logger.debug(
+      '[Email] _resolved_contracts missing for %s; falling back to '
+      'module-level _CONTRACT_SPECS_EMAIL default tier', state_key,
+    )
+    multiplier, cost_aud_round_trip = _CONTRACT_SPECS_EMAIL[state_key]
   cost_open = cost_aud_round_trip / 2
   direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
   price_diff = current_close - position['entry_price']
@@ -870,7 +889,7 @@ def _render_positions_email(state: dict) -> str:
     contracts_cell = html.escape(str(pos['n_contracts']), quote=True)
     trail = _compute_trail_stop_email(pos)
     trail_cell = html.escape(_fmt_currency_email(trail), quote=True)
-    unrealised = _compute_unrealised_pnl_email(pos, state_key, last_close)
+    unrealised = _compute_unrealised_pnl_email(pos, state_key, last_close, state)
     if unrealised is None:
       pnl_cell = html.escape(_fmt_em_dash_email(), quote=True)
     else:

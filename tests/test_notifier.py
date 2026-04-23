@@ -590,6 +590,97 @@ class TestComposeBody:
     assert result is None
 
 
+class TestUnrealisedPnlEmailUsesResolvedContracts:
+  '''Phase 8 WR-01 (mirror of dashboard test): _compute_unrealised_pnl_email
+  MUST source the tier multiplier/cost from state['_resolved_contracts']
+  [state_key] so operators who --reset with a non-default tier (spi-standard,
+  spi-full) see correct unrealised P&L in the daily email — not the
+  hardcoded spi-mini default. Fallback to module-level
+  _CONTRACT_SPECS_EMAIL only when _resolved_contracts is absent.
+  '''
+
+  def test_standard_tier_uses_25_multiplier(self) -> None:
+    '''spi-standard: multiplier=25.0, cost_aud=30.0. LONG 2 contracts
+    entry=7000, current=7100 → gross = 100 * 2 * 25 = 5000.
+    cost_open = 30/2 * 2 = 30. unrealised = 5000 - 30 = 4970.
+    '''
+    position = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-04-10',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 7100.0,
+      'trough_price': None, 'atr_entry': 50.0,
+    }
+    state = {
+      '_resolved_contracts': {
+        'SPI200':  {'multiplier': 25.0, 'cost_aud': 30.0},
+        'AUDUSD':  {'multiplier': 10000.0, 'cost_aud': 5.0},
+      },
+    }
+    result = notifier._compute_unrealised_pnl_email(
+      position, 'SPI200', 7100.0, state,
+    )
+    assert result == pytest.approx(4970.0)
+
+  def test_full_tier_uses_50_multiplier(self) -> None:
+    '''spi-full: multiplier=50.0, cost_aud=50.0. LONG 1 contract
+    entry=7000, current=7100 → gross = 100 * 1 * 50 = 5000.
+    cost_open = 50/2 * 1 = 25. unrealised = 5000 - 25 = 4975.
+    '''
+    position = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-04-10',
+      'n_contracts': 1, 'pyramid_level': 0, 'peak_price': 7100.0,
+      'trough_price': None, 'atr_entry': 50.0,
+    }
+    state = {
+      '_resolved_contracts': {
+        'SPI200':  {'multiplier': 50.0, 'cost_aud': 50.0},
+        'AUDUSD':  {'multiplier': 10000.0, 'cost_aud': 5.0},
+      },
+    }
+    result = notifier._compute_unrealised_pnl_email(
+      position, 'SPI200', 7100.0, state,
+    )
+    assert result == pytest.approx(4975.0)
+
+  def test_missing_resolved_contracts_falls_back_to_mini_defaults(
+      self, caplog) -> None:
+    '''State without _resolved_contracts key → falls back to module-level
+    _CONTRACT_SPECS_EMAIL (spi-mini = 5.0 multiplier, 6.0 cost_aud).
+    Debug log emitted.
+
+    LONG 2 contracts entry=7000, current=7100 → gross = 100*2*5 = 1000.
+    cost_open = 6/2 * 2 = 6. unrealised = 1000 - 6 = 994.
+    '''
+    position = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-04-10',
+      'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 7100.0,
+      'trough_price': None, 'atr_entry': 50.0,
+    }
+    state = {}
+    with caplog.at_level(logging.DEBUG, logger='notifier'):
+      result = notifier._compute_unrealised_pnl_email(
+        position, 'SPI200', 7100.0, state,
+      )
+    assert result == pytest.approx(994.0)
+    assert any(
+      '_resolved_contracts missing' in rec.message for rec in caplog.records
+    ), 'WR-01 fallback should emit a DEBUG log line naming the missing key'
+
+  def test_state_none_also_falls_back(self) -> None:
+    '''state=None → same fallback to module-level defaults (backward
+    compatibility with older call sites / pytest parity checks).
+    '''
+    position = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-04-10',
+      'n_contracts': 1, 'pyramid_level': 0, 'peak_price': 7100.0,
+      'trough_price': None, 'atr_entry': 50.0,
+    }
+    # multiplier=5.0, cost_aud=6.0. gross = 100*1*5 = 500. open_cost = 3.
+    result = notifier._compute_unrealised_pnl_email(
+      position, 'SPI200', 7100.0, None,
+    )
+    assert result == pytest.approx(497.0)
+
+
 class TestFormatters:
   '''D-02: notifier owns 7 _fmt_*_email formatters. Inline style on colour
   spans (email clients strip CSS classes). Mirror dashboard semantics

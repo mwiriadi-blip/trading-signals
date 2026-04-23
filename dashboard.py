@@ -524,6 +524,7 @@ def _compute_trail_stop_display(position: dict) -> float:
 
 def _compute_unrealised_pnl_display(
   position: dict, state_key: str, current_close: float | None,
+  state: dict | None = None,
 ) -> float | None:
   '''UI-SPEC §Positions table Unrealised P&L formula. Inline re-implementation
   of sizing_engine.compute_unrealised_pnl per CONTEXT D-01 hex fence. Returns
@@ -532,10 +533,27 @@ def _compute_unrealised_pnl_display(
   Per CLAUDE.md §Operator Decisions / CONTEXT D-13: opening-half cost is
   deducted here (matches sizing_engine.compute_unrealised_pnl exactly —
   TestStatsMath::test_unrealised_pnl_matches_sizing_engine locks parity).
+
+  Phase 8 WR-01 fix: prefer the operator-selected tier values from
+  state['_resolved_contracts'][state_key]; fall back to the module-level
+  _CONTRACT_SPECS defaults when state is None or lacks _resolved_contracts
+  (pre-Phase-8 state shape or non-load_state callers like unit tests that
+  build state dicts directly). Mirrors D-17 resolved-tier flow.
   '''
   if current_close is None:
     return None
-  multiplier, cost_aud_round_trip = _CONTRACT_SPECS[state_key]
+  resolved = None
+  if state is not None:
+    resolved = state.get('_resolved_contracts', {}).get(state_key)
+  if resolved is not None:
+    multiplier = resolved['multiplier']
+    cost_aud_round_trip = resolved['cost_aud']
+  else:
+    logger.debug(
+      '[Dashboard] _resolved_contracts missing for %s; falling back to '
+      'module-level _CONTRACT_SPECS default tier', state_key,
+    )
+    multiplier, cost_aud_round_trip = _CONTRACT_SPECS[state_key]
   cost_aud_open = cost_aud_round_trip / 2
   direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
   price_diff = current_close - position['entry_price']
@@ -689,7 +707,7 @@ def _render_positions_table(state: dict) -> str:
     pyramid_cell = html.escape(f'Lvl {pos["pyramid_level"]}', quote=True)
     trail_stop = _compute_trail_stop_display(pos)
     trail_cell = html.escape(_fmt_currency(trail_stop), quote=True)
-    unrealised = _compute_unrealised_pnl_display(pos, state_key, last_close)
+    unrealised = _compute_unrealised_pnl_display(pos, state_key, last_close, state)
     if unrealised is None:
       pnl_cell = html.escape(_fmt_em_dash(), quote=True)
     else:
