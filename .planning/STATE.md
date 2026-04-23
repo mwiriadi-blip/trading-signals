@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Gap Closure
 current_plan: 1
-status: executing
-last_updated: "2026-04-23T22:27:44.422Z"
+status: complete
+last_updated: "2026-04-23T23:00:00.000Z"
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 33
-  completed_plans: 32
-  percent: 97
+  completed_plans: 33
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -64,6 +64,7 @@ Plan: 3 of 3
 | Phase 07 P07-02 | ~20min | 3 tasks | 3 files |
 | Phase 07 P03 | ~15min | 4 tasks | 5 files |
 | Phase 8 P3 | 60 minutes | 3 tasks | 5 files |
+| Phase 9 P1 | ~4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -159,6 +160,8 @@ None.
 *State initialised: 2026-04-20 at roadmap creation*
 
 **Planned Phase:** 09 (Milestone v1.0 Gap Closure) — 1 plans — 2026-04-23T22:27:44.414Z
+
+**Plan 09-01 completed:** 2026-04-23 — 2 tasks, 3 files modified (.planning/REQUIREMENTS.md +102/-101; .github/workflows/daily.yml +1 line; tests/test_scheduler.py +22 lines) + 2 files created (09-01-SUMMARY.md, deferred-items.md). Task 1: ERR-01 spec amended to match test-locked no-email behaviour (`except (DataFetchError, ShortFrameError): return 2` with no crash-email call); 37 `- [ ]` checkbox flips via single replace_all (DATA 6 + STATE 7 + NOTF 9 + DASH 9 + CLI 4 + ERR 2 = 37 → 80/80 checked); 59 `| Pending |` traceability rows flipped to `| Complete |` (ERR-01 and SIG-05..08 rows got richer Complete-with-evidence descriptors); coverage header updated to `Mapped to phases: 80/80, Verified: 80/80`; amendment footer dated 2026-04-23 appended. Task 2: `timeout-minutes: 10` added at job level in daily.yml between `runs-on: ubuntu-latest` and `steps:` (parses as int 10 via PyYAML); `test_daily_workflow_has_timeout_minutes` appended inside `TestGHAWorkflow` with two independent assertions (key existence + value equality) — TestGHAWorkflow went from 12 → 13 tests. Locked-behaviour guard `tests/test_main.py::TestCrashEmailBoundary::test_data_fetch_error_does_not_fire_crash_email` unchanged and green (git diff --exit-code returns 0). Full suite: 662 passed (was 661; +1 for new regression test). Pre-existing ruff F401 warnings in notifier.py (19 errors) logged to deferred-items.md as out-of-scope. One Rule-3 deviation (footer date 2026-04-23 instead of draft's 2026-04-24, matching today's actual execution date per executor context). Phase 9 complete; milestone v1.0 ready for archive. Commits: f3f6e3c (Task 1 REQUIREMENTS reconciliation), 2e3d314 (Task 2 GHA timeout + regression test).
 
 **Plan 01-02 completed:** 2026-04-20T19:49:00Z — 3 tasks, 3 files created (tests/oracle/wilder.py, tests/oracle/mom_rvol.py, tests/oracle/test_oracle_self_consistency.py), 17 self-consistency tests passing, requirements SIG-01..SIG-04 marked complete.
 

@@ -171,7 +171,7 @@
   3. `.github/workflows/daily.yml` has `timeout-minutes: 10` on the daily-check job so an unbounded run cannot consume GHA minutes indefinitely. Existing `tests/test_scheduler.py::TestGHAWorkflow` regression-checks the workflow YAML.
 **Plans:** 1 plan
 Plans:
-- [ ] 09-01-PLAN.md — Close v1.0 gaps: amend ERR-01 spec text to match test-locked no-email design, bulk-sync 37 traceability checkboxes to [x]/Complete, add timeout-minutes: 10 to daily.yml + regression test
+- [x] 09-01-PLAN.md — Close v1.0 gaps: amend ERR-01 spec text to match test-locked no-email design, bulk-sync 37 traceability checkboxes to [x]/Complete, add timeout-minutes: 10 to daily.yml + regression test (completed 2026-04-23)
 **UI hint**: no
 
 ## Phase Dependencies (build order)
@@ -202,7 +202,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 | 6. Email Notification | 0/0 | Not started | - |
 | 7. Scheduler + GitHub Actions Deployment | 3/3 | Complete    | 2026-04-23 |
 | 8. Hardening — Warning Carry-over, Stale Banner, Crash Email | 3/3 | Complete    | 2026-04-23 |
-| 9. Milestone v1.0 Gap Closure | 0/0 | Not started | - |
+| 9. Milestone v1.0 Gap Closure | 1/1 | Complete    | 2026-04-23 |
 
 ## Coverage Validation
 
