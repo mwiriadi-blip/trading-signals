@@ -54,11 +54,109 @@ class _FakeJob:
 
 
 class TestWeekdayGate:
-  '''D-03: run_daily_check short-circuits on AWST Sat/Sun. Wave 1 fills body.'''
+  '''D-03: run_daily_check short-circuits on AWST Sat/Sun.'''
 
-  @pytest.mark.xfail(reason='Wave 1 lands body per 07-02-PLAN.md D-03', strict=True)
-  def test_scaffold_placeholder(self) -> None:
-    raise NotImplementedError('Wave 1')
+  @pytest.mark.freeze_time('2026-04-25T00:00:00+00:00')  # Sat 08:00 AWST = weekday=5
+  def test_saturday_skips_fetch_and_compute(self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    fetch_calls: list = []
+    monkeypatch.setattr(
+      main_module.data_fetcher, 'fetch_ohlcv',
+      lambda *a, **kw: fetch_calls.append(a) or None,
+    )
+    args = argparse.Namespace(
+      test=False, reset=False, force_email=False, once=True,
+    )
+    rc, state, old_signals, run_date = main_module.run_daily_check(args)
+    assert rc == 0
+    assert state is None
+    assert old_signals is None
+    assert run_date is not None
+    assert run_date.weekday() == 5
+    assert fetch_calls == []
+
+  @pytest.mark.freeze_time('2026-04-26T00:00:00+00:00')  # Sun 08:00 AWST = weekday=6
+  def test_sunday_skips_fetch_and_compute(self, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    fetch_calls: list = []
+    monkeypatch.setattr(
+      main_module.data_fetcher, 'fetch_ohlcv',
+      lambda *a, **kw: fetch_calls.append(a) or None,
+    )
+    args = argparse.Namespace(
+      test=False, reset=False, force_email=False, once=True,
+    )
+    rc, state, old_signals, run_date = main_module.run_daily_check(args)
+    assert rc == 0
+    assert state is None
+    assert old_signals is None
+    assert run_date is not None
+    assert run_date.weekday() == 6
+    assert fetch_calls == []
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST = weekday=0
+  def test_monday_proceeds_through_fetch(
+    self, tmp_path, monkeypatch, caplog,
+  ) -> None:
+    '''Monday MUST actually proceed to fetch. 07-REVIEWS.md Codex MEDIUM-fix:
+    assert explicitly on fetch_ohlcv call count + arguments, not merely on
+    absence of "weekend skip" in logs. Regressions that bypass fetch will
+    fail this test loudly.
+
+    Uses committed fixtures so both instrument fetches succeed and the full
+    per-symbol loop executes (both tickers appear in fetch_calls). This gives
+    us a strong positive assertion on fetch-call count AND argument identity.
+    '''
+    from pathlib import Path
+    import pandas as pd
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    # Seed fresh state.json so run_daily_check can load/save without issue.
+    import state_manager
+    state_manager.save_state(state_manager.reset_state(), path=tmp_path / 'state.json')
+
+    fetch_fixture_dir = Path(__file__).parent / 'fixtures' / 'fetch'
+
+    def _load_fixture(name: str) -> pd.DataFrame:
+      return pd.read_json(fetch_fixture_dir / name, orient='split')
+
+    fetch_calls: list = []
+
+    def _recorder(sym, **kwargs):
+      fetch_calls.append((sym, kwargs))
+      if sym == '^AXJO':
+        return _load_fixture('axjo_400d.json')
+      if sym == 'AUDUSD=X':
+        return _load_fixture('audusd_400d.json')
+      raise AssertionError(f'unexpected symbol: {sym!r}')
+
+    monkeypatch.setattr(main_module.data_fetcher, 'fetch_ohlcv', _recorder)
+
+    args = argparse.Namespace(
+      test=True, reset=False, force_email=False, once=True,
+    )
+    rc, state, old_signals, run_date = main_module.run_daily_check(args)
+
+    # 07-REVIEWS.md Codex MEDIUM-fix: EXPLICIT fetch-call observation.
+    assert run_date.weekday() == 0, f'expected Mon; got weekday={run_date.weekday()}'
+    assert len(fetch_calls) == 2, (
+      f'CLI-04 / SCHED-03: Monday must fetch both instruments; '
+      f'got {len(fetch_calls)} fetch call(s): {fetch_calls}'
+    )
+    # First positional arg is the ticker — verify both expected symbols appear.
+    tickers_fetched = {call_args[0] for call_args in fetch_calls}
+    assert '^AXJO' in tickers_fetched, (
+      f'SCHED-03: ^AXJO (SPI 200) must be fetched on Mon; got {tickers_fetched}'
+    )
+    assert 'AUDUSD=X' in tickers_fetched, (
+      f'SCHED-03: AUDUSD=X must be fetched on Mon; got {tickers_fetched}'
+    )
+    # Belt-and-braces: weekend-skip branch must not have fired.
+    assert 'weekend skip' not in caplog.text
 
 
 class TestImmediateFirstRun:
@@ -177,11 +275,45 @@ class TestLoopErrorHandling:
 
 
 class TestDefaultModeDispatch:
-  '''D-05: default mode emits new log line; --once does not. Wave 1 fills body.'''
+  '''D-05: default mode emits new log line; --once does not.'''
 
-  @pytest.mark.xfail(reason='Wave 1 lands body per 07-02-PLAN.md D-05', strict=True)
-  def test_scaffold_placeholder(self) -> None:
-    raise NotImplementedError('Wave 1')
+  def test_default_mode_emits_scheduler_entered_log(
+    self, tmp_path, monkeypatch, caplog,
+  ) -> None:
+    # 07-REVIEWS.md Codex MEDIUM-fix: patch `main._get_process_tzname` (Wave 0
+    # wrapper, always writable) instead of `time.tzname` (platform-dependent,
+    # sometimes frozen).
+    monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')
+    caplog.set_level(logging.INFO)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('dotenv.load_dotenv', lambda *a, **kw: False)
+    # Short-circuit the immediate first run so we reach the loop quickly.
+    monkeypatch.setattr(main_module, '_run_daily_check_caught', lambda j, a: None)
+    # Wrap _run_schedule_loop so it uses a fake scheduler + max_ticks=0 — no hang.
+    real_loop = main_module._run_schedule_loop
+    fake = _FakeScheduler()
+
+    def _wrap(job, args):
+      return real_loop(
+        job, args,
+        scheduler=fake, sleep_fn=lambda _: None, max_ticks=0,
+      )
+
+    monkeypatch.setattr(main_module, '_run_schedule_loop', _wrap)
+    rc = main_module.main([])
+    assert rc == 0
+    assert any(
+      'scheduler entered' in r.message
+      and '00:00 UTC' in r.message
+      and '08:00 AWST' in r.message
+      for r in caplog.records
+    )
+    # Assert deprecated Phase 4 line is NOT present anywhere in the record stream:
+    assert all(
+      'One-shot mode (scheduler wiring lands in Phase 7)' not in r.message
+      for r in caplog.records
+    ), 'D-05: Phase 4 stub log line must be deleted from run_daily_check'
 
 
 class TestDotenvLoading:
