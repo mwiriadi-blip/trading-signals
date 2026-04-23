@@ -376,6 +376,14 @@ def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
   # Happy path: migrate, then D-18 validate, then return
   state = _migrate(state)
   _validate_loaded_state(state)           # D-18: raises ValueError on missing keys
+  # D-14 (Phase 8): materialise runtime-only _resolved_contracts from
+  # tier labels. Underscore prefix = excluded from save_state (below).
+  # KeyError propagates if a label in state['contracts'] is absent from
+  # system_params.*_CONTRACTS — caller should repair via --reset.
+  state['_resolved_contracts'] = {
+    'SPI200':  SPI_CONTRACTS[state['contracts']['SPI200']],
+    'AUDUSD':  AUDUSD_CONTRACTS[state['contracts']['AUDUSD']],
+  }
   return state
 
 def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
@@ -386,12 +394,23 @@ def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
   bug; allow_nan=False surfaces it as ValueError immediately rather than
   silently persisting non-standard JSON.
 
+  Keys with `_` prefix are excluded from the persisted JSON per the
+  runtime-only convention (D-14 Phase 8). `_resolved_contracts` is the
+  first underscore-prefixed key; future transient keys (e.g., Plan 03's
+  `_stale_info`) inherit the same exclusion automatically. The in-memory
+  state dict is NOT mutated — the filter builds a new dict for dumping.
+
   OSError on os.replace is RE-RAISED (RESEARCH §Open Question 2):
   data integrity > silent failure. Orchestrator (Phase 4) handles.
 
   Durability ordering per D-17: see _atomic_write docstring.
   '''
-  data = json.dumps(state, sort_keys=True, indent=2, allow_nan=False)
+  # D-14 (Phase 8): strip runtime-only keys (underscore-prefixed) before
+  # dumping. `_resolved_contracts` is the first underscore-prefixed key;
+  # the convention is load-time materialisation only. Plan 03's
+  # `_stale_info` also relies on this filter for transient signalling.
+  persisted = {k: v for k, v in state.items() if not k.startswith('_')}
+  data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False)
   _atomic_write(data, path)
 
 def append_warning(state: dict, source: str, message: str, now=None) -> dict:
@@ -422,6 +441,30 @@ def append_warning(state: dict, source: str, message: str, now=None) -> dict:
   entry = {'date': today_awst, 'source': source, 'message': message}
   # FIFO trim: keep last (MAX_WARNINGS - 1) + new entry = MAX_WARNINGS total
   state['warnings'] = state['warnings'][-(MAX_WARNINGS - 1):] + [entry]
+  return state
+
+def clear_warnings(state: dict) -> dict:
+  '''D-02 (Phase 8): clear state['warnings'] after the current run's
+  email has been built and dispatched. Preserves D-10 sole-writer
+  invariant — state_manager is the ONLY module that mutates
+  state['warnings']; notifier reads but never writes.
+
+  Intended flow in main.run_daily_check (canonical sequence per
+  Plan 03 revision):
+    1. Build email payload reading state['warnings'] as-of run start.
+    2. save_state(state) to persist the run's mutations (end of
+       run_daily_check step 5).
+    3. notifier.send_daily_email(...) — dispatch.
+    4. clear_warnings(state) — empty N-1 warnings list FIRST.
+    5. If dispatch failed (SendStatus.ok is False), append_warning
+       with source='notifier' so NEXT run surfaces the missed send —
+       tagged with THIS run's AWST date.
+    6. save_state(state) — single post-dispatch save (W3: total
+       per-run save count = 2).
+
+  In-place mutation; returns the same dict for chaining.
+  '''
+  state['warnings'] = []
   return state
 
 def record_trade(state: dict, trade: dict) -> dict:
