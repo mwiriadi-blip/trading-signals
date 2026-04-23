@@ -110,6 +110,7 @@ class TestWeekdayGate:
     us a strong positive assertion on fetch-call count AND argument identity.
     '''
     from pathlib import Path
+
     import pandas as pd
 
     caplog.set_level(logging.INFO)

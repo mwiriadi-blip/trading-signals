@@ -555,13 +555,26 @@ def run_daily_check(
   # BEFORE the per-symbol loop so CLI-04/CLI-05 smoke tests see the line
   # even if a later step raises.
   run_date = _compute_run_date()
+
+  # D-03 (Phase 7): weekday gate — short-circuits BEFORE any fetch, compute,
+  # or state mutation. Applies to ALL invocation modes (default, --once,
+  # --test, --force-email). `run_date.weekday()` returns 0=Mon..6=Sun
+  # (Python stdlib contract); 5=Sat, 6=Sun. Preserves the 4-tuple contract
+  # so main()'s dispatch ladder None-guard absorbs the state=None case
+  # without a second code path.
+  if run_date.weekday() >= system_params.WEEKDAY_SKIP_THRESHOLD:
+    logger.info(
+      '[Sched] weekend skip %s (weekday=%d) — no fetch, no state mutation',
+      run_date.strftime('%Y-%m-%d'), run_date.weekday(),
+    )
+    return 0, None, None, run_date
+
   run_date_iso = run_date.strftime('%Y-%m-%d')
   run_date_display = run_date.strftime('%Y-%m-%d %H:%M:%S AWST')
   run_start_monotonic = time.perf_counter()
   logger.info(
     '[Sched] Run %s mode=%s', run_date_display, _mode_label(args),
   )
-  logger.info('[Sched] One-shot mode (scheduler wiring lands in Phase 7)')
 
   # Step 2: load state.
   state = state_manager.load_state()
