@@ -1331,10 +1331,16 @@ def _post_to_resend(
       if resp.status_code == 429:
         raise requests.exceptions.HTTPError('429 rate-limit', response=resp)
       if 400 <= resp.status_code < 500:
-        # Fix 1 (T-06-02): truncate AND redact api_key from any echo.
-        safe_body = resp.text[:200]
+        # Fix 1 (T-06-02): redact api_key from any echo, THEN truncate.
+        # Phase 8 IN-03 ordering fix: truncating first risks leaking a
+        # partial key that straddles the 200-char boundary (first N
+        # chars of the key would survive the .replace() call). Redact
+        # on the full body first so any occurrence — whole or partial
+        # if echoed multiple times — is scrubbed before truncation.
+        safe_body = resp.text
         if api_key:
           safe_body = safe_body.replace(api_key, '[REDACTED]')
+        safe_body = safe_body[:200]
         raise ResendError(
           f'4xx from Resend: {resp.status_code} {safe_body}',
         )
