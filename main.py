@@ -1247,7 +1247,16 @@ def _handle_reset(args: argparse.Namespace) -> int:
   print(f'    AUDUSD:  {audusd_contract}')
   try:
     current = state_manager.load_state()
-  except Exception:
+  except Exception as e:
+    # Phase 8 IN-02: surface the swallowed error at DEBUG so an operator
+    # running `--reset` because their state is already broken can see WHY
+    # the preview block is empty when running with --log-level DEBUG.
+    # The swallow itself is intentional — the preview must still proceed
+    # even if the existing state.json is unreadable.
+    logger.debug(
+      '[State] reset preview: failed to read existing state (%s: %s)',
+      type(e).__name__, e,
+    )
     current = None
   if current is not None:
     print('Current state.json:')
