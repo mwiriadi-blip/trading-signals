@@ -52,6 +52,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import pytz
 import requests
@@ -77,6 +78,21 @@ from system_params import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# SendStatus — Phase 8 D-08 dispatch-result discriminator
+# =========================================================================
+
+class SendStatus(NamedTuple):
+  '''Phase 8 D-08: dispatch-result discriminator returned by send_daily_email
+  and send_crash_email. Orchestrator (main.run_daily_check) translates
+  `ok=False` into state_manager.append_warning for surfacing on the next
+  run. NamedTuple chosen over dataclass for immutability + positional
+  unpacking: `ok, reason = send_daily_email(...)`.
+  '''
+  ok: bool
+  reason: str | None   # None on success; <=200-char human-readable on failure
 
 
 # =========================================================================
@@ -285,6 +301,7 @@ def compose_email_subject(
   state: dict,
   old_signals: dict,
   is_test: bool = False,
+  has_critical_banner: bool = False,   # D-04 (Phase 8)
 ) -> str:
   '''D-04 subject template:
 
@@ -293,7 +310,9 @@ def compose_email_subject(
   Emoji per D-04:
     🔴 (U+1F534) when _detect_signal_changes is True.
     📊 (U+1F4CA) when unchanged OR first-run (D-06).
-  [TEST] prefix (with trailing space) BEFORE emoji when is_test=True.
+  Phase 8 D-04: `[!]` prefix (with trailing space) AFTER `[TEST]` BEFORE the
+  core when `has_critical_banner=True` (stale state or corrupt-reset).
+  `[TEST]` prefix (with trailing space) BEFORE `[!]` when `is_test=True`.
 
   Date from state['signals'][<any_key>]['as_of_run'] (ISO YYYY-MM-DD);
   falls back to state['last_run'] if signals are legacy int shape OR
@@ -343,12 +362,20 @@ def compose_email_subject(
   date_label = date_iso if date_iso else 'first run'
 
   # Assembly: [TEST] prefix BEFORE emoji per D-04 line 92.
+  # Phase 8 D-04: `[!]` prefix injected BETWEEN [TEST] and emoji when
+  # has_critical_banner=True (stale state or corrupt-reset). Order:
+  # [TEST] [!] <emoji> ...
   core = (
     f'{emoji} {date_label} — SPI200 {spi_label}, '
     f'AUDUSD {audusd_label} — Equity {equity_str}'
   )
+  prefix_parts: list[str] = []
   if is_test:
-    return f'[TEST] {core}'
+    prefix_parts.append('[TEST]')
+  if has_critical_banner:
+    prefix_parts.append('[!]')
+  if prefix_parts:
+    return f"{' '.join(prefix_parts)} {core}"
   return core
 
 
@@ -452,8 +479,14 @@ def _compute_unrealised_pnl_email(
   return gross - open_cost
 
 
-def _render_header_email(state: dict, now: datetime) -> str:
-  '''Section 1: site title + subtitle + last-updated + signal-as-of (D-10, Fix 6).'''
+def _render_hero_card_email(state: dict, now: datetime) -> str:
+  '''B4 revision (Phase 8): the existing hero card (Trading Signals h1 +
+  subtitle + Last updated + Signal as of) — extracted verbatim from
+  pre-edit _render_header_email so the new composing _render_header_email
+  can assemble parts=[banner?, hero, routine?].
+
+  Section 1: site title + subtitle + last-updated + signal-as-of (D-10, Fix 6).
+  '''
   last_updated = _fmt_last_updated_email(now)
   # Signal-as-of: prefer a single shared value if both instruments match.
   spi_as_of = _extract_signal_as_of(state, 'SPI200')
@@ -494,6 +527,146 @@ def _render_header_email(state: dict, now: datetime) -> str:
     f'<tr><td height="32" style="height:32px;font-size:0;line-height:0;">'
     f'&nbsp;</td></tr>\n'
   )
+
+
+def _has_critical_banner(state: dict) -> bool:
+  '''D-04 + B2/B3 revisions (Phase 8): True iff state has a critical
+  surface — transient `_stale_info` (ERR-05) OR a `state['warnings']`
+  entry whose message starts with `'recovered from corruption'` (ERR-03).
+  Age filter BYPASSED: corrupt warnings may be tagged with a date other
+  than `prior_run_date`; staleness is not even stored in warnings (it is
+  a transient runtime key set by orchestrator pre-render).
+  '''
+  if state.get('_stale_info'):
+    return True
+  for w in state.get('warnings', []):
+    if (
+      w.get('source') == 'state_manager'
+      and w.get('message', '').startswith('recovered from corruption')
+    ):
+      return True
+  return False
+
+
+def _render_header_email(state: dict, now: datetime) -> str:
+  '''D-01 / D-03 / B2 + B3 revisions (Phase 8):
+
+  Composes: [critical banner?] + hero card + [routine row?].
+
+  Critical banner sources (age-filter BYPASSED — always render when present):
+    - `state['_stale_info']` (transient dict from orchestrator) — red border
+      `_COLOR_SHORT`, label "Stale state", message includes days_stale.
+    - `state['warnings']` entry where `source='state_manager'` AND
+      `message.startswith('recovered from corruption')` — gold border
+      `_COLOR_FLAT`, label "State was reset".
+
+  Routine row source (subject to D-03 age filter):
+    `state['warnings']` entries where `w['date'] == prior_run_date` AND not
+    matched by the critical classifier above. Compact metadata line +
+    stacked list of messages.
+
+  Hero card: delegated to `_render_hero_card_email` (B4 — verbatim extract).
+
+  XSS posture (preserved): every dynamic value flows through
+  `html.escape(value, quote=True)` at leaf render site.
+  '''
+  parts: list[str] = []
+
+  # --- CRITICAL BANNER 1: stale state via transient _stale_info (B3) ---
+  stale_info = state.get('_stale_info')
+  if stale_info:
+    days = stale_info.get('days_stale', 0)
+    last_run_date = stale_info.get('last_run_date', 'unknown')
+    safe_msg = html.escape(
+      f'Last run was {days} days ago ({last_run_date}) — data + signals may be stale',
+      quote=True,
+    )
+    parts.append(
+      f'<tr><td style="padding:12px 16px;background:{_COLOR_SURFACE};'
+      f'border-left:4px solid {_COLOR_SHORT};'
+      f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\','
+      f'Roboto,sans-serif;font-size:14px;color:{_COLOR_TEXT};'
+      f'line-height:1.5;">'
+      f'<p style="margin:0 0 4px 0;font-size:16px;font-weight:700;'
+      f'color:{_COLOR_TEXT};letter-spacing:0.02em;">'
+      f'━━━ Stale state ━━━</p>'
+      f'<p style="margin:0;color:{_COLOR_TEXT_MUTED};font-size:13px;">'
+      f'{safe_msg}</p>'
+      f'</td></tr>\n'
+      f'<tr><td height="16" style="height:16px;font-size:0;line-height:0;">'
+      f'&nbsp;</td></tr>\n'
+    )
+
+  # --- CRITICAL BANNER 2: corrupt-reset via warnings prefix (B2 / B3) ---
+  # Age-filter BYPASSED: state_manager.load_state appends this warning with
+  # TODAY's date at corrupt-recovery time, which is likely NOT equal to
+  # prior_run_date (state.json was missing/corrupt and thus has no prior_run).
+  corrupt_warnings = [
+    w for w in state.get('warnings', [])
+    if w.get('source') == 'state_manager'
+    and w.get('message', '').startswith('recovered from corruption')
+  ]
+  for w in corrupt_warnings:
+    safe_msg = html.escape(w.get('message', ''), quote=True)
+    parts.append(
+      f'<tr><td style="padding:12px 16px;background:{_COLOR_SURFACE};'
+      f'border-left:4px solid {_COLOR_FLAT};'
+      f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\','
+      f'Roboto,sans-serif;font-size:14px;color:{_COLOR_TEXT};'
+      f'line-height:1.5;">'
+      f'<p style="margin:0 0 4px 0;font-size:16px;font-weight:700;'
+      f'color:{_COLOR_TEXT};letter-spacing:0.02em;">'
+      f'━━━ State was reset ━━━</p>'
+      f'<p style="margin:0;color:{_COLOR_TEXT_MUTED};font-size:13px;">'
+      f'{safe_msg}</p>'
+      f'</td></tr>\n'
+      f'<tr><td height="16" style="height:16px;font-size:0;line-height:0;">'
+      f'&nbsp;</td></tr>\n'
+    )
+
+  # --- HERO CARD (verbatim from pre-edit function, B4) ---
+  parts.append(_render_hero_card_email(state, now))
+
+  # --- ROUTINE ROW: age-filtered non-critical warnings (D-03) ---
+  prior_run_date = state.get('last_run')
+  if prior_run_date:
+    routine = [
+      w for w in state.get('warnings', [])
+      if w.get('date') == prior_run_date
+      and not (
+        w.get('source') == 'state_manager'
+        and w.get('message', '').startswith('recovered from corruption')
+      )
+    ]
+  else:
+    routine = []
+
+  if routine:
+    n = len(routine)
+    # Plural/singular labels kept as literal substrings so grep audits can
+    # locate the routine-row metadata copy in source (D-01 / Phase 8 AC).
+    if n == 1:
+      label = f'{n} warning from prior run'
+    else:
+      label = f'{n} warnings from prior run'
+    items_html = ''.join(
+      f'<div style="margin:4px 0;color:{_COLOR_TEXT_DIM};font-size:12px;">'
+      f'&bull; {html.escape(w.get("message", ""), quote=True)}'
+      f'</div>'
+      for w in routine
+    )
+    parts.append(
+      f'<tr><td style="padding:8px 16px;background:{_COLOR_BG};'
+      f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\','
+      f'Roboto,sans-serif;font-size:12px;color:{_COLOR_TEXT_MUTED};">'
+      f'<div>{label}</div>'
+      f'{items_html}'
+      f'</td></tr>\n'
+      f'<tr><td height="16" style="height:16px;font-size:0;line-height:0;">'
+      f'&nbsp;</td></tr>\n'
+    )
+
+  return ''.join(parts)
 
 
 def _render_action_required_email(
