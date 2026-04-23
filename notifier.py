@@ -1251,10 +1251,11 @@ def _post_to_resend(
   from_addr: str,
   to_addr: str,
   subject: str,
-  html_body: str,
+  html_body: str | None = None,
   timeout_s: int = _RESEND_TIMEOUT_S,
   retries: int = _RESEND_RETRIES,
   backoff_s: int = _RESEND_BACKOFF_S,
+  text_body: str | None = None,
 ) -> None:
   '''POST to Resend with retry-on-transient (D-12 + RESEARCH §1).
 
@@ -1265,6 +1266,11 @@ def _post_to_resend(
   Raises ResendError after retries exhaust OR on non-retryable 4xx
   (400/401/403/422/etc., but NOT 429).
 
+  Phase 8: accepts either `html_body` (existing callers) or `text_body`
+  (Phase 8 `send_crash_email`) or both. Raises `ValueError` if both are
+  None. Resend API accepts both keys simultaneously; the server picks
+  the correct MIME part per recipient client.
+
   REVIEWS.md Fix 1 (HIGH): api_key MUST be actively redacted from any
   error message built from resp.text OR an exception repr. We replace the
   literal api_key with '[REDACTED]' before raising — defense-in-depth
@@ -1274,12 +1280,17 @@ def _post_to_resend(
   connect-phase + `timeout_s` read-phase. Prevents hung DNS/TCP handshake
   from consuming the full read budget.
   '''
-  payload = {
+  if html_body is None and text_body is None:
+    raise ValueError('_post_to_resend requires html_body OR text_body')
+  payload: dict = {
     'from': from_addr,
     'to': [to_addr],
     'subject': subject,
-    'html': html_body,
   }
+  if html_body is not None:
+    payload['html'] = html_body
+  if text_body is not None:
+    payload['text'] = text_body
   headers = {
     'Authorization': f'Bearer {api_key}',
     'Content-Type': 'application/json',
@@ -1331,43 +1342,72 @@ def send_daily_email(
   old_signals: dict,
   now: datetime,
   is_test: bool = False,
-) -> int:
-  '''Public dispatch. NEVER raises. Returns 0 on success OR graceful degradation.
+) -> SendStatus:
+  '''Public dispatch. NEVER raises. Returns SendStatus on every path.
 
   NOTF-01: POSTs to Resend via _post_to_resend when RESEND_API_KEY present.
-  NOTF-07: Resend API failure logs error, does NOT crash — returns 0.
-  NOTF-08: Missing RESEND_API_KEY → write last_email.html + log WARN + return 0.
+  NOTF-07: Resend API failure logs warning, returns SendStatus(ok=False,
+    reason=...). Orchestrator (main.run_daily_check) translates into
+    state_manager.append_warning so the failure surfaces on the next run
+    (D-08 / Phase 8).
+  NOTF-08: Missing RESEND_API_KEY → log WARN + return
+    SendStatus(ok=True, reason='no_api_key'). Graceful degradation is NOT
+    a failure — operator chose to run without a dispatch path.
+  D-02 (Phase 8): `last_email.html` written on EVERY dispatch path,
+    regardless of RESEND_API_KEY presence or Resend success — operator
+    grep-recovery source of truth. Disk-write failure is logged but does
+    NOT abort Resend dispatch.
+  D-04 (Phase 8): subject gets `[!]` prefix when `_has_critical_banner`
+    returns True (stale state or corrupt-reset).
 
   Recipient: os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK).
   '''
-  subject = compose_email_subject(state, old_signals, is_test=is_test)
-  html_body = compose_email_body(state, old_signals, now)
+  has_critical = _has_critical_banner(state)
+  subject = compose_email_subject(
+    state, old_signals,
+    is_test=is_test, has_critical_banner=has_critical,
+  )
+  try:
+    html_body = compose_email_body(state, old_signals, now)
+  except Exception as e:
+    logger.warning(
+      '[Email] WARN compose_email_body failed: %s: %s',
+      type(e).__name__, e,
+    )
+    return SendStatus(
+      ok=False,
+      reason=f'compose_body_failed: {type(e).__name__}: {e}'[:200],
+    )
+
+  # D-02 (Phase 8): write last_email.html EVERY run, BEFORE any api_key
+  # or dispatch branch. Operator grep-recovery source of truth.
+  last_email_path = Path('last_email.html')
+  try:
+    _atomic_write_html(html_body, last_email_path)
+  except Exception as e:
+    logger.warning(
+      '[Email] WARN last_email.html write failed: %s: %s',
+      type(e).__name__, e,
+    )
+    # Continue — disk-write failure must not block Resend dispatch.
 
   api_key = os.environ.get('RESEND_API_KEY')
   if not api_key:
-    # NOTF-08 fallback: write last_email.html for operator preview.
-    last_email_path = Path('last_email.html')
-    try:
-      _atomic_write_html(html_body, last_email_path)
-    except Exception as e:
-      # Belt-and-braces: even the fallback write must not crash the run.
-      logger.warning(
-        '[Email] WARN unexpected failure: %s: %s', type(e).__name__, e,
-      )
-      return 0
     logger.warning(
       '[Email] WARN RESEND_API_KEY missing — wrote %s (fallback)',
       last_email_path,
     )
-    return 0
+    return SendStatus(ok=True, reason='no_api_key')
 
   to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
   try:
     _post_to_resend(api_key, _EMAIL_FROM, to_addr, subject, html_body)
     logger.info('[Email] sent to %s subject=%r', to_addr, subject)
+    return SendStatus(ok=True, reason=None)
   except ResendError as e:
-    # NOTF-07: log + continue; no crash.
+    # NOTF-07: log + return failure status; orchestrator translates to warning.
     logger.warning('[Email] WARN send failed: %s', e)
+    return SendStatus(ok=False, reason=str(e)[:200])
   except Exception as e:
     # Belt-and-braces: ANY unexpected exception logged not propagated.
     # The ONLY place this codebase allows a bare Exception catch — email
@@ -1375,7 +1415,88 @@ def send_daily_email(
     logger.warning(
       '[Email] WARN unexpected failure: %s: %s', type(e).__name__, e,
     )
-  return 0
+    return SendStatus(ok=False, reason=f'{type(e).__name__}: {e}'[:200])
+
+
+def send_crash_email(
+  exc: BaseException,
+  state_summary: str,
+  now: datetime | None = None,
+) -> SendStatus:
+  '''D-05/D-06/D-07 (Phase 8): text/plain [CRASH] dispatch.
+
+  Reuses `_post_to_resend` retry loop (3 retries, flat backoff) — accepts
+  the 30s max hang on exit for parity with regular sends. NEVER raises.
+  No last_crash.html disk fallback: crash emails are transient; operator
+  has `journalctl` / GHA logs for traceback recovery.
+
+  Body format (text/plain, D-06):
+    Timestamp: <ISO AWST>
+    Exception: <class>: <message>
+
+    Traceback:
+      <traceback.format_exception() output>
+
+    State summary:
+      <state_summary argument, verbatim>
+
+  `state_summary` is built by the caller (main._build_crash_state_summary
+  in Plan 03) so notifier never touches state.json. Keeps hex-boundary
+  clean. Text/plain body means NO html escape on `state_summary`; it is
+  rendered verbatim.
+  '''
+  import traceback as _tb  # local import: no hex-boundary change needed
+  if now is None:
+    now = datetime.now(pytz.UTC)
+  awst = pytz.timezone('Australia/Perth')
+  iso_awst = now.astimezone(awst).strftime('%Y-%m-%d %H:%M:%S %Z')
+  date_only = now.astimezone(awst).strftime('%Y-%m-%d')
+  subject = f'[CRASH] Trading Signals — {date_only}'
+  tb_text = _tb.format_exception(type(exc), exc, exc.__traceback__)
+  body = (
+    f'Timestamp: {iso_awst}\n'
+    f'Exception: {type(exc).__name__}: {exc}\n'
+    f'\n'
+    f'Traceback:\n'
+    f'{"".join(tb_text)}\n'
+    f'State summary:\n'
+    f'{state_summary}\n'
+  )
+
+  api_key = os.environ.get('RESEND_API_KEY')
+  if not api_key:
+    logger.warning(
+      '[Email] WARN crash-email: RESEND_API_KEY missing — skipping dispatch',
+    )
+    return SendStatus(ok=False, reason='no_api_key')
+
+  to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
+  if not to_addr:
+    logger.warning(
+      '[Email] WARN crash-email: SIGNALS_EMAIL_TO missing — skipping dispatch',
+    )
+    return SendStatus(ok=False, reason='no_recipient')
+
+  try:
+    _post_to_resend(
+      api_key=api_key,
+      from_addr=_EMAIL_FROM,
+      to_addr=to_addr,
+      subject=subject,
+      html_body=None,
+      text_body=body,
+    )
+    logger.info('[Email] CRASH email sent to %s', to_addr)
+    return SendStatus(ok=True, reason=None)
+  except ResendError as e:
+    logger.warning('[Email] WARN crash-email send failed: %s', e)
+    return SendStatus(ok=False, reason=str(e)[:200])
+  except Exception as e:
+    logger.warning(
+      '[Email] WARN crash-email unexpected failure: %s: %s',
+      type(e).__name__, e,
+    )
+    return SendStatus(ok=False, reason=f'{type(e).__name__}: {e}'[:200])
 
 
 # =========================================================================
@@ -1392,5 +1513,7 @@ if __name__ == '__main__':
   _state = load_state()
   _old_signals: dict = {'^AXJO': None, 'AUDUSD=X': None}
   _now = datetime.now(pytz.timezone('Australia/Perth'))
-  _rc = send_daily_email(_state, _old_signals, _now, is_test=True)
-  sys.exit(_rc)
+  _status = send_daily_email(_state, _old_signals, _now, is_test=True)
+  # Back-to-back Plan 03 adopts the SendStatus contract in main.py.
+  # CLI preview: ok=True → exit 0; ok=False → exit 1 for operator feedback.
+  sys.exit(0 if _status.ok else 1)
