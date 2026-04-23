@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 2
-status: verifying
-last_updated: "2026-04-23T03:37:08.432Z"
+current_plan: 1
+status: executing
+last_updated: "2026-04-23T09:07:44.515Z"
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 29
-  completed_plans: 29
-  percent: 100
+  total_plans: 32
+  completed_plans: 30
+  percent: 94
 ---
 
 # STATE — Trading Signals
@@ -22,18 +22,18 @@ progress:
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
 - **Core value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 07 — scheduler-github-actions-deployment
+- **Current focus:** Phase 08 — Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account
 
 ## Current Position
 
-Phase: 07 (scheduler-github-actions-deployment) — EXECUTING
-Plan: 3 of 3
+Phase: 08 (Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account) — EXECUTING
+Plan: 1 of 3
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 6 (complete) → 7 (Scheduler + GitHub Actions Deployment)
-- **Current Plan:** 2
+- **Current Plan:** 1
 - **Total Plans:** 3
-- **Status:** Phase complete — ready for verification
+- **Status:** Executing Phase 08
 - **Progress:** [██████████] 100%
 
 ```
