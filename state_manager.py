@@ -46,10 +46,15 @@ from pathlib import Path
 from typing import Any  # noqa: F401 — retained for Waves 1-3 type hints
 
 from system_params import (
-  INITIAL_ACCOUNT,  # noqa: F401 — used in reset_state (Wave 2)
+  INITIAL_ACCOUNT,  # used in reset_state + MIGRATIONS[2] (Phase 8)
   MAX_WARNINGS,  # noqa: F401 — used in append_warning (Wave 2)
   STATE_FILE,
   STATE_SCHEMA_VERSION,  # noqa: F401 — used in _migrate (Wave 1)
+  # Phase 8 additions (D-14, CONF-02): tier vocabulary + default labels
+  AUDUSD_CONTRACTS,
+  SPI_CONTRACTS,
+  _DEFAULT_AUDUSD_LABEL,
+  _DEFAULT_SPI_LABEL,
 )
 
 # =========================================================================
@@ -70,6 +75,8 @@ _REQUIRED_TRADE_FIELDS = frozenset({
 _REQUIRED_STATE_KEYS = frozenset({
   'schema_version', 'account', 'last_run', 'positions',
   'signals', 'trade_log', 'equity_history', 'warnings',
+  # Phase 8 (v2 schema): CONF-01 + CONF-02 required top-level keys
+  'initial_account', 'contracts',
 })
 
 # =========================================================================
@@ -78,7 +85,18 @@ _REQUIRED_STATE_KEYS = frozenset({
 
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
-  # 2: lambda s: {**s, 'new_field': default_value},  # v2 stub for future
+  # Phase 8 v2 backfill (D-15 silent — no append_warning, no log):
+  # Pre-Phase-8 state.json missing 'initial_account' and/or 'contracts'
+  # gets defaults silently. s.get(..., default) is idempotent when the
+  # keys are already present (CONF-01/CONF-02 preserves operator choice).
+  2: lambda s: {
+    **s,
+    'initial_account': s.get('initial_account', INITIAL_ACCOUNT),
+    'contracts': s.get('contracts', {
+      'SPI200': _DEFAULT_SPI_LABEL,
+      'AUDUSD': _DEFAULT_AUDUSD_LABEL,
+    }),
+  },
 }
 
 # =========================================================================
@@ -297,6 +315,14 @@ def reset_state() -> dict:
     'trade_log': [],
     'equity_history': [],
     'warnings': [],
+    # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys emitted on
+    # fresh reset so corruption-recovery path + initial setup produce a
+    # state that passes _validate_loaded_state under schema v2.
+    'initial_account': INITIAL_ACCOUNT,
+    'contracts': {
+      'SPI200': _DEFAULT_SPI_LABEL,
+      'AUDUSD': _DEFAULT_AUDUSD_LABEL,
+    },
   }
 
 def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:

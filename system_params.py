@@ -68,12 +68,36 @@ AUDUSD_NOTIONAL: float = 10000.0
 AUDUSD_COST_AUD: float = 5.0    # round-trip; half deducted on open, half on close
 
 # =========================================================================
+# Phase 8 constants — contract tier presets (D-11, CONF-02)
+# =========================================================================
+# Label vocabulary: instrument-prefixed for CLI self-documentation
+# (--spi-contract spi-mini reads naturally vs generic 'mini'). Tier
+# multiplier + cost values per Phase 2 D-11. Baseline spellings locked
+# per Phase 8 CONTEXT.md D-11; operator divergence may extend this dict
+# in a follow-up milestone without schema bump.
+
+SPI_CONTRACTS: dict[str, dict[str, float]] = {
+  'spi-mini':     {'multiplier': 5.0,  'cost_aud': 6.0},
+  'spi-standard': {'multiplier': 25.0, 'cost_aud': 30.0},
+  'spi-full':     {'multiplier': 50.0, 'cost_aud': 50.0},
+}
+
+AUDUSD_CONTRACTS: dict[str, dict[str, float]] = {
+  'audusd-standard': {'multiplier': 10000.0, 'cost_aud': 5.0},
+  'audusd-mini':     {'multiplier': 1000.0,  'cost_aud': 0.5},
+}
+
+# D-11: defaults used by _migrate v1→v2 when state.json has no 'contracts' key.
+_DEFAULT_SPI_LABEL: str = 'spi-mini'
+_DEFAULT_AUDUSD_LABEL: str = 'audusd-standard'
+
+# =========================================================================
 # Phase 3 constants — state persistence (STATE-01, STATE-07, D-11)
 # =========================================================================
 
 INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
 MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
-STATE_SCHEMA_VERSION: int = 1       # bump on each schema change (STATE-04)
+STATE_SCHEMA_VERSION: int = 2       # bump on each schema change (STATE-04); Phase 8 → v2 (CONF-01/CONF-02)
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================

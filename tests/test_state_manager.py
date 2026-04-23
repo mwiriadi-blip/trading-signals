@@ -197,10 +197,19 @@ class TestLoadSave:
       'warnings': [
         {'date': '2026-04-20', 'source': 'sizing_engine', 'message': 'size=0: ...'},
       ],
+      # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys required by
+      # _validate_loaded_state. Round-trip equality comparison below
+      # ignores the runtime-only _resolved_contracts key (load_state
+      # materialises it after migration; save_state strips it before dump).
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     save_state(state, path=path)
     loaded = load_state(path=path)
-    assert loaded == state, 'round-trip must preserve every field including nested dicts/lists'
+    # Phase 8: load_state materialises _resolved_contracts (runtime-only
+    # per D-14); strip before equality to compare persisted shape only.
+    loaded_persisted = {k: v for k, v in loaded.items() if not k.startswith('_')}
+    assert loaded_persisted == state, 'round-trip must preserve every field including nested dicts/lists'
 
 class TestAtomicity:
   '''STATE-02 / D-08 (amended by D-17): crash simulation + post-replace fsync ordering proof.
@@ -863,15 +872,19 @@ class TestReset:
   Wave 2 fills this in.
   '''
 
-  def test_reset_state_has_all_8_top_level_keys(self) -> None:
-    '''STATE-01: reset_state returns dict with exactly 8 top-level keys.'''
+  def test_reset_state_has_all_10_top_level_keys(self) -> None:
+    '''STATE-01 (extended Phase 8 v2): reset_state returns dict with exactly
+    10 top-level keys — 8 original + 2 Phase 8 additions (initial_account,
+    contracts) required by _validate_loaded_state under schema v2.'''
     state = reset_state()
     expected_keys = {
       'schema_version', 'account', 'last_run', 'positions',
       'signals', 'trade_log', 'equity_history', 'warnings',
+      # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys
+      'initial_account', 'contracts',
     }
     assert set(state.keys()) == expected_keys, (
-      f'STATE-01: reset_state keys mismatch. Expected {sorted(expected_keys)}, '
+      f'STATE-01 (v2): reset_state keys mismatch. Expected {sorted(expected_keys)}, '
       f'got {sorted(state.keys())}'
     )
 
@@ -963,8 +976,11 @@ class TestSchemaVersion:
     sample = {'x': 1, 'y': 'two'}
     assert MIGRATIONS[1](sample) == sample, 'v1 migration must be identity (no-op hook)'
 
-  def test_schema_v1_no_op_migration(self, tmp_path) -> None:
-    '''STATE-04: a v1 state on disk loads with schema_version unchanged and all fields preserved.'''
+  def test_current_schema_no_op_migration(self, tmp_path) -> None:
+    '''STATE-04 (extended Phase 8): a state at STATE_SCHEMA_VERSION on disk
+    loads with schema_version unchanged and all fields preserved. Both the
+    v1 identity hook AND the v2 backfill are no-ops when state is already
+    at the current version with all required keys present.'''
     path = tmp_path / 'state.json'
     state = {
       'schema_version': STATE_SCHEMA_VERSION,
@@ -973,11 +989,18 @@ class TestSchemaVersion:
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {'SPI200': 0, 'AUDUSD': 0},
       'trade_log': [], 'equity_history': [], 'warnings': [],
+      # Phase 8 (v2 schema): CONF-01 + CONF-02 required keys. Under v2,
+      # s.get(..., default) in MIGRATIONS[2] is idempotent — preserves
+      # existing values without overwriting.
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     save_state(state, path=path)
     loaded = load_state(path=path)
     assert loaded['schema_version'] == STATE_SCHEMA_VERSION
-    assert loaded == state, 'v1 no-op migration must not mutate any field'
+    # Phase 8: strip runtime-only _resolved_contracts before equality
+    loaded_persisted = {k: v for k, v in loaded.items() if not k.startswith('_')}
+    assert loaded_persisted == state, 'no-op migration must not mutate any field'
 
   def test_load_state_without_schema_version_key_migrates_to_current(self, tmp_path) -> None:
     '''Pitfall 5: state without schema_version key defaults to 0, walks forward to current.'''
