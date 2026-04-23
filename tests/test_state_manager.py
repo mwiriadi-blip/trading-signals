@@ -23,7 +23,10 @@ import pytest  # noqa: F401 — used across Waves 1/2/3 for raises / parametrize
 
 from state_manager import (
   MIGRATIONS,  # noqa: F401 — used in Wave 1 TestSchemaVersion
+  _migrate,  # noqa: F401 — used in Phase 8 TestMigrateV2Backfill
+  _validate_loaded_state,  # noqa: F401 — used in Phase 8 tests
   append_warning,  # noqa: F401 — used in Wave 2 TestWarnings
+  clear_warnings,  # noqa: F401 — used in Phase 8 TestClearWarnings
   load_state,  # noqa: F401 — used in Waves 1/2 TestLoadSave/TestCorruptionRecovery
   record_trade,  # noqa: F401 — used in Wave 3 TestRecordTrade
   reset_state,  # noqa: F401 — used in Wave 2 TestReset
@@ -31,10 +34,14 @@ from state_manager import (
   update_equity_history,  # noqa: F401 — used in Wave 3 TestEquityHistory
 )
 from system_params import (
+  AUDUSD_CONTRACTS,  # noqa: F401 — used in Phase 8 TestLoadStateResolvesContracts
   INITIAL_ACCOUNT,  # noqa: F401 — used in Wave 2 TestReset
   MAX_WARNINGS,  # noqa: F401 — used in Wave 2 TestWarnings
+  SPI_CONTRACTS,  # noqa: F401 — used in Phase 8 TestLoadStateResolvesContracts
   STATE_FILE,  # noqa: F401 — used in Wave 1 TestLoadSave default path
   STATE_SCHEMA_VERSION,  # noqa: F401 — used in Wave 1 TestSchemaVersion
+  _DEFAULT_AUDUSD_LABEL,  # noqa: F401 — used in Phase 8 tests
+  _DEFAULT_SPI_LABEL,  # noqa: F401 — used in Phase 8 tests
 )
 
 # =========================================================================
@@ -1017,3 +1024,314 @@ class TestSchemaVersion:
     assert loaded['schema_version'] == STATE_SCHEMA_VERSION, (
       'missing schema_version must default to 0 and walk to current'
     )
+
+# =========================================================================
+# Phase 8 test classes — v2 migration, underscore filter, tier resolve, clear_warnings
+# =========================================================================
+
+class TestMigrateV2Backfill:
+  '''Phase 8 D-15: _migrate fills initial_account + contracts silently on
+  pre-Phase-8 state.json without appending a warning. Idempotent for states
+  that already have the keys set (operator's choice preserved).'''
+
+  def test_v0_state_gets_initial_account_and_contracts_defaults(self) -> None:
+    '''D-15: state without schema_version (→ v0) + no initial_account + no
+    contracts → _migrate adds both with defaults.'''
+    state = {
+      # no schema_version key → defaults to 0 in _migrate
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+    }
+    migrated = _migrate(state)
+    assert migrated['initial_account'] == INITIAL_ACCOUNT, (
+      f'D-15: v0 → v2 must add initial_account default; got {migrated.get("initial_account")!r}'
+    )
+    assert migrated['contracts'] == {
+      'SPI200': _DEFAULT_SPI_LABEL, 'AUDUSD': _DEFAULT_AUDUSD_LABEL,
+    }, f'D-15: v0 → v2 must add contracts defaults; got {migrated.get("contracts")!r}'
+
+  def test_v1_state_gets_only_phase8_keys_backfilled(self) -> None:
+    '''D-15: state at schema_version=1 with other fields intact → _migrate
+    adds initial_account + contracts only; does NOT overwrite existing keys.'''
+    state = {
+      'schema_version': 1,
+      'account': 85432.10, 'last_run': '2026-03-15',
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 1, 'AUDUSD': -1},
+      'trade_log': [{'instrument': 'SPI200', 'net_pnl': 250.0}],
+      'equity_history': [{'date': '2026-03-14', 'equity': 85000.0}],
+      'warnings': [],
+    }
+    migrated = _migrate(state)
+    # Phase 8 keys backfilled
+    assert 'initial_account' in migrated
+    assert 'contracts' in migrated
+    # Existing keys untouched
+    assert migrated['account'] == 85432.10
+    assert migrated['last_run'] == '2026-03-15'
+    assert migrated['signals'] == {'SPI200': 1, 'AUDUSD': -1}
+    assert migrated['trade_log'] == [{'instrument': 'SPI200', 'net_pnl': 250.0}]
+    assert migrated['equity_history'] == [{'date': '2026-03-14', 'equity': 85000.0}]
+
+  def test_v2_state_has_existing_initial_account_preserved(self) -> None:
+    '''D-15 idempotence: the s.get(..., default) pattern preserves existing
+    values. A state already carrying initial_account=50000.0 keeps it —
+    the lambda never overwrites operator choice.'''
+    state = {
+      'schema_version': 1,  # force re-run of MIGRATIONS[2]
+      'account': 50000.0, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      # Operator's CONF-01 choice:
+      'initial_account': 50000.0,
+      'contracts': {'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini'},
+    }
+    migrated = _migrate(state)
+    assert migrated['initial_account'] == 50000.0, (
+      'D-15: existing initial_account must be preserved (idempotent)'
+    )
+    assert migrated['contracts'] == {
+      'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini',
+    }, 'D-15: existing contracts must be preserved (idempotent)'
+
+  def test_migrate_v2_appends_no_warning(self) -> None:
+    '''D-15: _migrate on v1 state MUST NOT append a warning — silent
+    migration. Backfill is transparent to the operator.'''
+    state = {
+      'schema_version': 1,
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+    }
+    warnings_before = list(state['warnings'])  # copy
+    migrated = _migrate(state)
+    assert migrated['warnings'] == warnings_before, (
+      f'D-15: _migrate must NOT append a warning; '
+      f'before={warnings_before!r} after={migrated["warnings"]!r}'
+    )
+
+  def test_migrate_walks_schema_version_to_current(self) -> None:
+    '''STATE-04 (Phase 8 extension): after _migrate, schema_version equals
+    STATE_SCHEMA_VERSION (now 2 per Phase 8).'''
+    state = {
+      # no schema_version → defaults to 0
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+    }
+    migrated = _migrate(state)
+    assert migrated['schema_version'] == STATE_SCHEMA_VERSION
+    assert STATE_SCHEMA_VERSION == 2, 'Phase 8 bumps STATE_SCHEMA_VERSION to 2'
+
+
+class TestSaveStateExcludesUnderscoreKeys:
+  '''Phase 8 D-14: save_state filters out any key starting with underscore.
+  The convention is runtime-only — these keys never cross the disk boundary.
+  Rule applies to _resolved_contracts AND Plan 03's future _stale_info.'''
+
+  def test_resolved_contracts_not_persisted(self, tmp_path) -> None:
+    '''D-14: _resolved_contracts is the canonical runtime-only key; must NOT
+    appear in the on-disk state.json.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    state['_resolved_contracts'] = {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    }
+    save_state(state, path=path)
+    on_disk = json.loads(path.read_text())
+    assert '_resolved_contracts' not in on_disk, (
+      f'D-14: _resolved_contracts must NOT appear on disk; '
+      f'disk keys: {sorted(on_disk.keys())}'
+    )
+
+  def test_arbitrary_underscore_key_not_persisted(self, tmp_path) -> None:
+    '''D-14 general rule: ANY key with underscore prefix is stripped. This
+    test guards against regressions where the filter is narrowed to only
+    _resolved_contracts — the convention is the whole namespace.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    state['_arbitrary'] = 'runtime-only-secret'
+    state['_another_transient'] = {'foo': 'bar'}
+    save_state(state, path=path)
+    on_disk = json.loads(path.read_text())
+    assert '_arbitrary' not in on_disk
+    assert '_another_transient' not in on_disk
+
+  def test_stale_info_not_persisted(self, tmp_path) -> None:
+    '''D-14 (Plan 03 regression guard): _stale_info is Plan 03's transient
+    signal for the stale-state banner. Must NOT be persisted — the filter
+    at the state_manager layer gives Plan 03 the invariant it needs
+    without a separate opt-in.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    state['_stale_info'] = {'days_stale': 3, 'last_run_date': '2026-04-20'}
+    save_state(state, path=path)
+    on_disk = json.loads(path.read_text())
+    assert '_stale_info' not in on_disk, (
+      f'D-14: _stale_info must NOT appear on disk (Plan 03 regression guard); '
+      f'disk keys: {sorted(on_disk.keys())}'
+    )
+
+  def test_public_keys_all_persisted(self, tmp_path) -> None:
+    '''D-14: filter is UNDERSCORE-ONLY. All 10 v2-required public keys
+    (schema_version, account, last_run, positions, signals, trade_log,
+    equity_history, warnings, initial_account, contracts) persist.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    save_state(state, path=path)
+    on_disk = json.loads(path.read_text())
+    expected = {
+      'schema_version', 'account', 'last_run', 'positions',
+      'signals', 'trade_log', 'equity_history', 'warnings',
+      'initial_account', 'contracts',
+    }
+    assert expected <= set(on_disk.keys()), (
+      f'D-14: all 10 v2-required public keys must persist; '
+      f'missing={sorted(expected - set(on_disk.keys()))}'
+    )
+
+  def test_save_does_not_mutate_in_memory_state(self, tmp_path) -> None:
+    '''D-14: save_state builds a new persisted dict via the filter; the
+    caller's in-memory state dict is untouched so _resolved_contracts
+    remains available for the rest of the run.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    state['_resolved_contracts'] = {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    }
+    save_state(state, path=path)
+    # In-memory state STILL has _resolved_contracts after save
+    assert '_resolved_contracts' in state, (
+      'D-14: save_state must not mutate the caller\'s dict; '
+      '_resolved_contracts must remain on the in-memory state.'
+    )
+    assert state['_resolved_contracts']['SPI200'] == {'multiplier': 5.0, 'cost_aud': 6.0}
+
+
+class TestLoadStateResolvesContracts:
+  '''Phase 8 D-14: load_state materialises _resolved_contracts from the
+  tier labels in state['contracts'], looking up each label in the
+  corresponding system_params.*_CONTRACTS dict. Unknown labels raise
+  KeyError (operator surfaces it + runs --reset; hex rule preserved).'''
+
+  def test_load_state_resolves_spi_mini(self, tmp_path) -> None:
+    '''D-14: state with contracts = {SPI200: spi-mini, AUDUSD: audusd-standard}
+    resolves to the SPI mini + AUDUSD standard tier values.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    # Defaults are spi-mini + audusd-standard, so reset_state already matches
+    save_state(state, path=path)
+    loaded = load_state(path=path)
+    assert loaded['_resolved_contracts']['SPI200'] == {
+      'multiplier': 5.0, 'cost_aud': 6.0,
+    }, f'D-14: expected spi-mini tier values; got {loaded["_resolved_contracts"]["SPI200"]}'
+    assert loaded['_resolved_contracts']['AUDUSD'] == {
+      'multiplier': 10000.0, 'cost_aud': 5.0,
+    }, f'D-14: expected audusd-standard tier values; got {loaded["_resolved_contracts"]["AUDUSD"]}'
+
+  def test_load_state_resolves_spi_standard_and_audusd_mini(self, tmp_path) -> None:
+    '''D-14: a different tier combination (spi-standard + audusd-mini)
+    resolves to the correct tier values from SPI_CONTRACTS / AUDUSD_CONTRACTS.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    state['contracts'] = {'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini'}
+    save_state(state, path=path)
+    loaded = load_state(path=path)
+    assert loaded['_resolved_contracts']['SPI200'] == {
+      'multiplier': 25.0, 'cost_aud': 30.0,
+    }
+    assert loaded['_resolved_contracts']['AUDUSD'] == {
+      'multiplier': 1000.0, 'cost_aud': 0.5,
+    }
+
+  def test_load_state_unknown_label_raises_key_error(self, tmp_path) -> None:
+    '''D-14: an unknown label in state['contracts'] raises KeyError naming
+    the offending label. Hex rule: caller surfaces and operator runs --reset.
+
+    The state is written directly (bypassing save_state — which would
+    happily persist the bogus label) so the schema is valid JSON with
+    all required keys, but the label lookup fails on load.'''
+    path = tmp_path / 'state.json'
+    bogus_state = {
+      'schema_version': STATE_SCHEMA_VERSION,
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-made-up', 'AUDUSD': 'audusd-standard'},
+    }
+    path.write_text(json.dumps(bogus_state, indent=2))
+    with pytest.raises(KeyError, match='spi-made-up'):
+      load_state(path=path)
+
+  def test_load_state_on_fresh_reset_resolves_defaults(self, tmp_path) -> None:
+    '''D-14: reset_state emits default labels; after save + load, the
+    materialised _resolved_contracts matches spi-mini / audusd-standard.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    save_state(state, path=path)
+    loaded = load_state(path=path)
+    assert loaded['_resolved_contracts']['SPI200'] == SPI_CONTRACTS[_DEFAULT_SPI_LABEL]
+    assert loaded['_resolved_contracts']['AUDUSD'] == AUDUSD_CONTRACTS[_DEFAULT_AUDUSD_LABEL]
+
+
+class TestClearWarnings:
+  '''Phase 8 D-02: clear_warnings empties state['warnings'] in place and
+  returns the same dict. Preserves D-10 sole-writer invariant — state_manager
+  is the ONLY module that mutates state['warnings'].'''
+
+  def test_clear_warnings_empties_list(self) -> None:
+    '''D-02: state with 3 warning entries → after clear_warnings, list is empty.'''
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 22, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'sizing_engine', 'msg 1', now=fixed_now)
+    state = append_warning(state, 'state_manager', 'msg 2', now=fixed_now)
+    state = append_warning(state, 'notifier', 'msg 3', now=fixed_now)
+    assert len(state['warnings']) == 3, 'precondition: 3 warnings appended'
+    result = clear_warnings(state)
+    assert result['warnings'] == [], (
+      f'D-02: clear_warnings must empty state["warnings"]; got {result["warnings"]!r}'
+    )
+
+  def test_clear_warnings_preserves_other_keys(self) -> None:
+    '''D-02: clear_warnings only touches state["warnings"]; all other
+    top-level keys (account, positions, signals, trade_log, etc.) remain
+    untouched.'''
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 22, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'sizing_engine', 'msg 1', now=fixed_now)
+    # Capture non-warning state snapshot
+    snapshot = {k: v for k, v in state.items() if k != 'warnings'}
+    clear_warnings(state)
+    after_snapshot = {k: v for k, v in state.items() if k != 'warnings'}
+    assert after_snapshot == snapshot, (
+      'D-02: clear_warnings must NOT touch any key other than warnings'
+    )
+
+  def test_clear_warnings_in_place_mutation(self) -> None:
+    '''D-02: clear_warnings returns the SAME dict reference (in-place
+    mutation pattern — like append_warning, record_trade).'''
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 22, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'sizing_engine', 'msg', now=fixed_now)
+    result = clear_warnings(state)
+    assert result is state, (
+      'D-02: clear_warnings must return the same dict reference (in-place)'
+    )
+
+  def test_clear_warnings_on_empty_list_is_noop(self) -> None:
+    '''D-02: calling clear_warnings on a state with no warnings is a no-op
+    and does not raise.'''
+    state = reset_state()
+    assert state['warnings'] == [], 'precondition: fresh state has empty warnings'
+    result = clear_warnings(state)
+    assert result['warnings'] == []
+    assert result is state
