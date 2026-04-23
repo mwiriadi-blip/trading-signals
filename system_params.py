@@ -91,6 +91,17 @@ AUDUSD_CONTRACTS: dict[str, dict[str, float]] = {
 _DEFAULT_SPI_LABEL: str = 'spi-mini'
 _DEFAULT_AUDUSD_LABEL: str = 'audusd-standard'
 
+# Phase 8 IN-05: shared fallback (multiplier, cost_aud) tuples used by
+# dashboard.py and notifier.py when state['_resolved_contracts'] is
+# unavailable (pre-Phase-8 state shape or unit tests that build state dicts
+# directly). Single source of truth — previously duplicated inline in both
+# render modules. Values match the default SPI mini / AUD standard tiers
+# (preserves pre-Phase-8 behavior when no tier has been selected).
+FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
+  'SPI200': (SPI_MULT, SPI_COST_AUD),
+  'AUDUSD': (AUDUSD_NOTIONAL, AUDUSD_COST_AUD),
+}
+
 # =========================================================================
 # Phase 3 constants — state persistence (STATE-01, STATE-07, D-11)
 # =========================================================================

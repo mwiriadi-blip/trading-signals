@@ -70,6 +70,7 @@ from system_params import (
   _COLOR_TEXT_MUTED,
   AUDUSD_COST_AUD,
   AUDUSD_NOTIONAL,
+  FALLBACK_CONTRACT_SPECS,
   INITIAL_ACCOUNT,
   SPI_COST_AUD,
   SPI_MULT,
@@ -131,10 +132,11 @@ _INSTRUMENT_DISPLAY_NAMES_EMAIL = {
   'AUDUSD': 'AUD / USD',
 }
 
-_CONTRACT_SPECS_EMAIL = {
-  'SPI200': (SPI_MULT, SPI_COST_AUD),
-  'AUDUSD': (AUDUSD_NOTIONAL, AUDUSD_COST_AUD),
-}
+# Phase 8 IN-05: _CONTRACT_SPECS_EMAIL is now a re-export of
+# system_params.FALLBACK_CONTRACT_SPECS — single source of truth shared with
+# dashboard.py. Local binding retained so existing call sites inside this
+# module continue to work without churn.
+_CONTRACT_SPECS_EMAIL = FALLBACK_CONTRACT_SPECS
 
 # D-05: state_key → yfinance symbol for old_signals dict lookup (old_signals
 # is keyed by yfinance symbol per main.py pre-run capture).

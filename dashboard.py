@@ -91,6 +91,7 @@ from system_params import (  # noqa: F401 — Wave 1 contract specs + trail mult
   _COLOR_TEXT_MUTED,
   AUDUSD_COST_AUD,
   AUDUSD_NOTIONAL,
+  FALLBACK_CONTRACT_SPECS,
   INITIAL_ACCOUNT,
   SPI_COST_AUD,
   SPI_MULT,
@@ -124,10 +125,12 @@ _INSTRUMENT_DISPLAY_NAMES = {
   'AUDUSD': 'AUD / USD',
 }
 
-_CONTRACT_SPECS = {
-  'SPI200': (SPI_MULT, SPI_COST_AUD),
-  'AUDUSD': (AUDUSD_NOTIONAL, AUDUSD_COST_AUD),
-}
+# Phase 8 IN-05: _CONTRACT_SPECS is now a re-export of
+# system_params.FALLBACK_CONTRACT_SPECS — single source of truth shared with
+# notifier.py. Local binding retained so existing call sites inside this
+# module (and any out-of-tree consumers that imported the name) continue to
+# work without churn.
+_CONTRACT_SPECS = FALLBACK_CONTRACT_SPECS
 
 
 # =========================================================================
