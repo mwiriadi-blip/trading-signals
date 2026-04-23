@@ -10,12 +10,12 @@ Fine granularity — each requirement is independently testable.
 
 ### Data Ingestion
 
-- [ ] **DATA-01**: App fetches 400 days of daily OHLCV for `^AXJO` via yfinance
-- [ ] **DATA-02**: App fetches 400 days of daily OHLCV for `AUDUSD=X` via yfinance
-- [ ] **DATA-03**: Fetch retries up to 3 times with 10s backoff on failure
-- [ ] **DATA-04**: Empty/short frame (len < 300) raises a hard fail — no state written, error emailed
-- [ ] **DATA-05**: Stale last bar (older than per-instrument freshness budget) is flagged as a warning
-- [ ] **DATA-06**: `signal_as_of` (date of last data bar) is logged separately from `run_date` (clock-now in Perth)
+- [x] **DATA-01**: App fetches 400 days of daily OHLCV for `^AXJO` via yfinance
+- [x] **DATA-02**: App fetches 400 days of daily OHLCV for `AUDUSD=X` via yfinance
+- [x] **DATA-03**: Fetch retries up to 3 times with 10s backoff on failure
+- [x] **DATA-04**: Empty/short frame (len < 300) raises a hard fail — no state written, error emailed
+- [x] **DATA-05**: Stale last bar (older than per-instrument freshness budget) is flagged as a warning
+- [x] **DATA-06**: `signal_as_of` (date of last data bar) is logged separately from `run_date` (clock-now in Perth)
 
 ### Signal Engine (pure math)
 
@@ -87,39 +87,39 @@ Fine granularity — each requirement is independently testable.
 
 ### State Persistence
 
-- [ ] **STATE-01**: State file `state.json` has top-level keys: `schema_version`, `account`, `last_run`, `positions`, `signals`, `trade_log`, `equity_history`, `warnings`
-- [ ] **STATE-02**: Writes are atomic via tempfile → fsync → `os.replace`
-- [ ] **STATE-03**: Corrupt `state.json` is backed up to `state.json.corrupt.<timestamp>` and reinitialised
-- [ ] **STATE-04**: `schema_version` enables forward migration path (no-op migration on v1 to prove the hook)
-- [ ] **STATE-05**: `record_trade(state, trade)` appends to `trade_log` and adjusts `account`
-- [ ] **STATE-06**: `update_equity_history(state, date)` appends `{date, equity}` with equity = account + sum(unrealised)
-- [ ] **STATE-07**: `reset_state()` reinitialises account to $100,000 with empty positions/trades/history
+- [x] **STATE-01**: State file `state.json` has top-level keys: `schema_version`, `account`, `last_run`, `positions`, `signals`, `trade_log`, `equity_history`, `warnings`
+- [x] **STATE-02**: Writes are atomic via tempfile → fsync → `os.replace`
+- [x] **STATE-03**: Corrupt `state.json` is backed up to `state.json.corrupt.<timestamp>` and reinitialised
+- [x] **STATE-04**: `schema_version` enables forward migration path (no-op migration on v1 to prove the hook)
+- [x] **STATE-05**: `record_trade(state, trade)` appends to `trade_log` and adjusts `account`
+- [x] **STATE-06**: `update_equity_history(state, date)` appends `{date, equity}` with equity = account + sum(unrealised)
+- [x] **STATE-07**: `reset_state()` reinitialises account to $100,000 with empty positions/trades/history
 
 ### Email Notification
 
-- [ ] **NOTF-01**: Email sends via Resend HTTPS API (`POST https://api.resend.com/emails`) with Bearer token
-- [ ] **NOTF-02**: Subject shows signals + P&L + date, prefixed 🔴 on signal change and 📊 when unchanged
-- [ ] **NOTF-03**: HTML body uses inline CSS only (dark theme: #0f1117 bg, #22c55e LONG, #ef4444 SHORT, #eab308 FLAT)
-- [ ] **NOTF-04**: Body sections: header with date/account, signal status table, positions, today's P&L, running equity, last 5 closed trades, footer disclaimer
-- [ ] **NOTF-05**: ACTION REQUIRED block (red border) appears when any signal changed from the previous run
-- [ ] **NOTF-06**: Email is mobile-responsive (tested width 375px)
-- [ ] **NOTF-07**: Resend API failure logs error and continues — does NOT crash the workflow
-- [ ] **NOTF-08**: Missing `RESEND_API_KEY` degrades gracefully (writes `last_email.html` + console) — no crash
-- [ ] **NOTF-09**: All user-visible values in the HTML are escaped to prevent injection
+- [x] **NOTF-01**: Email sends via Resend HTTPS API (`POST https://api.resend.com/emails`) with Bearer token
+- [x] **NOTF-02**: Subject shows signals + P&L + date, prefixed 🔴 on signal change and 📊 when unchanged
+- [x] **NOTF-03**: HTML body uses inline CSS only (dark theme: #0f1117 bg, #22c55e LONG, #ef4444 SHORT, #eab308 FLAT)
+- [x] **NOTF-04**: Body sections: header with date/account, signal status table, positions, today's P&L, running equity, last 5 closed trades, footer disclaimer
+- [x] **NOTF-05**: ACTION REQUIRED block (red border) appears when any signal changed from the previous run
+- [x] **NOTF-06**: Email is mobile-responsive (tested width 375px)
+- [x] **NOTF-07**: Resend API failure logs error and continues — does NOT crash the workflow
+- [x] **NOTF-08**: Missing `RESEND_API_KEY` degrades gracefully (writes `last_email.html` + console) — no crash
+- [x] **NOTF-09**: All user-visible values in the HTML are escaped to prevent injection
 - [x] **NOTF-10
 **: Warnings from previous run carry over into next email header
 
 ### Dashboard
 
-- [ ] **DASH-01**: `dashboard.html` is a single self-contained file with inline CSS
-- [ ] **DASH-02**: Chart.js 4.4.6 UMD is loaded from a pinned CDN URL with SRI hash
-- [ ] **DASH-03**: Page shows current signal for both instruments with status colour
-- [ ] **DASH-04**: Account equity chart (Chart.js line) uses `equity_history` data
-- [ ] **DASH-05**: Open positions table shows entry, current, contracts, pyramid level, trail stop, unrealised P&L
-- [ ] **DASH-06**: Last 20 closed trades rendered as an HTML table
-- [ ] **DASH-07**: Key stats block shows total return, Sharpe, max drawdown, win rate
-- [ ] **DASH-08**: "Last updated" timestamp shown in AWST
-- [ ] **DASH-09**: Visual theme matches backtest aesthetic (same palette as email)
+- [x] **DASH-01**: `dashboard.html` is a single self-contained file with inline CSS
+- [x] **DASH-02**: Chart.js 4.4.6 UMD is loaded from a pinned CDN URL with SRI hash
+- [x] **DASH-03**: Page shows current signal for both instruments with status colour
+- [x] **DASH-04**: Account equity chart (Chart.js line) uses `equity_history` data
+- [x] **DASH-05**: Open positions table shows entry, current, contracts, pyramid level, trail stop, unrealised P&L
+- [x] **DASH-06**: Last 20 closed trades rendered as an HTML table
+- [x] **DASH-07**: Key stats block shows total return, Sharpe, max drawdown, win rate
+- [x] **DASH-08**: "Last updated" timestamp shown in AWST
+- [x] **DASH-09**: Visual theme matches backtest aesthetic (same palette as email)
 
 ### Scheduler & Deployment
 
@@ -140,16 +140,16 @@ Fine granularity — each requirement is independently testable.
 
 ### CLI Flags
 
-- [ ] **CLI-01**: `python main.py --test` runs a full signal check, prints the report, sends a `[TEST]`-prefixed email, and does NOT mutate `state.json` (enforced by structurally separating compute and persist). **Phase 4 lands the compute + structural read-only guarantee + a `[Email] --test` stub log line; the actual `[TEST]`-prefixed Resend send is wired in Phase 6 (NOTF-01 dispatch point).** The structural read-only guarantee (no `state.json` mutation on `--test`) is satisfied in Phase 4 and does not change in Phase 6.
-- [ ] **CLI-02**: `python main.py --reset` reinitialises `state.json` after confirmation
-- [ ] **CLI-03**: `python main.py --force-email` sends today's email immediately regardless of schedule. **Phase 4 parses the flag and logs `[Email] --force-email received; notifier wiring arrives in Phase 6` (stub), honouring the `--test` + `--force-email` combination by running `run_daily_check` first without persist then emitting the stub; Phase 6 replaces the stub with `notifier.send_daily_email()` fed by fresh computed state (same compute path as `--once`).**
-- [ ] **CLI-04**: `python main.py --once` runs one daily check for GitHub Actions mode
+- [x] **CLI-01**: `python main.py --test` runs a full signal check, prints the report, sends a `[TEST]`-prefixed email, and does NOT mutate `state.json` (enforced by structurally separating compute and persist). **Phase 4 lands the compute + structural read-only guarantee + a `[Email] --test` stub log line; the actual `[TEST]`-prefixed Resend send is wired in Phase 6 (NOTF-01 dispatch point).** The structural read-only guarantee (no `state.json` mutation on `--test`) is satisfied in Phase 4 and does not change in Phase 6.
+- [x] **CLI-02**: `python main.py --reset` reinitialises `state.json` after confirmation
+- [x] **CLI-03**: `python main.py --force-email` sends today's email immediately regardless of schedule. **Phase 4 parses the flag and logs `[Email] --force-email received; notifier wiring arrives in Phase 6` (stub), honouring the `--test` + `--force-email` combination by running `run_daily_check` first without persist then emitting the stub; Phase 6 replaces the stub with `notifier.send_daily_email()` fed by fresh computed state (same compute path as `--once`).**
+- [x] **CLI-04**: `python main.py --once` runs one daily check for GitHub Actions mode
 - [x] **CLI-05**: Default invocation (`python main.py`) runs immediately and then enters the schedule loop. **Phase 4 lands default-mode == `--once` (runs once and exits; logs `[Sched] One-shot mode (scheduler wiring lands in Phase 7)`); Phase 7 flips default to run-once-then-enter-schedule-loop via the `schedule` library per SCHED-01
 /02.**
 
 ### Error Handling & Observability
 
-- [ ] **ERR-01**: yfinance failure after 3 retries sends an error email and exits gracefully
+- [x] **ERR-01**: yfinance failure after 3 retries logs `[Fetch] ERROR <symbol>: <exception>` to stderr, exits with return code 2, and does NOT send email (deliberate — transient data-fetch errors are expected during weekly market closures, DNS blips, and upstream yfinance outages and should not spam the operator's inbox; only unhandled exceptions reach the Layer-B crash-email path via `main.py:1375-1398`). Guard: `tests/test_main.py::TestCrashEmailBoundary::test_data_fetch_error_does_not_fire_crash_email` locks the no-email behaviour.
 - [x] **ERR-02
 **: Resend API failure is logged, written to console, and does not crash the run
 - [x] **ERR-03
@@ -158,7 +158,7 @@ Fine granularity — each requirement is independently testable.
 **: Top-level `except Exception` wraps `run_daily_check`; crashes attempt a crash email then exit non-zero
 - [x] **ERR-05
 **: If `last_run` is > 2 days old on startup, the next email prefixes a "stale state" banner
-- [ ] **ERR-06**: Console logs use a structured format readable in Replit/GHA output (one block per instrument + summary)
+- [x] **ERR-06**: Console logs use a structured format readable in Replit/GHA output (one block per instrument + summary)
 
 ### Configuration (added 2026-04-22 — folded in from pending todo, landing in Phase 8)
 
@@ -212,66 +212,66 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 4 | Pending |
-| DATA-02 | Phase 4 | Pending |
-| DATA-03 | Phase 4 | Pending |
-| DATA-04 | Phase 4 | Pending |
-| DATA-05 | Phase 4 | Pending |
-| DATA-06 | Phase 4 | Pending |
+| DATA-01 | Phase 4 | Complete |
+| DATA-02 | Phase 4 | Complete |
+| DATA-03 | Phase 4 | Complete |
+| DATA-04 | Phase 4 | Complete |
+| DATA-05 | Phase 4 | Complete |
+| DATA-06 | Phase 4 | Complete |
 | SIG-01 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
 | SIG-02 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
 | SIG-03 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
 | SIG-04 | Phase 1 | Complete (oracle Plan 01-02 + production Plan 01-04 @ 1e-9) |
-| SIG-05 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
-| SIG-06 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
-| SIG-07 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
-| SIG-08 | Phase 1 | Goldens ready (Plan 01-03); production SUT pending (Plan 01-05) |
-| SIZE-01 | Phase 2 | Pending |
-| SIZE-02 | Phase 2 | Pending |
-| SIZE-03 | Phase 2 | Pending |
-| SIZE-04 | Phase 2 | Pending |
-| SIZE-05 | Phase 2 | Pending |
-| SIZE-06 | Phase 2 | Pending |
+| SIG-05 | Phase 1 | Complete (Plan 01-03 goldens + Plan 01-05 production SUT verified @ 1e-9) |
+| SIG-06 | Phase 1 | Complete (Plan 01-03 goldens + Plan 01-05 production SUT verified @ 1e-9) |
+| SIG-07 | Phase 1 | Complete (Plan 01-03 goldens + Plan 01-05 production SUT verified @ 1e-9) |
+| SIG-08 | Phase 1 | Complete (Plan 01-03 goldens + Plan 01-05 production SUT verified @ 1e-9) |
+| SIZE-01 | Phase 2 | Complete |
+| SIZE-02 | Phase 2 | Complete |
+| SIZE-03 | Phase 2 | Complete |
+| SIZE-04 | Phase 2 | Complete |
+| SIZE-05 | Phase 2 | Complete |
+| SIZE-06 | Phase 2 | Complete |
 | EXIT-01 | Phase 2 | Complete |
 | EXIT-02 | Phase 2 | Complete |
 | EXIT-03 | Phase 2 | Complete |
 | EXIT-04 | Phase 2 | Complete |
 | EXIT-05 | Phase 2 | Complete |
-| EXIT-06 | Phase 2 | Pending |
-| EXIT-07 | Phase 2 | Pending |
-| EXIT-08 | Phase 2 | Pending |
-| EXIT-09 | Phase 2 | Pending |
-| PYRA-01 | Phase 2 | Pending |
-| PYRA-02 | Phase 2 | Pending |
-| PYRA-03 | Phase 2 | Pending |
-| PYRA-04 | Phase 2 | Pending |
+| EXIT-06 | Phase 2 | Complete |
+| EXIT-07 | Phase 2 | Complete |
+| EXIT-08 | Phase 2 | Complete |
+| EXIT-09 | Phase 2 | Complete |
+| PYRA-01 | Phase 2 | Complete |
+| PYRA-02 | Phase 2 | Complete |
+| PYRA-03 | Phase 2 | Complete |
+| PYRA-04 | Phase 2 | Complete |
 | PYRA-05 | Phase 2 | Complete |
-| STATE-01 | Phase 3 | Pending |
-| STATE-02 | Phase 3 | Pending |
-| STATE-03 | Phase 3 | Pending |
-| STATE-04 | Phase 3 | Pending |
-| STATE-05 | Phase 3 | Pending |
-| STATE-06 | Phase 3 | Pending |
-| STATE-07 | Phase 3 | Pending |
-| NOTF-01 | Phase 6 | Pending |
-| NOTF-02 | Phase 6 | Pending |
-| NOTF-03 | Phase 6 | Pending |
-| NOTF-04 | Phase 6 | Pending |
-| NOTF-05 | Phase 6 | Pending |
-| NOTF-06 | Phase 6 | Pending |
-| NOTF-07 | Phase 6 | Pending |
-| NOTF-08 | Phase 6 | Pending |
-| NOTF-09 | Phase 6 | Pending |
-| NOTF-10 | Phase 8 | Pending |
-| DASH-01 | Phase 5 | Pending |
-| DASH-02 | Phase 5 | Pending |
-| DASH-03 | Phase 5 | Pending |
-| DASH-04 | Phase 5 | Pending |
-| DASH-05 | Phase 5 | Pending |
-| DASH-06 | Phase 5 | Pending |
-| DASH-07 | Phase 5 | Pending |
-| DASH-08 | Phase 5 | Pending |
-| DASH-09 | Phase 5 | Pending |
+| STATE-01 | Phase 3 | Complete |
+| STATE-02 | Phase 3 | Complete |
+| STATE-03 | Phase 3 | Complete |
+| STATE-04 | Phase 3 | Complete |
+| STATE-05 | Phase 3 | Complete |
+| STATE-06 | Phase 3 | Complete |
+| STATE-07 | Phase 3 | Complete |
+| NOTF-01 | Phase 6 | Complete |
+| NOTF-02 | Phase 6 | Complete |
+| NOTF-03 | Phase 6 | Complete |
+| NOTF-04 | Phase 6 | Complete |
+| NOTF-05 | Phase 6 | Complete |
+| NOTF-06 | Phase 6 | Complete |
+| NOTF-07 | Phase 6 | Complete |
+| NOTF-08 | Phase 6 | Complete |
+| NOTF-09 | Phase 6 | Complete |
+| NOTF-10 | Phase 8 | Complete |
+| DASH-01 | Phase 5 | Complete |
+| DASH-02 | Phase 5 | Complete |
+| DASH-03 | Phase 5 | Complete |
+| DASH-04 | Phase 5 | Complete |
+| DASH-05 | Phase 5 | Complete |
+| DASH-06 | Phase 5 | Complete |
+| DASH-07 | Phase 5 | Complete |
+| DASH-08 | Phase 5 | Complete |
+| DASH-09 | Phase 5 | Complete |
 | SCHED-01 | Phase 7 | Complete (Plan 07-02 _run_schedule_loop cron wiring + SCHEDULE_TIME_UTC 00:00) |
 | SCHED-02 | Phase 7 | Complete (Plan 07-02 main() default dispatch: immediate first run before loop) |
 | SCHED-03 | Phase 7 | Complete (Plan 07-02 run_daily_check weekday gate, WEEKDAY_SKIP_THRESHOLD=5) |
@@ -279,23 +279,23 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | SCHED-05 | Phase 7 | Complete (Plan 07-03 .github/workflows/daily.yml, operator-verified 2026-04-23) |
 | SCHED-06 | Phase 7 | Complete (Plan 07-03 docs/DEPLOY.md §Alternative — Reserved VM + Always On caveat) |
 | SCHED-07 | Phase 7 | Complete (Plan 07-01 dotenv bootstrap + Plan 07-03 GHA Secrets + Replit Secrets docs) |
-| CLI-01 | Phase 4 (compute + structural read-only) + Phase 6 (`[TEST]` email wiring) | Pending |
-| CLI-02 | Phase 4 | Pending |
-| CLI-03 | Phase 4 (stub + `--test` combo) + Phase 6 (notifier wiring) | Pending |
-| CLI-04 | Phase 4 | Pending |
-| CLI-05 | Phase 4 (default == one-shot) + Phase 7 (schedule-loop wiring) | Pending |
-| ERR-01 | Phase 4 | Pending |
-| ERR-02 | Phase 8 | Pending |
-| ERR-03 | Phase 8 | Pending |
-| ERR-04 | Phase 8 | Pending |
-| ERR-05 | Phase 8 | Pending |
-| ERR-06 | Phase 4 | Pending |
-| CONF-01 | Phase 8 | Pending |
-| CONF-02 | Phase 8 | Pending |
+| CLI-01 | Phase 4 (compute + structural read-only) + Phase 6 (`[TEST]` email wiring) | Complete |
+| CLI-02 | Phase 4 | Complete |
+| CLI-03 | Phase 4 (stub + `--test` combo) + Phase 6 (notifier wiring) | Complete |
+| CLI-04 | Phase 4 | Complete |
+| CLI-05 | Phase 4 (default == one-shot) + Phase 7 (schedule-loop wiring) | Complete |
+| ERR-01 | Phase 4 | Complete (spec amended in Phase 9 to match `test_data_fetch_error_does_not_fire_crash_email` lock) |
+| ERR-02 | Phase 8 | Complete |
+| ERR-03 | Phase 8 | Complete |
+| ERR-04 | Phase 8 | Complete |
+| ERR-05 | Phase 8 | Complete |
+| ERR-06 | Phase 4 | Complete |
+| CONF-01 | Phase 8 | Complete |
+| CONF-02 | Phase 8 | Complete |
 
 **Coverage:**
 - v1 requirements: 80 total (DATA 6 + SIG 8 + SIZE 6 + EXIT 9 + PYRA 5 + STATE 7 + NOTF 10 + DASH 9 + SCHED 7 + CLI 5 + ERR 6 + CONF 2)
-- Mapped to phases: 80
+- Mapped to phases: 80/80, Verified: 80/80
 - Unmapped: 0
 - Note (2026-04-22): CLI-01, CLI-03, and CLI-05 are split across phases — Phase 4 owns the CLI surface + compute + structural guarantees; Phase 6 owns Resend dispatch (CLI-01 `[TEST]` send + CLI-03 today's email); Phase 7 owns the schedule loop (CLI-05 default-mode loop). Each split is tracked in the per-phase requirement lists; coverage is still 1:1 at the phase-requirement-closure level.
 - Note (2026-04-22): CONF-01 and CONF-02 added by folding a pending todo ("Configurable starting account and contract sizes") into Phase 8 Hardening. Phase 8 req count now 7 (was 5).
@@ -315,3 +315,4 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 *Requirements defined: 2026-04-20*
 *Traceability populated: 2026-04-20 (roadmap creation)*
 *Amended 2026-04-22: CLI-01 / CLI-03 / CLI-05 Phase 4 ↔ Phase 6/7 split per Phase 4 cross-AI review (04-REVIEWS.md C-1) — Phase 4 owns CLI surface, compute, and structural read-only guarantee; Phase 6 wires email dispatch; Phase 7 wires schedule loop.*
+*Amended 2026-04-23: Phase 9 gap closure — ERR-01 spec text reconciled with implemented + test-locked no-email-on-data-error design; all 80 traceability checkboxes flipped to [x]/Complete to reflect v1.0-MILESTONE-AUDIT.md verified state (79/80 VERIFIED + 1 amended = 80/80).*
