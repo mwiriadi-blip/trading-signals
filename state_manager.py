@@ -83,20 +83,27 @@ _REQUIRED_STATE_KEYS = frozenset({
 # Schema migration registry (D-04, STATE-04)
 # =========================================================================
 
-MIGRATIONS: dict = {
-  1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
-  # Phase 8 v2 backfill (D-15 silent — no append_warning, no log):
-  # Pre-Phase-8 state.json missing 'initial_account' and/or 'contracts'
-  # gets defaults silently. s.get(..., default) is idempotent when the
-  # keys are already present (CONF-01/CONF-02 preserves operator choice).
-  2: lambda s: {
+def _migrate_v1_to_v2(s: dict) -> dict:
+  '''Phase 8 CONF-01/CONF-02 backfill: add initial_account (default $100k)
+  and contracts (default mini tier) for pre-v2 state files.
+
+  D-15 silent migration: no append_warning, no log. s.get(..., default) is
+  idempotent when the keys are already present — operator choice (a state
+  file with 'initial_account'/'contracts' already set) is preserved.
+  '''
+  return {
     **s,
     'initial_account': s.get('initial_account', INITIAL_ACCOUNT),
     'contracts': s.get('contracts', {
       'SPI200': _DEFAULT_SPI_LABEL,
       'AUDUSD': _DEFAULT_AUDUSD_LABEL,
     }),
-  },
+  }
+
+
+MIGRATIONS: dict = {
+  1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
+  2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
 }
 
 # =========================================================================
