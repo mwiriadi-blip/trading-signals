@@ -106,7 +106,8 @@ Fine granularity — each requirement is independently testable.
 - [ ] **NOTF-07**: Resend API failure logs error and continues — does NOT crash the workflow
 - [ ] **NOTF-08**: Missing `RESEND_API_KEY` degrades gracefully (writes `last_email.html` + console) — no crash
 - [ ] **NOTF-09**: All user-visible values in the HTML are escaped to prevent injection
-- [ ] **NOTF-10**: Warnings from previous run carry over into next email header
+- [x] **NOTF-10
+**: Warnings from previous run carry over into next email header
 
 ### Dashboard
 
@@ -149,16 +150,22 @@ Fine granularity — each requirement is independently testable.
 ### Error Handling & Observability
 
 - [ ] **ERR-01**: yfinance failure after 3 retries sends an error email and exits gracefully
-- [ ] **ERR-02**: Resend API failure is logged, written to console, and does not crash the run
-- [ ] **ERR-03**: Corrupt `state.json` is backed up and reinitialised with a warning in the next email
-- [ ] **ERR-04**: Top-level `except Exception` wraps `run_daily_check`; crashes attempt a crash email then exit non-zero
-- [ ] **ERR-05**: If `last_run` is > 2 days old on startup, the next email prefixes a "stale state" banner
+- [x] **ERR-02
+**: Resend API failure is logged, written to console, and does not crash the run
+- [x] **ERR-03
+**: Corrupt `state.json` is backed up and reinitialised with a warning in the next email
+- [x] **ERR-04
+**: Top-level `except Exception` wraps `run_daily_check`; crashes attempt a crash email then exit non-zero
+- [x] **ERR-05
+**: If `last_run` is > 2 days old on startup, the next email prefixes a "stale state" banner
 - [ ] **ERR-06**: Console logs use a structured format readable in Replit/GHA output (one block per instrument + summary)
 
 ### Configuration (added 2026-04-22 — folded in from pending todo, landing in Phase 8)
 
-- [ ] **CONF-01**: Starting account amount is a runtime config entered at `--reset` (CLI flag `--initial-account <amount>`), persisted under `state['initial_account']`. Dashboard total-return formula (DASH-07) and Phase 6 email equity/P&L references read from `state['initial_account']` instead of the hardcoded `system_params.INITIAL_ACCOUNT`. Backward-compat: if the key is missing from a pre-existing state.json, default to `INITIAL_ACCOUNT` (current $100,000) via Phase 3's `_migrate` hook. Minimum: $1,000 (validated at CLI parse).
-- [ ] **CONF-02**: Contract size is selectable per instrument via CLI flag (`--spi-contract {mini|standard|full}` and `--audusd-contract {standard|mini}`) at `--reset`, persisted under `state['contracts'][symbol]` as a preset label. Orchestrator reads the preset and passes the corresponding `multiplier` + `cost_aud` tier to `sizing_engine.step()` and `_closed_trade_to_record`. Tier table lives in `system_params.py` (`SPI_CONTRACTS`, `AUDUSD_CONTRACTS` dicts). Backward-compat: missing key defaults to `'mini'` (SPI: $5/pt $6 round-trip — current locked values per Phase 2 D-11).
+- [x] **CONF-01
+**: Starting account amount is a runtime config entered at `--reset` (CLI flag `--initial-account <amount>`), persisted under `state['initial_account']`. Dashboard total-return formula (DASH-07) and Phase 6 email equity/P&L references read from `state['initial_account']` instead of the hardcoded `system_params.INITIAL_ACCOUNT`. Backward-compat: if the key is missing from a pre-existing state.json, default to `INITIAL_ACCOUNT` (current $100,000) via Phase 3's `_migrate` hook. Minimum: $1,000 (validated at CLI parse).
+- [x] **CONF-02
+**: Contract size is selectable per instrument via CLI flag (`--spi-contract {mini|standard|full}` and `--audusd-contract {standard|mini}`) at `--reset`, persisted under `state['contracts'][symbol]` as a preset label. Orchestrator reads the preset and passes the corresponding `multiplier` + `cost_aud` tier to `sizing_engine.step()` and `_closed_trade_to_record`. Tier table lives in `system_params.py` (`SPI_CONTRACTS`, `AUDUSD_CONTRACTS` dicts). Backward-compat: missing key defaults to `'mini'` (SPI: $5/pt $6 round-trip — current locked values per Phase 2 D-11).
 
 ## v2 Requirements
 

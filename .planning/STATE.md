@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: 1
 status: executing
-last_updated: "2026-04-23T09:07:44.515Z"
+last_updated: "2026-04-23T09:58:50.665Z"
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 32
-  completed_plans: 30
-  percent: 94
+  completed_plans: 32
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -27,13 +27,13 @@ progress:
 ## Current Position
 
 Phase: 08 (Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account) — EXECUTING
-Plan: 1 of 3
+Plan: 3 of 3
 
 - **Milestone:** v1 — Mechanical Signal System
 - **Phase:** 6 (complete) → 7 (Scheduler + GitHub Actions Deployment)
 - **Current Plan:** 1
 - **Total Plans:** 3
-- **Status:** Executing Phase 08
+- **Status:** Ready to execute
 - **Progress:** [██████████] 100%
 
 ```
@@ -63,6 +63,7 @@ Plan: 1 of 3
 | Phase 07 P01 | ~8min | 2 tasks tasks | 6 files files |
 | Phase 07 P07-02 | ~20min | 3 tasks | 3 files |
 | Phase 07 P03 | ~15min | 4 tasks | 5 files |
+| Phase 8 P3 | 60 minutes | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,9 @@ Plan: 1 of 3
 - Phase 7 Wave 2: GHA workflow ships cron '0 0 * * 1-5' + workflow_dispatch + permissions:contents:write + concurrency:trading-signals + git-auto-commit@v5 with add_options:'-f' (Pitfall 2 force-add of gitignored state.json)
 - Phase 7 Wave 2 operator verification approved: workflow_dispatch ran green, state.json commit-back via github-actions[bot] confirmed, email arrived, README badge renders
 - Phase 7 Wave 2: TestGHAWorkflow uses parsed.get('on') or parsed.get(True) fallback (Codex HIGH) and does NOT use importorskip (Consensus MEDIUM — PyYAML pinned in Wave 0)
+- Plan 03: Module-level _LAST_LOADED_STATE cache in main.py single-threaded orchestrator enables crash-email SC-3 completeness without threading schedule-loop state through the scheduler driver
+- Plan 03: _dispatch_email_and_maintain_warnings encapsulates B1 canonical ordering (dispatch -> clear -> maybe-append -> single save) in one place so --force-email, --test, and (future) scheduled runs all share the same invariant
+- Plan 03: math.isfinite guard applied on BOTH argparse-flag and interactive-Q&A paths for --initial-account, closing T-08-12 regardless of invocation surface
 
 ### Todos Carried Forward
 
