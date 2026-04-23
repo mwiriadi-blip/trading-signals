@@ -130,8 +130,10 @@ Fine granularity — each requirement is independently testable.
 **: `run_daily_check` has an internal weekday gate (does not execute on Sat/Sun even if invoked)
 - [x] **SCHED-04
 **: `--once` flag runs a single daily check and exits (used by GitHub Actions)
-- [ ] **SCHED-05**: Primary deployment is GitHub Actions: `.github/workflows/daily.yml` with `cron: '0 0 * * 1-5'`, `permissions: contents: write`, `concurrency: trading-signals`, and commit-back of `state.json` via `stefanzweifel/git-auto-commit-action@v5`
-- [ ] **SCHED-06**: Alternative deployment is Replit Always On (Reserved VM), documented with filesystem-persistence caveat
+- [x] **SCHED-05
+**: Primary deployment is GitHub Actions: `.github/workflows/daily.yml` with `cron: '0 0 * * 1-5'`, `permissions: contents: write`, `concurrency: trading-signals`, and commit-back of `state.json` via `stefanzweifel/git-auto-commit-action@v5`
+- [x] **SCHED-06
+**: Alternative deployment is Replit Always On (Reserved VM), documented with filesystem-persistence caveat
 - [x] **SCHED-07
 **: All secrets loaded from env vars (`.env` locally, GitHub Secrets / Replit Secrets in deploy)
 
@@ -263,13 +265,13 @@ Updated during roadmap creation — each requirement maps to exactly one phase.
 | DASH-07 | Phase 5 | Pending |
 | DASH-08 | Phase 5 | Pending |
 | DASH-09 | Phase 5 | Pending |
-| SCHED-01 | Phase 7 | Pending |
-| SCHED-02 | Phase 7 | Pending |
-| SCHED-03 | Phase 7 | Pending |
-| SCHED-04 | Phase 7 | Pending |
-| SCHED-05 | Phase 7 | Pending |
-| SCHED-06 | Phase 7 | Pending |
-| SCHED-07 | Phase 7 | Pending |
+| SCHED-01 | Phase 7 | Complete (Plan 07-02 _run_schedule_loop cron wiring + SCHEDULE_TIME_UTC 00:00) |
+| SCHED-02 | Phase 7 | Complete (Plan 07-02 main() default dispatch: immediate first run before loop) |
+| SCHED-03 | Phase 7 | Complete (Plan 07-02 run_daily_check weekday gate, WEEKDAY_SKIP_THRESHOLD=5) |
+| SCHED-04 | Phase 7 | Complete (Plan 07-03 workflow `python main.py --once` step + CLI-04 preserved) |
+| SCHED-05 | Phase 7 | Complete (Plan 07-03 .github/workflows/daily.yml, operator-verified 2026-04-23) |
+| SCHED-06 | Phase 7 | Complete (Plan 07-03 docs/DEPLOY.md §Alternative — Reserved VM + Always On caveat) |
+| SCHED-07 | Phase 7 | Complete (Plan 07-01 dotenv bootstrap + Plan 07-03 GHA Secrets + Replit Secrets docs) |
 | CLI-01 | Phase 4 (compute + structural read-only) + Phase 6 (`[TEST]` email wiring) | Pending |
 | CLI-02 | Phase 4 | Pending |
 | CLI-03 | Phase 4 (stub + `--test` combo) + Phase 6 (notifier wiring) | Pending |

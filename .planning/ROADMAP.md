@@ -16,7 +16,7 @@
 - [x] **Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI** — Live yfinance fetch, `main.py` orchestrator, CLI flags, structured logs (completed 2026-04-22)
 - [x] **Phase 5: Dashboard** — Static `dashboard.html` with Chart.js equity curve, positions, trades, key stats (completed 2026-04-22)
 - [ ] **Phase 6: Email Notification** — Resend HTML email with ACTION REQUIRED block, mobile-responsive dark theme, graceful degradation
-- [ ] **Phase 7: Scheduler + GitHub Actions Deployment** — `cron 0 0 * * 1-5` GHA workflow with state commit-back, Replit alternative documented
+- [x] **Phase 7: Scheduler + GitHub Actions Deployment** — `cron 0 0 * * 1-5` GHA workflow with state commit-back, Replit alternative documented (completed 2026-04-23, operator-verified)
 - [ ] **Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account** — Warning persistence, stale-state banner, top-level crash path, corrupt-state recovery surfaced to operator, configurable starting account + per-instrument contract-size tiers (CONF-01/02 folded in 2026-04-22)
 
 ## Phase Details
@@ -137,10 +137,10 @@
   3. `python main.py --once` runs exactly one check and exits cleanly with non-zero on failure — the GHA workflow uses this mode
   4. All secrets (`RESEND_API_KEY`, `SIGNALS_EMAIL_TO`) are loaded from env vars with `python-dotenv` locally and GitHub Secrets / Replit Secrets in deploy — never committed
   5. Deployment guide documents GitHub Actions as the recommended primary path with Replit Reserved VM + Always On as the documented alternative including its filesystem-persistence caveat
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 - [x] 07-01-PLAN.md — Wave 0 scaffold: pin schedule + python-dotenv, add Phase 7 constants, seed main.py stubs + live load_dotenv(), create tests/test_scheduler.py 6-class skeleton, extend AST blocklist (DASHBOARD + NOTIFIER), rewrite .env.example header
-- [ ] 07-02-PLAN.md — Wave 1 body: fill _run_daily_check_caught + _run_schedule_loop, prepend weekday gate to run_daily_check, flip default-mode dispatch to immediate-run-then-loop, delete Phase 4 stub log line + update tests/test_main.py:129,146 (Pitfall 3)
-- [ ] 07-03-PLAN.md — Wave 2 PHASE GATE: create .github/workflows/daily.yml + docs/DEPLOY.md + README.md, append TestGHAWorkflow + TestDeployDocs, amend ROADMAP SC-4 per D-12, operator checkpoint verifies end-to-end workflow_dispatch
+- [x] 07-02-PLAN.md — Wave 1 body: fill _run_daily_check_caught + _run_schedule_loop, prepend weekday gate to run_daily_check, flip default-mode dispatch to immediate-run-then-loop, delete Phase 4 stub log line + update tests/test_main.py:129,146 (Pitfall 3)
+- [x] 07-03-PLAN.md — Wave 2 PHASE GATE: create .github/workflows/daily.yml + docs/DEPLOY.md + README.md, append TestGHAWorkflow + TestDeployDocs, amend ROADMAP SC-4 per D-12, operator checkpoint verifies end-to-end workflow_dispatch (operator-verified 2026-04-23)
 **UI hint**: no
 
 ### Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account
@@ -184,7 +184,7 @@ Phase 3 ─┤            ├─► Phase 4 ─┬─► Phase 5 ─┐
 | 4. End-to-End Skeleton — Fetch + Orchestrator + CLI | 0/0 | Not started | - |
 | 5. Dashboard | 0/0 | Not started | - |
 | 6. Email Notification | 0/0 | Not started | - |
-| 7. Scheduler + GitHub Actions Deployment | 1/3 | In Progress | - |
+| 7. Scheduler + GitHub Actions Deployment | 3/3 | Complete    | 2026-04-23 |
 | 8. Hardening — Warning Carry-over, Stale Banner, Crash Email | 0/0 | Not started | - |
 
 ## Coverage Validation

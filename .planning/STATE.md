@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 2
-status: executing
-last_updated: "2026-04-23T00:10:24.078Z"
+status: verifying
+last_updated: "2026-04-23T01:31:52.564Z"
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 29
-  completed_plans: 28
-  percent: 97
+  completed_plans: 29
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -33,8 +33,8 @@ Plan: 3 of 3
 - **Phase:** 6 (complete) → 7 (Scheduler + GitHub Actions Deployment)
 - **Current Plan:** 2
 - **Total Plans:** 3
-- **Status:** Ready to execute
-- **Progress:** [██████████] 97%
+- **Status:** Phase complete — ready for verification
+- **Progress:** [██████████] 100%
 
 ```
 [░░░░░░░░] 0% (0/8 phases)
@@ -62,6 +62,7 @@ Plan: 3 of 3
 | Phase 02 P05 | 14 | 3 tasks | 20 files |
 | Phase 07 P01 | ~8min | 2 tasks tasks | 6 files files |
 | Phase 07 P07-02 | ~20min | 3 tasks | 3 files |
+| Phase 07 P03 | ~15min | 4 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,9 @@ Plan: 3 of 3
 - Phase 7 Wave 1: _FakeScheduler.day fixed to @property to match real schedule library .every().day access (Wave 0 scaffold bug — Rule 1)
 - Phase 7 Wave 1: Monday weekday-gate test uses committed fetch fixtures rather than plan-specified None-recorder (main.py has no None-guard — Rule 1 plan design flaw)
 - Phase 7 Wave 1: test_default_mode_does_NOT_send_email patched alongside the two plan-named test_main.py tests (Phase 7 default dispatch broke it too — Pitfall 3 sibling, Rule 3)
+- Phase 7 Wave 2: GHA workflow ships cron '0 0 * * 1-5' + workflow_dispatch + permissions:contents:write + concurrency:trading-signals + git-auto-commit@v5 with add_options:'-f' (Pitfall 2 force-add of gitignored state.json)
+- Phase 7 Wave 2 operator verification approved: workflow_dispatch ran green, state.json commit-back via github-actions[bot] confirmed, email arrived, README badge renders
+- Phase 7 Wave 2: TestGHAWorkflow uses parsed.get('on') or parsed.get(True) fallback (Codex HIGH) and does NOT use importorskip (Consensus MEDIUM — PyYAML pinned in Wave 0)
 
 ### Todos Carried Forward
 
@@ -161,3 +165,5 @@ None.
 **Plan 01-05 completed:** 2026-04-20T20:22:46Z — 2 tasks, 2 files modified (signal_engine.py 193 → 254 lines; tests/test_signal_engine.py 213 → 409 lines). `get_signal(df) -> int` (D-06 bare int, NaN-abstaining 2-of-3 vote gated by ADX >= 25) and `get_latest_indicators(df) -> dict` (D-08 8-key lowercase dict, every value explicit `float()` cast per REVIEWS POLISH) appended after existing compute_indicators. TestVote (9 parametrized scenarios + 6 named SIG-05..08 shortcuts) + TestEdgeCases (D-09 NaN ADX, D-10 Mom12 NaN 2-of-2, D-11 flat-price NaN, D-12 RVol 0.0, 3 threshold-equality tests for ADX==25 and Mom==±0.02, 3 get_latest_indicators contract tests) cover SIG-05..08 + D-09..12 + REVIEWS STRONGLY RECOMMENDED + REVIEWS POLISH. Split-vote scenario verified FLAT end-to-end (REVIEWS MUST FIX closed). 63/63 tests in tests/test_signal_engine.py pass; 80/80 full-suite green; ruff clean. Requirements SIG-05..SIG-08 marked complete. Commits: b0ebeb3 (feat Task 1), 675b713 (test Task 2).
 
 **Plan 01-06 completed:** 2026-04-20T20:35:36Z — Final Phase 1 gate. 1 file modified (tests/test_signal_engine.py 409 → 649 lines; +240). Appended TestDeterminism class with 19 tests: 16 SHA256 snapshot regression (2 fixtures × 8 indicators, hashes ORACLE output per D-14 trust-anchor design — production has ~5e-14 drift below the 1e-9 tolerance gate); test_forbidden_imports_absent (AST blocklist per REVIEWS STRONGLY RECOMMENDED — FORBIDDEN_MODULES includes datetime/os/subprocess/socket/time/json/pathlib/requests/urllib/http/state_manager/notifier/dashboard/main/schedule/dotenv/pytz/yfinance); test_signal_engine_has_core_public_surface (hasattr contract for compute_indicators/get_signal/get_latest_indicators/LONG/SHORT/FLAT); test_no_four_space_indent (tokenize-aware 2-space-evidence check per REVIEWS POLISH). Two Rule-1 plan bugs fixed inline: (1) hash oracle not production because production has ~5e-14 drift from oracle snapshot; (2) indent check needed 2-space-presence evidence (not 4-space absence) since nested code legitimately has 4 leading spaces in 2-space style. 99/99 full suite green (0.60s); ruff clean; `python tests/regenerate_goldens.py` idempotent (zero git diff on oracle goldens + snapshot.json). Phase 1 SHIPPED — all 8 SIG requirements have named passing tests, determinism snapshot locked, hex boundary enforced. Commit: 14d3ecd (test Task 1; Task 2 verification-only under same commit).
+
+**Plan 07-03 completed:** 2026-04-23T01:30:00Z — Wave 2 PHASE GATE (operator-verified). 3 files created (.github/workflows/daily.yml 45 lines, docs/DEPLOY.md 172 lines, README.md 49 lines) + 1 file extended (tests/test_scheduler.py 335 → 657 lines, +322). Workflow: cron `0 0 * * 1-5` + workflow_dispatch + permissions:contents:write + concurrency:trading-signals + actions/checkout@v4 + actions/setup-python@v5 (reads .python-version) + `python main.py --once` job step + stefanzweifel/git-auto-commit-action@v5 with add_options:'-f' (Pitfall 2 — force-add of gitignored state.json) + if:success() (D-11 — no commit on fail). 24 new tests (TestGHAWorkflow:12 + TestDeployDocs:12) including 2 dedicated review-fix tests (test_readme_has_gha_status_badge for Gemini LOW + test_deploy_md_local_dev_tz_note for Consensus LOW). 07-REVIEWS.md fixes pinned: Codex HIGH `parsed.get('on') or parsed.get(True)` fallback present; Consensus MEDIUM no `pytest.importorskip('yaml')` softener (PyYAML 6.0.2 pinned in Wave 0); Gemini LOW README badge present; Consensus LOW DEPLOY.md §Local-development TZ note present. ROADMAP SC-4 amended per D-12 (drop ANTHROPIC_API_KEY, name SIGNALS_EMAIL_TO). 552/552 tests pass; ruff clean. Operator verification (Task 3): workflow_dispatch ran green on github.com, state.json commit-back via github-actions[bot] confirmed, daily Resend email arrived in inbox, README.md GHA status badge renders as green "passing" indicator — outcome `approved`. SCHED-04..07 marked complete in REQUIREMENTS.md (SCHED-01..03 closed in Plan 07-02). Phase 7 ready for `/gsd-verify-work 7`. Two minor noise-only deviations (benign `importorskip.*yaml` substring matches in docstring narrative; ruff UP015 autofix). Commits: bbdc5e9 (Task 1 — workflow + TestGHAWorkflow + ROADMAP SC-4 amendment), 5b0a3b9 (Task 2 — DEPLOY.md + README.md + TestDeployDocs).
