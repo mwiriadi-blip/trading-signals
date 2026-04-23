@@ -399,18 +399,71 @@ def _build_parser() -> argparse.ArgumentParser:
     help='Run one daily check and exit (CLI-04, GHA mode). '
          'Phase 4: alias for default; scheduler loop arrives in Phase 7.',
   )
+  # Phase 8 CONF-01 / CONF-02 — --reset companion flags (D-09..D-13).
+  p.add_argument(
+    '--initial-account',
+    type=float,
+    default=None,
+    help=(
+      'Starting account balance for --reset (Phase 8 CONF-01). '
+      'Min $1,000, no ceiling, must be finite. If omitted on TTY, '
+      'prompts interactively; on non-TTY, requires the other two '
+      '--*-contract flags alongside.'
+    ),
+  )
+  p.add_argument(
+    '--spi-contract',
+    type=str,
+    default=None,
+    choices=list(system_params.SPI_CONTRACTS.keys()),
+    help=(
+      'SPI 200 contract preset for --reset (Phase 8 CONF-02). '
+      f'Choices: {", ".join(system_params.SPI_CONTRACTS.keys())}. '
+      'Interactive prompt if omitted on TTY.'
+    ),
+  )
+  p.add_argument(
+    '--audusd-contract',
+    type=str,
+    default=None,
+    choices=list(system_params.AUDUSD_CONTRACTS.keys()),
+    help=(
+      'AUD/USD contract preset for --reset (Phase 8 CONF-02). '
+      f'Choices: {", ".join(system_params.AUDUSD_CONTRACTS.keys())}.'
+    ),
+  )
   return p
 
 
 def _validate_flag_combo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-  '''D-05: --reset is strictly exclusive. --test + --force-email is allowed.
+  '''D-05 (Phase 4): --reset is strictly exclusive with --test /
+  --force-email / --once. D-09 (Phase 8): --initial-account,
+  --spi-contract, --audusd-contract ARE allowed alongside --reset
+  but MUST NOT appear without it.
 
   Using post-parse parser.error() (exits with code 2, matching argparse
   convention) because argparse's mutually_exclusive_group would also block
   --test + --once etc. which D-05 allows.
   '''
   if args.reset and (args.test or args.force_email or args.once):
-    parser.error('--reset cannot be combined with other flags')
+    parser.error('--reset cannot be combined with --test/--force-email/--once')
+  reset_companions_present = (
+    args.initial_account is not None
+    or args.spi_contract is not None
+    or args.audusd_contract is not None
+  )
+  if reset_companions_present and not args.reset:
+    parser.error(
+      '--initial-account / --spi-contract / --audusd-contract '
+      'require --reset'
+    )
+
+
+def _stdin_isatty() -> bool:
+  '''D-13 (Phase 8): thin wrapper around sys.stdin.isatty() for
+  test-patchability. Mirrors Phase 7 _get_process_tzname precedent.
+  '''
+  return sys.stdin.isatty()
 
 
 # =========================================================================
@@ -936,37 +989,168 @@ def run_daily_check(
 # CLI-02 / CLI-03 handlers (Wave 3)
 # =========================================================================
 
-def _handle_reset() -> int:
-  '''CLI-02: reinitialise state.json to fresh $100k after operator confirmation.
+def _handle_reset(args: argparse.Namespace) -> int:
+  '''CLI-02 + Phase 8 D-09/D-10/D-11/D-12/D-13:
 
-  Confirmation rules (RESEARCH §Pitfall 5 lines 542-553):
-    - If env var RESET_CONFIRM=='YES' (stripped), skip the interactive prompt.
-      (Used by CI + tests.)
-    - Else interactive: input('Type YES to confirm reset: '); catch EOFError
-      (non-interactive stdin = cancellation, not a crash).
+  Accepts --initial-account / --spi-contract / --audusd-contract
+  OR prompts interactively on TTY. Non-TTY + missing flags → exit 2.
 
-  Exit codes:
-    0 — confirmed + reset + save_state succeeded.
-    1 — operator cancelled (input != 'YES'); distinct from argparse=2 and
-        success=0.
+  Flow:
+    1. D-13 non-TTY guard (must be first).
+    2. D-09 interactive Q&A for each missing flag (or q to quit).
+    3. D-10 min-$1000 validation (float, $/comma-stripped) + isfinite check.
+    4. D-11 label validation (argparse choices handles explicit flags;
+       interactive path re-validates against SPI_CONTRACTS/AUDUSD_CONTRACTS).
+    5. D-12 preview block: print new values + current state.json values.
+    6. YES confirmation (RESET_CONFIRM env override preserved).
+    7. Build state + save.
+
+  Return codes:
+    0 — reset written
+    1 — operator cancelled (EOF, blank YES, q, invalid input, non-finite)
+    2 — non-TTY without companion flags OR argparse-level error
 
   Note: this function contains its OWN state_manager.save_state call,
   distinct from the one inside run_daily_check. The C-7 AST gate
   (revision 2026-04-22) is scoped to run_daily_check only; this second
   site at module level is expected and valid.
   '''
+  import math
+
+  has_explicit_flags = (
+    args.initial_account is not None
+    and args.spi_contract is not None
+    and args.audusd_contract is not None
+  )
+  if not has_explicit_flags and not _stdin_isatty():
+    print(
+      '[State] ERROR: Non-interactive shell detected. Pass '
+      '--initial-account <N> --spi-contract <label> '
+      '--audusd-contract <label> explicitly.',
+      file=sys.stderr,
+    )
+    return 2
+
+  # --- D-09 interactive Q&A ---
+  initial_account = args.initial_account
+  if initial_account is None:
+    try:
+      raw = input('Starting account [$100,000]: ').strip()
+    except EOFError:
+      raw = 'q'
+    if raw.lower() == 'q':
+      logger.info('[State] --reset cancelled by operator')
+      return 1
+    if raw == '':
+      initial_account = float(system_params.INITIAL_ACCOUNT)
+    else:
+      cleaned = raw.lstrip('$').replace(',', '')
+      try:
+        initial_account = float(cleaned)
+      except ValueError:
+        print(f'[State] ERROR: invalid account value {raw!r}', file=sys.stderr)
+        return 1
+  # T-08-12 mitigation: reject NaN/inf/-inf (argparse type=float accepts them).
+  if not math.isfinite(initial_account):
+    print(
+      '[State] ERROR: --initial-account must be a finite number '
+      '(not NaN/inf/-inf)',
+      file=sys.stderr,
+    )
+    return 1
+  if initial_account < 1000:
+    print(
+      '[State] ERROR: --initial-account must be at least $1,000',
+      file=sys.stderr,
+    )
+    return 1
+
+  spi_contract = args.spi_contract
+  if spi_contract is None:
+    default_label = system_params._DEFAULT_SPI_LABEL
+    choices = ', '.join(system_params.SPI_CONTRACTS.keys())
+    try:
+      raw = input(
+        f'SPI200 contract preset [{default_label}] (choices: {choices}): '
+      ).strip()
+    except EOFError:
+      raw = 'q'
+    if raw.lower() == 'q':
+      logger.info('[State] --reset cancelled by operator')
+      return 1
+    if raw == '':
+      spi_contract = default_label
+    elif raw not in system_params.SPI_CONTRACTS:
+      print(
+        f'[State] ERROR: invalid SPI label {raw!r} — choices: {choices}',
+        file=sys.stderr,
+      )
+      return 1
+    else:
+      spi_contract = raw
+
+  audusd_contract = args.audusd_contract
+  if audusd_contract is None:
+    default_label = system_params._DEFAULT_AUDUSD_LABEL
+    choices = ', '.join(system_params.AUDUSD_CONTRACTS.keys())
+    try:
+      raw = input(
+        f'AUDUSD contract preset [{default_label}] (choices: {choices}): '
+      ).strip()
+    except EOFError:
+      raw = 'q'
+    if raw.lower() == 'q':
+      logger.info('[State] --reset cancelled by operator')
+      return 1
+    if raw == '':
+      audusd_contract = default_label
+    elif raw not in system_params.AUDUSD_CONTRACTS:
+      print(
+        f'[State] ERROR: invalid AUDUSD label {raw!r} — choices: {choices}',
+        file=sys.stderr,
+      )
+      return 1
+    else:
+      audusd_contract = raw
+
+  # --- D-12 preview ---
+  print('This will replace state.json. New values:')
+  print(f'  initial_account: ${initial_account:,.2f}')
+  print('  contracts:')
+  print(f'    SPI200:  {spi_contract}')
+  print(f'    AUDUSD:  {audusd_contract}')
+  try:
+    current = state_manager.load_state()
+  except Exception:
+    current = None
+  if current is not None:
+    print('Current state.json:')
+    cur_ia = current.get('initial_account', system_params.INITIAL_ACCOUNT)
+    tag = 'migrated default' if 'initial_account' not in current else 'on disk'
+    print(f'  initial_account: ${cur_ia:,.2f} ({tag})')
+    print(f'  last_run: {current.get("last_run")}')
+    print(f'  trades: {len(current.get("trade_log", []))}')
+
+  # --- YES confirm (RESET_CONFIRM env override preserved) ---
   confirm = os.getenv('RESET_CONFIRM', '').strip()
   if confirm != 'YES':
     try:
-      confirm = input('Type YES to confirm reset: ').strip()
+      confirm = input('Type YES to confirm, anything else to cancel: ').strip()
     except EOFError:
       confirm = ''
   if confirm != 'YES':
     logger.info('[State] --reset cancelled by operator')
     return 1
+
+  # --- Build + save ---
   state = state_manager.reset_state()
+  state['initial_account'] = float(initial_account)
+  state['contracts'] = {'SPI200': spi_contract, 'AUDUSD': audusd_contract}
   state_manager.save_state(state)
-  logger.info('[State] state.json reset to fresh $100k account')
+  logger.info(
+    '[State] state.json reset (initial_account=$%.2f, SPI200=%s, AUDUSD=%s)',
+    initial_account, spi_contract, audusd_contract,
+  )
   return 0
 
 
@@ -1020,7 +1204,7 @@ def main(argv: list[str] | None = None) -> int:
   )
   try:
     if args.reset:
-      return _handle_reset()
+      return _handle_reset(args)
     if args.force_email or args.test:
       # D-15 Phase 6: shared compute-then-email path. --test structurally
       # skips save_state inside run_daily_check; --force-email persists.

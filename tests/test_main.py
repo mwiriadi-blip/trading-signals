@@ -219,6 +219,9 @@ class TestCLI:
       self, tmp_path, monkeypatch) -> None:
     '''CLI-02 happy path: --reset with RESET_CONFIRM=YES (env bypass) reinits
     state.json to the reset_state() baseline ($100k, empty trade_log).
+
+    Phase 8 update: pass explicit --initial-account / --spi-contract /
+    --audusd-contract flags (D-13 non-TTY guard requires this).
     '''
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
@@ -229,7 +232,12 @@ class TestCLI:
     state_manager.save_state(state, path=tmp_path / 'state.json')
     monkeypatch.setenv('RESET_CONFIRM', 'YES')
 
-    rc = main.main(['--reset'])
+    rc = main.main([
+      '--reset',
+      '--initial-account', '100000',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
     assert rc == 0
 
     from system_params import INITIAL_ACCOUNT
@@ -243,20 +251,31 @@ class TestCLI:
 
   def test_reset_without_confirmation_does_not_write(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''CLI-02 cancel path: --reset with input != 'YES' does NOT mutate state.json
-    and returns exit code 1 (operator cancellation, distinct from argparse=2
-    and success=0).
+    '''CLI-02 cancel path: --reset with confirm != 'YES' does NOT mutate
+    state.json and returns exit code 1 (operator cancellation, distinct
+    from argparse=2 and success=0).
+
+    Phase 8 update: supply the three CONF flags explicitly so the Q&A
+    short-circuits to the YES prompt, which we reject with 'no'. The
+    interactive path's own 'q' quit works similarly but this keeps the
+    existing assertion intent (confirm step rejection).
     '''
     caplog.set_level(logging.INFO)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
     state_json = tmp_path / 'state.json'
     _seed_fresh_state(state_json)
     mtime_before = state_json.stat().st_mtime_ns
-    # Simulate operator typing 'no' at the prompt.
-    monkeypatch.setattr('builtins.input', lambda prompt: 'no')
+    # Simulate operator typing 'no' at the YES prompt.
+    monkeypatch.setattr('builtins.input', lambda prompt='': 'no')
 
-    rc = main.main(['--reset'])
+    rc = main.main([
+      '--reset',
+      '--initial-account', '100000',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
     assert rc == 1, (
       'CLI-02 cancel: expected exit code 1 (operator cancel), got '
       f'{rc} — must not be 0 (success) or 2 (argparse error).'
@@ -1171,3 +1190,303 @@ class TestLoggerConfig:
     finally:
       if dummy in root.handlers:
         root.removeHandler(dummy)
+
+
+# =========================================================================
+# Phase 8 Task 2 — CLI CONF flags + _handle_reset interactive Q&A
+# =========================================================================
+
+
+class TestResetFlags:
+  '''Phase 8 D-09/D-10/D-11/D-12/D-13 + T-08-12:
+  explicit-flag happy path + validation + choices + combo rules + isfinite.
+  '''
+
+  def test_reset_with_all_three_flags_writes_state(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 1: all flags present + RESET_CONFIRM=YES → state.json has
+    initial_account=50000.0 AND contracts matches flags.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', '50000',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['initial_account'] == 50000.0
+    assert s['contracts'] == {
+      'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard',
+    }
+
+  def test_initial_account_below_1000_rejected(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 2: --initial-account 500 → exit 1 + stderr mentions "at least $1,000".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', '500',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert 'at least $1,000' in err
+
+  def test_invalid_spi_contract_choice_rejected(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 3: --spi-contract spi-bogus → exit 2 (argparse choices).'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    with pytest.raises(SystemExit) as exc:
+      main.main([
+        '--reset',
+        '--initial-account', '50000',
+        '--spi-contract', 'spi-bogus',
+        '--audusd-contract', 'audusd-standard',
+      ])
+    assert exc.value.code == 2
+
+  def test_invalid_audusd_contract_choice_rejected(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 4: --audusd-contract audusd-bogus → exit 2.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    with pytest.raises(SystemExit) as exc:
+      main.main([
+        '--reset',
+        '--initial-account', '50000',
+        '--spi-contract', 'spi-mini',
+        '--audusd-contract', 'audusd-bogus',
+      ])
+    assert exc.value.code == 2
+
+  def test_flag_combo_relaxation_allows_conf_flags_with_reset(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 5: D-09 relaxation — CONF flags allowed alongside --reset.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', '25000',
+      '--spi-contract', 'spi-standard',
+      '--audusd-contract', 'audusd-mini',
+    ])
+    assert rc == 0
+
+  def test_initial_account_without_reset_rejected(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 6: --initial-account without --reset → exit 2 + "require --reset".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    with pytest.raises(SystemExit) as exc:
+      main.main(['--initial-account', '50000'])
+    assert exc.value.code == 2
+
+  def test_spi_contract_without_reset_rejected(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 7: --spi-contract without --reset → exit 2.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    with pytest.raises(SystemExit) as exc:
+      main.main(['--spi-contract', 'spi-mini'])
+    assert exc.value.code == 2
+
+  def test_reset_combined_with_once_rejected(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 8: --reset --once → exit 2 + "cannot be combined" (D-05 preserved).'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    with pytest.raises(SystemExit) as exc:
+      main.main(['--reset', '--once'])
+    assert exc.value.code == 2
+
+  def test_initial_account_nan_rejected_cli_path(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 18 (T-08-12): --initial-account nan → exit 1 + stderr "finite".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', 'nan',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert 'finite' in err.lower()
+
+  def test_initial_account_inf_rejected_cli_path(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''T-08-12: +inf rejected on the argparse-flag path.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', 'inf',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert 'finite' in err.lower()
+
+
+class TestResetInteractive:
+  '''Phase 8 D-09: interactive Q&A paths.'''
+
+  def test_reset_interactive_happy_path(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 9: TTY + iter inputs → state.json has inputs applied.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    inputs = iter(['50000', 'spi-standard', 'audusd-mini'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main(['--reset'])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['initial_account'] == 50000.0
+    assert s['contracts'] == {'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini'}
+
+  def test_reset_interactive_quit_cancels(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''Test 10: first input == 'q' → exit 1, no state.json written.'''
+    caplog.set_level(logging.INFO)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    monkeypatch.setattr('builtins.input', lambda prompt='': 'q')
+    rc = main.main(['--reset'])
+    assert rc == 1
+    assert not (tmp_path / 'state.json').exists()
+    assert 'cancelled' in caplog.text
+
+  def test_reset_interactive_blank_defaults(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 11: all blank inputs → defaults applied.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    inputs = iter(['', '', ''])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main(['--reset'])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['initial_account'] == 100000.0
+    assert s['contracts'] == {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'}
+
+  def test_reset_interactive_dollar_sign_comma_stripping(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 12: input '$50,000' → parsed as 50000.0.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    inputs = iter(['$50,000', '', ''])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main(['--reset'])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['initial_account'] == 50000.0
+
+  def test_reset_interactive_invalid_float_rejected(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 13: input 'abc' → exit 1 + "invalid account value".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    monkeypatch.setattr('builtins.input', lambda prompt='': 'abc')
+    rc = main.main(['--reset'])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert 'invalid account value' in err
+
+  def test_reset_interactive_below_1000_rejected(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 14: input '500' → exit 1 + "at least $1,000".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    monkeypatch.setattr('builtins.input', lambda prompt='': '500')
+    rc = main.main(['--reset'])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert 'at least $1,000' in err
+
+  def test_reset_interactive_nan_rejected(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 19 (T-08-12 interactive path): input 'nan' → exit 1 + "finite".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    monkeypatch.setattr('builtins.input', lambda prompt='': 'nan')
+    rc = main.main(['--reset'])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert 'finite' in err.lower()
+
+
+class TestResetPreview:
+  '''Phase 8 D-12: preview block printed before YES prompt.'''
+
+  def test_preview_shows_new_and_current_values(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 17: stdout contains New values block + Current state.json block.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    # Pre-exist state.json so the "Current state.json" section renders.
+    _seed_fresh_state(tmp_path / 'state.json')
+    inputs = iter(['50000', 'spi-standard', 'audusd-mini'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main(['--reset'])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'New values:' in out
+    assert 'Current state.json:' in out
+    assert '$50,000.00' in out
+    assert 'SPI200:  spi-standard' in out
+    assert 'AUDUSD:  audusd-mini' in out
+
+
+class TestResetNonTTY:
+  '''Phase 8 D-13: non-TTY guard.'''
+
+  def test_non_tty_without_flags_exits_2(
+      self, tmp_path, monkeypatch, capsys) -> None:
+    '''Test 15: non-TTY + no CONF flags → exit 2 + "Non-interactive shell detected".'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: False)
+    rc = main.main(['--reset'])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert 'Non-interactive shell detected' in err
+
+  def test_non_tty_with_explicit_flags_succeeds(
+      self, tmp_path, monkeypatch) -> None:
+    '''Test 16: non-TTY + all flags + RESET_CONFIRM=YES → exit 0.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: False)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', '50000',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 0

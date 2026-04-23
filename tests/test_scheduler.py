@@ -329,7 +329,8 @@ class TestDotenvLoading:
 
     monkeypatch.setattr('dotenv.load_dotenv', _recorder)
     # Short-circuit main() via --reset path so we never hit the schedule loop.
-    monkeypatch.setattr(main_module, '_handle_reset', lambda: 1)
+    # Phase 8 signature update: _handle_reset now takes args.
+    monkeypatch.setattr(main_module, '_handle_reset', lambda args: 1)
     rc = main_module.main(['--reset'])
     assert rc == 1
     assert called == [True]
