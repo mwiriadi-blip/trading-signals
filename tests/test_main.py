@@ -277,6 +277,8 @@ class TestCLI:
       self, tmp_path, monkeypatch, caplog) -> None:
     '''CLI-03 Phase 6: --force-email invokes notifier.send_daily_email
     with post-run state + run_date. Phase 4 stub is replaced.
+
+    Phase 8 D-08 update: fake_send returns SendStatus instead of int 0.
     '''
     caplog.set_level(logging.INFO)
     monkeypatch.chdir(tmp_path)
@@ -286,11 +288,12 @@ class TestCLI:
 
     sent: list[tuple] = []
 
+    import notifier
+
     def _fake_send(state, old_signals, run_date, is_test=False):
       sent.append((state, old_signals, run_date, is_test))
-      return 0
+      return notifier.SendStatus(ok=True, reason=None)
 
-    import notifier
     monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
 
     rc = main.main(['--force-email'])
@@ -304,6 +307,8 @@ class TestCLI:
     '''D-05 capture: the state passed to send_daily_email is post-compute
     (dict-shape signals with last_scalars + last_close), proving the dispatch
     happens AFTER run_daily_check mutates state['signals'].
+
+    Phase 8 D-08 update: fake_send returns SendStatus.
     '''
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
@@ -312,11 +317,12 @@ class TestCLI:
 
     captured: list[dict] = []
 
+    import notifier
+
     def _fake_send(state, old_signals, run_date, is_test=False):
       captured.append(state)
-      return 0
+      return notifier.SendStatus(ok=True, reason=None)
 
-    import notifier
     monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
 
     rc = main.main(['--force-email'])
@@ -334,7 +340,10 @@ class TestCLI:
 
   def test_test_flag_sends_test_prefixed_email_no_state_mutation(
       self, tmp_path, monkeypatch) -> None:
-    '''CLI-01 Phase 6: --test sends [TEST] email AND state.json mtime unchanged.'''
+    '''CLI-01 Phase 6: --test sends [TEST] email AND state.json mtime unchanged.
+
+    Phase 8 D-08 update: fake_send returns SendStatus.
+    '''
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
     state_json = tmp_path / 'state.json'
@@ -344,11 +353,12 @@ class TestCLI:
 
     sent: list[bool] = []
 
+    import notifier
+
     def _fake_send(state, old_signals, run_date, is_test=False):
       sent.append(is_test)
-      return 0
+      return notifier.SendStatus(ok=True, reason=None)
 
-    import notifier
     monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
 
     rc = main.main(['--test'])
@@ -363,6 +373,8 @@ class TestCLI:
       self, tmp_path, monkeypatch) -> None:
     '''D-05 + D-15: --force-email --test runs compute-then-email with is_test=True
     AND does NOT persist state (CLI-01 structural lock preserved).
+
+    Phase 8 D-08 update: fake_send returns SendStatus.
     '''
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
@@ -373,11 +385,12 @@ class TestCLI:
 
     sent: list[bool] = []
 
+    import notifier
+
     def _fake_send(state, old_signals, run_date, is_test=False):
       sent.append(is_test)
-      return 0
+      return notifier.SendStatus(ok=True, reason=None)
 
-    import notifier
     monkeypatch.setattr(notifier, 'send_daily_email', _fake_send)
 
     rc = main.main(['--force-email', '--test'])

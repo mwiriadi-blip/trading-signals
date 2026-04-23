@@ -485,13 +485,17 @@ def _compute_win_rate(state: dict) -> str:
 
 
 def _compute_total_return(state: dict) -> str:
-  '''CONTEXT D-10: (current_equity - INITIAL_ACCOUNT) / INITIAL_ACCOUNT * 100. Always defined.'''
+  '''D-16 (Phase 8): use state['initial_account'] as the baseline;
+  fall through to system_params.INITIAL_ACCOUNT for pre-Phase-8 state
+  that missed _migrate v2 backfill (defense-in-depth).
+  '''
+  initial = state.get('initial_account', INITIAL_ACCOUNT)
   eq_hist = state.get('equity_history', [])
   if eq_hist:
-    current = eq_hist[-1].get('equity', state.get('account', INITIAL_ACCOUNT))
+    current = eq_hist[-1].get('equity', state.get('account', initial))
   else:
-    current = state.get('account', INITIAL_ACCOUNT)
-  total_return = (current - INITIAL_ACCOUNT) / INITIAL_ACCOUNT
+    current = state.get('account', initial)
+  total_return = (current - initial) / initial
   return f'{total_return * 100:+.1f}%'  # signed format: '+5.3%', '-2.1%', '+0.0%'
 
 

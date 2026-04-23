@@ -88,6 +88,19 @@ _MIN_BARS_REQUIRED = 300
 # DATA-05 (D-09): stale when (run_date - signal_as_of).days > this.
 _STALE_THRESHOLD_DAYS = 3
 
+# Phase 8 D-01 (ERR-05 staleness classifier): if (run_date - last_run).days > 2
+# the next email's header banner labels the state 'Stale'.
+STALENESS_DAYS_THRESHOLD: int = 2
+
+# Phase 8 review-driven amendment (2026-04-23 Codex MEDIUM): cache the most
+# recently loaded state so main()'s outer `except Exception` (crash handler)
+# can pass a real state summary into the crash email instead of None.
+# Previous draft passed state=None into _send_crash_email, which weakened
+# ROADMAP SC-3 ("crash email with last-known state summary"). Module-level
+# assignment is safe because this process runs single-threaded in both GHA
+# one-shot and Replit schedule modes; no concurrency hazard.
+_LAST_LOADED_STATE: 'dict | None' = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -125,8 +138,8 @@ def _send_email_never_crash(
   old_signals: dict,
   run_date: datetime,
   is_test: bool = False,
-) -> None:
-  '''D-15 + NOTF-07/NOTF-08: email dispatch never crashes the run.
+) -> 'object | None':
+  '''D-15 + NOTF-07/NOTF-08 + Phase 8 D-08 consumer bridge.
 
   C-2 reviews (Phase 5 precedent): `import notifier` lives INSIDE the
   helper body (not at module top) so import-time errors in notifier.py
@@ -135,6 +148,11 @@ def _send_email_never_crash(
   Without this, an import-time notifier error takes down main.py at
   module load time, before the helper even runs.
 
+  Phase 8 D-08: returns the notifier.SendStatus verbatim; caller
+  (_dispatch_email_and_maintain_warnings) translates ok=False into a
+  state_manager.append_warning. On an import-time or pre-SendStatus
+  exception, returns None; caller treats that as a dispatch failure.
+
   The ONLY place in this codebase where `except Exception:` is correct —
   alongside _render_dashboard_never_crash. NOTF-07 + NOTF-08: email
   failures NEVER crash the workflow. State is already saved; dashboard
@@ -142,9 +160,107 @@ def _send_email_never_crash(
   '''
   try:
     import notifier  # local import — C-2 isolates import-time failures
-    notifier.send_daily_email(state, old_signals, run_date, is_test=is_test)
+    return notifier.send_daily_email(state, old_signals, run_date, is_test=is_test)
   except Exception as e:
     logger.warning('[Email] send failed: %s: %s', type(e).__name__, e)
+    return None
+
+
+# =========================================================================
+# Phase 8 D-02/D-08 + B1 revision: warning carry-over dispatch helper
+# =========================================================================
+
+def _maybe_set_stale_info(state: dict, run_date: datetime) -> None:
+  '''Phase 8 ERR-05 + B3 revision: if state['last_run'] exists AND is
+  > STALENESS_DAYS_THRESHOLD days before run_date, set a TRANSIENT
+  state['_stale_info'] dict. Plan 02's _render_header_email reads this
+  to render the red stale banner at top of email. NEVER persisted
+  (D-14 underscore filter + explicit pop in
+  _dispatch_email_and_maintain_warnings).
+  '''
+  last_run_iso = state.get('last_run')
+  if not last_run_iso:
+    return
+  try:
+    last_dt = datetime.strptime(last_run_iso, '%Y-%m-%d')
+  except (TypeError, ValueError):
+    return
+  # Compare AWST dates (run_date is AWST via _compute_run_date)
+  delta_days = (run_date.date() - last_dt.date()).days
+  if delta_days > STALENESS_DAYS_THRESHOLD:
+    state['_stale_info'] = {
+      'days_stale': delta_days,
+      'last_run_date': last_run_iso,
+    }
+
+
+def _dispatch_email_and_maintain_warnings(
+  state: dict,
+  old_signals: dict,
+  now: datetime,
+  is_test: bool,
+  persist: bool,
+) -> None:
+  '''Phase 8 D-02/D-08 + B1 revision: CANONICAL ORDER:
+
+    1. dispatch — notifier reads state['warnings'] (N-1 entries) + any
+       transient _stale_info to render the header banner.
+    2. clear_warnings(state) — wipe N-1 warnings first. If we appended
+       a notifier-failure warning BEFORE clearing, clear_warnings
+       would wipe it and the next run would never surface it.
+    3. IF dispatch failed AND reason != 'no_api_key' (no_api_key is
+       intentional operator configuration, not a failure):
+         append_warning with notifier-sourced message —
+         this warning is tagged with the CURRENT run's AWST date.
+         It will be surfaced by next run's email via the routine-row
+         age filter (w['date'] == prior_run_date).
+       Review-driven amendment (2026-04-23, Codex MEDIUM):
+       status is None (notifier import failure caught by
+       _send_email_never_crash) also counts as a dispatch failure
+       — append a dedicated warning so operator sees it next run.
+    4. state.pop('_stale_info', None) — belt-and-suspenders clear of
+       the transient signalling key before save (D-14 filter also
+       strips it; explicit pop keeps in-memory dict clean).
+    5. save_state(state) — single post-dispatch save.
+
+  W3: total per-run save_state calls = 2 (end of run_daily_check step 5,
+  plus this single post-dispatch save).
+
+  Must be called AFTER run_daily_check's own save_state.
+  '''
+  status = _send_email_never_crash(state, old_signals, now, is_test=is_test)
+  if not persist:
+    # --test path: structural read-only. Do not mutate warnings or
+    # persist. Still pop _stale_info from the in-memory dict for
+    # cleanliness, but do NOT save.
+    state.pop('_stale_info', None)
+    return
+  # B1 canonical order:
+  # (a) wipe N-1 warnings FIRST.
+  state_manager.clear_warnings(state)
+  # (b) classify dispatch outcome and append-if-failed.
+  #     Review-driven amendment (2026-04-23, Codex MEDIUM):
+  #     `status is None` = _send_email_never_crash caught an
+  #     import-time or pre-SendStatus exception. Operator must
+  #     see this on the next run, so append a dedicated warning
+  #     rather than silently skipping.
+  if status is None:
+    state_manager.append_warning(
+      state, source='notifier',
+      message='Previous email dispatch failed to return status (import or runtime error)',
+      now=now,
+    )
+  elif not status.ok and status.reason != 'no_api_key':
+    state_manager.append_warning(
+      state, source='notifier',
+      message=f'Previous email send failed: {status.reason or "unknown"}',
+      now=now,
+    )
+  # (c) belt + suspenders: clear the transient _stale_info key
+  #     before save (D-14 filter also handles this).
+  state.pop('_stale_info', None)
+  # (d) single post-dispatch save.
+  state_manager.save_state(state)
 
 
 # =========================================================================
@@ -579,6 +695,21 @@ def run_daily_check(
   # Step 2: load state.
   state = state_manager.load_state()
 
+  # Phase 8 review-driven amendment (Codex MEDIUM): refresh the module-level
+  # cache as soon as load_state returns. The outer crash handler in main()
+  # reads this via _LAST_LOADED_STATE to build the crash-email state summary
+  # (_build_crash_state_summary already handles state=None gracefully for
+  # crashes BEFORE load_state).
+  global _LAST_LOADED_STATE
+  _LAST_LOADED_STATE = state
+
+  # Phase 8 ERR-05 (B3 revision): staleness signalled via transient
+  # state['_stale_info']. Set BEFORE dispatch, popped BEFORE save_state
+  # by _dispatch_email_and_maintain_warnings. NOT stored in state['warnings']
+  # because Plan 02's routine age filter would drop it (date mismatch
+  # between tag-time and prior_run_date).
+  _maybe_set_stale_info(state, run_date)
+
   # D-05 (Phase 6): capture old_signals BEFORE the per-symbol loop mutates
   # state['signals']. Keyed by yfinance symbol per notifier's expectation.
   # Handles BOTH Phase 3 int-shape AND Phase 4 D-08 dict-shape per Pitfall 7.
@@ -597,9 +728,14 @@ def run_daily_check(
   last_close_by_state_key: dict[str, float] = {}  # reused in step 4 equity rollup.
 
   for state_key, yf_symbol in SYMBOL_MAP.items():
-    spec = _SYMBOL_CONTRACT_SPECS[state_key]
-    multiplier = spec['multiplier']
-    cost_aud_round_trip = spec['cost_aud']
+    # Phase 8 D-17: resolve tier from state['_resolved_contracts'] materialised
+    # by state_manager.load_state (Plan 01). sizing_engine never imports the
+    # contract dicts — orchestrator passes multiplier + cost_aud_open through.
+    # Round-trip is split half-on-open (here) / half-on-close (via
+    # _closed_trade_to_record → state_manager.record_trade) per Phase 2 D-13.
+    resolved = state['_resolved_contracts'][state_key]
+    multiplier = resolved['multiplier']
+    cost_aud_round_trip = resolved['cost_aud']
     cost_aud_open = cost_aud_round_trip / 2
 
     # 3.a: fetch — DataFetchError propagates (Wave 3 catches at top level).
@@ -734,15 +870,17 @@ def run_daily_check(
     }
 
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
+  # Phase 8 D-17: resolve tier from state['_resolved_contracts'] (per-symbol
+  # tier from operator --reset config), not scalar system_params imports.
   equity = state['account']
   for sk, pos in state['positions'].items():
     if pos is not None:
-      spec = _SYMBOL_CONTRACT_SPECS[sk]
+      resolved = state['_resolved_contracts'][sk]
       equity += sizing_engine.compute_unrealised_pnl(
         pos,
         last_close_by_state_key[sk],
-        spec['multiplier'],
-        spec['cost_aud'] / 2,
+        resolved['multiplier'],
+        resolved['cost_aud'] / 2,
       )
 
   # Step 5: update equity history (STATE-06).
@@ -897,7 +1035,15 @@ def main(argv: list[str] | None = None) -> int:
         and old_signals is not None
         and run_date is not None
       ):
-        _send_email_never_crash(state, old_signals, run_date, is_test=args.test)
+        # Phase 8 D-02/D-08 + B1 revision: dispatch → clear → maybe-append
+        # → single save. `persist=not args.test` preserves --test structural
+        # read-only (CLI-01) — --test dispatches (so operator sees preview)
+        # but never calls save_state or mutates warnings.
+        _dispatch_email_and_maintain_warnings(
+          state, old_signals, run_date,
+          is_test=args.test,
+          persist=not args.test,
+        )
       return rc
     # CLI-04: --once is a one-shot for GHA mode. No loop.
     if args.once:
