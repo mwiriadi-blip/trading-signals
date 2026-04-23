@@ -169,7 +169,9 @@
   1. REQUIREMENTS.md ERR-01 row text no longer claims "sends an error email" on yfinance failure — updated to match implemented behavior: "logs `[Fetch] ERROR`, exits rc=2, does NOT email (deliberate — transient data-fetch errors do not warrant operator inbox churn; only unhandled exceptions trigger Layer-B crash email)". The existing `tests/test_main.py::test_data_fetch_error_does_not_fire_crash_email` remains green as the locked-behavior guard.
   2. REQUIREMENTS.md traceability table reflects actual completion state: all 80 requirements checked `[x]` (including ERR-01 per updated wording); coverage count at top of file shows "Mapped to phases: 80/80, Verified: 80/80".
   3. `.github/workflows/daily.yml` has `timeout-minutes: 10` on the daily-check job so an unbounded run cannot consume GHA minutes indefinitely. Existing `tests/test_scheduler.py::TestGHAWorkflow` regression-checks the workflow YAML.
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 09-01-PLAN.md — Close v1.0 gaps: amend ERR-01 spec text to match test-locked no-email design, bulk-sync 37 traceability checkboxes to [x]/Complete, add timeout-minutes: 10 to daily.yml + regression test
 **UI hint**: no
 
 ## Phase Dependencies (build order)
