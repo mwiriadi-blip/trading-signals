@@ -28,7 +28,12 @@ class _FakeScheduler:
   def every(self):
     return self
 
+  @property
   def day(self):
+    # Real `schedule` library: `.every().day` is a property (no parens), not a
+    # method — matches production code `.every().day.at(...)` in
+    # _run_schedule_loop. [Rule 1] Wave 0 shipped this as a method; Wave 1
+    # fix aligns the fake with the real API surface.
     return self
 
   def at(self, time_str, *_a, **_kw):

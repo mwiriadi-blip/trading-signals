@@ -44,6 +44,7 @@ import data_fetcher
 import signal_engine
 import sizing_engine
 import state_manager
+import system_params
 from data_fetcher import DataFetchError, ShortFrameError
 from sizing_engine import ClosedTrade
 from system_params import (
@@ -175,13 +176,28 @@ def _run_daily_check_caught(job, args) -> None:
   '''D-02 (Phase 7 Wave 1): never-crash wrapper for scheduled run_daily_check.
 
   Third instance of the never-crash pattern after _render_dashboard_never_crash
-  and _send_email_never_crash. Wave 1 fills the body per 07-02-PLAN.md Task 2
-  (typed DataFetchError/ShortFrameError at WARN, catch-all Exception at WARN,
-  rc != 0 WARN).
+  and _send_email_never_crash. Schedule loop survives one bad run — next cron
+  fire retries. ONLY valid `except Exception:` site in the loop path. Phase 8
+  (ERR-04) adds crash-email dispatch on top of this net.
 
-  Wave 0: stub raises so any accidental call during Wave 0 fails loudly.
+  Catches:
+    - typed DataFetchError / ShortFrameError -> WARN [Sched] data-layer failure
+    - catch-all Exception -> WARN [Sched] unexpected error (loop continues)
+    - rc != 0 return (happy-path non-zero) -> WARN [Sched] rc=N (loop continues)
   '''
-  raise NotImplementedError('[Sched] Wave 1 lands body per 07-02-PLAN.md D-02')
+  try:
+    rc, _, _, _ = job(args)
+    if rc != 0:
+      logger.warning(
+        '[Sched] daily check returned rc=%d (loop continues)', rc,
+      )
+  except (DataFetchError, ShortFrameError) as e:
+    logger.warning('[Sched] data-layer failure caught in loop: %s', e)
+  except Exception as e:
+    logger.warning(
+      '[Sched] unexpected error caught in loop: %s: %s (loop continues)',
+      type(e).__name__, e,
+    )
 
 
 def _run_schedule_loop(
@@ -195,21 +211,44 @@ def _run_schedule_loop(
   '''D-01 (Phase 7 Wave 1): factored schedule loop driver with injectable fakes.
 
   Production call: `_run_schedule_loop(run_daily_check, args)` — defaults flow.
-  Test call: `_run_schedule_loop(job, args, scheduler=fake, sleep_fn=list.append,
+  Test call: `_run_schedule_loop(..., scheduler=fake, sleep_fn=fake_sleep,
   max_ticks=1)` — one tick, no real sleep, no real scheduler thread.
 
-  Wave 1 fills the body per 07-02-PLAN.md Task 3:
-    - local import `import schedule`
-    - assert _get_process_tzname() == 'UTC' (Pitfall 1 mitigation; uses wrapper
-      so tests patch `main._get_process_tzname` instead of `time.tzname`)
-    - lazy-resolve scheduler + sleep_fn
-    - register schedule.every().day.at('00:00').do(_run_daily_check_caught, job, args)
-    - loop while max_ticks is None or ticks < max_ticks
-    - emit `[Sched] scheduler entered; next fire 00:00 UTC (08:00 AWST) Mon–Fri`
+  Pitfall 1 mitigation: the `schedule` library's `.at()` without tz arg uses
+  process-local time. We rely on UTC. Fail fast if the process runs in any
+  other tz — Replit or GHA runner misconfiguration would otherwise silently
+  fire at the wrong wall-clock moment. The check goes through the
+  `_get_process_tzname()` wrapper (Wave 0) so tests can patch
+  `main._get_process_tzname` cleanly (07-REVIEWS.md Codex MEDIUM-fix:
+  `time.tzname` is platform-dependent and sometimes frozen).
 
-  Wave 0: stub raises so any accidental call during Wave 0 fails loudly.
+  Pitfall 7 mitigation: max_ticks=None means infinite loop (production). Tests
+  MUST pass a finite max_ticks to avoid hanging.
   '''
-  raise NotImplementedError('[Sched] Wave 1 lands body per 07-02-PLAN.md D-01')
+  import time as _time
+
+  import schedule  # LOCAL — C-2 / hex-lite / AST blocklist discipline
+
+  tzname = _get_process_tzname()
+  assert tzname == 'UTC', (
+    f'[Sched] process tz must be UTC; got {tzname!r}. '
+    f'Set TZ=UTC in the deploy environment.'
+  )
+
+  _scheduler = scheduler or schedule
+  _sleep = sleep_fn or _time.sleep
+
+  logger.info(
+    '[Sched] scheduler entered; next fire 00:00 UTC (08:00 AWST) Mon\u2013Fri'
+  )
+  _scheduler.every().day.at(system_params.SCHEDULE_TIME_UTC).do(_run_daily_check_caught, job, args)
+
+  ticks = 0
+  while max_ticks is None or ticks < max_ticks:
+    _scheduler.run_pending()
+    _sleep(tick_budget_s)
+    ticks += 1
+  return 0
 
 
 # =========================================================================
@@ -847,9 +886,13 @@ def main(argv: list[str] | None = None) -> int:
       ):
         _send_email_never_crash(state, old_signals, run_date, is_test=args.test)
       return rc
-    # Default / --once path: no email.
-    rc, _state, _old_signals, _run_date = run_daily_check(args)
-    return rc
+    # CLI-04: --once is a one-shot for GHA mode. No loop.
+    if args.once:
+      rc, _state, _old_signals, _run_date = run_daily_check(args)
+      return rc
+    # Default (no flag): Phase 7 D-04 + D-05 — immediate first run, then loop.
+    _run_daily_check_caught(run_daily_check, args)
+    return _run_schedule_loop(run_daily_check, args)
   except (DataFetchError, ShortFrameError) as e:
     logger.error('[Fetch] ERROR: %s', e)
     return 2
