@@ -1062,6 +1062,48 @@ def run_daily_check(
 # CLI-02 / CLI-03 handlers (Wave 3)
 # =========================================================================
 
+def _prompt_or_default(
+  prompt_text: str,
+  default_value,
+  validator,
+):
+  '''Phase 8 WR-02: shared interactive-prompt helper for _handle_reset.
+
+  Consolidates the prompt/blank-accepts-default/q-cancels/invalid-rejects
+  cycle that repeated 3× verbatim in _handle_reset. Public behavior is
+  unchanged from the pre-refactor inline blocks — existing interactive-
+  path tests (TestResetInteractive) continue to pass without modification.
+
+  Contract:
+    - Prints prompt_text via input() (already spelled with trailing ': ').
+    - Returns (rc, value):
+        rc=0 + the parsed value, OR
+        rc=1 + None when cancelled ('q'/EOF) or invalid.
+    - Blank input → default_value returned with rc=0.
+    - 'q' (case-insensitive) or EOFError on input() → log 'cancelled',
+      return (1, None).
+    - validator(raw) is called with the stripped raw string for non-
+      blank, non-q inputs. It MUST return (ok: bool, value_or_err):
+        ok=True  → value used; helper returns (0, value)
+        ok=False → value_or_err is the stderr error message;
+                   helper prints '[State] ERROR: {msg}' and returns (1, None).
+  '''
+  try:
+    raw = input(prompt_text).strip()
+  except EOFError:
+    raw = 'q'
+  if raw.lower() == 'q':
+    logger.info('[State] --reset cancelled by operator')
+    return 1, None
+  if raw == '':
+    return 0, default_value
+  ok, parsed_or_err = validator(raw)
+  if not ok:
+    print(f'[State] ERROR: {parsed_or_err}', file=sys.stderr)
+    return 1, None
+  return 0, parsed_or_err
+
+
 def _handle_reset(args: argparse.Namespace) -> int:
   '''CLI-02 + Phase 8 D-09/D-10/D-11/D-12/D-13:
 
@@ -1070,7 +1112,8 @@ def _handle_reset(args: argparse.Namespace) -> int:
 
   Flow:
     1. D-13 non-TTY guard (must be first).
-    2. D-09 interactive Q&A for each missing flag (or q to quit).
+    2. D-09 interactive Q&A for each missing flag (or q to quit) via
+       _prompt_or_default (Phase 8 WR-02 refactor).
     3. D-10 min-$1000 validation (float, $/comma-stripped) + isfinite check.
     4. D-11 label validation (argparse choices handles explicit flags;
        interactive path re-validates against SPI_CONTRACTS/AUDUSD_CONTRACTS).
@@ -1107,22 +1150,20 @@ def _handle_reset(args: argparse.Namespace) -> int:
   # --- D-09 interactive Q&A ---
   initial_account = args.initial_account
   if initial_account is None:
-    try:
-      raw = input('Starting account [$100,000]: ').strip()
-    except EOFError:
-      raw = 'q'
-    if raw.lower() == 'q':
-      logger.info('[State] --reset cancelled by operator')
-      return 1
-    if raw == '':
-      initial_account = float(system_params.INITIAL_ACCOUNT)
-    else:
+    def _validate_account(raw: str):
       cleaned = raw.lstrip('$').replace(',', '')
       try:
-        initial_account = float(cleaned)
+        return True, float(cleaned)
       except ValueError:
-        print(f'[State] ERROR: invalid account value {raw!r}', file=sys.stderr)
-        return 1
+        return False, f'invalid account value {raw!r}'
+
+    rc, initial_account = _prompt_or_default(
+      'Starting account [$100,000]: ',
+      float(system_params.INITIAL_ACCOUNT),
+      _validate_account,
+    )
+    if rc != 0:
+      return rc
   # T-08-12 mitigation: reject NaN/inf/-inf (argparse type=float accepts them).
   if not math.isfinite(initial_account):
     print(
@@ -1142,49 +1183,37 @@ def _handle_reset(args: argparse.Namespace) -> int:
   if spi_contract is None:
     default_label = system_params._DEFAULT_SPI_LABEL
     choices = ', '.join(system_params.SPI_CONTRACTS.keys())
-    try:
-      raw = input(
-        f'SPI200 contract preset [{default_label}] (choices: {choices}): '
-      ).strip()
-    except EOFError:
-      raw = 'q'
-    if raw.lower() == 'q':
-      logger.info('[State] --reset cancelled by operator')
-      return 1
-    if raw == '':
-      spi_contract = default_label
-    elif raw not in system_params.SPI_CONTRACTS:
-      print(
-        f'[State] ERROR: invalid SPI label {raw!r} — choices: {choices}',
-        file=sys.stderr,
-      )
-      return 1
-    else:
-      spi_contract = raw
+
+    def _validate_spi(raw: str):
+      if raw not in system_params.SPI_CONTRACTS:
+        return False, f'invalid SPI label {raw!r} — choices: {choices}'
+      return True, raw
+
+    rc, spi_contract = _prompt_or_default(
+      f'SPI200 contract preset [{default_label}] (choices: {choices}): ',
+      default_label,
+      _validate_spi,
+    )
+    if rc != 0:
+      return rc
 
   audusd_contract = args.audusd_contract
   if audusd_contract is None:
     default_label = system_params._DEFAULT_AUDUSD_LABEL
     choices = ', '.join(system_params.AUDUSD_CONTRACTS.keys())
-    try:
-      raw = input(
-        f'AUDUSD contract preset [{default_label}] (choices: {choices}): '
-      ).strip()
-    except EOFError:
-      raw = 'q'
-    if raw.lower() == 'q':
-      logger.info('[State] --reset cancelled by operator')
-      return 1
-    if raw == '':
-      audusd_contract = default_label
-    elif raw not in system_params.AUDUSD_CONTRACTS:
-      print(
-        f'[State] ERROR: invalid AUDUSD label {raw!r} — choices: {choices}',
-        file=sys.stderr,
-      )
-      return 1
-    else:
-      audusd_contract = raw
+
+    def _validate_audusd(raw: str):
+      if raw not in system_params.AUDUSD_CONTRACTS:
+        return False, f'invalid AUDUSD label {raw!r} — choices: {choices}'
+      return True, raw
+
+    rc, audusd_contract = _prompt_or_default(
+      f'AUDUSD contract preset [{default_label}] (choices: {choices}): ',
+      default_label,
+      _validate_audusd,
+    )
+    if rc != 0:
+      return rc
 
   # --- D-12 preview ---
   print('This will replace state.json. New values:')
