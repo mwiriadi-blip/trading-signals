@@ -221,6 +221,7 @@ None — CONF-01 and CONF-02 already folded into the roadmap on 2026-04-22 (per 
 - **IN-03 TestWeekdayGate fake returning `None`** — test-quality polish. Deferred from 07-REVIEW.md.
 - **IN-04 en-dash in `[Sched] scheduler entered` log line** — one-byte fix. Deferred from 07-REVIEW.md; operator may want to fold it into Phase 8 if the planner has bandwidth.
 - **Dashboard re-render after `--reset` with new initial_account:** dashboard rendering is triggered on every run_daily_check, so the new values will surface in the next email naturally. No separate "reset also re-renders" hook needed for v1.
+- **Holiday staleness false-positives (added 2026-04-23 per cross-AI review Gemini LOW concern):** The `> 2 days` stale threshold (D-01 / ROADMAP SC-2) will trigger on Tuesday runs after Monday public holidays (Fri → Tue = 4 days). Accepted for v1 — safer to over-notify than miss a real scheduler death. Revisit if the operator finds the red banner noisy; options include (a) bump threshold to `> 3 days` (misses genuine 3-day gaps; still false-positives on Tuesday-after-long-weekend), (b) AWST-calendar-aware "next-business-day" check (complexity not warranted for a single-operator tool), or (c) add a `known_holidays` state list that suppresses the banner when the gap maps to configured holidays (schema change; defer until operator actually complains).
 
 </deferred>
 
@@ -228,3 +229,4 @@ None — CONF-01 and CONF-02 already folded into the roadmap on 2026-04-22 (per 
 
 *Phase: 08-hardening-warning-carry-over-stale-banner-crash-email-config*
 *Context gathered: 2026-04-23*
+*Review-driven amendment 2026-04-23: added "Holiday staleness false-positives" to Deferred Ideas per cross-AI review Change 3.*
