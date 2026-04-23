@@ -135,7 +135,7 @@
   1. `.github/workflows/daily.yml` runs on `cron: '0 0 * * 1-5'` with `permissions: contents: write`, a `concurrency: trading-signals` block, `actions/checkout@v4`, `actions/setup-python@v5`, and `stefanzweifel/git-auto-commit-action@v5` to commit `state.json`
   2. The default `python main.py` entry point runs an immediate first check then enters the `schedule` loop firing at 00:00 UTC weekdays; `run_daily_check` has an internal weekday gate that no-ops on Sat/Sun even if invoked (replaces the Phase 4 default-mode == `--once` behaviour per CLI-05)
   3. `python main.py --once` runs exactly one check and exits cleanly with non-zero on failure — the GHA workflow uses this mode
-  4. All secrets (`RESEND_API_KEY`, optional `ANTHROPIC_API_KEY`) are loaded from env vars with `python-dotenv` locally and GitHub Secrets / Replit Secrets in deploy — never committed
+  4. All secrets (`RESEND_API_KEY`, `SIGNALS_EMAIL_TO`) are loaded from env vars with `python-dotenv` locally and GitHub Secrets / Replit Secrets in deploy — never committed
   5. Deployment guide documents GitHub Actions as the recommended primary path with Replit Reserved VM + Always On as the documented alternative including its filesystem-persistence caveat
 **Plans:** 3 plans
 - [x] 07-01-PLAN.md — Wave 0 scaffold: pin schedule + python-dotenv, add Phase 7 constants, seed main.py stubs + live load_dotenv(), create tests/test_scheduler.py 6-class skeleton, extend AST blocklist (DASHBOARD + NOTIFIER), rewrite .env.example header

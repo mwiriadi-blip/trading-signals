@@ -333,3 +333,174 @@ class TestDotenvLoading:
     rc = main_module.main(['--reset'])
     assert rc == 1
     assert called == [True]
+
+
+# =========================================================================
+# Wave 2 (07-03-PLAN.md): static validation of .github/workflows/daily.yml
+# =========================================================================
+
+
+class TestGHAWorkflow:
+  '''SCHED-05 / D-07..D-11 / Pitfall 2: static validation of daily.yml contract.
+
+  07-REVIEWS.md fixes incorporated:
+  - Codex HIGH: `test_workflow_parses_as_yaml` computes the `on:` block via
+    `parsed.get('on') or parsed.get(True)` BEFORE any indexing. PyYAML 1.1
+    coerces bare `on:` to Python `True`; the old shape (`parsed['on']`
+    accessed first) would `KeyError` before the fallback ran.
+  - Consensus MEDIUM: no `pytest.importorskip('yaml')` — PyYAML is pinned
+    (`PyYAML==6.0.2`) in requirements.txt via Wave 0, so the import is
+    guaranteed to succeed.
+  '''
+
+  WORKFLOW_PATH = '.github/workflows/daily.yml'
+
+  def test_workflow_file_exists(self) -> None:
+    import os
+    assert os.path.isfile(self.WORKFLOW_PATH), (
+      f'SCHED-05: {self.WORKFLOW_PATH} must exist'
+    )
+
+  def test_workflow_parses_as_yaml(self) -> None:
+    '''Handles PyYAML 1.1 `on: True` boolean-coercion edge case.
+
+    07-REVIEWS.md Codex HIGH fix: resolve the `on:` block FIRST via
+    `.get('on') or .get(True)` to tolerate both spellings, THEN do all
+    subsequent assertions via `on_block[...]`. The old shape attempted
+    `parsed['on']` before the fallback and would `KeyError` on versions
+    that coerce bare `on:` to Python `True`.
+
+    Consensus MEDIUM: PyYAML is pinned in requirements.txt (Wave 0), so
+    no `importorskip` is needed here — a missing yaml module is a real
+    failure, not a test-env skip.
+    '''
+    import yaml  # guaranteed available — PyYAML==6.0.2 pinned in Wave 0
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      parsed = yaml.safe_load(fh)
+    assert parsed is not None, 'daily.yml parsed to None — file empty or malformed'
+    assert parsed.get('name') == 'Daily signal check', (
+      f"SCHED-05: workflow name must be 'Daily signal check'; "
+      f"got {parsed.get('name')!r}"
+    )
+
+    # 07-REVIEWS.md Codex HIGH fix: compute on_block FIRST with fallback,
+    # THEN assert. Do NOT touch parsed['on'] before this line.
+    on_block = parsed.get('on') or parsed.get(True)
+    assert on_block is not None, (
+      "on: block missing (checked both str 'on' and bool True keys); "
+      f"top-level keys: {list(parsed.keys())}"
+    )
+    assert 'schedule' in on_block, (
+      f"SCHED-01: schedule: trigger missing from on: block; "
+      f"on_block keys: {list(on_block.keys())}"
+    )
+    assert 'workflow_dispatch' in on_block, (
+      f"D-08: workflow_dispatch: trigger missing from on: block; "
+      f"on_block keys: {list(on_block.keys())}"
+    )
+
+  def test_cron_schedule_is_0_0_mon_fri(self) -> None:
+    import re
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert re.search(r"cron:\s*'0 0 \* \* 1-5'", content), (
+      "SCHED-01: cron line must be exactly '0 0 * * 1-5' (single-quoted)"
+    )
+
+  def test_workflow_dispatch_present(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'workflow_dispatch:' in content, (
+      'D-08: workflow_dispatch manual trigger required'
+    )
+
+  def test_permissions_contents_write(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'permissions:' in content
+    assert 'contents: write' in content, (
+      'D-07: permissions.contents: write required for git-auto-commit-action'
+    )
+    assert 'issues: write' not in content, (
+      'Principle of least privilege: do not grant issues write access'
+    )
+    assert 'pull-requests: write' not in content, (
+      'Principle of least privilege: do not grant pull-requests write access'
+    )
+
+  def test_concurrency_group_serialises(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'concurrency:' in content
+    assert 'group: trading-signals' in content
+    assert 'cancel-in-progress: false' in content, (
+      'D-07: in-flight runs must not be cancelled by dispatch overlap'
+    )
+
+  def test_setup_python_cache_and_version_file(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'actions/setup-python@v5' in content
+    assert "python-version-file: '.python-version'" in content, (
+      'D-09: .python-version pyenv pin consumed by setup-python'
+    )
+    assert "cache: 'pip'" in content, 'D-09: pip cache required'
+    assert 'cache-dependency-path: requirements.txt' in content, (
+      'D-09: cache-key scoped to requirements.txt'
+    )
+
+  def test_checkout_action_pinned(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'actions/checkout@v4' in content, 'D-07: actions/checkout@v4 pin'
+
+  def test_run_step_uses_main_once(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'python main.py --once' in content, (
+      'SCHED-04: GHA uses --once mode (one-shot + exit); not default loop mode'
+    )
+
+  def test_env_block_names_both_secrets(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'RESEND_API_KEY:' in content and '${{ secrets.RESEND_API_KEY }}' in content
+    assert 'SIGNALS_EMAIL_TO:' in content and '${{ secrets.SIGNALS_EMAIL_TO }}' in content
+    # Principle of least privilege — no bulk ${{ secrets }} mapping:
+    assert 'env: ${{ secrets' not in content, (
+      'D-12: explicit secret mapping required; no bulk ${{ secrets }} exposure'
+    )
+
+  def test_git_auto_commit_force_add_and_if_success(self) -> None:
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'stefanzweifel/git-auto-commit-action@v5' in content, (
+      'D-10: v5 major-tag pin'
+    )
+    assert 'if: success()' in content, (
+      'D-11: no commit on job failure'
+    )
+    assert 'file_pattern: state.json' in content, (
+      'D-10: commit state.json only'
+    )
+    assert "add_options: '-f'" in content, (
+      'Pitfall 2: state.json is gitignored; add_options: -f required'
+    )
+    assert "commit_message: 'chore(state): daily signal update [skip ci]'" in content, (
+      'D-10: canonical commit message with [skip ci]'
+    )
+    assert 'commit_user_name:  github-actions[bot]' in content or \
+           'commit_user_name: github-actions[bot]' in content
+    assert '41898282+github-actions[bot]@users.noreply.github.com' in content, (
+      'D-10: canonical bot email for attribution'
+    )
+
+  def test_no_ssh_or_pat_token_references(self) -> None:
+    '''Security: no leaked SSH keys or PAT references in the workflow.'''
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    # Default GITHUB_TOKEN is sufficient; explicit PAT should not be present.
+    assert 'ssh-key:' not in content
+    assert 'SSH_PRIVATE_KEY' not in content
+    # Sanity check: no ANTHROPIC_API_KEY references per D-12 ROADMAP amendment
+    assert 'ANTHROPIC_API_KEY' not in content
