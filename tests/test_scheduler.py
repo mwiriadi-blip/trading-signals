@@ -506,6 +506,28 @@ class TestGHAWorkflow:
     # Sanity check: no ANTHROPIC_API_KEY references per D-12 ROADMAP amendment
     assert 'ANTHROPIC_API_KEY' not in content
 
+  def test_daily_workflow_has_timeout_minutes(self) -> None:
+    '''Phase 9 IN-01 carry-over from Phase 7 (v1.0-MILESTONE-AUDIT.md §tech_debt).
+
+    Job-level timeout-minutes caps runaway runs so a stuck yfinance fetch, a
+    hung Resend retry, or a leaked schedule-loop cannot consume GHA minutes
+    indefinitely. 10 minutes is well above the ~2 min happy-path runtime and
+    the ~30s crash-email retry budget (Phase 8 D-07).
+    '''
+    import yaml  # pinned PyYAML==6.0.2 per Wave 0 Phase 7
+    with open(self.WORKFLOW_PATH, encoding='utf-8') as fh:
+      parsed = yaml.safe_load(fh)
+    jobs = parsed.get('jobs') or {}
+    daily = jobs.get('daily') or {}
+    assert 'timeout-minutes' in daily, (
+      'IN-01: jobs.daily.timeout-minutes must be set to cap runaway runs; '
+      f'daily job keys: {list(daily.keys())}'
+    )
+    assert daily['timeout-minutes'] == 10, (
+      'IN-01: jobs.daily.timeout-minutes must equal 10 (min-level cap); '
+      f'got {daily["timeout-minutes"]!r}'
+    )
+
 
 class TestDeployDocs:
   '''SCHED-06 / D-14..D-16: static validation of docs/DEPLOY.md + README.md.
