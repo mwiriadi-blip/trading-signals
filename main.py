@@ -205,7 +205,7 @@ def _run_schedule_loop(
   args,
   scheduler=None,
   sleep_fn=None,
-  tick_budget_s: float = 60.0,
+  tick_budget_s: float = float(system_params.LOOP_SLEEP_S),
   max_ticks: int | None = None,
 ) -> int:
   '''D-01 (Phase 7 Wave 1): factored schedule loop driver with injectable fakes.
