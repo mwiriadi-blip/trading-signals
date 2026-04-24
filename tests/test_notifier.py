@@ -260,13 +260,13 @@ class TestComposeBody:
 
   def test_body_has_doctype_and_html(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert body.startswith('<!DOCTYPE html>'), f'expected DOCTYPE prefix; got: {body[:32]!r}'
     assert body.endswith('</html>\n'), f'expected </html>\\n suffix; got: {body[-32:]!r}'
 
   def test_body_sections_in_d10_order(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     idx_title = body.index('Trading Signals')
     idx_signal = body.index('Signal Status')
     idx_positions = body.index('Open Positions')
@@ -287,38 +287,38 @@ class TestComposeBody:
 
   def test_body_no_style_block(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<style>' not in body
     assert '</style>' not in body
 
   def test_body_no_media_query(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '@media' not in body
 
   def test_body_has_palette_inline_bg(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '#0f1117' in body
 
   def test_body_has_max_width_600(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'max-width:600px' in body
 
   def test_body_has_viewport_meta(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in body
 
   def test_body_has_role_presentation(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'role="presentation"' in body
 
   def test_body_has_bgcolor_belt_and_braces(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'bgcolor="#0f1117"' in body
 
   def test_compose_body_naive_datetime_raises(self) -> None:
@@ -326,7 +326,7 @@ class TestComposeBody:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     naive = datetime(2026, 4, 22, 9, 0)
     with pytest.raises(ValueError, match='naive datetime='):
-      compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, naive)
+      compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, naive, from_addr='signals@carbonbookkeeping.com.au')
 
   # -----------------------------------------------------------------
   # ACTION REQUIRED conditional + copy (D-06, D-11)
@@ -334,24 +334,24 @@ class TestComposeBody:
 
   def test_action_required_present_on_change(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'ACTION REQUIRED' in body
     assert 'border-left:4px solid #ef4444' in body
 
   def test_action_required_absent_on_no_change(self) -> None:
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'ACTION REQUIRED' not in body
 
   def test_action_required_absent_on_first_run(self) -> None:
     '''D-06: first-run (all old None) is NO CHANGE — ACTION REQUIRED omitted.'''
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'ACTION REQUIRED' not in body
 
   def test_action_required_contains_per_instrument_diffs(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # SPI200 diff: LONG → SHORT; AUDUSD diff: FLAT → LONG.
     # Slice to the ACTION REQUIRED section so we're testing the diff region.
     ar_start = body.index('ACTION REQUIRED')
@@ -363,7 +363,7 @@ class TestComposeBody:
   def test_action_required_contains_close_position_copy(self) -> None:
     '''D-11 close-position copy sourced from trade_log[-1] (SPI200 close today).'''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # Fixture trade_log[-1] is SPI200 LONG close on 2026-04-22 with
     # n_contracts=2, entry_price=8204.5 → "(2 contracts @ entry $8,204.50)"
     assert 'Close existing LONG position (2 contracts @ entry $8,204.50)' in body
@@ -371,7 +371,7 @@ class TestComposeBody:
   def test_action_required_uses_unicode_arrow(self) -> None:
     '''Fix 5: raw Unicode → (U+2192), never &rarr; HTML entity.'''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '→' in body
     assert '&rarr;' not in body
 
@@ -381,18 +381,18 @@ class TestComposeBody:
 
   def test_empty_state_renders_no_open_positions(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'No open positions' in body
 
   def test_empty_state_equity_is_initial_account(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # empty_state.json has account=100000.0, equity_history=[]
     assert '$100,000.00' in body
 
   def test_empty_state_renders_no_closed_trades(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'No closed trades' in body
 
   # -----------------------------------------------------------------
@@ -402,21 +402,21 @@ class TestComposeBody:
   def test_xss_escape_on_exit_reason(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     state['trade_log'][-1]['exit_reason'] = '<script>alert(1)</script>'
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<script>alert(1)</script>' not in body
     assert '&lt;script&gt;alert(1)&lt;/script&gt;' in body
 
   def test_xss_escape_on_instrument_value(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     state['trade_log'][-1]['instrument'] = '<script>x</script>'
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<script>x</script>' not in body
     assert '&lt;script&gt;x&lt;/script&gt;' in body
 
   def test_xss_escape_on_direction_value(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     state['positions']['SPI200']['direction'] = '<img src=x onerror=y>'
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<img src=x onerror=y>' not in body
     assert '&lt;img src=x onerror=y&gt;' in body
 
@@ -426,22 +426,22 @@ class TestComposeBody:
 
   def test_has_header_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Trading Signals' in body
 
   def test_has_signal_status_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Signal Status' in body
 
   def test_has_positions_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Open Positions' in body
 
   def test_has_todays_pnl_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # html.escape(quote=True) renders ' as &#x27; and & as &amp;
     # so "Today's P&L" appears as "Today&#x27;s P&amp;L" in the body.
     assert (
@@ -452,17 +452,17 @@ class TestComposeBody:
 
   def test_has_running_equity_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Running equity' in body or 'Running Equity' in body
 
   def test_has_closed_trades_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Last 5 Closed Trades' in body
 
   def test_has_footer_disclaimer(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Not financial advice' in body
 
   # -----------------------------------------------------------------
@@ -476,13 +476,13 @@ class TestComposeBody:
     (leaf-discipline per Phase 5 D-15).
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'SPI 200 &amp; AUD/USD mechanical system' in body or \
            'SPI 200 & AUD/USD mechanical system' in body
 
   def test_header_contains_signal_as_of(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Signal as of' in body
 
   # -----------------------------------------------------------------
@@ -496,7 +496,7 @@ class TestComposeBody:
     Expected: 0.6502 - 3.0 * 0.0042 = 0.6376. Currency format: $0.64.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     audusd_pos = state['positions']['AUDUSD']
     expected_trail = audusd_pos['peak_price'] - TRAIL_MULT_LONG * audusd_pos['atr_entry']
     # _fmt_currency_email uses 2dp — AUDUSD rendering accepts this per UI-SPEC
@@ -513,7 +513,7 @@ class TestComposeBody:
     Expected: 8285.0 + 2.0 * 50.0 = 8385.00. Currency: $8,385.00.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     spi_pos = state['positions']['SPI200']
     expected_trail = spi_pos['trough_price'] + TRAIL_MULT_SHORT * spi_pos['atr_entry']
     expected_str = f'${expected_trail:,.2f}'
@@ -533,7 +533,7 @@ class TestComposeBody:
     Rendered via _fmt_pnl_with_colour_email → SHORT red span with -$12.50.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     pos = state['positions']['AUDUSD']
     current = state['signals']['AUDUSD']['last_close']
     gross = (current - pos['entry_price']) * AUDUSD_NOTIONAL * pos['n_contracts']
@@ -555,7 +555,7 @@ class TestComposeBody:
     unrealised = 0.0 - 3.0 = -3.00.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     pos = state['positions']['SPI200']
     current = state['signals']['SPI200']['last_close']
     # SHORT: profit when current < entry → direction_mult = -1
@@ -1276,7 +1276,7 @@ class TestGoldenEmail:
   def test_golden_with_change_matches_committed(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
-    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     golden = GOLDEN_WITH_CHANGE_PATH.read_text(encoding='utf-8')
     assert rendered == golden, (
       'compose_email_body drifted from golden_with_change.html. '
@@ -1287,7 +1287,7 @@ class TestGoldenEmail:
   def test_golden_no_change_matches_committed(self) -> None:
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
     old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
-    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     golden = GOLDEN_NO_CHANGE_PATH.read_text(encoding='utf-8')
     assert rendered == golden, (
       'compose_email_body drifted from golden_no_change.html. '
@@ -1297,7 +1297,7 @@ class TestGoldenEmail:
   def test_golden_empty_matches_committed(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
     old_signals = {'^AXJO': None, 'AUDUSD=X': None}
-    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     golden = GOLDEN_EMPTY_PATH.read_text(encoding='utf-8')
     assert rendered == golden, (
       'compose_email_body drifted from golden_empty.html. '
