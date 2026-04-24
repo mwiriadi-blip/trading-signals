@@ -918,6 +918,48 @@ class TestReset:
     )
     assert second['warnings'] == []
 
+
+class TestResetState:
+  '''Phase 10 BUG-01 D-02 / D-03: reset_state signature accepts custom
+  initial_account; default preserves backward compat.
+  '''
+
+  def test_reset_state_accepts_custom_initial_account(self) -> None:
+    '''D-02: reset_state(initial_account=50000) sets BOTH account and
+    initial_account to 50000.0 (invariant: they must be equal).'''
+    state = reset_state(initial_account=50000)
+    assert state['account'] == 50000.0
+    assert state['initial_account'] == 50000.0
+    assert state['account'] == state['initial_account'], (
+      'BUG-01 invariant: account and initial_account must be equal '
+      'immediately after reset'
+    )
+
+  def test_reset_state_custom_initial_account_edge_one_dollar(self) -> None:
+    '''D-02: edge — tiny initial_account still pairs account == initial_account.'''
+    state = reset_state(initial_account=1.0)
+    assert state['account'] == 1.0
+    assert state['initial_account'] == 1.0
+
+  def test_reset_state_default_preserves_backward_compat(self) -> None:
+    '''D-02: reset_state() with no arg still returns INITIAL_ACCOUNT
+    for both fields. Phase 3 callers + corrupt-recovery path stay green.'''
+    state = reset_state()
+    assert state['account'] == INITIAL_ACCOUNT
+    assert state['initial_account'] == INITIAL_ACCOUNT
+    assert state['account'] == state['initial_account']
+
+  def test_reset_state_custom_initial_account_does_not_affect_other_fields(self) -> None:
+    '''D-02: other canonical fields unchanged when custom initial_account passed.'''
+    state = reset_state(initial_account=50000)
+    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}
+    assert state['signals'] == {'SPI200': 0, 'AUDUSD': 0}
+    assert state['trade_log'] == []
+    assert state['equity_history'] == []
+    assert state['warnings'] == []
+    assert state['last_run'] is None
+
+
 class TestWarnings:
   '''D-09 / D-10 / D-11 / B-5: warning shape, AWST date, FIFO bound to MAX_WARNINGS.
 

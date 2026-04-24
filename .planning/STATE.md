@@ -1,18 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Interactive Trading Workstation
-current_phase: 10
-current_phase_name: "Foundation — v1.0 Cleanup & Deploy Key"
-current_plan: 0
-status: ready_to_plan
-last_updated: "2026-04-24T10:45:00.000Z"
+milestone: v1.0
+milestone_name: Cleanup & Deploy Key
+status: executing
+last_updated: "2026-04-24T22:20:38.737Z"
+last_activity: "2026-04-25 — Phase 12 shipped via PR #1 (Phase 10+11+12 combined)"
 progress:
   total_phases: 7
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 3
+  total_plans: 12
+  completed_plans: 12
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -25,23 +23,24 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 10 — Foundation — v1.0 Cleanup & Deploy Key (ready to plan)
+- **Current focus:** Phase 12 — https-domain-wiring
 
 ## Current Position
 
-Phase: 10 (Foundation — v1.0 Cleanup & Deploy Key) — Ready to plan
-Plan: —
+Phase: 12 (https-domain-wiring) — EXECUTING
+Plan: 1 of 4
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Roadmap complete; ready for `/gsd-discuss-phase 10`
-- **Last activity:** 2026-04-24 — v1.1 roadmap written (7 phases, 31 REQs mapped 100%)
-- **Progress:** 0/7 phases complete (v1.1); v1.0 archived with 9/9 phases at Phase 9
+- **Status:** Executing Phase 12
+- **Last activity:** 2026-04-25 — Phase 12 shipped via PR #1 (Phase 10+11+12 combined)
+- **Progress:** [██████████] 100%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
 ```
 
 **v1.1 phase inventory:**
+
 - Phase 10: Foundation — v1.0 Cleanup & Deploy Key (4 REQs) — ready to plan
 - Phase 11: Web Skeleton — FastAPI + uvicorn + systemd (4 REQs) — parallelizable with 10
 - Phase 12: HTTPS + Domain Wiring (3 REQs) — blocked on operator domain purchase
@@ -51,6 +50,7 @@ Plan: —
 - Phase 16: Hardening + UAT Completion (2 REQs)
 
 **Open prerequisites (operator-owned):**
+
 - [ ] Domain purchased and A-record pointing at droplet IP (blocks Phase 12+)
 - [ ] Droplet provisioned (DO, Ubuntu LTS, systemd, public IP) (blocks Phase 11+)
 - [ ] Resend domain verification (SPF/DKIM/DMARC) on the new domain (blocks Phase 12 INFRA-01)
@@ -82,6 +82,10 @@ Plan: —
 | Phase 07 P03 | ~15min | 4 tasks | 5 files |
 | Phase 8 P3 | 60 minutes | 3 tasks | 5 files |
 | Phase 9 P1 | ~4min | 2 tasks | 3 files |
+| Phase 11 P01 | 432s | 3 tasks | 6 files |
+| Phase 11 P02 | 5min | 2 tasks | 2 files |
+| Phase 11 P03 | 5min | 2 tasks | 2 files |
+| Phase 11 P04 | 279 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -146,6 +150,18 @@ Plan: —
 - Plan 03: Module-level _LAST_LOADED_STATE cache in main.py single-threaded orchestrator enables crash-email SC-3 completeness without threading schedule-loop state through the scheduler driver
 - Plan 03: _dispatch_email_and_maintain_warnings encapsulates B1 canonical ordering (dispatch -> clear -> maybe-append -> single save) in one place so --force-email, --test, and (future) scheduled runs all share the same invariant
 - Plan 03: math.isfinite guard applied on BOTH argparse-flag and interactive-Q&A paths for --initial-account, closing T-08-12 regardless of invocation surface
+- create_app() has no docs_url/redoc_url kwargs — Swagger defaults left for Phase 11 per REVIEWS MEDIUM #6
+- Handler uses date.fromisoformat (not datetime) per REVIEWS HIGH #1 — last_run is YYYY-MM-DD date string from state.json
+- Tests monkeypatch state_manager.load_state directly per REVIEWS HIGH #2 — STATE_FILE default arg is bound at import time
+- REVIEWS MEDIUM #5: EnvironmentFile=- (leading dash) makes .env optional in Phase 11; no web env vars consumed until Phase 13
+- REVIEWS LOW #8: web.app:app exact ExecStart reference guards cross-plan drift; configparser + raw text dual assertion strategy
+- REVIEWS MEDIUM #7: pip install --upgrade pip dropped from deploy.sh D-23 sequence
+- REVIEWS HIGH #4: two separate sudo -n systemctl restart calls in deploy.sh (one per unit, not combined)
+- REVIEWS HIGH #3: curl retry loop (10 attempts @ 1s) replaces sleep 3 heuristic in deploy.sh
+- Created SETUP-DROPLET.md as new sibling doc (not extending Phase 10) for cleaner per-phase separation
+- Sudoers: two comma-separated rules matching deploy.sh split sudo -n calls; /usr/bin/systemctl path (verify with which systemctl)
+- Passwordless sudo verification step added (REVIEWS HIGH #4) to catch sudoers miss before first deploy
+- .env NOT required in Phase 11 (EnvironmentFile=- in unit file per REVIEWS MEDIUM #5)
 
 ### Todos Carried Forward
 
@@ -207,7 +223,7 @@ These items require operator eyeballing (real Gmail inbox check, visual dashboar
 *v1.0 archived: 2026-04-24 at milestone close (Phases 1–9 complete, 80/80 REQs verified)*
 *v1.1 roadmap created: 2026-04-24 by /gsd-roadmapper (Phases 10–16, 31/31 REQs mapped)*
 
-**Planned Phase:** 09 (Milestone v1.0 Gap Closure) — 1 plans — 2026-04-23T22:27:44.414Z
+**Planned Phase:** 12 (https-domain-wiring) — 4 plans — 2026-04-24T20:09:03.026Z
 
 **Plan 09-01 completed:** 2026-04-23 — 2 tasks, 3 files modified (.planning/REQUIREMENTS.md +102/-101; .github/workflows/daily.yml +1 line; tests/test_scheduler.py +22 lines) + 2 files created (09-01-SUMMARY.md, deferred-items.md). Task 1: ERR-01 spec amended to match test-locked no-email behaviour (`except (DataFetchError, ShortFrameError): return 2` with no crash-email call); 37 `- [ ]` checkbox flips via single replace_all (DATA 6 + STATE 7 + NOTF 9 + DASH 9 + CLI 4 + ERR 2 = 37 → 80/80 checked); 59 `| Pending |` traceability rows flipped to `| Complete |` (ERR-01 and SIG-05..08 rows got richer Complete-with-evidence descriptors); coverage header updated to `Mapped to phases: 80/80, Verified: 80/80`; amendment footer dated 2026-04-23 appended. Task 2: `timeout-minutes: 10` added at job level in daily.yml between `runs-on: ubuntu-latest` and `steps:` (parses as int 10 via PyYAML); `test_daily_workflow_has_timeout_minutes` appended inside `TestGHAWorkflow` with two independent assertions (key existence + value equality) — TestGHAWorkflow went from 12 → 13 tests. Locked-behaviour guard `tests/test_main.py::TestCrashEmailBoundary::test_data_fetch_error_does_not_fire_crash_email` unchanged and green (git diff --exit-code returns 0). Full suite: 662 passed (was 661; +1 for new regression test). Pre-existing ruff F401 warnings in notifier.py (19 errors) logged to deferred-items.md as out-of-scope. One Rule-3 deviation (footer date 2026-04-23 instead of draft's 2026-04-24, matching today's actual execution date per executor context). Phase 9 complete; milestone v1.0 ready for archive. Commits: f3f6e3c (Task 1 REQUIREMENTS reconciliation), 2e3d314 (Task 2 GHA timeout + regression test).
 

@@ -11,8 +11,8 @@ library. Missing RESEND_API_KEY degrades to writing last_email.html
 
 Public surface (D-01):
   compose_email_subject(state, old_signals, is_test=False) -> str
-  compose_email_body(state, old_signals, now) -> str
-  send_daily_email(state, old_signals, now, is_test=False) -> int
+  compose_email_body(state, old_signals, now, *, from_addr) -> str
+  send_daily_email(state, old_signals, now, is_test=False) -> SendStatus
 
 Architecture (hexagonal-lite, CLAUDE.md): I/O hex. Peer of state_manager,
 data_fetcher, dashboard. Must NOT import signal_engine, sizing_engine,
@@ -68,12 +68,8 @@ from system_params import (
   _COLOR_TEXT,
   _COLOR_TEXT_DIM,
   _COLOR_TEXT_MUTED,
-  AUDUSD_COST_AUD,
-  AUDUSD_NOTIONAL,
   FALLBACK_CONTRACT_SPECS,
   INITIAL_ACCOUNT,
-  SPI_COST_AUD,
-  SPI_MULT,
   TRAIL_MULT_LONG,
   TRAIL_MULT_SHORT,
 )
@@ -100,7 +96,6 @@ class SendStatus(NamedTuple):
 # Email sender / recipient config (D-14)
 # =========================================================================
 
-_EMAIL_FROM = 'signals@carbonbookkeeping.com.au'  # verified Resend sender per PROJECT.md
 _EMAIL_TO_FALLBACK = 'mwiriadi@gmail.com'  # operator-confirmed fallback (Option C per REVIEWS.md)
 
 
@@ -1136,10 +1131,15 @@ def _render_closed_trades_email(state: dict) -> str:
   )
 
 
-def _render_footer_email(state: dict, now: datetime) -> str:  # noqa: ARG001
+def _render_footer_email(
+  state: dict, now: datetime, from_addr: str,
+) -> str:  # noqa: ARG001
   '''Section 7: footer disclaimer + sender + run-date (D-10).
 
   state arg reserved for future use (e.g. schema_version surfacing).
+  Phase 12 (D-16): from_addr threaded in from compose_email_body →
+  send_daily_email's per-dispatch env-var read (D-15). The old
+  module-level sender constant was removed.
   '''
   run_date_iso = now.strftime('%Y-%m-%d')
   return (
@@ -1148,7 +1148,7 @@ def _render_footer_email(state: dict, now: datetime) -> str:  # noqa: ARG001
     f'line-height:1.4;">Signal-only system. Not financial advice.</p>'
     f'<p style="margin:0 0 4px;font-size:12px;color:{_COLOR_TEXT_DIM};'
     f'line-height:1.4;">Trading Signals — sent by '
-    f'{html.escape(_EMAIL_FROM, quote=True)}</p>'
+    f'{html.escape(from_addr, quote=True)}</p>'
     f'<p style="margin:0;font-size:12px;color:{_COLOR_TEXT_DIM};'
     f'line-height:1.4;">Run date: {html.escape(run_date_iso, quote=True)}</p>'
     f'</td></tr>\n'
@@ -1159,6 +1159,8 @@ def compose_email_body(
   state: dict,
   old_signals: dict,
   now: datetime,
+  *,
+  from_addr: str,
 ) -> str:
   '''D-07 HTML shell + D-10 7-section body (NOTF-03/04/06/09).
 
@@ -1171,6 +1173,12 @@ def compose_email_body(
     at leaf interpolation (NOTF-09; Phase 5 D-15 leaf discipline).
   - Raw Unicode → (U+2192) in ACTION REQUIRED per Fix 5 — never &rarr;.
   - Clock injection: uses now= parameter; must be tz-aware (T-06-04).
+
+  Phase 12 (D-16): `from_addr` is a KEYWORD-ONLY argument (no default)
+  threaded to _render_footer_email so the rendered footer's sender
+  address is driven by send_daily_email's env-var read (D-15). The
+  "no default" is deliberate — makes signature drift fail loudly
+  (RESEARCH §Pattern 2).
   '''
   # Belt-and-braces naive-datetime rejection (T-06-04) — also enforced
   # inside _fmt_last_updated_email but surface the error at the top
@@ -1189,7 +1197,7 @@ def compose_email_body(
     + _render_positions_email(state)
     + _render_todays_pnl_email(state)
     + _render_closed_trades_email(state)
-    + _render_footer_email(state, now)
+    + _render_footer_email(state, now, from_addr)
   )
 
   return (
@@ -1388,14 +1396,32 @@ def send_daily_email(
     returns True (stale state or corrupt-reset).
 
   Recipient: os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK).
+
+  Phase 12 (D-14/D-15/D-16): SIGNALS_EMAIL_FROM read per-send. Missing
+  or empty → log ERROR + return SendStatus(ok=False, reason='missing_sender');
+  NO Resend call, NO last_email.html write (early return before any
+  payload construction). Orchestrator (main._dispatch_email_and_maintain_warnings)
+  translates ok=False into state_manager.append_warning (Phase 8 D-08).
+  NEVER falls back to onboarding@resend.dev (SC-4).
   '''
+  # Phase 12 D-15: per-send env read; D-14: missing → log ERROR + skip.
+  # NEVER falls back to onboarding@resend.dev (SC-4). Early return
+  # happens BEFORE compose_email_body + last_email.html write to keep
+  # the missing-sender path side-effect-free (12-REVIEWS.md LOW).
+  from_addr = os.environ.get('SIGNALS_EMAIL_FROM', '').strip()
+  if not from_addr:
+    logger.error('[Email] SIGNALS_EMAIL_FROM not set — email skipped')
+    return SendStatus(ok=False, reason='missing_sender')
+
   has_critical = _has_critical_banner(state)
   subject = compose_email_subject(
     state, old_signals,
     is_test=is_test, has_critical_banner=has_critical,
   )
   try:
-    html_body = compose_email_body(state, old_signals, now)
+    html_body = compose_email_body(
+      state, old_signals, now, from_addr=from_addr,
+    )
   except Exception as e:
     logger.warning(
       '[Email] WARN compose_email_body failed: %s: %s',
@@ -1428,7 +1454,7 @@ def send_daily_email(
 
   to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
   try:
-    _post_to_resend(api_key, _EMAIL_FROM, to_addr, subject, html_body)
+    _post_to_resend(api_key, from_addr, to_addr, subject, html_body)
     logger.info('[Email] sent to %s subject=%r', to_addr, subject)
     return SendStatus(ok=True, reason=None)
   except ResendError as e:
@@ -1471,6 +1497,11 @@ def send_crash_email(
   in Plan 03) so notifier never touches state.json. Keeps hex-boundary
   clean. Text/plain body means NO html escape on `state_summary`; it is
   rendered verbatim.
+
+  Phase 12 (D-14/D-15/D-16): SIGNALS_EMAIL_FROM read per-send. Missing
+  or empty → log ERROR + SendStatus(ok=False, reason='missing_sender');
+  no Resend call. Crash email is best-effort; missing env var is the
+  operator's responsibility (surfaced in next daily warning banner).
   '''
   import traceback as _tb  # local import: no hex-boundary change needed
   if now is None:
@@ -1490,6 +1521,14 @@ def send_crash_email(
     f'{state_summary}\n'
   )
 
+  # Phase 12 D-15: per-send env read; D-14: missing → log ERROR + skip.
+  from_addr = os.environ.get('SIGNALS_EMAIL_FROM', '').strip()
+  if not from_addr:
+    logger.error(
+      '[Email] SIGNALS_EMAIL_FROM not set — crash email skipped',
+    )
+    return SendStatus(ok=False, reason='missing_sender')
+
   api_key = os.environ.get('RESEND_API_KEY')
   if not api_key:
     logger.warning(
@@ -1507,7 +1546,7 @@ def send_crash_email(
   try:
     _post_to_resend(
       api_key=api_key,
-      from_addr=_EMAIL_FROM,
+      from_addr=from_addr,
       to_addr=to_addr,
       subject=subject,
       html_body=None,
