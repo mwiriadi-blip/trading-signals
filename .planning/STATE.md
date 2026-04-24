@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-24T23:04:05.403Z"
+last_updated: "2026-04-24T23:57:15.710Z"
 last_activity: "2026-04-24 — Completed quick task 260425-91t: document SIGNALS_EMAIL_FROM env-var contract in .env.example + PROJECT.md (no source change — Phase 12 D-16 already removed the hardcoded constant)"
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 12
+  total_plans: 17
   completed_plans: 12
-  percent: 100
+  percent: 71
 ---
 
 # STATE — Trading Signals
@@ -224,7 +224,7 @@ These items require operator eyeballing (real Gmail inbox check, visual dashboar
 *v1.0 archived: 2026-04-24 at milestone close (Phases 1–9 complete, 80/80 REQs verified)*
 *v1.1 roadmap created: 2026-04-24 by /gsd-roadmapper (Phases 10–16, 31/31 REQs mapped)*
 
-**Planned Phase:** 12 (https-domain-wiring) — 4 plans — 2026-04-24T20:09:03.026Z
+**Planned Phase:** 13 (Auth + Read Endpoints) — 5 plans — 2026-04-24T23:57:15.703Z
 
 **Plan 09-01 completed:** 2026-04-23 — 2 tasks, 3 files modified (.planning/REQUIREMENTS.md +102/-101; .github/workflows/daily.yml +1 line; tests/test_scheduler.py +22 lines) + 2 files created (09-01-SUMMARY.md, deferred-items.md). Task 1: ERR-01 spec amended to match test-locked no-email behaviour (`except (DataFetchError, ShortFrameError): return 2` with no crash-email call); 37 `- [ ]` checkbox flips via single replace_all (DATA 6 + STATE 7 + NOTF 9 + DASH 9 + CLI 4 + ERR 2 = 37 → 80/80 checked); 59 `| Pending |` traceability rows flipped to `| Complete |` (ERR-01 and SIG-05..08 rows got richer Complete-with-evidence descriptors); coverage header updated to `Mapped to phases: 80/80, Verified: 80/80`; amendment footer dated 2026-04-23 appended. Task 2: `timeout-minutes: 10` added at job level in daily.yml between `runs-on: ubuntu-latest` and `steps:` (parses as int 10 via PyYAML); `test_daily_workflow_has_timeout_minutes` appended inside `TestGHAWorkflow` with two independent assertions (key existence + value equality) — TestGHAWorkflow went from 12 → 13 tests. Locked-behaviour guard `tests/test_main.py::TestCrashEmailBoundary::test_data_fetch_error_does_not_fire_crash_email` unchanged and green (git diff --exit-code returns 0). Full suite: 662 passed (was 661; +1 for new regression test). Pre-existing ruff F401 warnings in notifier.py (19 errors) logged to deferred-items.md as out-of-scope. One Rule-3 deviation (footer date 2026-04-23 instead of draft's 2026-04-24, matching today's actual execution date per executor context). Phase 9 complete; milestone v1.0 ready for archive. Commits: f3f6e3c (Task 1 REQUIREMENTS reconciliation), 2e3d314 (Task 2 GHA timeout + regression test).
 
