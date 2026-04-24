@@ -16,7 +16,8 @@
 - [ ] **WEB-04**: HTTP (port 80) redirects to HTTPS; HSTS header set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`)
 - [ ] **WEB-05**: `GET /` returns the current `dashboard.html` content; refresh triggers regeneration if state changed since last render
 - [ ] **WEB-06**: `GET /api/state` returns the full `state.json` as `application/json` (for CLI/mobile consumers)
-- [ ] **WEB-07**: `GET /healthz` returns 200 with `{"status": "ok", "last_run": "..."}` for liveness checks; exempt from auth
+- [x] **WEB-07
+**: `GET /healthz` returns 200 with `{"status": "ok", "last_run": "..."}` for liveness checks; exempt from auth
 
 ## AUTH — Single-operator access control
 

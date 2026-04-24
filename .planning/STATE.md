@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-24T11:26:10.331Z"
+last_updated: "2026-04-24T11:36:08.263Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 8
-  completed_plans: 3
-  percent: 38
+  completed_plans: 5
+  percent: 63
 ---
 
 # STATE — Trading Signals
@@ -28,12 +28,12 @@ progress:
 ## Current Position
 
 Phase: 11 (Web Skeleton — FastAPI + uvicorn + systemd) — EXECUTING
-Plan: 1 of 4
+Plan: 2 of 4
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Executing Phase 11
+- **Status:** Ready to execute
 - **Last activity:** 2026-04-24
-- **Progress:** 0/7 phases complete (v1.1); v1.0 archived with 9/9 phases at Phase 9
+- **Progress:** [██████░░░░] 63%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -82,6 +82,7 @@ Plan: 1 of 4
 | Phase 07 P03 | ~15min | 4 tasks | 5 files |
 | Phase 8 P3 | 60 minutes | 3 tasks | 5 files |
 | Phase 9 P1 | ~4min | 2 tasks | 3 files |
+| Phase 11 P01 | 432s | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,9 @@ Plan: 1 of 4
 - Plan 03: Module-level _LAST_LOADED_STATE cache in main.py single-threaded orchestrator enables crash-email SC-3 completeness without threading schedule-loop state through the scheduler driver
 - Plan 03: _dispatch_email_and_maintain_warnings encapsulates B1 canonical ordering (dispatch -> clear -> maybe-append -> single save) in one place so --force-email, --test, and (future) scheduled runs all share the same invariant
 - Plan 03: math.isfinite guard applied on BOTH argparse-flag and interactive-Q&A paths for --initial-account, closing T-08-12 regardless of invocation surface
+- create_app() has no docs_url/redoc_url kwargs — Swagger defaults left for Phase 11 per REVIEWS MEDIUM #6
+- Handler uses date.fromisoformat (not datetime) per REVIEWS HIGH #1 — last_run is YYYY-MM-DD date string from state.json
+- Tests monkeypatch state_manager.load_state directly per REVIEWS HIGH #2 — STATE_FILE default arg is bound at import time
 
 ### Todos Carried Forward
 
