@@ -74,8 +74,8 @@ None committed. Candidates from v1.0 deferred tech debt:
 - **Shipped:** v1.0 on 2026-04-24 after 4 days of work (~5,800 source LOC Python, 662 tests, 250 commits, 9 phases).
 - **User:** Marc (Perth, AWST UTC+8 year-round, no DST) — runs Carbon Bookkeeping, Resend configured with verified sender `signals@carbonbookkeeping.com.au`.
 - **Architecture:** Hexagonal-lite. Pure-math modules (`signal_engine`, `sizing_engine`, `system_params`) with AST-enforced forbidden-imports blocklist. I/O adapters (`state_manager`, `notifier`, `dashboard`) with no cross-imports. `main.py` is the sole orchestrator.
-- **Deployment:** GitHub Actions is the PRIMARY path (cron `0 0 * * 1-5` UTC = 08:00 AWST Mon-Fri, with `timeout-minutes: 10` runaway-run cap per Phase 9). Replit Always On documented as alternative.
-- **State persistence:** GHA commits `state.json` back to the repo each run; Replit filesystem persists if Always On is active.
+- **Deployment:** DigitalOcean droplet systemd is the PRIMARY path (Phase 11 onwards). GitHub Actions cron is disabled (`.github/workflows/daily.yml.disabled`) per Phase 10 INFRA-03 to avoid duplicate signal emails; the disabled workflow retains `timeout-minutes: 10` as rollback insurance. Replit Always On remains documented as an alternative (see `docs/DEPLOY.md` — stale, rewrite deferred to post-Phase-12 docs-sweep per 10-CONTEXT.md Deferred Ideas).
+- **State persistence:** The droplet's daily run commits `state.json` back to `origin/main` via a GitHub deploy key (Phase 10 INFRA-02 / `_push_state_to_git` in `main.py`); Replit filesystem persists if Always On is active.
 - **Testing:** 662 tests passing, 0 failing. `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` AST-walks hex modules to enforce boundary invariants.
 - **Known deferred UAT:** 4 operator-facing visual checks (dashboard rendering, Gmail email rendering) recorded in STATE.md §Deferred Items — cannot be automated in GSD session.
 
@@ -102,7 +102,7 @@ None committed. Candidates from v1.0 deferred tech debt:
 | ATR + vol-target sizing, `n_contracts == 0` skips trade (no floor) | Matches the backtested system exactly; 0-floor silently breaches risk budget on small accounts | ✓ Good |
 | Static `dashboard.html` with Chart.js CDN (SRI-pinned) | Zero build step, matches prior backtest aesthetic; SRI prevents CDN tampering | ✓ Good |
 | Signal-only, no live trading | Explicit user directive — risk mitigation | ✓ Good |
-| GitHub Actions PRIMARY (Replit alternative) | Replit Autoscale doesn't guarantee filesystem persistence and kills `schedule` loops; GHA is free, stateless-by-design, and commits `state.json` back | ✓ Good |
+| DO droplet systemd PRIMARY (v1.1); GHA cron disabled, Replit alternative | Droplet gives HTTP-serving capability for FastAPI (v1.1 Phase 11+); GHA cron retired in Phase 10 INFRA-03 to avoid duplicate emails; state.json pushed back via deploy key per Phase 10 INFRA-02 | ✓ Good (v1.1) |
 | Hexagonal-lite: signal_engine ↔ state_manager no cross-import; main sole orchestrator | Keeps pure-math modules testable in isolation; AST blocklist enforces at CI time | ✓ Good |
 | Two-tier email banner (critical vs routine) + `[!]` subject prefix | Critical banners (stale-state, corrupt-recovery) always visible at top; routine warnings compact | ✓ Good (Phase 8) |
 | `_LAST_LOADED_STATE` module cache for crash-email state summary | Gives crash email access to last-loaded state without threading state through the scheduler | ⚠️ Revisit if parallel runs appear (v2) |
