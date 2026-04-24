@@ -7,3 +7,6 @@ pytest-freezer==0.4.9
 ruff==0.6.9
 schedule==1.2.2
 yfinance==1.2.0
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+httpx==0.28.1
