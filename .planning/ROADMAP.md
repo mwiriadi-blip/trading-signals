@@ -158,7 +158,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/4 | Not started | - |
-| 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 0/4 | Not started | - |
+| 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 4/4 | Complete (code); 4 operator-manual verifications pending on droplet | 2026-04-24 |
 | 12. HTTPS + Domain Wiring | v1.1 | 0/? | Not started | - |
 | 13. Auth + Read Endpoints | v1.1 | 0/? | Not started | - |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |

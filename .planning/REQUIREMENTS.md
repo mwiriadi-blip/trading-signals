@@ -99,10 +99,10 @@ Each REQ-ID is mapped to exactly one v1.1 phase (Phases 10–16). 31/31 mapped, 
 | CHORE-02 | ruff F401 cleanup | 10 | Pending |
 | INFRA-02 | Deploy key + nightly push | 10 | Pending |
 | INFRA-03 | Disable GHA cron | 10 | Pending |
-| WEB-01 | FastAPI systemd unit | 11 | Pending |
-| WEB-02 | uvicorn + nginx reverse proxy | 11 | Pending |
-| WEB-07 | GET /healthz | 11 | Pending |
-| INFRA-04 | deploy.sh idempotent script | 11 | Pending |
+| WEB-01 | FastAPI systemd unit | 11 | Complete |
+| WEB-02 | uvicorn + nginx reverse proxy | 11 | Complete (Phase 11 half — unit binds 127.0.0.1; nginx half lands in Phase 12) |
+| WEB-07 | GET /healthz | 11 | Complete |
+| INFRA-04 | deploy.sh idempotent script | 11 | Complete |
 | WEB-03 | Let's Encrypt HTTPS | 12 | Pending |
 | WEB-04 | HTTP→HTTPS redirect + HSTS | 12 | Pending |
 | INFRA-01 | Resend domain verification | 12 | Pending |
