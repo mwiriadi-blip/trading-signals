@@ -83,6 +83,7 @@ Plan: 3 of 4
 | Phase 8 P3 | 60 minutes | 3 tasks | 5 files |
 | Phase 9 P1 | ~4min | 2 tasks | 3 files |
 | Phase 11 P01 | 432s | 3 tasks | 6 files |
+| Phase 11 P02 | 5min | 2 tasks | 2 files |
 | Phase 11 P03 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
@@ -151,6 +152,8 @@ Plan: 3 of 4
 - create_app() has no docs_url/redoc_url kwargs — Swagger defaults left for Phase 11 per REVIEWS MEDIUM #6
 - Handler uses date.fromisoformat (not datetime) per REVIEWS HIGH #1 — last_run is YYYY-MM-DD date string from state.json
 - Tests monkeypatch state_manager.load_state directly per REVIEWS HIGH #2 — STATE_FILE default arg is bound at import time
+- REVIEWS MEDIUM #5: EnvironmentFile=- (leading dash) makes .env optional in Phase 11; no web env vars consumed until Phase 13
+- REVIEWS LOW #8: web.app:app exact ExecStart reference guards cross-plan drift; configparser + raw text dual assertion strategy
 - REVIEWS MEDIUM #7: pip install --upgrade pip dropped from deploy.sh D-23 sequence
 - REVIEWS HIGH #4: two separate sudo -n systemctl restart calls in deploy.sh (one per unit, not combined)
 - REVIEWS HIGH #3: curl retry loop (10 attempts @ 1s) replaces sleep 3 heuristic in deploy.sh

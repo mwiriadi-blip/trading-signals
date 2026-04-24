@@ -1,0 +1,30 @@
+[Unit]
+Description=Trading Signals — FastAPI web process
+After=network.target
+Wants=trading-signals.service
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/home/trader/trading-signals
+EnvironmentFile=-/home/trader/trading-signals/.env
+ExecStart=/home/trader/trading-signals/.venv/bin/uvicorn web.app:app \
+          --host 127.0.0.1 \
+          --port 8000 \
+          --workers 1 \
+          --log-level info
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading-signals-web
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/trader/trading-signals
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
