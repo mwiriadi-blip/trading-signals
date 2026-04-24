@@ -37,6 +37,7 @@ import notifier
 from notifier import (  # noqa: F401 — re-exported for convenience in tests
   compose_email_body,
   compose_email_subject,
+  send_crash_email,
   send_daily_email,
 )
 from system_params import (
@@ -66,6 +67,37 @@ GOLDEN_EMPTY_PATH = NOTIFIER_FIXTURE_DIR / 'golden_empty.html'
 # C-1 reviews fix: PERTH.localize(...) is correct; tzinfo=PERTH is not.
 PERTH = pytz.timezone('Australia/Perth')
 FROZEN_NOW = PERTH.localize(datetime(2026, 4, 22, 9, 0))
+
+
+# =========================================================================
+# Phase 12 D-19 + D-16: module-level autouse fixture pinning SIGNALS_EMAIL_FROM
+# =========================================================================
+# After D-16 removes the hardcoded _EMAIL_FROM constant, every test whose
+# path reaches send_daily_email / send_crash_email must see an env-provided
+# sender value — otherwise the dispatch short-circuits with missing_sender.
+# Pinning here to the same value baked into the committed golden HTMLs keeps
+# TestGoldenEmail byte-equal across env configurations. Individual tests in
+# TestEmailFromEnvVar override by calling monkeypatch.delenv / setenv('')
+# within their own bodies — pytest's last-mutation-wins semantics mean this
+# fixture is the default and per-test mutations override.
+#
+# Deliberately broad (12-REVIEWS.md LOW): every test class touches email
+# rendering or dispatch one way or another. Narrowing scope risks test
+# failures post signature migration.
+
+@pytest.fixture(autouse=True)
+def _pin_signals_email_from(monkeypatch):
+  '''Phase 12 D-19 + D-16: module-level default for SIGNALS_EMAIL_FROM.
+
+  After D-16 removes the hardcoded _EMAIL_FROM constant, every test that
+  renders email body content must see an env-provided sender value,
+  otherwise send_daily_email short-circuits with missing_sender. Pinning
+  to the same value as the committed golden HTMLs keeps TestGoldenEmail
+  byte-equal across env configurations.
+  '''
+  monkeypatch.setenv(
+    'SIGNALS_EMAIL_FROM', 'signals@carbonbookkeeping.com.au',
+  )
 
 
 # =========================================================================
@@ -2058,3 +2090,140 @@ def test_ruff_clean_notifier_detects_f401_regression(tmp_path) -> None:
     f'Sensitivity check failed: ruff did NOT emit an F401 entry for '
     f'an obvious unused import. Entries: {entries}'
   )
+
+
+# =========================================================================
+# Phase 12 INFRA-01 + D-17 — SIGNALS_EMAIL_FROM env-var contract
+# =========================================================================
+
+
+class TestEmailFromEnvVar:
+  '''Phase 12 INFRA-01 + D-17 — SIGNALS_EMAIL_FROM env-var contract.
+
+  D-14: missing/empty → log ERROR + return SendStatus(ok=False,
+        reason='missing_sender'); NO Resend POST.
+  D-15: per-send read inside send_daily_email (not at import time).
+  D-16: _EMAIL_FROM module constant removed.
+
+  SendStatus stays 2-field (ok, reason) per research finding #2 —
+  extending the NamedTuple cascades into main.py orchestrator code.
+  '''
+
+  def test_from_addr_reads_env_var(self, tmp_path, monkeypatch) -> None:
+    '''SIGNALS_EMAIL_FROM present → Resend payload `from` field matches.
+
+    Spy on notifier.requests.post to capture the POST payload; assert
+    the `from` key equals the env var value (not the old hardcoded
+    address, not `onboarding@resend.dev`).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SIGNALS_EMAIL_FROM', 'test@example.com')
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    captured: list = []
+
+    def _fake_post(url, **kw):
+      captured.append({'url': url, **kw})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    status = send_daily_email(state, old_signals, FROZEN_NOW)
+    assert status.ok is True
+    assert len(captured) == 1
+    assert captured[0]['json']['from'] == 'test@example.com'
+
+  def test_missing_env_var_skips_email_with_warning(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''SIGNALS_EMAIL_FROM unset → log ERROR + SendStatus(ok=False,
+    reason='missing_sender'); Resend.post NOT called. NEVER falls back
+    to onboarding@resend.dev.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('SIGNALS_EMAIL_FROM', raising=False)
+    # Set RESEND_API_KEY so the missing_sender path (not no_api_key)
+    # is what we're testing.
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    called = {'n': 0}
+
+    def _fake_post(*a, **kw):
+      called['n'] += 1
+      raise AssertionError(
+        'notifier.requests.post must NOT be called when '
+        'SIGNALS_EMAIL_FROM is missing'
+      )
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    with caplog.at_level(logging.ERROR, logger='notifier'):
+      status = send_daily_email(state, old_signals, FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'missing_sender'
+    assert called['n'] == 0
+    assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
+    # 12-REVIEWS.md LOW — missing-sender path MUST NOT touch disk.
+    assert not (tmp_path / 'last_email.html').exists(), (
+      'missing-sender path wrote last_email.html — violates '
+      'no-side-effects contract'
+    )
+
+  def test_empty_env_var_treated_as_missing(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''SIGNALS_EMAIL_FROM='' (empty string) → same path as missing.
+
+    `.strip()` on the env value collapses whitespace-only and empty
+    strings into the same "not set" bucket.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SIGNALS_EMAIL_FROM', '')
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    called = {'n': 0}
+
+    def _fake_post(*a, **kw):
+      called['n'] += 1
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    with caplog.at_level(logging.ERROR, logger='notifier'):
+      status = send_daily_email(state, old_signals, FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'missing_sender'
+    assert called['n'] == 0
+    assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
+    # 12-REVIEWS.md LOW — missing-sender path MUST NOT touch disk.
+    assert not (tmp_path / 'last_email.html').exists()
+
+  def test_crash_email_missing_env_var_skips_with_warning(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''12-REVIEWS.md LOW — crash-email path has same missing-sender
+    behavior as daily-email path (parity with test #2).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('SIGNALS_EMAIL_FROM', raising=False)
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    called = {'n': 0}
+
+    def _fake_post(*a, **kw):
+      called['n'] += 1
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    try:
+      raise RuntimeError('simulated crash for test')
+    except RuntimeError as exc:
+      with caplog.at_level(logging.ERROR, logger='notifier'):
+        status = send_crash_email(exc, 'test state summary', FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'missing_sender'
+    assert called['n'] == 0
+    assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
+    assert not (tmp_path / 'last_email.html').exists()
