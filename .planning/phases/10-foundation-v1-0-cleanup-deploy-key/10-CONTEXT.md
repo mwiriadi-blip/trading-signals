@@ -2,6 +2,7 @@
 
 **Gathered:** 2026-04-24
 **Status:** Ready for planning
+**Revised:** 2026-04-24 (reviews mode — see §Deferred Ideas for docs/DEPLOY.md scoping decision)
 
 <domain>
 ## Phase Boundary
@@ -77,8 +78,8 @@ Close four v1.0 carry-over items before v1.1 feature work starts:
 - **D-11: Commit message reused verbatim from v1.0 Phase 7 convention:** `chore(state): daily signal update [skip ci]`. The `[skip ci]` tag is vestigial (no CI runs on state commits) but preserves the grep-pattern so tools that looked for v1.0 state commits continue to work.
 
 - **D-12: Fail-loud on push errors; do NOT crash the daily run.** If `subprocess.run(['git', 'push', ...], check=True)` raises `CalledProcessError`:
-  1. Log at ERROR with `[State]` prefix: `"git push failed: <stderr excerpt truncated to 200 chars>"`.
-  2. Call `state_manager.append_warning(state, source='state_pusher', message=f'Nightly state.json push failed: {reason}')` — preserves Phase 8 D-08 sole-writer pattern by going through `append_warning`, NOT touching `state['warnings']` directly.
+  1. Log at ERROR with `[State]` prefix. **REVIEW REVISION (10-REVIEWS.md Codex LOW):** commit and push failures emit DISTINCT log verbs — `[State] git commit failed: <stderr excerpt>` vs `[State] git push failed: <stderr excerpt>` — so debugging is not misleading. The earlier spec allowed a single `[State] git push failed` for any CalledProcessError including commit failures; Plan 10-03 Task 1 now splits the except clauses per subcommand.
+  2. Call `state_manager.append_warning(state, source='state_pusher', message=f'Nightly state.json <verb> failed: {reason}')` — preserves Phase 8 D-08 sole-writer pattern by going through `append_warning`, NOT touching `state['warnings']` directly.
   3. `save_state(state)` one more time to persist the new warning — this is the ONLY exception to the "two saves per run" invariant from Phase 8 W3; document this explicitly in the helper's docstring. Alternative: rely on next run's normal save cycle to persist the warning. **Adopted approach: rely on next run.** Keeps the two-save invariant clean; worst case, a single missed-push warning is delayed by one run.
   4. NEXT run's email surfaces the missed push via the routine warnings row (Phase 8 age filter picks it up).
 
@@ -86,7 +87,7 @@ Close four v1.0 carry-over items before v1.1 feature work starts:
 
 - **D-14: Deploy key setup is an operator task, not code.** The droplet-side SSH keypair, GitHub deploy-key registration (with write access), and `~/.ssh/config` routing are one-time setup steps performed by the operator before Phase 10 code can push. Phase 10 plan MUST include a `SETUP-DEPLOY-KEY.md` doc in the phase directory with the exact commands (matches the walkthrough from earlier conversation — ssh-keygen, add public key to GitHub, configure ~/.ssh/config for github.com, switch remote from HTTPS to SSH, verify with `ssh -T git@github.com`). The doc is committed; the code assumes the key is already in place and fails loudly if not (D-12 covers this failure mode).
 
-- **D-15: The `trading-signals-web` systemd unit (Phase 11+) is NOT involved in state pushes.** Only the daily `trading-signals` unit pushes. Web process only reads state (GET /, GET /api/state) — never writes state. This preserves the "one writer" invariant for state.json on the droplet.
+- **D-15: The `trading-signals-web` systemd unit (Phase 11+) is NOT involved in state pushes.** Only the daily `trading-signals` unit pushes. Web process only reads state (GET /, GET /api/state) — never writes state. This preserves the "one writer" invariant for state.json on the droplet. **Additionally:** the daily runner only pushes when `run_daily_check()` actually ran past the weekday gate and past the `--test` structural read-only gate. Weekend-skip (line 829 `return` before load_state) and `--test` (line 1046 `return` before save_state) MUST NOT invoke `_push_state_to_git`. Plan 10-03 Task 2 adds `test_run_daily_check_does_not_push_on_weekend` and `test_run_daily_check_does_not_push_on_test_mode` to regression-guard this per REVIEW MEDIUM (10-REVIEWS.md Codex).
 
 ### Area 4 — INFRA-03 (GHA cron retirement)
 
@@ -99,14 +100,15 @@ Close four v1.0 carry-over items before v1.1 feature work starts:
   - **(b)** Delete the test entirely (GHA is retired; timeout assertion is moot).
   **Adopted: (a) — update path, keep the assertion.** Zero-cost; protects the rollback path; documents that the disabled file is still well-formed.
 
-- **D-19: PROJECT.md + ROADMAP.md + CLAUDE.md cross-references updated** to reflect droplet-primary, GHA-disabled state. Specifically: PROJECT.md "Deployment target" section, ROADMAP.md "Operator Decisions Baked In" table, any prose that says "GHA is the primary deployment path". Search-and-replace pass during Phase 10 plan.
+- **D-19: PROJECT.md + ROADMAP.md + CLAUDE.md cross-references updated** to reflect droplet-primary, GHA-disabled state. Specifically: PROJECT.md "Deployment target" section, ROADMAP.md "Operator Decisions Baked In" table, any prose that says "GHA is the primary deployment path". Search-and-replace pass during Phase 10 plan. **`docs/DEPLOY.md` is INTENTIONALLY out of scope** per the reviews-mode Deferred Ideas entry below — the file's Quickstart and "What the workflow does" sections describe the GHA-primary path in depth and cannot be surgically edited; the doc needs a broader rewrite that is deferred to a future docs-sweep phase.
 
 ### Claude's Discretion
 
-- **Exact log format for push failures (D-12)** — reasonable default: `'[State] git push failed: %s', stderr[:200]`. Planner picks final wording.
-- **Whether to use `subprocess.check_output` vs `subprocess.run(check=True)`** — equivalent; pick whichever reads cleaner per codebase convention.
+- **Exact log format for push failures (D-12)** — reasonable default: `'[State] git push failed: %s', stderr[:200]`. Planner picks final wording. **Planner decision (reviews mode):** commit-vs-push log verb distinction is LOCKED per D-12 amendment — separate except clauses; REVIEW LOW closed.
+- **Whether to use `subprocess.check_output` vs `subprocess.run(check=True)`** — equivalent; pick whichever reads cleaner per codebase convention. **Planner picked:** `subprocess.run(..., check=True, capture_output=True, timeout=...)` across all three calls (diff / commit / push) for uniform error surface and stderr capture for `append_warning`.
 - **Order of Phase 10 plan tasks** — recommend: Task 1 = BUG-01 + CHORE-02 (doc-like changes to touchy files), Task 2 = INFRA-02 deploy-key code, Task 3 = INFRA-03 GHA retire + SETUP-DEPLOY-KEY.md + test updates. Planner may reorder.
-- **Whether to squash all 4 items into a single plan vs split into 2 plans** — Phase is small (~4hr total); single plan is probably fine. Planner decides based on file overlap and commit atomicity.
+- **Whether to squash all 4 items into a single plan vs split into 2 plans** — Phase is small (~4hr total); single plan is probably fine. Planner decides based on file overlap and commit atomicity. **Planner picked:** 4 plans across 3 waves (10-01 BUG-01 + 10-02 CHORE-02 parallel Wave 1; 10-03 INFRA-02 Wave 2; 10-04 INFRA-03 Wave 3).
+- **Local `import subprocess` vs module-top import** — REVIEW LOW (10-REVIEWS.md): either is acceptable. **Planner picked Option A** per planner-reviews.md discretion — keep local import mirroring `_send_email_never_crash` pattern; Plan 10-03 Task 1 docstring explicitly documents the rationale so future readers understand the convention.
 
 ### Folded Todos
 
@@ -142,6 +144,7 @@ None — the `gsd-sdk query todo.match-phase 10` call returned zero matches. No 
 - `.github/workflows/daily.yml` → rename to `daily.yml.disabled` for D-16
 - `.planning/phases/10-foundation-v1-0-cleanup-deploy-key/SETUP-DEPLOY-KEY.md` — new operator setup doc for D-14
 - `.planning/PROJECT.md` + `.planning/ROADMAP.md` + `CLAUDE.md` — prose updates for D-19
+- `docs/DEPLOY.md` — **NOT in Phase 10 scope**; deferred to future docs-sweep phase per §Deferred Ideas
 
 ### Architectural invariants (do not break)
 - `CLAUDE.md` §Architecture — hex-lite: `state_manager` stays I/O-narrow (no subprocess, no git calls); `main.py` is the sole orchestrator; `signal_engine` ↔ `state_manager` no cross-import
@@ -203,6 +206,8 @@ None — the `gsd-sdk query todo.match-phase 10` call returned zero matches. No 
 
 - **test_daily_workflow_has_timeout_minutes test deletion (D-18 option (b)).** If the GHA-rollback scenario is formally abandoned (say, in v1.2 when repo secrets are deleted), delete the test along with `daily.yml.disabled` itself. Until then, keep both as a safety net.
 
+- **`docs/DEPLOY.md` rewrite (REVIEW LOW — codex 10-04 MEDIUM).** The current file (172 lines) describes GHA as the PRIMARY path in its Quickstart, "What the workflow does", and Cost sections, with the Replit alternative in a trailing section. Phase 10 cannot surgically amend this — a v1.1-correct DEPLOY.md needs a full rewrite covering: (1) droplet systemd as primary, (2) SETUP-DEPLOY-KEY.md as the operator-onboarding prerequisite, (3) `deploy.sh` idempotent-update runbook (produced by Phase 11 INFRA-04), (4) nginx + HTTPS wiring (produced by Phase 12), (5) Replit/GHA listed as historical alternatives retained for rollback. **Option (b) adopted per 10-REVIEWS.md — defer to a docs-sweep phase after Phase 12 so the rewrite has the full droplet + HTTPS + web-layer story to describe.** Phase 10's `CLAUDE.md`/`.planning/PROJECT.md` edits (D-19) are sufficient for the immediate rollout; Phase 10's `SETUP-DEPLOY-KEY.md` covers the deploy-key-specific onboarding; `docs/DEPLOY.md` will be rewritten when v1.1 has more infrastructure to document coherently. Gemini did not flag this concern (evaluated Plan 10-04 Task 1 Step C's "leave README badge as retired indicator" decision as the acceptable baseline for current-phase docs posture). Tracking stays in this Deferred Ideas entry until a new docs-sweep phase is scheduled.
+
 ### Reviewed Todos (not folded)
 None — `gsd-sdk query todo.match-phase 10` returned zero matches.
 
@@ -212,3 +217,4 @@ None — `gsd-sdk query todo.match-phase 10` returned zero matches.
 
 *Phase: 10-foundation-v1-0-cleanup-deploy-key*
 *Context gathered: 2026-04-24*
+*Reviews-mode revision: 2026-04-24 — D-12 commit-vs-push log distinction locked; D-15 weekend/--test skip coverage locked; D-19 docs/DEPLOY.md scoping locked (deferred); local-import rationale Option A locked*
