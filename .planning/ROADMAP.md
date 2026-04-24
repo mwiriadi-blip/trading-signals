@@ -47,7 +47,12 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   2. `ruff check notifier.py` returns zero warnings (F401 cleanup complete); CI test `test_ruff_clean_notifier` asserts this so the warnings cannot reappear
   3. Droplet has a GitHub deploy key with write access to the repo; a nightly systemd timer runs `git add state.json && git commit && git push origin main` and the last 3 days' state commits are visible in the GitHub commit log authored by the deploy key
   4. `.github/workflows/daily.yml` is renamed to `daily.yml.disabled` (or equivalent no-op rename) and no cron job fires from GitHub for 2 consecutive weekdays — droplet systemd is the sole signal runner; no duplicate email arrives in the operator inbox
-**Plans**: TBD
+**Plans**: 4 plans
+  - [ ] `10-01-PLAN.md` — BUG-01 defense-in-depth: `_handle_reset` one-line fix (D-01) + `state_manager.reset_state` signature extension (D-02) + TestHandleReset/TestResetState regression classes (D-03)
+  - [ ] `10-02-PLAN.md` — CHORE-02 ruff F401 cleanup: remove 4 unused imports from `notifier.py` (D-04) + `test_ruff_clean_notifier` CI regression guard (D-05)
+  - [ ] `10-03-PLAN.md` — INFRA-02 droplet deploy-key push: `_push_state_to_git` helper in `main.py` (D-07..D-12) + `run_daily_check` hook (D-08) + TestPushStateToGit/TestRunDailyCheckPushesState tests
+  - [ ] `10-04-PLAN.md` — INFRA-03 GHA retirement: `git mv daily.yml → daily.yml.disabled` (D-16), update `TestGHAWorkflow.WORKFLOW_PATH` (D-18), author `SETUP-DEPLOY-KEY.md` (D-14), D-19 prose updates in CLAUDE.md + PROJECT.md
+**Plans (wave structure)**: Wave 1 = [10-01, 10-02] parallel; Wave 2 = [10-03] after 10-01 (both append to `tests/test_main.py`); Wave 3 = [10-04] after 10-03 (SETUP-DEPLOY-KEY.md references `_push_state_to_git` helper)
 **UI hint**: no
 
 ### Phase 11: Web Skeleton — FastAPI + uvicorn + systemd
@@ -59,7 +64,12 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   2. `curl http://localhost:8000/healthz` on the droplet returns HTTP 200 with JSON body `{"status":"ok","last_run":"<ISO timestamp from state.json>"}`; a pytest `TestHealthz` covers happy-path + missing-state-file degraded path
   3. `bash deploy.sh` run twice in a row on the droplet is idempotent — second run shows "Already up to date" from git, pip reports no changes, systemctl restarts the units without error; exit code 0 both times
   4. uvicorn runs with `workers=1` and binds only to `127.0.0.1:8000` (not `0.0.0.0`) — `ss -tlnp | grep 8000` shows `127.0.0.1:8000` only, so nothing is externally reachable before Phase 12 wires nginx
-**Plans**: TBD
+**Plans:** 4 plans
+  - [ ] `11-01-PLAN.md` — WEB-07 Python scaffold: pin fastapi==0.136.1/uvicorn[standard]==0.46.0/httpx==0.28.1; create web/ package (__init__.py, app.py factory + module-level app, routes/__init__.py, routes/healthz.py); /healthz handler implements D-13..D-19 (200 always, JSON {status,last_run,stale}, C-2 local state_manager import, D-19 never-crash); tests/test_web_healthz.py with 5 classes (TestHealthzHappyPath, TestHealthzMissingStatefile, TestHealthzStaleness, TestHealthzDegradedPath, TestWebHexBoundary AST guard)
+  - [ ] `11-02-PLAN.md` — WEB-01/WEB-02 systemd unit: commit systemd/trading-signals-web.service to repo with locked body (D-06..D-12: User=trader, Wants=trading-signals.service soft dep, --host 127.0.0.1 + --workers 1, all 5 D-10 hardening directives, journald logs); tests/test_web_systemd_unit.py with 6 classes (configparser-based; critical test_execstart_does_not_bind_all_interfaces guards against 0.0.0.0)
+  - [ ] `11-03-PLAN.md` — INFRA-04 deploy.sh: idempotent script at repo root (D-20 set -euo pipefail; D-22 branch-must-be-main check first; D-23 8-step sequence: branch→fetch→pull --ff-only→pip upgrade→pip install -r→sudo systemctl restart trading-signals trading-signals-web→curl smoke /healthz→commit echo; D-25 no auto-rollback); tests/test_deploy_sh.py with 4 classes including 5 cross-step ordering checks
+  - [ ] `11-04-PLAN.md` — Operator runbook: SETUP-DROPLET.md at repo root with 7 sections (install systemd unit, install sudoers entry scoped to TWO unit names per D-21, verify port binding SC-4, verify deploy.sh idempotency SC-3, verify boot persistence SC-1, troubleshooting, anti-pattern WARNINGS against NOPASSWD: ALL and 0.0.0.0); tests/test_setup_droplet_doc.py with 8 classes including TestCrossArtifactDriftGuard which prevents the doc from drifting out of sync with unit name (Plan 02) or smoke-test URL (Plan 03)
+**Plans (wave structure)**: Wave 0 = [11-01] sequential (Python deps + scaffold + handler + tests); Wave 1 = [11-02, 11-03] parallel (disjoint files: systemd unit vs deploy.sh); Wave 2 = [11-04] after Wave 1 (drift guard reads both Plan 02 + Plan 03 artifacts)
 **UI hint**: no
 
 ### Phase 12: HTTPS + Domain Wiring
@@ -147,8 +157,8 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/? | Not started | - |
-| 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 0/? | Not started | - |
+| 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/4 | Not started | - |
+| 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 0/4 | Not started | - |
 | 12. HTTPS + Domain Wiring | v1.1 | 0/? | Not started | - |
 | 13. Auth + Read Endpoints | v1.1 | 0/? | Not started | - |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |
