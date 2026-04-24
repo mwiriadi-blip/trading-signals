@@ -1957,3 +1957,104 @@ class TestPostToResendContentType:
         'k', 'f@x.com', 't@x.com', 'subj',
         html_body=None, text_body=None, backoff_s=0,
       )
+
+
+# =========================================================================
+# Phase 10 CHORE-02 / D-05: ruff CI regression guard for notifier.py
+# =========================================================================
+
+def test_ruff_clean_notifier() -> None:
+  '''CHORE-02 / D-05: notifier.py must be ruff-CLEAN (zero warnings of
+  ANY category) AND specifically have zero F401 (unused-import) entries.
+
+  PRIMARY GATE (D-05 + ROADMAP SC-2): asserts `result.returncode == 0`.
+  This catches ALL ruff warnings — F401, E-series style errors,
+  W-series whitespace, UP-series py-upgrade suggestions, etc. — not
+  just unused imports. Any new ruff warning in notifier.py reds this.
+
+  SECONDARY DIAGNOSTIC: parses the JSON and asserts zero entries with
+  `code == 'F401'`. When the primary gate reds, the diagnostic
+  narrows the failure to "is it the Phase 10 F401 regression or
+  something else?".
+
+  Invokes `ruff check notifier.py --output-format=json` via subprocess
+  (ruff 0.6.9, pinned in requirements.txt). Template per
+  10-RESEARCH.md §Pattern 2. Stable across ruff 0.6.x per JSON output
+  schema.
+
+  REVIEW REVISION (10-REVIEWS.md HIGH): the earlier draft asserted
+  only on the F401 filter, NOT on returncode. This allowed any
+  non-F401 ruff warning to pass. Now both are enforced.
+  '''
+  import json
+  import subprocess
+
+  result = subprocess.run(
+    ['ruff', 'check', 'notifier.py', '--output-format=json'],
+    capture_output=True,
+    text=True,
+    timeout=30,
+  )
+  entries = json.loads(result.stdout) if result.stdout.strip() else []
+  # SECONDARY DIAGNOSTIC first — gives a clearer error message when
+  # the regression is specifically F401 (the category this phase
+  # closed). Only then check the PRIMARY gate so an E501 regression
+  # (say) produces a clean "ruff exits 1" message instead of being
+  # swallowed by a spurious F401 assertion.
+  f401_entries = [e for e in entries if e.get('code') == 'F401']
+  assert len(f401_entries) == 0, (
+    f'CHORE-02 / D-05: notifier.py must have zero F401 (unused-import) '
+    f'warnings; found {len(f401_entries)}: '
+    f'{[(e.get("location", {}).get("row"), e.get("message")) for e in f401_entries]}'
+  )
+  # PRIMARY GATE: D-05 + ROADMAP SC-2 "ruff check notifier.py returns
+  # zero warnings" — enforced via returncode, which ruff sets to 1
+  # whenever ANY issue exists (of any rule category).
+  assert result.returncode == 0, (
+    f'CHORE-02 / D-05 / SC-2: ruff check notifier.py must exit 0 '
+    f'(no warnings of ANY category). Got returncode={result.returncode}. '
+    f'Full entries: {entries}. '
+    f'stderr: {result.stderr[:200] if result.stderr else "(empty)"}'
+  )
+
+
+def test_ruff_clean_notifier_detects_f401_regression(tmp_path) -> None:
+  '''CHORE-02 / D-05 sensitivity check: prove the guard actually RED-lights
+  on an F401 regression. Writes a temp module with an unused import and
+  asserts `ruff check <temp_file>` returns non-zero AND emits at least one
+  F401 entry.
+
+  This replaces the "manually re-add SPI_MULT and verify RED" ceremony
+  in the earlier plan draft — it exercises the same invariant (guard
+  is F401-sensitive) via a self-contained fixture, so no notifier.py
+  mutation is required during the test run.
+
+  REVIEW REVISION (10-REVIEWS.md Codex LOW): removed the manual
+  re-remove-import ceremony; this temp-file test replaces it.
+  '''
+  import json
+  import subprocess
+
+  # Fixture with a clear, unused import — must unambiguously trigger F401.
+  fixture = tmp_path / 'f401_regression_probe_clean.py'
+  fixture.write_text(
+    "'''F401 regression probe — unused import, no noqa.'''\n"
+    'import os\n'
+  )
+  result = subprocess.run(
+    ['ruff', 'check', str(fixture), '--output-format=json'],
+    capture_output=True,
+    text=True,
+    timeout=30,
+  )
+  assert result.returncode != 0, (
+    f'Sensitivity check failed: ruff exited 0 on a file with an '
+    f'unused import — guard would miss F401 regressions. '
+    f'stdout: {result.stdout[:200]}'
+  )
+  entries = json.loads(result.stdout) if result.stdout.strip() else []
+  f401_entries = [e for e in entries if e.get('code') == 'F401']
+  assert len(f401_entries) >= 1, (
+    f'Sensitivity check failed: ruff did NOT emit an F401 entry for '
+    f'an obvious unused import. Entries: {entries}'
+  )
