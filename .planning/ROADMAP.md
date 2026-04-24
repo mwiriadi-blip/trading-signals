@@ -81,7 +81,12 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   2. `curl -sI http://signals.<owned-domain>.com/healthz` returns HTTP 301 redirect to the `https://` equivalent, and the HTTPS response header includes `Strict-Transport-Security: max-age=31536000; includeSubDomains`
   3. The daily signal email sent by the droplet-run notifier arrives from `signals@<owned-domain>` (driven by new `SIGNALS_EMAIL_FROM` env var read from droplet `.env`, not hardcoded); SPF/DKIM pass in Gmail's "show original" header view
   4. `SIGNALS_EMAIL_FROM` is a real env var honoured by `notifier.py` (with a regression test that patches the env var and asserts the Resend POST body's `from` field matches); missing env var fails the send with a clear log line, never silently falls back to `onboarding@resend.dev`
-**Plans**: TBD
+**Plans**: 4 plans
+  - [ ] `12-01-PLAN.md` — WEB-03 + WEB-04 nginx config: committed `nginx/signals.conf` with 443-only server block (Mozilla Intermediate TLS, HSTS exact value no preload, rate-limit on /healthz, ACME carve-out, security headers at server scope) + `tests/test_nginx_signals_conf.py` (grep-style structural invariants, 8+ test classes)
+  - [ ] `12-02-PLAN.md` — INFRA-01 notifier.py env-var refactor: remove `_EMAIL_FROM` constant (all 4 touch sites), read `SIGNALS_EMAIL_FROM` per-send in send_daily_email + send_crash_email, thread through `compose_email_body` (keyword-only) → `_render_footer_email` (3-arg signature), fail-loud missing path (log ERROR + SendStatus(ok=False, reason='missing_sender') — 2-field per research finding #2) + TestEmailFromEnvVar (3 tests) + module-level autouse fixture + regenerator pinning
+  - [ ] `12-03-PLAN.md` — WEB-03 deploy.sh nginx reload hook: gated `if [ -f nginx/signals.conf ] && command -v nginx &>/dev/null` block running `sudo -n nginx -t` + `sudo -n systemctl reload nginx` AFTER retry-loop smoke test + TestNginxReloadHook (9 tests) — depends on Plan 01
+  - [ ] `12-04-PLAN.md` — WEB-03/WEB-04/INFRA-01 operator runbook: `.planning/phases/12-https-domain-wiring/SETUP-HTTPS.md` with 10 sections (Prerequisites → Install → Copy/sed/symlink → Certbot → Verify → Timer → Env var → Sudoers → Troubleshooting → Rollback) + `tests/test_setup_https_doc.py` with TestCrossArtifactDriftGuard — depends on Plans 01, 02, 03
+**Plans (wave structure)**: Wave 1 = [12-01, 12-02] parallel (disjoint files: nginx/ vs notifier.py); Wave 2 = [12-03] after 12-01 (deploy.sh references nginx/signals.conf path in gate); Wave 3 = [12-04] after 12-01+02+03 (cross-artifact drift guard reads all three)
 **UI hint**: no
 
 ### Phase 13: Auth + Read Endpoints
@@ -159,7 +164,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 |-------|-----------|----------------|--------|-----------|
 | 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/4 | Not started | - |
 | 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 4/4 | Complete (code); 4 operator-manual verifications pending on droplet | 2026-04-24 |
-| 12. HTTPS + Domain Wiring | v1.1 | 0/? | Not started | - |
+| 12. HTTPS + Domain Wiring | v1.1 | 0/4 | Not started | - |
 | 13. Auth + Read Endpoints | v1.1 | 0/? | Not started | - |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |
 | 15. Live Calculator + Sentinels | v1.1 | 0/? | Not started | - |
