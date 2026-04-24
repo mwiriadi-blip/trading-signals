@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-24T11:36:08.263Z"
+last_updated: "2026-04-24T11:43:43.796Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
-  percent: 63
+  completed_plans: 6
+  percent: 75
 ---
 
 # STATE — Trading Signals
@@ -28,12 +28,12 @@ progress:
 ## Current Position
 
 Phase: 11 (Web Skeleton — FastAPI + uvicorn + systemd) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
 - **Last activity:** 2026-04-24
-- **Progress:** [██████░░░░] 63%
+- **Progress:** [████████░░] 75%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -83,6 +83,7 @@ Plan: 2 of 4
 | Phase 8 P3 | 60 minutes | 3 tasks | 5 files |
 | Phase 9 P1 | ~4min | 2 tasks | 3 files |
 | Phase 11 P01 | 432s | 3 tasks | 6 files |
+| Phase 11 P02 | 5m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,8 @@ Plan: 2 of 4
 - create_app() has no docs_url/redoc_url kwargs — Swagger defaults left for Phase 11 per REVIEWS MEDIUM #6
 - Handler uses date.fromisoformat (not datetime) per REVIEWS HIGH #1 — last_run is YYYY-MM-DD date string from state.json
 - Tests monkeypatch state_manager.load_state directly per REVIEWS HIGH #2 — STATE_FILE default arg is bound at import time
+- EnvironmentFile=- (leading dash) makes .env optional in Phase 11 — REVIEWS MEDIUM #5; no web env vars consumed until Phase 13
+- web.app:app exact ExecStart reference guards cross-plan drift — REVIEWS LOW #8; configparser + raw text dual assertion strategy
 
 ### Todos Carried Forward
 
