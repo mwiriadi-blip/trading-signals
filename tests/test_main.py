@@ -1492,6 +1492,81 @@ class TestResetNonTTY:
     assert rc == 0
 
 
+class TestHandleReset:
+  '''Phase 10 BUG-01 D-01 / D-03: _handle_reset syncs state['account']
+  to state['initial_account'] in BOTH CLI-flag and interactive paths.
+  '''
+
+  def test_reset_syncs_account_to_initial_account_cli_flag_path(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-01 + D-03: --reset --initial-account 50000 yields
+    state['account'] == state['initial_account'] == 50000.0.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', '50000',
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['initial_account'] == 50000.0
+    assert s['account'] == 50000.0, (
+      'BUG-01: state[account] must equal state[initial_account] after '
+      '--reset via CLI-flag path'
+    )
+    assert s['account'] == s['initial_account'], 'BUG-01 invariant'
+    assert s['contracts'] == {
+      'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard',
+    }
+
+  def test_reset_syncs_account_to_initial_account_interactive_path(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-01 + D-03: interactive input 50000 yields
+    state['account'] == state['initial_account'] == 50000.0.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: True)
+    inputs = iter(['50000', 'spi-standard', 'audusd-mini'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main(['--reset'])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['initial_account'] == 50000.0
+    assert s['account'] == 50000.0, (
+      'BUG-01: state[account] must equal state[initial_account] after '
+      '--reset via interactive Q&A path'
+    )
+    assert s['account'] == s['initial_account'], 'BUG-01 invariant'
+    assert s['contracts'] == {
+      'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini',
+    }
+
+  def test_reset_default_initial_account_still_syncs(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-01: when no --initial-account passed, non-TTY rejects with exit 2;
+    but CLI-flag path with full flags + non-TTY must still keep invariant
+    when --initial-account is also explicit.'''
+    from system_params import INITIAL_ACCOUNT
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr('main._stdin_isatty', lambda: False)  # non-TTY
+    monkeypatch.setenv('RESET_CONFIRM', 'YES')
+    rc = main.main([
+      '--reset',
+      '--initial-account', str(int(INITIAL_ACCOUNT)),
+      '--spi-contract', 'spi-mini',
+      '--audusd-contract', 'audusd-standard',
+    ])
+    assert rc == 0
+    s = json.loads((tmp_path / 'state.json').read_text())
+    assert s['account'] == s['initial_account']
+    assert s['account'] == float(INITIAL_ACCOUNT)
+
+
 # =========================================================================
 # Phase 8 Task 3 — crash-email boundary + warning-carry-over flow
 # =========================================================================

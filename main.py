@@ -1278,6 +1278,7 @@ def _handle_reset(args: argparse.Namespace) -> int:
   # --- Build + save ---
   state = state_manager.reset_state()
   state['initial_account'] = float(initial_account)
+  state['account'] = float(initial_account)  # Phase 10 BUG-01 D-01: sync account to initial_account
   state['contracts'] = {'SPI200': spi_contract, 'AUDUSD': audusd_contract}
   state_manager.save_state(state)
   logger.info(
