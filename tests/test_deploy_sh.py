@@ -177,3 +177,115 @@ class TestDeployShSafety:
 
   def test_no_daemon_reload(self, deploy_text):
     assert 'daemon-reload' not in deploy_text
+
+
+class TestNginxReloadHook:
+  '''Phase 12 D-20 — conditional nginx config-test + reload hook.
+
+  The hook is gated on BOTH `nginx/signals.conf` file presence AND
+  `command -v nginx` — pre-Phase-12 droplets (nginx not installed)
+  MUST skip the block silently, and repo checkouts without the
+  Plan-01 config file MUST also skip.
+
+  T-12-04 (sudoers privilege surface): deploy.sh calls `sudo -n` so
+  a misconfigured sudoers rule fails fast (not hanging on password
+  prompt). Absolute paths are pinned in the sudoers rule itself
+  (SETUP-HTTPS.md Step 8), not inside deploy.sh.
+  '''
+
+  def test_gate_file_check_present(self, deploy_text):
+    '''D-20: gate must check for nginx/signals.conf (Plan 01 artifact).'''
+    assert '[ -f nginx/signals.conf ]' in deploy_text
+
+  def test_gate_command_v_check_present(self, deploy_text):
+    '''D-20: `command -v nginx &>/dev/null` is the new optional-feature
+    gating idiom — first use in deploy.sh. Pre-Phase-12 droplets
+    (no nginx installed) skip silently via this short-circuit.
+    '''
+    assert 'command -v nginx &>/dev/null' in deploy_text
+
+  def test_gate_uses_logical_and(self, deploy_text):
+    '''D-20: BOTH conditions required — `&&` not `||` or two ifs.'''
+    # The full gate literal from RESEARCH §Example 4.
+    assert (
+      'if [ -f nginx/signals.conf ] && command -v nginx &>/dev/null; then'
+    ) in deploy_text
+
+  def test_nginx_config_test_call_inside_gate(self, deploy_text):
+    '''D-20: `sudo -n nginx -t` (non-interactive config test).
+
+    `-n` fails fast when sudoers path is wrong (Pitfall 7 —
+    /usr/sbin/nginx vs /usr/bin/nginx typos).
+    '''
+    assert re.search(r'^\s*sudo -n nginx -t\s*$', deploy_text, re.MULTILINE)
+
+  def test_nginx_reload_call_inside_gate(self, deploy_text):
+    '''D-20: `sudo -n systemctl reload nginx` (non-interactive reload).'''
+    assert re.search(
+      r'^\s*sudo -n systemctl reload nginx\s*$',
+      deploy_text,
+      re.MULTILINE,
+    )
+
+  def test_no_absolute_nginx_path_in_deploy_sh(self, deploy_text):
+    '''deploy.sh uses PATH-relative `nginx` — sudoers pins the
+    absolute path (/usr/sbin/nginx). Putting `/usr/sbin/nginx -t`
+    in deploy.sh would hardcode a distro-specific path into the
+    repo (Pitfall 7 documents Ubuntu /usr/sbin; sudoers is the
+    right place for that pinning).
+    '''
+    assert '/usr/sbin/nginx' not in deploy_text
+
+  def test_order_after_healthz_smoke_test(self, deploy_lines):
+    '''D-20 ordering: reload block lives AFTER Phase 11 retry-loop
+    smoke test. RESEARCH Open Question 5 recommendation — if
+    FastAPI restart fails, `set -e` aborts BEFORE we reload nginx.
+    '''
+    c = _line_index(
+      deploy_lines,
+      r'curl -fsS --max-time 2 http://127\.0\.0\.1:8000/healthz',
+    )
+    n = _line_index(deploy_lines, r'\[ -f nginx/signals\.conf \]')
+    assert c < n, (
+      f'nginx gate (line {n}) must come AFTER /healthz smoke test '
+      f'(line {c})'
+    )
+
+  def test_order_before_commit_echo(self, deploy_lines):
+    '''D-20 ordering: reload block lives BEFORE final commit-hash echo.'''
+    n = _line_index(deploy_lines, r'^\s*sudo -n systemctl reload nginx\s*$')
+    h = _line_index(deploy_lines, r'git rev-parse --short HEAD')
+    assert n < h, (
+      f'nginx reload (line {n}) must come BEFORE commit-hash echo '
+      f'(line {h})'
+    )
+
+  def test_no_unconditional_nginx_reference_before_gate(self, deploy_text):
+    '''Negative: NO nginx mention before the gate line.
+
+    Pre-Phase-12 droplets (no nginx installed) must run deploy.sh
+    cleanly. Any `nginx` token before the gate would either crash
+    (unknown command) or succeed spuriously.
+    '''
+    gate_literal = 'if [ -f nginx/signals.conf ]'
+    assert gate_literal in deploy_text, 'gate must exist'
+    pre_gate = deploy_text.split(gate_literal, 1)[0]
+    # Case-insensitive `nginx` scan — includes comments, strings, anything.
+    assert 'nginx' not in pre_gate.lower(), (
+      'nginx token found BEFORE the gate — pre-Phase-12 droplets '
+      'would fail. Move all nginx references inside the gated block.'
+    )
+
+  def test_echo_messages_have_deploy_prefix(self, deploy_text):
+    '''The new block's echoes follow the existing [deploy] prefix
+    convention (Phase 11 test_log_prefix_on_echoes — every echo has it).
+    '''
+    # Match echo lines that mention nginx; confirm each has [deploy] prefix.
+    nginx_echoes = re.findall(
+      r'^\s*echo\s+["\'].*nginx.*["\'].*$',
+      deploy_text,
+      re.MULTILINE | re.IGNORECASE,
+    )
+    assert len(nginx_echoes) >= 1, 'expected at least 1 nginx-related echo'
+    for e in nginx_echoes:
+      assert '[deploy]' in e, f'missing [deploy] prefix in echo: {e!r}'
