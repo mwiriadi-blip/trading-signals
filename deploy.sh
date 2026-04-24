@@ -64,6 +64,28 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 
+# D-20 (Phase 12): reverse-proxy config test + reload hook, gated.
+# Pre-Phase-12 droplets (no reverse-proxy binary installed) skip
+# silently via `command -v` — the first use of optional-feature
+# gating in deploy.sh. Repo checkouts without nginx/signals.conf
+# (pre-Plan-01) also skip via the file-existence check.
+#
+# Requires the 4-rule sudoers entry (operator sets per SETUP-HTTPS.md
+# Step 8) — absolute paths for all four commands live in the sudoers
+# rule itself, not in this script (REVIEWS MEDIUM: secure_path in
+# /etc/sudoers resolves the PATH-relative names below).
+#
+# Ordering rationale (RESEARCH Open Question 5): reload AFTER
+# FastAPI restart + smoke test means a failed restart aborts via
+# `set -e` before we reload — no point routing traffic to a
+# broken app.
+if [ -f nginx/signals.conf ] && command -v nginx &>/dev/null; then
+  echo "[deploy] nginx config detected — testing + reloading..."
+  sudo -n nginx -t
+  sudo -n systemctl reload nginx
+  echo "[deploy] nginx reloaded"
+fi
+
 # D-23 step 8: success
 COMMIT=$(git rev-parse --short HEAD)
 echo "[deploy] deploy complete. commit=${COMMIT}"

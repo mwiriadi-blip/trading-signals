@@ -261,19 +261,26 @@ class TestNginxReloadHook:
     )
 
   def test_no_unconditional_nginx_reference_before_gate(self, deploy_text):
-    '''Negative: NO nginx mention before the gate line.
+    '''Negative: NO *executable* nginx reference before the gate line.
 
     Pre-Phase-12 droplets (no nginx installed) must run deploy.sh
-    cleanly. Any `nginx` token before the gate would either crash
-    (unknown command) or succeed spuriously.
+    cleanly. Any executable `nginx` token before the gate would
+    either crash (unknown command) or succeed spuriously. Comment
+    lines that document the gate (the block immediately above the
+    gate) are harmless — shell `#` comments never execute.
     '''
     gate_literal = 'if [ -f nginx/signals.conf ]'
     assert gate_literal in deploy_text, 'gate must exist'
     pre_gate = deploy_text.split(gate_literal, 1)[0]
-    # Case-insensitive `nginx` scan — includes comments, strings, anything.
-    assert 'nginx' not in pre_gate.lower(), (
-      'nginx token found BEFORE the gate — pre-Phase-12 droplets '
-      'would fail. Move all nginx references inside the gated block.'
+    # Strip shell `#` comment lines before scanning — they do not execute.
+    pre_gate_code = '\n'.join(
+      line for line in pre_gate.splitlines()
+      if not line.lstrip().startswith('#')
+    )
+    assert 'nginx' not in pre_gate_code.lower(), (
+      'executable nginx token found BEFORE the gate (non-comment) — '
+      'pre-Phase-12 droplets would fail. Move all nginx commands '
+      'inside the gated block.'
     )
 
   def test_echo_messages_have_deploy_prefix(self, deploy_text):
