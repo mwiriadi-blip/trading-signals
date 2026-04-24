@@ -4,6 +4,24 @@
 
 A **shipped** Python CLI (v1.0, 2026-04-24) that runs a mechanical trend-following trading system for two instruments — SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`) — via GitHub Actions cron at 08:00 AWST weekdays. It fetches daily OHLCV data, computes ATR/ADX/momentum-vote signals, sizes positions with trailing-stop + pyramiding, persists state atomically with corruption recovery, renders an HTML dashboard, emails the operator via Resend, and handles crashes with a last-ditch crash-email boundary. **Signal-only** — it never places live trades; it tells the operator what the system says they should be doing and tracks hypothetical P&L against a configurable starting account (default $100k).
 
+**v1.1 direction (in progress):** Transform the email-only system into a hosted, interactive trade journal on DO. FastAPI + nginx serves `signals.yourdomain.com`; operator records executed trades via form; dashboard surfaces live stop-loss + pyramid thresholds and flags position-vs-signal drift.
+
+## Current Milestone: v1.1 Interactive Trading Workstation
+
+**Goal:** Transform the v1.0 email-only signal system into a hosted, interactive trade journal — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance.
+
+**Target features:**
+- Hosted dashboard at `signals.yourdomain.com` (FastAPI + nginx + Let's Encrypt on DO)
+- Interactive trade journal: form-based open/close/modify via POST endpoints
+- Live stop-loss + pyramid calculator surfaced per-instrument
+- Sanity-check sentinels (position-vs-signal drift warnings)
+- BUG-001 fix: `reset_state()` syncs `account` with `initial_account`
+- Selected v1.0 tech debt: F1 full-chain integration test, ruff F401 cleanup, Phase 6 HUMAN-UAT completion
+
+**Architecture (locked):** DO droplet = runtime (systemd: schedule loop + FastAPI web). GitHub = source + state history via deploy key push-back. HTMX or vanilla JS (no React). Shared-secret header auth.
+
+**Prerequisites:** Domain purchased and pointing at droplet IP; Resend domain verification.
+
 ## Core Value
 
 Deliver an accurate, reproducible daily signal and actionable instruction ("close LONG / open SHORT / hold") to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts. **Validated in v1.0.**

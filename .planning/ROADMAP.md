@@ -1,68 +1,230 @@
-# Roadmap: Trading Signals — SPI 200 & AUD/USD Mechanical System
+# Roadmap: Trading Signals — v1.1 Interactive Trading Workstation
+
+**Created:** 2026-04-24 (v1.1 roadmap)
+**Milestone:** v1.1 Interactive Trading Workstation
+**Start phase:** 10 (continuing from v1.0 which closed at Phase 9)
+**Granularity:** fine
+**Parallelization:** true
+**Coverage:** 31/31 v1.1 requirements mapped (WEB 7, AUTH 3, TRADE 6, CALC 4, SENTINEL 3, BUG 1, INFRA 4, CHORE 3)
+
+**Core Value (v1.1):** Transform the v1.0 email-only CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels. Architecture locked: DO droplet runtime (systemd) + GitHub (source + state history via deploy-key push-back) + FastAPI + uvicorn + nginx + Let's Encrypt + HTMX (no React) + shared-secret header auth.
 
 ## Milestones
 
-- ✅ **v1.0 MVP — Mechanical Signal System** — Phases 1-9 (shipped 2026-04-24)
+- [x] **v1.0 MVP — Mechanical Signal System** — Phases 1-9 (shipped 2026-04-24). See [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md).
+- [ ] **v1.1 Interactive Trading Workstation** — Phases 10-16 (in progress from 2026-04-24).
+
+## Prerequisites (v1.1)
+
+Must be resolved BEFORE the dependent phase can be planned:
+
+| Prerequisite | Owner | Blocks |
+|--------------|-------|--------|
+| Operator purchases domain (e.g. `example.com`) pointing A-record at droplet IP | Operator | Phase 12+ (HTTPS / domain wiring onwards) |
+| Droplet provisioned on DigitalOcean (Ubuntu LTS, systemd, public IP) | Operator | Phase 11+ (any systemd or nginx work) |
+| Resend account has the new domain verified (SPF/DKIM/DMARC) with an `@<owned-domain>` sender | Operator | Phase 12 (INFRA-01 lands here) |
+
+Phase 10 has **no** infrastructure dependencies — operator can start there immediately while the droplet + domain are being acquired.
 
 ## Phases
 
-<details>
-<summary>✅ v1.0 MVP — Mechanical Signal System (Phases 1-9) — SHIPPED 2026-04-24</summary>
+- [ ] **Phase 10: Foundation — v1.0 Cleanup & Deploy Key** — BUG-01 + ruff cleanup + droplet deploy key wiring + retire GHA cron; no domain needed yet
+- [ ] **Phase 11: Web Skeleton — FastAPI + uvicorn + systemd** — FastAPI app serving `/healthz` behind uvicorn on localhost:8000 as a systemd unit, with an idempotent deploy.sh; no HTTPS yet
+- [ ] **Phase 12: HTTPS + Domain Wiring** — nginx reverse proxy + Let's Encrypt cert + HSTS + Resend domain verification (depends on operator-purchased domain)
+- [ ] **Phase 13: Auth + Read Endpoints** — Shared-secret header auth, 401 handling with audit log, `GET /` (dashboard) and `GET /api/state` (JSON) behind auth
+- [ ] **Phase 14: Trade Journal — Mutation Endpoints** — `POST /trades/open|close|modify` with field validation, HTMX forms in the dashboard, sole-writer invariant preserved
+- [ ] **Phase 15: Live Calculator + Sentinels** — Per-instrument stop + pyramid display, forward-looking peak-stop calculator, entry-target / add-target rendering, drift + reversal banners on dashboard and in email
+- [ ] **Phase 16: Hardening + UAT Completion** — F1 full-chain integration test + Phase 6 HUMAN-UAT scenarios verified via hosted dashboard; final gate before milestone close
 
-- [x] Phase 1: Signal Engine Core — Indicators & Vote (6/6 plans) — completed 2026-04-20
-- [x] Phase 2: Signal Engine — Sizing, Exits, Pyramiding (5/5 plans) — completed 2026-04-22
-- [x] Phase 3: State Persistence with Recovery (4/4 plans) — completed 2026-04-21
-- [x] Phase 4: End-to-End Skeleton — Fetch + Orchestrator + CLI (4/4 plans) — completed 2026-04-22
-- [x] Phase 5: Dashboard (3/3 plans) — completed 2026-04-22
-- [x] Phase 6: Email Notification (4/4 plans) — completed 2026-04-23
-- [x] Phase 7: Scheduler + GitHub Actions Deployment (3/3 plans) — completed 2026-04-23
-- [x] Phase 8: Hardening — Warning Carry-over, Stale Banner, Crash Email, Config (3/3 plans) — completed 2026-04-23
-- [x] Phase 9: Milestone v1.0 Gap Closure (1/1 plan) — completed 2026-04-24
+## Phase Details
 
-**Archive:** [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
-**Audit:** [milestones/v1.0-MILESTONE-AUDIT.md](milestones/v1.0-MILESTONE-AUDIT.md)
-**Requirements:** [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) (80/80 verified)
+### Phase 10: Foundation — v1.0 Cleanup & Deploy Key
+**Goal**: Close the small v1.0 carry-over items (BUG-01 account-reset regression + ruff F401 cleanup) and prepare the droplet↔GitHub wiring for the web-layer phases, without requiring a domain yet.
+**Depends on**: Nothing (can run immediately; parallelizable with Phase 11 because they touch disjoint files — Phase 10 touches `state_manager.py` + `notifier.py` + `.github/workflows/`, Phase 11 touches new files under `web/` + `systemd/`)
+**Requirements**: BUG-01, CHORE-02, INFRA-02, INFRA-03
+**Success Criteria** (what must be TRUE):
+  1. `python main.py --reset` (CLI-flag path) and `--reset --initial-account X` (interactive-Q&A path) both leave `state['account'] == state['initial_account']`; a new regression test `test_reset_state_syncs_account_to_initial` asserts equality immediately after reset via both entry points
+  2. `ruff check notifier.py` returns zero warnings (F401 cleanup complete); CI test `test_ruff_clean_notifier` asserts this so the warnings cannot reappear
+  3. Droplet has a GitHub deploy key with write access to the repo; a nightly systemd timer runs `git add state.json && git commit && git push origin main` and the last 3 days' state commits are visible in the GitHub commit log authored by the deploy key
+  4. `.github/workflows/daily.yml` is renamed to `daily.yml.disabled` (or equivalent no-op rename) and no cron job fires from GitHub for 2 consecutive weekdays — droplet systemd is the sole signal runner; no duplicate email arrives in the operator inbox
+**Plans**: TBD
+**UI hint**: no
 
-</details>
+### Phase 11: Web Skeleton — FastAPI + uvicorn + systemd
+**Goal**: Stand up a FastAPI app on the droplet as a systemd unit, serving `/healthz` on `localhost:8000` via uvicorn, with an idempotent deploy script. No HTTPS, no auth, no dashboard yet — just proof that the web process survives reboots and deploys cleanly.
+**Depends on**: Phase 10 (needs the droplet-side deploy-key plumbing for deploy.sh to `git pull` cleanly)
+**Requirements**: WEB-01, WEB-02, WEB-07, INFRA-04
+**Success Criteria** (what must be TRUE):
+  1. `systemctl status trading-signals-web` reports `active (running)` after a droplet reboot; the unit starts automatically without operator login
+  2. `curl http://localhost:8000/healthz` on the droplet returns HTTP 200 with JSON body `{"status":"ok","last_run":"<ISO timestamp from state.json>"}`; a pytest `TestHealthz` covers happy-path + missing-state-file degraded path
+  3. `bash deploy.sh` run twice in a row on the droplet is idempotent — second run shows "Already up to date" from git, pip reports no changes, systemctl restarts the units without error; exit code 0 both times
+  4. uvicorn runs with `workers=1` and binds only to `127.0.0.1:8000` (not `0.0.0.0`) — `ss -tlnp | grep 8000` shows `127.0.0.1:8000` only, so nothing is externally reachable before Phase 12 wires nginx
+**Plans**: TBD
+**UI hint**: no
 
-### 📋 v1.1+ (Planned — see PROJECT.md for ideas)
+### Phase 12: HTTPS + Domain Wiring
+**Goal**: Put `signals.<owned-domain>.com` on HTTPS via nginx reverse-proxy and Let's Encrypt, with HTTP→HTTPS redirect and HSTS, and switch Resend email sending to the verified operator-owned domain. After this phase the site is publicly reachable over HTTPS but still open (auth lands in Phase 13).
+**Depends on**: Phase 11 (needs FastAPI on `localhost:8000` to reverse-proxy into). **Operator prerequisite:** domain purchased and A-record pointing at droplet IP; Resend domain verification (SPF/DKIM/DMARC) completed.
+**Requirements**: WEB-03, WEB-04, INFRA-01
+**Success Criteria** (what must be TRUE):
+  1. `curl -sI https://signals.<owned-domain>.com/healthz` returns HTTP 200 with a valid Let's Encrypt cert chain (`openssl s_client -connect signals.<owned-domain>.com:443` shows Issuer `Let's Encrypt`); the certbot systemd timer is enabled and dry-run renewal succeeds
+  2. `curl -sI http://signals.<owned-domain>.com/healthz` returns HTTP 301 redirect to the `https://` equivalent, and the HTTPS response header includes `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+  3. The daily signal email sent by the droplet-run notifier arrives from `signals@<owned-domain>` (driven by new `SIGNALS_EMAIL_FROM` env var read from droplet `.env`, not hardcoded); SPF/DKIM pass in Gmail's "show original" header view
+  4. `SIGNALS_EMAIL_FROM` is a real env var honoured by `notifier.py` (with a regression test that patches the env var and asserts the Resend POST body's `from` field matches); missing env var fails the send with a clear log line, never silently falls back to `onboarding@resend.dev`
+**Plans**: TBD
+**UI hint**: no
 
-Next milestone TBD. Candidates from v1.0 deferred tech debt:
-- F1 full-chain integration test harness
-- Holiday-calendar-aware staleness threshold
-- Thread-safe `_LAST_LOADED_STATE` if parallel runs appear
-- ruff F401 cleanup in notifier.py
-- Phase 7 IN-02 README badge placeholder fix
-- Phase 7 IN-03 TestWeekdayGate fake quality polish
+### Phase 13: Auth + Read Endpoints
+**Goal**: Gate every non-healthz endpoint behind a shared-secret header, and expose the existing v1.0 dashboard (`GET /`) and state snapshot (`GET /api/state`) over HTTPS. After this phase the operator can securely browse the v1.0 dashboard from any device.
+**Depends on**: Phase 12 (needs HTTPS so the shared secret isn't sent in plaintext)
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, WEB-05, WEB-06
+**Success Criteria** (what must be TRUE):
+  1. `curl -sI https://signals.<owned-domain>.com/` (no auth header) returns HTTP 401 with body `unauthorized` (plain text, no hint about the header name); `curl -H "X-Trading-Signals-Auth: <wrong>"` also returns 401 — only the correct `WEB_AUTH_SECRET` value yields 200
+  2. `GET /` with correct auth returns the current `dashboard.html` bytes with `Content-Type: text/html`; if `state.json` mtime is newer than the last rendered dashboard, the endpoint regenerates before serving (verified by `test_get_root_regenerates_on_stale_dashboard`)
+  3. `GET /api/state` with correct auth returns the full `state.json` with `Content-Type: application/json` and every top-level key present (`schema_version`, `account`, `last_run`, `positions`, `signals`, `trade_log`, `equity_history`, `warnings`, `contracts`)
+  4. `GET /healthz` works with NO auth header (still 200) — liveness checks must never be gated; a regression test asserts `/healthz` is exempt from the auth dependency
+  5. Every 401 response writes a journald log line at WARN level including source IP (`X-Forwarded-For` from nginx) and truncated User-Agent (first 120 chars); `journalctl -u trading-signals-web --since '5 min ago' | grep 'auth failure'` shows the expected entries after a test run
+**Plans**: TBD
+**UI hint**: yes
 
-Run `/gsd-new-milestone` to define v1.1 scope.
+### Phase 14: Trade Journal — Mutation Endpoints
+**Goal**: Let the operator record executed trades through the web UI — open, close, and modify positions via HTMX forms that POST to validated JSON endpoints. Every mutation flows through `state_manager.save_state()` so the v1.0 sole-writer invariant for warnings holds.
+**Depends on**: Phase 13 (needs auth + HTMX-able dashboard already served)
+**Requirements**: TRADE-01, TRADE-02, TRADE-03, TRADE-04, TRADE-05, TRADE-06
+**Success Criteria** (what must be TRUE):
+  1. `POST /trades/open` with `{instrument: "SPI200", direction: "LONG", entry_price: 7800.5, contracts: 2}` appends a new position to `state.positions`, saves via `state_manager.save_state()`, and returns an HTMX partial re-rendering the positions table with the new row
+  2. `POST /trades/open` with any invalid field (e.g. `instrument: "BTC"`, `contracts: 0`, `entry_price: -1`, `entry_price: NaN`) returns HTTP 400 with a JSON body listing each offending field and reason; no mutation to `state.json` occurs
+  3. `POST /trades/close` records a closed trade via `state_manager.record_trade()` — `trade_log` grows by one entry, `state.account` updates by realised P&L (respecting the Phase 2/3 D-13 half-on-close cost-split), and `state.positions` loses the closed position; a regression test compares `account_after - account_before` to manual P&L math for both LONG and SHORT exits
+  4. `POST /trades/modify` can update a position's trailing stop or contract count independently (either field optional); attempts to set `new_contracts: 0` or a non-finite `new_stop` return 400
+  5. Dashboard `GET /` includes three HTMX forms (open / close / modify) that POST to their endpoints and swap in the server-returned partial without a full page reload; a selenium-lite or httpx-driven test asserts the HTMX response includes a `hx-swap`-compatible fragment, not a full `<html>` document
+  6. No mutation endpoint writes to `state['warnings']` directly — a regression test AST-walks the web module's handlers and asserts none of them reference `state['warnings'] =` or `.append` on that list (v1.0 sole-writer invariant preserved; only the signal orchestrator touches warnings)
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 15: Live Calculator + Sentinels
+**Goal**: Turn the dashboard from a passive log into an active decision-support tool — surface the current trailing stop, next pyramid-add price, forward-looking peak stop, and entry target from `sizing_engine`; flag drift when `state.positions` disagrees with today's signal on dashboard AND in the daily email.
+**Depends on**: Phase 14 (needs mutations working so the operator's real positions drive the calculator display)
+**Requirements**: CALC-01, CALC-02, CALC-03, CALC-04, SENTINEL-01, SENTINEL-02, SENTINEL-03
+**Success Criteria** (what must be TRUE):
+  1. Per-instrument row on the dashboard shows (when a position is held): current trailing stop price, distance-to-stop in absolute $ and %, and the next pyramid trigger price — all derived by importing `sizing_engine` calculators from the web layer (no re-implementation; pure-math hex boundary preserved)
+  2. When `signal == LONG` and `positions[instrument]` is empty, the row shows an "entry target" block with: next-close threshold (the signal's entry price), suggested contracts (from `calc_position_size`), and the initial trailing stop — matching what the email ACTION REQUIRED block says
+  3. When a position is open, the row shows a "forward-looking" line: "at current bar high Z, stop would rise to W" computed by evaluating `get_trailing_stop` against today's live high (not yesterday's); a test fixture proves the forward-stop math matches `sizing_engine.get_trailing_stop` bit-for-bit
+  4. Pyramid section shows "level N active; next add at price P (+Y×ATR_entry)" and "new stop after add: S" — values equal what `check_pyramid` + `get_trailing_stop` would return on the next bar
+  5. When `positions[instrument]` has an open LONG but today's signal is FLAT (or position holds LONG while signal is SHORT, or any mismatch), an amber "drift" banner on the dashboard names the instrument and the direction of mismatch; a mismatch to the *opposite* direction (LONG↔SHORT) uses a red "reversal" banner instead of amber drift
+  6. The same drift/reversal banner surfaces in the daily email as a top-tier critical banner (reusing Phase 8's `_has_critical_banner` classifier via a new source key `'drift'`); a regression test injects a drifted state and asserts the email body contains the banner text and the subject carries the `[!]` critical prefix
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 16: Hardening + UAT Completion
+**Goal**: Close the v1.0 tech-debt items that were deferred, and complete the Phase 6 HUMAN-UAT scenarios that are now verifiable via the hosted dashboard. Final gate before v1.1 milestone archive.
+**Depends on**: Phase 15 (HUMAN-UAT scenarios need the full dashboard + email flow working; F1 test needs the full signal→dashboard→email chain)
+**Requirements**: CHORE-01, CHORE-03
+**Success Criteria** (what must be TRUE):
+  1. A single `tests/test_integration_f1.py::test_full_chain_fetch_to_email` exercises yfinance fetch (mocked at the `requests.get` boundary only, not at `data_fetcher.fetch_ohlcv`) → `run_daily_check` → `state_manager.save_state` → `dashboard.render_dashboard` → `notifier.send_daily_email` (dispatch stubbed at `_post_to_resend`), and asserts that the resulting `last_email.html` contains the expected signal + positions + equity values; no internal composition is mocked
+  2. The F1 integration test catches a deliberately-planted cross-module regression (e.g., rename `get_signal` → `compute_signal` without updating `main.py`) — a meta-test confirms F1 red-lights on that planted break when run locally before being reverted
+  3. Phase 6 `06-HUMAN-UAT.md` has its 3 pending scenarios marked `complete` with operator-recorded notes: (a) dashboard loads correctly on mobile via the hosted URL, (b) email renders correctly in real Gmail on mobile, (c) drift banner (from Phase 15) renders correctly in both dashboard and email on at least one real weekday run
+  4. `STATE.md §Deferred Items` no longer lists the three Phase 6 HUMAN-UAT items, the Phase 5 dashboard visual check, or the Phase 6 email rendering check — all moved to a Completed section with the operator's verification date
+**Plans**: TBD
+**UI hint**: yes
+
+## Phase Dependencies (build order)
+
+```
+Phase 10 ─┐
+          │ (parallel with 11 on disjoint files)
+Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 ─► Phase 16
+```
+
+**Parallelizable pairs** (from config `parallelization: true`):
+- **Phase 10 and Phase 11 can run in parallel.** They touch disjoint files: Phase 10 modifies `state_manager.py` (BUG-01), `notifier.py` (CHORE-02 ruff), `.github/workflows/` (INFRA-03 rename); Phase 11 creates new files under `web/`, `systemd/`, and `deploy.sh`. The only shared touchpoint is `CLAUDE.md` / `.planning/` notes — resolve via non-overlapping sections or sequential commits at plan-check time.
+- Phases 12–16 are strictly sequential — each needs the previous layer's capability (HTTPS → auth → mutations → calculator → UAT).
+
+**Cut points (if time-boxed):**
+- Phases 10 + 11 alone already retire the GHA duplicate-run risk and prove the droplet runtime works — a viable "beachhead" ship even if the domain is delayed.
+- Phases 10–13 deliver a hosted read-only dashboard — the operator can browse v1.0 output from anywhere without mutations. Phases 14+ are the value-add.
 
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Signal Engine Core — Indicators & Vote | v1.0 | 6/6 | Complete | 2026-04-20 |
-| 2. Signal Engine — Sizing, Exits, Pyramiding | v1.0 | 5/5 | Complete | 2026-04-22 |
-| 3. State Persistence with Recovery | v1.0 | 4/4 | Complete | 2026-04-21 |
-| 4. End-to-End Skeleton — Fetch + Orchestrator + CLI | v1.0 | 4/4 | Complete | 2026-04-22 |
-| 5. Dashboard | v1.0 | 3/3 | Complete | 2026-04-22 |
-| 6. Email Notification | v1.0 | 4/4 | Complete | 2026-04-23 |
-| 7. Scheduler + GitHub Actions Deployment | v1.0 | 3/3 | Complete | 2026-04-23 |
-| 8. Hardening — Warning Carry-over, Stale Banner, Crash Email | v1.0 | 3/3 | Complete | 2026-04-23 |
-| 9. Milestone v1.0 Gap Closure | v1.0 | 1/1 | Complete | 2026-04-24 |
+| 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/? | Not started | - |
+| 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 0/? | Not started | - |
+| 12. HTTPS + Domain Wiring | v1.1 | 0/? | Not started | - |
+| 13. Auth + Read Endpoints | v1.1 | 0/? | Not started | - |
+| 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |
+| 15. Live Calculator + Sentinels | v1.1 | 0/? | Not started | - |
+| 16. Hardening + UAT Completion | v1.1 | 0/? | Not started | - |
 
-## Operator Decisions Baked In (carried forward to v1.1+)
+Plan counts filled in by `/gsd-plan-phase <N>` as each phase is planned.
+
+## Coverage Validation
+
+- **Total v1.1 requirements:** 31 (WEB 7 + AUTH 3 + TRADE 6 + CALC 4 + SENTINEL 3 + BUG 1 + INFRA 4 + CHORE 3)
+- **Mapped to phases:** 31/31
+- **Orphans:** 0
+- **Duplicates:** 0
+
+### Coverage Map
+
+| REQ-ID | Phase |
+|--------|-------|
+| BUG-01 | 10 |
+| CHORE-02 | 10 |
+| INFRA-02 | 10 |
+| INFRA-03 | 10 |
+| WEB-01 | 11 |
+| WEB-02 | 11 |
+| WEB-07 | 11 |
+| INFRA-04 | 11 |
+| WEB-03 | 12 |
+| WEB-04 | 12 |
+| INFRA-01 | 12 |
+| AUTH-01 | 13 |
+| AUTH-02 | 13 |
+| AUTH-03 | 13 |
+| WEB-05 | 13 |
+| WEB-06 | 13 |
+| TRADE-01 | 14 |
+| TRADE-02 | 14 |
+| TRADE-03 | 14 |
+| TRADE-04 | 14 |
+| TRADE-05 | 14 |
+| TRADE-06 | 14 |
+| CALC-01 | 15 |
+| CALC-02 | 15 |
+| CALC-03 | 15 |
+| CALC-04 | 15 |
+| SENTINEL-01 | 15 |
+| SENTINEL-02 | 15 |
+| SENTINEL-03 | 15 |
+| CHORE-01 | 16 |
+| CHORE-03 | 16 |
+
+Per-phase counts: Phase 10 = 4, Phase 11 = 4, Phase 12 = 3, Phase 13 = 5, Phase 14 = 6, Phase 15 = 7, Phase 16 = 2. Total = 4+4+3+5+6+7+2 = **31** ✓
+
+## Operator Decisions Baked In (v1.1)
 
 | Decision | Reflected in |
 |----------|--------------|
-| GitHub Actions is the PRIMARY deployment path | Phase 7 goal + SCHED-05 success criterion |
-| `n_contracts == 0` skips trade + warns (no `max(1,…)` floor) | Phase 2 success criterion 1 + SIZE-04/05 |
-| LONG→FLAT (and SHORT→FLAT) closes the open position | Phase 2 success criterion 2 + EXIT-01/02 |
-| Trailing stops use intraday high/low (peak updates + hit detection) | Phase 2 success criterion 3 + EXIT-06/07/08/09 |
-| Data-fetch errors (yfinance) log + exit rc=2, do NOT email | Phase 9 ERR-01 spec amendment + locked guard test |
-| `_resolved_contracts` is runtime-only (underscore-prefix persistence rule) | Phase 8 D-14 + save_state filter |
+| DO droplet is runtime; GitHub is source + state history via deploy-key push-back | Phase 10 INFRA-02 + Phase 11 systemd unit + Phase 16 milestone close |
+| FastAPI + uvicorn + nginx + Let's Encrypt on `signals.<owned-domain>.com` | Phases 11 + 12 success criteria |
+| HTMX or vanilla JS (no React / SPA framework) | Phase 14 SC-5 (HTMX partial fragments, not full-page JSON swap) |
+| Shared-secret header auth (not OAuth / sessions / cookies) | Phase 13 AUTH-01..03 |
+| uvicorn `workers=1` — preserves v1.0 single-threaded `_LAST_LOADED_STATE` cache | Phase 11 SC-4; multi-worker deferred to v1.2+ per REQUIREMENTS.md §Future |
+| Signal-only (no live trading) — carried from v1.0 | Phase 14 endpoints record hypothetical executed trades only; no broker integration |
+| GHA cron retired once droplet systemd runs reliably | Phase 10 INFRA-03 + Phase 11 systemd unit |
+| Domain + Resend verification are operator prerequisites, not code work | Prerequisites block above + Phase 12 entry gate |
+
+## Carried-Forward Operator Decisions from v1.0
+
+| Decision | Reflected in |
+|----------|--------------|
+| `n_contracts == 0` skips trade + warns (no `max(1,…)` floor) | Phase 14 TRADE-02 validation rejects `contracts < 1`; no silent floor |
+| LONG→FLAT (and SHORT→FLAT) closes the open position | Phase 15 SENTINEL-01 amber-drift banner text matches this semantics |
+| Trailing stops use intraday high/low (peak updates + hit detection) | Phase 15 CALC-03 forward-looking peak-stop math |
+| Data-fetch errors (yfinance) log + exit rc=2, do NOT email | Unchanged — droplet systemd unit inherits the same behaviour |
+| `_resolved_contracts` is runtime-only (underscore-prefix persistence rule) | Phase 14 TRADE-06 sole-writer invariant; `save_state` continues to strip underscore-prefix keys |
 
 ---
-
-*Roadmap updated: 2026-04-24 after v1.0 milestone archived*
-*Ready for: `/gsd-new-milestone` to define v1.1 scope*
+*Roadmap created: 2026-04-24 (v1.1 milestone kickoff)*
+*Ready for: `/gsd-discuss-phase 10` (or parallel `/gsd-discuss-phase 11` once Phase 10 plans exist)*

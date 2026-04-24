@@ -1,54 +1,71 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Gap Closure
-current_plan: 1
-status: complete
-last_updated: "2026-04-23T23:00:00.000Z"
+milestone: v1.1
+milestone_name: Interactive Trading Workstation
+current_phase: 10
+current_phase_name: "Foundation — v1.0 Cleanup & Deploy Key"
+current_plan: 0
+status: ready_to_plan
+last_updated: "2026-04-24T10:45:00.000Z"
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 33
-  completed_plans: 33
-  percent: 100
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-04-20 (roadmap created)
+**Last updated:** 2026-04-24 (v1.1 roadmap created by /gsd-roadmapper)
 
 ## Project Reference
 
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
-- **Core value:** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
+- **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
+- **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 08 — Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account
+- **Current focus:** Phase 10 — Foundation — v1.0 Cleanup & Deploy Key (ready to plan)
 
 ## Current Position
 
-Phase: 08 (Hardening — Warning Carry-over, Stale Banner, Crash Email, Configurable Account) — VERIFIED ✓
-Plan: 3 of 3
+Phase: 10 (Foundation — v1.0 Cleanup & Deploy Key) — Ready to plan
+Plan: —
 
-- **Milestone:** v1 — Mechanical Signal System
-- **Phase:** 6 (complete) → 7 (Scheduler + GitHub Actions Deployment)
-- **Current Plan:** 1
-- **Total Plans:** 3
-- **Status:** Ready to execute
-- **Progress:** [██████████] 100%
+- **Milestone:** v1.1 — Interactive Trading Workstation
+- **Status:** Roadmap complete; ready for `/gsd-discuss-phase 10`
+- **Last activity:** 2026-04-24 — v1.1 roadmap written (7 phases, 31 REQs mapped 100%)
+- **Progress:** 0/7 phases complete (v1.1); v1.0 archived with 9/9 phases at Phase 9
 
 ```
-[░░░░░░░░] 0% (0/8 phases)
+[░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
 ```
+
+**v1.1 phase inventory:**
+- Phase 10: Foundation — v1.0 Cleanup & Deploy Key (4 REQs) — ready to plan
+- Phase 11: Web Skeleton — FastAPI + uvicorn + systemd (4 REQs) — parallelizable with 10
+- Phase 12: HTTPS + Domain Wiring (3 REQs) — blocked on operator domain purchase
+- Phase 13: Auth + Read Endpoints (5 REQs)
+- Phase 14: Trade Journal — Mutation Endpoints (6 REQs)
+- Phase 15: Live Calculator + Sentinels (7 REQs)
+- Phase 16: Hardening + UAT Completion (2 REQs)
+
+**Open prerequisites (operator-owned):**
+- [ ] Domain purchased and A-record pointing at droplet IP (blocks Phase 12+)
+- [ ] Droplet provisioned (DO, Ubuntu LTS, systemd, public IP) (blocks Phase 11+)
+- [ ] Resend domain verification (SPF/DKIM/DMARC) on the new domain (blocks Phase 12 INFRA-01)
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases defined | 8 |
-| Requirements mapped | 78/78 |
-| Phases completed | 0 |
-| Phases in-flight | 0 |
-| Decisions logged | 4 (operator decisions baked into roadmap) |
+| v1.1 Phases defined | 7 (Phase 10..16) |
+| v1.1 Requirements mapped | 31/31 |
+| v1.1 Phases completed | 0 |
+| v1.1 Phases in-flight | 0 |
+| v1.0 Phases completed (archive) | 9/9 |
+| v1.0 Requirements verified (archive) | 80/80 |
+| Decisions logged | 4 (v1.0 baked in) + 8 (v1.1 baked in) |
 | Phase 01 P01 | 9 | 3 tasks | 10 files |
 | Phase 01 P02 | 5 | 3 tasks | 3 files |
 | Phase 01 P03 | 10 | 2 tasks | 28 files |
@@ -72,10 +89,18 @@ Plan: 3 of 3
 
 | Decision | Phase | Rationale |
 |----------|-------|-----------|
-| GitHub Actions is the PRIMARY deployment path (Replit documented as alternative) | 7 | Replit Autoscale doesn't guarantee filesystem persistence and kills `schedule` loops; GHA is free, stateless-by-design, and commits `state.json` back to the repo |
-| `n_contracts == 0` skips the trade and warns (no `max(1, …)` floor) | 2 | A `max(1, …)` floor silently breaches the 1% risk budget on small accounts; skipping with a visible warning keeps risk discipline |
-| LONG→FLAT (and SHORT→FLAT) closes the open position | 2 | Unambiguous semantics: FLAT means "no position", so any non-matching signal closes |
-| Trailing stops use intraday HIGH/LOW for both peak updates and hit detection | 2 | Consistent intraday convention matches how the backtest was built; close-only convention would diverge from reconciliation data |
+| GitHub Actions is the PRIMARY deployment path (Replit documented as alternative) | 7 (v1.0) | Replit Autoscale doesn't guarantee filesystem persistence and kills `schedule` loops; GHA is free, stateless-by-design, and commits `state.json` back to the repo |
+| `n_contracts == 0` skips the trade and warns (no `max(1, …)` floor) | 2 (v1.0) | A `max(1, …)` floor silently breaches the 1% risk budget on small accounts; skipping with a visible warning keeps risk discipline |
+| LONG→FLAT (and SHORT→FLAT) closes the open position | 2 (v1.0) | Unambiguous semantics: FLAT means "no position", so any non-matching signal closes |
+| Trailing stops use intraday HIGH/LOW for both peak updates and hit detection | 2 (v1.0) | Consistent intraday convention matches how the backtest was built; close-only convention would diverge from reconciliation data |
+| DO droplet = runtime (systemd); GitHub = source + state history via deploy-key push-back | 10–16 (v1.1) | Inverts v1.0 GHA-primary model — droplet gives HTTP serving capability for FastAPI; GHA cron retired to avoid duplicate-email risk |
+| FastAPI + uvicorn + nginx + Let's Encrypt on `signals.<owned-domain>.com` | 11–12 (v1.1) | Standard Python async web stack; reverse-proxy pattern plays well with certbot renewal and isolates the app from public bind |
+| HTMX or vanilla JS (no React / SPA framework) | 14 (v1.1) | Matches project's no-build-step convention from v1.0 static dashboard; avoids bundle + asset-version management overhead |
+| Shared-secret header auth (not OAuth / sessions / cookies) | 13 (v1.1) | Single-operator tool; session cookies would require CSRF + storage without benefit; header auth is grep-auditable and composable with curl |
+| uvicorn `workers=1` — preserves v1.0 single-threaded `_LAST_LOADED_STATE` cache | 11 (v1.1) | Multi-worker would require thread-safe state cache + file-lock coordination; deferred to v1.2 |
+| Domain + Resend verification are operator prerequisites, not code work | Pre-12 (v1.1) | Can't be done by a GSD session — blocks Phase 12 entry until resolved |
+| GHA cron retired once droplet systemd runs reliably | 10 (v1.1) | Running both means duplicate signal emails and competing `state.json` writes — must be a clean handover |
+| v1.0 carry-over tech debt (BUG-01 + ruff + F1 integration + HUMAN-UAT) folded into v1.1 | 10 + 16 (v1.1) | Phase 10 = cheap polish; Phase 16 = HUMAN-UAT is now verifiable via hosted dashboard (blocked in v1.0 by no-public-URL) |
 
 - Python 3.11.8 installed via pyenv (Homebrew-installed); 5 Phase 1 deps pinned to bit-locked versions in requirements.txt (numpy==2.0.2, pandas==2.3.3, pytest==8.3.3, yfinance==1.2.0, ruff==0.6.9); later-phase deps deferred to their phase scaffolds
 - ruff format NOT used in Phase 1 — ruff 0.6.9 lacks indent-width knob (would reflow to 4-space). Using ruff check only, with .editorconfig + reviewer discipline + Plan 06 lint guard for 2-space enforcement (R-05)
@@ -129,10 +154,13 @@ Plan: 3 of 3
 - [ ] Pin exact yfinance version (not `>=`) in `requirements.txt` at Phase 4; bump deliberately
 - [ ] Document Replit Reserved VM path in Phase 7 deployment guide alongside GHA
 - [x] **Configurable starting account + contract-size selection** — folded into Phase 8 Hardening on 2026-04-22 as CONF-01 (runtime-configurable starting account) + CONF-02 (per-instrument contract-size tiers). See [.planning/todos/completed/2026-04-22-configurable-starting-account-and-contract-sizes--folded-into-phase-8.md](./todos/completed/2026-04-22-configurable-starting-account-and-contract-sizes--folded-into-phase-8.md) and Phase 8 in ROADMAP.md
+- [ ] **(v1.1) Operator purchases domain + points A-record at droplet IP** — blocks Phase 12+
+- [ ] **(v1.1) Operator provisions DO droplet** (Ubuntu LTS, systemd, public IP) — blocks Phase 11+
+- [ ] **(v1.1) Operator verifies new domain on Resend** (SPF/DKIM/DMARC) — blocks Phase 12 INFRA-01
 
 ### Blockers
 
-None.
+None at the GSD-session level. Three operator-owned prerequisites (domain / droplet / Resend verification) gate Phases 11–12 but do NOT block Phase 10 planning or execution.
 
 ### Quick Tasks Completed
 
@@ -142,35 +170,42 @@ None.
 
 ### Warnings (roadmap-level)
 
-- Requirements count reconciliation: prompt stated 67 v1 requirements; REQUIREMENTS.md contains 78 across 11 categories. All 78 are mapped. Verify at Phase 1 kickoff that the operator's intent matches.
+- (v1.0 retrospective) Requirements count reconciliation: prompt stated 67 v1 requirements; REQUIREMENTS.md contains 78 across 11 categories. All 78 are mapped. Verify at Phase 1 kickoff that the operator's intent matches. — **Resolved**: v1.0 closed at 80/80 after CONF-01/02 were folded in.
+- (v1.1) REQUIREMENTS.md originally claimed 32 requirements in the namespace footer; actual count is 31 (WEB 7 + AUTH 3 + TRADE 6 + CALC 4 + SENTINEL 3 + BUG 1 + INFRA 4 + CHORE 3 = 31). Roadmap uses 31. Self-documented in REQUIREMENTS.md footer.
 
 ## Deferred Items
 
 Items acknowledged and deferred at v1.0 milestone close on 2026-04-24:
 
-| Category | Item | Status |
-|----------|------|--------|
-| quick_task | 260421-723-add-oracle-hash-comment-test-compute-ind | missing |
-| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial |
-| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | human_needed |
-| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | human_needed |
+| Category | Item | Status | v1.1 disposition |
+|----------|------|--------|------------------|
+| quick_task | 260421-723-add-oracle-hash-comment-test-compute-ind | missing | Still deferred (not v1.1 scope) |
+| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial | **Folded into v1.1 Phase 16 as CHORE-03** |
+| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | human_needed | Becomes verifiable via hosted dashboard (v1.1 Phase 16 SC-4) |
+| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | human_needed | Becomes verifiable via Phase 12 Resend domain verification + Phase 16 operator run |
 
-These items require operator eyeballing (real Gmail inbox check, visual dashboard inspection) that cannot be automated in a GSD session. Programmatic verification is complete (662 tests passing, 80/80 requirements verified, 9/9 phases closed, all SCs PASS). Can be resolved post-tag by the operator; does not block milestone archive.
+These items require operator eyeballing (real Gmail inbox check, visual dashboard inspection) that cannot be automated in a GSD session. Programmatic verification for v1.0 was complete (662 tests passing, 80/80 requirements verified, 9/9 phases closed, all SCs PASS). v1.1 Phase 16 SC-3/SC-4 formally close these items once the hosted dashboard is live.
 
 ## Session Continuity
 
-- **Last action:** Executed Plan 01-06 (final gate) — appended TestDeterminism class (19 tests) to `tests/test_signal_engine.py` (409 → 649 lines). 16 SHA256 snapshot tests lock the oracle bit-level trust anchor (D-14) against committed snapshot.json; test_forbidden_imports_absent AST-walks signal_engine.py against the FORBIDDEN_MODULES blocklist (REVIEWS STRONGLY RECOMMENDED); test_no_four_space_indent uses tokenize-aware 2-space-evidence check (REVIEWS POLISH / Gemini). Two Rule-1 plan bugs fixed inline: (1) hash oracle not production because production has ~5e-14 drift from oracle snapshot; (2) indent check needed 2-space-presence evidence (not 4-space absence) since nested code legitimately has 4 leading spaces in 2-space style. 99/99 full suite green; ruff clean; regenerate_goldens.py idempotent. Requirements SIG-01..SIG-08 all marked complete. Commit: 14d3ecd (test Task 1, Task 2 verification-only).
-- **Next action:** Run `/gsd-verify-work 1` to run the phase verifier. Phase 1 has shipped; if verifier exits clean, phase closes and Phase 2 (Sizing & Exits) planning can commence via `/gsd-discuss-phase 2`.
+- **Last action:** `/gsd-roadmapper` wrote `.planning/ROADMAP.md` (v1.1 — 7 phases 10..16, 31/31 REQs mapped, 0 orphans/duplicates) and updated `.planning/REQUIREMENTS.md` traceability table (TBD → Phase N for all 31 REQ-IDs).
+- **Next action:** `/gsd-discuss-phase 10` to scope Phase 10 (Foundation — v1.0 Cleanup & Deploy Key). Phase 10 has no infrastructure prerequisites; operator can start immediately. Phase 11 can be discussed in parallel on a separate session (disjoint files: Phase 10 touches `state_manager.py`/`notifier.py`/`.github/workflows/`; Phase 11 creates `web/` + `systemd/` + `deploy.sh`).
 - **Files ready for review:**
-  - `.planning/ROADMAP.md` — full phase detail + success criteria
-  - `.planning/REQUIREMENTS.md` — traceability table populated
-  - `.planning/PROJECT.md` — unchanged
+  - `.planning/ROADMAP.md` — v1.1 full phase detail + success criteria + coverage map + dependency graph
+  - `.planning/REQUIREMENTS.md` — traceability table populated with Phase 10..16 assignments
+  - `.planning/PROJECT.md` — unchanged (already reflects v1.1 direction)
+  - `.planning/MILESTONES.md` — unchanged (v1.0 archived section; v1.1 section will be added at milestone close)
 - **Research flags to revisit during phase planning:**
-  - Phase 1: trailing-stop convention and contract multipliers need operator sign-off at plan-check
-  - Phase 7: GHA-vs-Replit primary-path inversion needs operator confirmation (already baked in, but flag anyway)
+  - Phase 10: confirm BUG-01 interactive-Q&A path scope (is there a separate Q&A flow for reset, or does `--reset` alone cover both?)
+  - Phase 11: confirm systemd unit ownership/user model (dedicated service user vs droplet root)
+  - Phase 12: operator must complete domain purchase + Resend verification BEFORE plan kickoff; verify A-record resolves on Phase 12 entry
+  - Phase 14: confirm with operator whether HTMX partial responses should hx-target the whole positions table or just the added row (UX decision)
+  - Phase 15: forward-looking peak-stop math — confirm this should use today's live-but-incomplete bar (e.g. yfinance 15-min-delayed intraday) or only yesterday's close + today's range so far
 
 ---
-*State initialised: 2026-04-20 at roadmap creation*
+*State initialised: 2026-04-20 at v1.0 roadmap creation*
+*v1.0 archived: 2026-04-24 at milestone close (Phases 1–9 complete, 80/80 REQs verified)*
+*v1.1 roadmap created: 2026-04-24 by /gsd-roadmapper (Phases 10–16, 31/31 REQs mapped)*
 
 **Planned Phase:** 09 (Milestone v1.0 Gap Closure) — 1 plans — 2026-04-23T22:27:44.414Z
 
@@ -186,4 +221,6 @@ These items require operator eyeballing (real Gmail inbox check, visual dashboar
 
 **Plan 01-06 completed:** 2026-04-20T20:35:36Z — Final Phase 1 gate. 1 file modified (tests/test_signal_engine.py 409 → 649 lines; +240). Appended TestDeterminism class with 19 tests: 16 SHA256 snapshot regression (2 fixtures × 8 indicators, hashes ORACLE output per D-14 trust-anchor design — production has ~5e-14 drift below the 1e-9 tolerance gate); test_forbidden_imports_absent (AST blocklist per REVIEWS STRONGLY RECOMMENDED — FORBIDDEN_MODULES includes datetime/os/subprocess/socket/time/json/pathlib/requests/urllib/http/state_manager/notifier/dashboard/main/schedule/dotenv/pytz/yfinance); test_signal_engine_has_core_public_surface (hasattr contract for compute_indicators/get_signal/get_latest_indicators/LONG/SHORT/FLAT); test_no_four_space_indent (tokenize-aware 2-space-evidence check per REVIEWS POLISH). Two Rule-1 plan bugs fixed inline: (1) hash oracle not production because production has ~5e-14 drift from oracle snapshot; (2) indent check needed 2-space-presence evidence (not 4-space absence) since nested code legitimately has 4 leading spaces in 2-space style. 99/99 full suite green (0.60s); ruff clean; `python tests/regenerate_goldens.py` idempotent (zero git diff on oracle goldens + snapshot.json). Phase 1 SHIPPED — all 8 SIG requirements have named passing tests, determinism snapshot locked, hex boundary enforced. Commit: 14d3ecd (test Task 1; Task 2 verification-only under same commit).
 
-**Plan 07-03 completed:** 2026-04-23T01:30:00Z — Wave 2 PHASE GATE (operator-verified). 3 files created (.github/workflows/daily.yml 45 lines, docs/DEPLOY.md 172 lines, README.md 49 lines) + 1 file extended (tests/test_scheduler.py 335 → 657 lines, +322). Workflow: cron `0 0 * * 1-5` + workflow_dispatch + permissions:contents:write + concurrency:trading-signals + actions/checkout@v4 + actions/setup-python@v5 (reads .python-version) + `python main.py --once` job step + stefanzweifel/git-auto-commit-action@v5 with add_options:'-f' (Pitfall 2 — force-add of gitignored state.json) + if:success() (D-11 — no commit on fail). 24 new tests (TestGHAWorkflow:12 + TestDeployDocs:12) including 2 dedicated review-fix tests (test_readme_has_gha_status_badge for Gemini LOW + test_deploy_md_local_dev_tz_note for Consensus LOW). 07-REVIEWS.md fixes pinned: Codex HIGH `parsed.get('on') or parsed.get(True)` fallback present; Consensus MEDIUM no `pytest.importorskip('yaml')` softener (PyYAML 6.0.2 pinned in Wave 0); Gemini LOW README badge present; Consensus LOW DEPLOY.md §Local-development TZ note present. ROADMAP SC-4 amended per D-12 (drop ANTHROPIC_API_KEY, name SIGNALS_EMAIL_TO). 552/552 tests pass; ruff clean. Operator verification (Task 3): workflow_dispatch ran green on github.com, state.json commit-back via github-actions[bot] confirmed, daily Resend email arrived in inbox, README.md GHA status badge renders as green "passing" indicator — outcome `approved`. SCHED-04..07 marked complete in REQUIREMENTS.md (SCHED-01..03 closed in Plan 07-02). Phase 7 ready for `/gsd-verify-work 7`. Two minor noise-only deviations (benign `importorskip.*yaml` substring matches in docstring narrative; ruff UP015 autofix). Commits: bbdc5e9 (Task 1 — workflow + TestGHAWorkflow + ROADMAP SC-4 amendment), 5b0a3b9 (Task 2 — DEPLOY.md + README.md + TestDeployDocs).
+**Plan 07-03 completed:** 2026-04-23T01:30:00Z — Wave 2 PHASE GATE (operator-verified). 3 files created (.github/workflows/daily.yml 45 lines, docs/DEPLOY.md 172 lines, README.md 49 lines) + 1 file extended (tests/test_scheduler.py 335 → 657 lines, +322). Workflow: cron `0 0 * * 1-5` + workflow_dispatch + permissions:contents:write + concurrency:trading-signals + actions/checkout@v4 + actions/setup-python@v5 (reads .python-version) + `python main.py --once` job step + stefanzweifel/git-auto-commit-action@v5 with add_options:'-f' (Pitfall 2 — force-add of gitignored state.json) + if:success() (D-11 — no commit on fail). 24 new tests (TestGHAWorkflow:12 + TestDeployDocs:12) including 2 dedicated review-fix tests (test_readme_has_gha_status_badge for Gemini LOW + test_deploy_md_local_dev_tz_note for Consensus LOW). 07-REVIEWS.md fixes pinned: Codex HIGH `parsed.get('on') or parsed.get(True)` fallback present; Consensus MEDIUM no `pytest.importorskip('yaml')` softener (PyYAML 6.0.2 pinned in Wave 0); Gemini LOW README badge present; Consensus LOW DEPLOY.md §Local-development TZ note present. ROADMAP SC-4 amended per D-12 (drop ANTHROPIC_API_KEY, name SIGNALS_EMAIL_TO). 552/552 tests pass; ruff clean. Operator verification (Task 3): workflow_dispatch ran green on github.com, state.json commit-back via github-actions[bot] confirmed, daily Resend email arrived in inbox, README.md GHA status badge renders as green "passing" indicator — outcome `approved`. SCHED-04..07 marked complete in REQUIREMENTS.md (SCHED-01..03 closed in Plan 07-02). Phase 7 ready for `/gsd-verify-work 7`. Two minor noise-only deviations (benign `importorskip.*yaml` substring matches in docstring narrative; ruff UP015 autofix). Commits: bbdc5e9 (Task 1 — workflow + TestGHAWorkflow + ROADMAP status check), 5b0a3b9 (Task 2 — DEPLOY.md + README.md + TestDeployDocs).
+
+**v1.1 roadmap created:** 2026-04-24 — `/gsd-roadmapper` produced 7-phase v1.1 plan (Phases 10..16) with 100% coverage on 31 REQs. Phase 10 (Foundation — v1.0 Cleanup & Deploy Key) is the entry point — no infrastructure prerequisites. Phase 11 is parallelizable with Phase 10. Phases 12+ gated on operator purchasing a domain and verifying Resend. Files written: `.planning/ROADMAP.md` (new v1.1 version) + `.planning/REQUIREMENTS.md` (traceability table populated). Ready for `/gsd-discuss-phase 10`.
