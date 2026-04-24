@@ -292,6 +292,7 @@ class TestCLI:
   # Replaces the Phase 4 `test_force_email_logs_stub_and_exits_zero` test.
   # -----------------------------------------------------------------------
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_force_email_sends_live_email(
       self, tmp_path, monkeypatch, caplog) -> None:
     '''CLI-03 Phase 6: --force-email invokes notifier.send_daily_email
@@ -321,6 +322,7 @@ class TestCLI:
     _state, _old_signals, _run_date, is_test = sent[0]
     assert is_test is False, '--force-email alone must pass is_test=False'
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_force_email_captures_post_run_state(
       self, tmp_path, monkeypatch) -> None:
     '''D-05 capture: the state passed to send_daily_email is post-compute
@@ -357,6 +359,7 @@ class TestCLI:
       'D-05: state passed to email must be post-compute (G-2 + B-1 fields present)'
     )
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_test_flag_sends_test_prefixed_email_no_state_mutation(
       self, tmp_path, monkeypatch) -> None:
     '''CLI-01 Phase 6: --test sends [TEST] email AND state.json mtime unchanged.
@@ -388,6 +391,7 @@ class TestCLI:
     )
     assert sent == [True], '--test must call send_daily_email with is_test=True'
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_force_email_and_test_combined(
       self, tmp_path, monkeypatch) -> None:
     '''D-05 + D-15: --force-email --test runs compute-then-email with is_test=True
@@ -480,6 +484,7 @@ class TestOrchestrator:
   `caplog` for [Prefix] log assertions. Waves 2-3 fill this in.
   '''
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_short_frame_raises_and_no_state_written(
       self, tmp_path, monkeypatch) -> None:
     '''DATA-04 / D-03 + Pitfall 6: short-frame (< 300 rows) raises
@@ -614,6 +619,7 @@ class TestOrchestrator:
     # -1 * (8000 - 8050) * 3 * 5 = 750.0
     assert rec_short['gross_pnl'] == pytest.approx(750.0)
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_orchestrator_reads_both_int_and_dict_signal_shape(
       self, tmp_path, monkeypatch) -> None:
     '''D-08 / Pitfall 7 + G-2 revision 2026-04-22: orchestrator reads int-shape
@@ -668,6 +674,7 @@ class TestOrchestrator:
         f'{key}: last_close should be positive (fixture fetches produce realistic prices)'
       )
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_reversal_long_to_short_preserves_new_position(
       self, tmp_path, monkeypatch) -> None:
     '''AC-1 revision 2026-04-22 — headline regression guard.
@@ -832,6 +839,7 @@ class TestOrchestrator:
       'DATA-05: expected [Fetch] WARN log line at WARNING level'
     )
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_fetch_failure_exits_nonzero_no_save_state(
       self, tmp_path, monkeypatch, caplog) -> None:
     '''ERR-01 / D-03: DataFetchError during fetch exits 2 and leaves state.json
@@ -891,6 +899,7 @@ class TestOrchestrator:
     assert '#0f1117' in content, 'DASH-09: palette bg must be present'
     assert 'sha384-MH1axGwz' in content, 'DASH-02: Chart.js SRI must be present'
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_dashboard_failure_never_crashes_run(
       self, tmp_path, monkeypatch, caplog) -> None:
     '''D-06: if dashboard.render_dashboard raises at CALL TIME, run_daily_check
@@ -935,6 +944,7 @@ class TestOrchestrator:
     )
     assert 'RuntimeError' in caplog.text, 'exception type must be in log message'
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_dashboard_import_time_failure_never_crashes_run(
       self, tmp_path, monkeypatch, caplog) -> None:
     '''C-2 reviews: an import-time error in dashboard.py (syntax error,
@@ -1038,6 +1048,7 @@ class TestEmailNeverCrash:
   and ::test_dashboard_import_time_failure_never_crashes_run (import-time).
   '''
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_email_runtime_failure_never_crashes_run(
       self, tmp_path, monkeypatch, caplog) -> None:
     '''D-15: if notifier.send_daily_email raises at CALL TIME, main returns 0
@@ -1061,6 +1072,7 @@ class TestEmailNeverCrash:
     assert '[Email] send failed' in caplog.text
     assert 'RuntimeError' in caplog.text
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_email_import_time_failure_never_crashes_run(
       self, tmp_path, monkeypatch, caplog) -> None:
     '''C-2 reviews: import-time notifier failure MUST be caught by the same
@@ -1104,6 +1116,7 @@ class TestRunDailyCheckTupleReturn:
   (rc, state, old_signals, run_date).
   '''
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_run_daily_check_returns_4_tuple(
       self, tmp_path, monkeypatch) -> None:
     from datetime import datetime as _dt
@@ -1124,6 +1137,7 @@ class TestRunDailyCheckTupleReturn:
     assert isinstance(run_date, _dt)
     assert run_date.tzinfo is not None, 'run_date must be timezone-aware'
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_run_daily_check_test_mode_returns_in_memory_state(
       self, tmp_path, monkeypatch) -> None:
     '''--test early-return: state is non-None (in-memory compute output);
@@ -1772,6 +1786,7 @@ class TestCrashEmailBoundary:
     assert '[Sched] unexpected error caught' in caplog.text
     assert called == []
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_crash_email_includes_last_loaded_state(
       self, tmp_path, monkeypatch) -> None:
     '''Test 12 (review-driven R1 — SC-3 completeness): after a successful
@@ -1906,6 +1921,7 @@ class TestWarningCarryOverFlow:
     assert '_stale_info' not in state
     assert saves == [], 'persist=False must NOT call save_state'
 
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_happy_path_save_state_called_exactly_twice(
       self, _ctx, monkeypatch) -> None:
     '''W3: full run_daily_check → _dispatch_email_and_maintain_warnings
