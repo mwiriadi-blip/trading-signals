@@ -1995,3 +1995,399 @@ class TestWarningCarryOverFlow:
     assert len(save_snapshots) == 1
     assert len(save_snapshots[0]) == 1
     assert save_snapshots[0][0]['source'] == 'notifier'
+
+
+# =========================================================================
+# Phase 10 INFRA-02 / D-07..D-12 — TestPushStateToGit regression class
+# =========================================================================
+
+class _FakeCompletedProcess:
+  '''Minimal stand-in for subprocess.CompletedProcess — only fields
+  _push_state_to_git reads.'''
+
+  def __init__(self, returncode: int = 0, stderr: bytes = b'',
+               stdout: bytes = b''):
+    self.returncode = returncode
+    self.stderr = stderr
+    self.stdout = stdout
+
+
+class TestPushStateToGit:
+  '''Phase 10 INFRA-02 / D-07..D-12: nightly state.json git push never
+  crashes. Covers skip-if-unchanged (D-09), commit+push happy path
+  (D-08/D-10/D-11), push-failure fail-loud (D-12), commit-failure
+  fail-loud (REVIEW LOW log-verb distinction), diff-error fail-loud,
+  two-saves-per-run invariant preserved (Phase 8 W3).
+  '''
+
+  def test_skip_if_unchanged_logs_and_returns(
+      self, monkeypatch, caplog) -> None:
+    '''D-09: git diff --quiet rc=0 -> log [State] skip + return; no commit/push.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=0)
+      raise AssertionError(
+        f'skip path must not invoke subprocess beyond git diff; got {argv}'
+      )
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    caplog.set_level(logging.INFO)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert len(calls) == 1, f'expected 1 subprocess call (diff), got {len(calls)}'
+    assert '[State] state.json unchanged' in caplog.text
+
+  def test_happy_path_commits_with_inline_identity_and_pushes(
+      self, monkeypatch, caplog) -> None:
+    '''D-08/D-10/D-11: rc=1 on diff -> commit with inline -c flags + verbatim message, then push.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv or 'push' in argv:
+        return _FakeCompletedProcess(returncode=0)
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    caplog.set_level(logging.INFO)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert len(calls) == 3, (
+      f'expected 3 subprocess calls (diff+commit+push), got {len(calls)}'
+    )
+    diff_argv, commit_argv, push_argv = [c[0] for c in calls]
+    assert diff_argv == ['git', 'diff', '--quiet', 'state.json']
+    assert '-c' in commit_argv and 'user.email=droplet@trading-signals' in commit_argv
+    assert '-c' in commit_argv and 'user.name=DO Droplet' in commit_argv
+    assert 'chore(state): daily signal update [skip ci]' in commit_argv
+    assert 'state.json' in commit_argv
+    assert commit_argv.index('commit') < commit_argv.index('state.json'), (
+      'state.json must appear AFTER `commit` subcommand as the path arg'
+    )
+    assert push_argv == ['git', 'push', 'origin', 'main']
+    assert '[State] state.json pushed' in caplog.text
+
+  def test_push_failure_logs_error_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''D-12: CalledProcessError on push -> logger.error with '[State] git
+    push failed' + append_warning + no crash. Verifies REVIEW LOW
+    log-verb distinction: message says "push failed", NOT "commit failed".
+    '''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        return _FakeCompletedProcess(returncode=0)
+      if 'push' in argv:
+        raise subprocess.CalledProcessError(
+          returncode=128,
+          cmd=list(argv),
+          stderr=b'fatal: Authentication failed (deploy key missing)',
+        )
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({
+        'source': source, 'message': message, 'now': now,
+      })
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git push failed' in caplog.text
+    assert '[State] git commit failed' not in caplog.text, (
+      "REVIEW LOW regression: push failure logged as 'git commit failed' — "
+      "commit-vs-push log distinction broken"
+    )
+    assert 'Authentication failed' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'push failed' in warnings_captured[0]['message'].lower() or \
+           'rc=128' in warnings_captured[0]['message']
+    assert warnings_captured[0]['now'] == now
+
+  def test_commit_failure_logs_error_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''REVIEW LOW (10-REVIEWS.md): CalledProcessError on commit -> logger
+    must emit '[State] git commit failed' (not 'push failed'); warning
+    message distinguishes commit failure.
+    '''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        raise subprocess.CalledProcessError(
+          returncode=1,
+          cmd=list(argv),
+          stderr=b'error: pathspec state.json did not match',
+        )
+      raise AssertionError(
+        f'commit-failure path must not reach push; got {argv}'
+      )
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({
+        'source': source, 'message': message, 'now': now,
+      })
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git commit failed' in caplog.text
+    assert '[State] git push failed' not in caplog.text, (
+      "REVIEW LOW regression: commit failure logged as 'git push failed' — "
+      "commit-vs-push log distinction broken"
+    )
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'commit' in warnings_captured[0]['message'].lower()
+    push_attempts = [c for c in calls if 'push' in c[0]]
+    assert push_attempts == [], (
+      'commit failure must short-circuit BEFORE push subprocess call'
+    )
+
+  def test_diff_error_appends_warning_without_pushing(
+      self, monkeypatch, caplog) -> None:
+    '''D-12 edge: git diff rc=128 (repo error) -> log + warn + return.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(
+          returncode=128,
+          stderr=b'fatal: not a git repository',
+        )
+      raise AssertionError(f'must not call subprocess past diff; got {argv}')
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert len(calls) == 1, 'must not call subprocess past diff on rc>=128'
+    assert '[State] git diff failed' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+
+  def test_never_calls_save_state_on_push_failure(
+      self, monkeypatch) -> None:
+    '''Phase 8 W3: two-saves-per-run invariant preserved; _push_state_to_git
+    must NOT call save_state even on failure.'''
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    save_calls: list = []
+
+    def _fake_run(argv, **kwargs):
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        return _FakeCompletedProcess(returncode=0)
+      if 'push' in argv:
+        raise subprocess.CalledProcessError(
+          returncode=1, cmd=list(argv), stderr=b'network error',
+        )
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    def _fake_save(*args, **kwargs):
+      save_calls.append((args, kwargs))
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr('main.state_manager.save_state', _fake_save)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning',
+      lambda state, source, message, now=None: state,
+    )
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert save_calls == [], (
+      'Phase 8 W3 invariant: _push_state_to_git must not call save_state'
+    )
+
+
+# =========================================================================
+# Phase 10 INFRA-02 / D-08 + D-15 — TestRunDailyCheckPushesState
+# =========================================================================
+# REVIEW MEDIUM (10-REVIEWS.md): direct run_daily_check invocation for
+# primary wiring (not main.main([...]) — avoids email + dashboard side
+# effects). One CLI smoke test retained to cover the dispatch path.
+# REVIEW MEDIUM: adds weekend + --test skip tests to close the D-15
+# coverage gap Codex flagged.
+
+class TestRunDailyCheckPushesState:
+  '''D-08: run_daily_check invokes _push_state_to_git(state, run_date)
+  AFTER save_state + dashboard render. D-15: not invoked on --test or
+  weekend. Tests primarily exercise run_daily_check() directly per
+  REVIEW MEDIUM (10-REVIEWS.md); one smoke test retained for CLI path.
+  '''
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_run_daily_check_invokes_push_after_save(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-08: normal non-test weekday run -> _push_state_to_git called
+    with (state, run_date). Direct run_daily_check invocation
+    (REVIEW MEDIUM: avoids main.main([...]) coupling to email dispatch).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    calls: list = []
+
+    def _spy_push(state, now):
+      calls.append((dict(state), now))
+
+    monkeypatch.setattr('main._push_state_to_git', _spy_push)
+    args = _make_args(once=True)
+    rc, state, old_signals, run_date = main.run_daily_check(args)
+    assert rc == 0
+    assert len(calls) == 1, (
+      'D-08: _push_state_to_git must be invoked once per non-test weekday run'
+    )
+    pushed_state, pushed_now = calls[0]
+    assert 'account' in pushed_state, 'state arg must carry run state'
+    assert pushed_now == run_date, (
+      'D-08: now arg must equal run_daily_check run_date'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_run_daily_check_does_not_push_on_test_mode(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-15 (REVIEW MEDIUM — NEW): --test is structurally read-only;
+    run_daily_check returns BEFORE save_state on --test, so
+    _push_state_to_git must never be called. Spy on the helper and
+    assert zero invocations.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    calls: list = []
+
+    def _spy_push(state, now):
+      calls.append((dict(state), now))
+
+    monkeypatch.setattr('main._push_state_to_git', _spy_push)
+    args = _make_args(test=True)
+    rc, state, old_signals, run_date = main.run_daily_check(args)
+    assert rc == 0
+    assert calls == [], (
+      'D-15: --test must NOT invoke _push_state_to_git '
+      '(structural read-only — early return before save_state)'
+    )
+
+  @pytest.mark.freeze_time('2026-04-25T00:00:00+00:00')  # Sat 08:00 AWST
+  def test_run_daily_check_does_not_push_on_weekend(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-15 (REVIEW MEDIUM — NEW): weekend skip short-circuits
+    run_daily_check at the weekday gate. _push_state_to_git must not
+    be called — return happens before load_state, fetch, or save_state.
+    Spy on the helper and assert zero invocations.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    calls: list = []
+
+    def _spy_push(state, now):
+      calls.append((dict(state), now))
+
+    monkeypatch.setattr('main._push_state_to_git', _spy_push)
+    args = _make_args(once=True)
+    rc, state, old_signals, run_date = main.run_daily_check(args)
+    assert rc == 0
+    assert state is None, (
+      'weekend gate returns state=None per run_daily_check contract'
+    )
+    assert calls == [], (
+      'D-15: weekend skip must NOT invoke _push_state_to_git '
+      '(early return at weekday gate — never reaches save_state)'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_main_cli_dispatch_reaches_push_helper_smoke(
+      self, tmp_path, monkeypatch) -> None:
+    '''REVIEW MEDIUM smoke-only: verify the CLI dispatch path
+    (main.main(['--force-email'])) still reaches _push_state_to_git.
+    This is the ONE test that exercises the main.main([...]) surface;
+    the primary wiring assertions sit on the direct run_daily_check
+    tests above to avoid email + dashboard side-effect coupling.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    calls: list = []
+
+    def _spy_push(state, now):
+      calls.append((dict(state), now))
+
+    monkeypatch.setattr(
+      'notifier._post_to_resend',
+      lambda *a, **kw: {'ok': True, 'reason': None, 'attempts': 1},
+    )
+    monkeypatch.setattr('main._push_state_to_git', _spy_push)
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert len(calls) == 1, (
+      'CLI smoke: main(["--force-email"]) dispatch must still reach '
+      '_push_state_to_git exactly once'
+    )
