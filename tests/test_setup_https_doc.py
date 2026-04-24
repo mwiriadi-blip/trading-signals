@@ -349,11 +349,23 @@ class TestCrossArtifactDriftGuard:
     assert 'SIGNALS_EMAIL_FROM' in doc_text
 
   def test_no_hardcoded_email_from_in_notifier(self, doc_text):
-    '''D-16 drift guard: `_EMAIL_FROM` constant has been removed.'''
+    '''D-16 drift guard: the module-level `_EMAIL_FROM = '...'` constant
+    has been removed. Cannot use a bare `'_EMAIL_FROM' not in
+    notifier_text` check because `SIGNALS_EMAIL_FROM` contains
+    `_EMAIL_FROM` as a substring — match the assignment form instead.
+    '''
     notifier_text = Path('notifier.py').read_text()
-    assert '_EMAIL_FROM' not in notifier_text, (
-      'notifier.py still references _EMAIL_FROM — Plan 02 D-16 incomplete'
-    )
+    # Look for any module-level (or function-level) assignment of the
+    # form `_EMAIL_FROM = ...` — the original D-16-target constant.
+    # Allowed false-negatives: SIGNALS_EMAIL_FROM appears in `os.environ
+    # .get('SIGNALS_EMAIL_FROM', ...)` and in log messages — those do
+    # not match `^[ \t]*_EMAIL_FROM\s*=` because they have `SIGNALS`
+    # prefix and/or are inside string literals.
+    assert not re.search(
+      r'(^|[^A-Z_])_EMAIL_FROM\s*=',
+      notifier_text,
+      re.MULTILINE,
+    ), 'notifier.py still has `_EMAIL_FROM = ...` — Plan 02 D-16 incomplete'
 
   def test_env_path_matches_systemd_unit(self, doc_text):
     '''12-REVIEWS.md LOW (belt-and-braces) — doc's .env path must match
