@@ -2261,6 +2261,236 @@ class TestPushStateToGit:
       'Phase 8 W3 invariant: _push_state_to_git must not call save_state'
     )
 
+  # -----------------------------------------------------------------
+  # Phase 10 code-review WR-01: cover TimeoutExpired + generic-Exception
+  # branches across all three subcommands (diff / commit / push). The
+  # happy-path / skip / CalledProcessError paths are exercised above;
+  # these six tests close the ~75 LOC gap flagged by 10-REVIEW.md WR-01.
+  # -----------------------------------------------------------------
+
+  def test_diff_timeout_logs_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''WR-01: subprocess.TimeoutExpired on `git diff` -> log
+    "[State] git diff subprocess timeout" + append warning + return
+    (no crash, no commit, no push).'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        raise subprocess.TimeoutExpired(cmd=list(argv), timeout=30)
+      raise AssertionError(
+        f'diff-timeout path must not reach commit/push; got {argv}'
+      )
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message, 'now': now})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert len(calls) == 1, 'diff timeout must short-circuit before commit/push'
+    assert '[State] git diff subprocess timeout' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'timed out' in warnings_captured[0]['message'].lower()
+    assert warnings_captured[0]['now'] == now
+
+  def test_diff_unexpected_exception_logs_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''WR-01: generic Exception on `git diff` -> log
+    "[State] git diff unexpected error" + append warning + return.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        raise OSError('ENOSPC: no space left on device')
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git diff unexpected error' in caplog.text
+    assert 'OSError' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'OSError' in warnings_captured[0]['message']
+
+  def test_commit_timeout_logs_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''WR-01: subprocess.TimeoutExpired on `git commit` -> log
+    "[State] git commit subprocess timeout" + append warning + no push.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    calls: list = []
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      calls.append((list(argv), kwargs))
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        raise subprocess.TimeoutExpired(cmd=list(argv), timeout=30)
+      raise AssertionError(
+        f'commit-timeout path must not reach push; got {argv}'
+      )
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git commit subprocess timeout' in caplog.text
+    assert '[State] git push failed' not in caplog.text
+    push_attempts = [c for c in calls if 'push' in c[0]]
+    assert push_attempts == [], (
+      'commit timeout must short-circuit BEFORE push subprocess call'
+    )
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'timed out' in warnings_captured[0]['message'].lower()
+
+  def test_commit_unexpected_exception_logs_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''WR-01: generic Exception on `git commit` -> log
+    "[State] git commit unexpected error" + append warning + no push.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        raise RuntimeError('unexpected runtime error')
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git commit unexpected error' in caplog.text
+    assert 'RuntimeError' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'RuntimeError' in warnings_captured[0]['message']
+
+  def test_push_timeout_logs_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''WR-01: subprocess.TimeoutExpired on `git push` -> log
+    "[State] git push subprocess timeout" + append warning + no crash.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        return _FakeCompletedProcess(returncode=0)
+      if 'push' in argv:
+        raise subprocess.TimeoutExpired(cmd=list(argv), timeout=60)
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git push subprocess timeout' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'timed out' in warnings_captured[0]['message'].lower()
+
+  def test_push_unexpected_exception_logs_and_appends_warning(
+      self, monkeypatch, caplog) -> None:
+    '''WR-01: generic Exception on `git push` -> log
+    "[State] git push unexpected error" + append warning + no crash.'''
+    import logging
+    import subprocess
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    warnings_captured: list = []
+
+    def _fake_run(argv, **kwargs):
+      if argv[:3] == ['git', 'diff', '--quiet']:
+        return _FakeCompletedProcess(returncode=1)
+      if 'commit' in argv:
+        return _FakeCompletedProcess(returncode=0)
+      if 'push' in argv:
+        raise ConnectionError('network unreachable')
+      raise AssertionError(f'unexpected argv: {argv}')
+
+    def _fake_append_warning(state, source, message, now=None):
+      warnings_captured.append({'source': source, 'message': message})
+      return state
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    monkeypatch.setattr(
+      'main.state_manager.append_warning', _fake_append_warning,
+    )
+    caplog.set_level(logging.ERROR)
+    state = {'account': 1.0, 'warnings': []}
+    now = datetime(2026, 4, 28, 8, 0, tzinfo=ZoneInfo('Australia/Perth'))
+    main._push_state_to_git(state, now)
+    assert '[State] git push unexpected error' in caplog.text
+    assert 'ConnectionError' in caplog.text
+    assert len(warnings_captured) == 1
+    assert warnings_captured[0]['source'] == 'state_pusher'
+    assert 'ConnectionError' in warnings_captured[0]['message']
+
 
 # =========================================================================
 # Phase 10 INFRA-02 / D-08 + D-15 — TestRunDailyCheckPushesState
