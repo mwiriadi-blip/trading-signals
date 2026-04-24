@@ -31,11 +31,22 @@ implemented; this script now produces the committed goldens. Fix 8
 per REVIEWS.md: subject .txt goldens committed alongside HTML bodies.
 '''
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pytz
+
+# Phase 12 D-16/D-19: compose_email_body now requires keyword-only
+# `from_addr`; pin SIGNALS_EMAIL_FROM to the same value baked into the
+# committed golden HTMLs so regeneration produces byte-equal output.
+# Using setdefault means operator overrides (e.g., new verified sender)
+# are respected — export SIGNALS_EMAIL_FROM=... before invoking this
+# script to regenerate against a different sender.
+os.environ.setdefault(
+  'SIGNALS_EMAIL_FROM', 'signals@carbonbookkeeping.com.au',
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -63,12 +74,22 @@ def regenerate_one(state_name: str, golden_stem: str, old_signals: dict) -> None
   Writes 2 files per scenario:
     - {golden_stem}.html — full HTML body (byte-equal gate)
     - {golden_stem}_subject.txt — single-line subject + trailing '\\n' (Fix 8)
+
+  Phase 12: compose_email_body requires keyword-only `from_addr` (D-16).
+  Value pulled from SIGNALS_EMAIL_FROM env var (setdefault near top of
+  this module keeps the script self-contained — operator may override
+  by exporting SIGNALS_EMAIL_FROM before invocation).
   '''
   state = json.loads((FIXTURES_DIR / state_name).read_text())
+  # Guaranteed by setdefault at module top; read here to thread into
+  # compose_email_body as explicit kwarg.
+  from_addr = os.environ['SIGNALS_EMAIL_FROM']
 
   # Body HTML
   body_path = FIXTURES_DIR / f'{golden_stem}.html'
-  html = compose_email_body(state, old_signals, FROZEN_NOW)
+  html = compose_email_body(
+    state, old_signals, FROZEN_NOW, from_addr=from_addr,
+  )
   body_path.write_text(html, encoding='utf-8', newline='\n')
   print(f'[regen] wrote {body_path.name} ({body_path.stat().st_size} bytes)')
 
