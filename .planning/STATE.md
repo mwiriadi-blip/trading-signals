@@ -32,7 +32,7 @@ Plan: 1 of 4
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Executing Phase 12
-- **Last activity:** 2026-04-24
+- **Last activity:** 2026-04-25 - Completed quick task 260425-7iw: Add freeze_time decorator to 16 weekend-flaky tests in tests/test_main.py
 - **Progress:** [██████████] 100%
 
 ```
@@ -183,6 +183,7 @@ None at the GSD-session level. Three operator-owned prerequisites (domain / drop
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260421-723 | Phase 1 REVIEWS pass-2 follow-up: oracle-hash comment + test_compute_indicators_is_idempotent + tests/regenerate_scenarios.py | 2026-04-21 | 2ace992 | [260421-723-add-oracle-hash-comment-test-compute-ind](./quick/260421-723-add-oracle-hash-comment-test-compute-ind/) |
+| 260425-7iw | Add freeze_time decorator to 16 weekend-flaky tests in tests/test_main.py | 2026-04-25 | 47f6979 | [260425-7iw-add-freeze-time-decorator-to-16-weekend-](./quick/260425-7iw-add-freeze-time-decorator-to-16-weekend-/) |
 
 ### Warnings (roadmap-level)
 
