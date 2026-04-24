@@ -301,15 +301,23 @@ def _validate_loaded_state(state: dict) -> None:
 # Public API
 # =========================================================================
 
-def reset_state() -> dict:
-  '''STATE-07 / D-01 / D-03: fresh state, $100k account, empty collections.
+def reset_state(initial_account: float = INITIAL_ACCOUNT) -> dict:
+  '''STATE-07 / D-01 / D-03 / Phase 10 BUG-01 D-02: fresh state,
+  account + initial_account both equal to `initial_account` (default
+  INITIAL_ACCOUNT from system_params).
+
+  Phase 10 D-02 closes BUG-01 at the module boundary: both
+  `state['account']` and `state['initial_account']` are set from the
+  same source-of-truth argument, so no caller can create a state where
+  they differ. Defense-in-depth alongside main.py::_handle_reset D-01
+  call-site fix.
 
   Each call returns a NEW dict (no shared mutable references) so that
   mutating one returned state doesn't bleed into a future reset.
   '''
   return {
     'schema_version': STATE_SCHEMA_VERSION,
-    'account': INITIAL_ACCOUNT,
+    'account': float(initial_account),        # D-02: from arg
     'last_run': None,
     'positions': {                            # D-01: None = inactive
       'SPI200': None,
@@ -325,7 +333,7 @@ def reset_state() -> dict:
     # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys emitted on
     # fresh reset so corruption-recovery path + initial setup produce a
     # state that passes _validate_loaded_state under schema v2.
-    'initial_account': INITIAL_ACCOUNT,
+    'initial_account': float(initial_account),  # D-02: from arg
     'contracts': {
       'SPI200': _DEFAULT_SPI_LABEL,
       'AUDUSD': _DEFAULT_AUDUSD_LABEL,

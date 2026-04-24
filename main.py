@@ -185,6 +185,219 @@ def _send_email_never_crash(
 
 
 # =========================================================================
+# Phase 10 INFRA-02 / D-07..D-15 — nightly state.json deploy-key git push
+# =========================================================================
+
+def _push_state_to_git(state: dict, now: datetime) -> None:
+  '''Phase 10 INFRA-02 / D-07..D-12 — nightly state.json commit + push via
+  deploy-key-authenticated git remote. Never crashes the daily run.
+
+  Uses local `import subprocess` to keep module-level import surface
+  lean — this mirrors the `_send_email_never_crash` pattern established
+  earlier. Although subprocess is stdlib (import failure is implausible),
+  the local-import idiom is the project convention for never-crash
+  wrappers and keeps the AST blocklist grep-auditable (REVIEW-LOW
+  Option A; see 10-REVIEWS.md).
+
+  Architecture:
+    [save_state completed] -> [_push_state_to_git]
+      -> `git diff --quiet state.json`
+          rc=0 -> log [State] skip + return
+          rc=1 -> continue to commit+push
+          rc>=128 -> fail-loud path
+      -> `git -c user.email=droplet@trading-signals
+              -c user.name=DO Droplet
+              commit -m 'chore(state): daily signal update [skip ci]'
+              state.json`   (check=True)
+      -> `git push origin main`   (check=True)
+
+  D-07: lives in main.py (not state_manager) — preserves hex-lite
+    boundary; state_manager stays I/O-narrow (disk only, no subprocess).
+  D-09: skip-if-unchanged via git diff --quiet exit codes.
+  D-10: inline -c flags (do NOT mutate .git/config).
+  D-11: commit message verbatim from v1.0 Phase 7 convention.
+  D-12: fail-loud — log ERROR + append_warning(source='state_pusher').
+    Does NOT call save_state a third time (preserves Phase 8 W3
+    two-saves-per-run invariant); warning persists via next run's
+    normal save cycle.
+  D-15: --test and weekend-skip never reach this helper (caller
+    returns before save_state on both paths). Structurally guaranteed
+    by the placement AFTER save_state in run_daily_check; verified
+    by TestRunDailyCheckPushesState weekend + test-mode tests.
+
+  COMMIT-vs-PUSH LOG DISTINCTION (REVIEW LOW): commit and push each
+  have their OWN try/except clause so the emitted log verb names the
+  failing subcommand unambiguously. Previously both paths shared an
+  '[State] git push failed' message, which misled debugging.
+  '''
+  try:
+    import subprocess  # local — C-2 pattern; see docstring rationale
+    # D-09 three-way rc branch on `git diff --quiet state.json`.
+    diff_result = subprocess.run(
+      ['git', 'diff', '--quiet', 'state.json'],
+      capture_output=True,
+      timeout=30,
+    )
+    diff_rc = diff_result.returncode
+    if diff_rc == 0:
+      logger.info('[State] state.json unchanged — skipping git push')
+      return
+    if diff_rc >= 128:
+      stderr_excerpt = (diff_result.stderr or b'').decode('utf-8', errors='replace')[:200]
+      logger.error('[State] git diff failed (rc=%d): %s', diff_rc, stderr_excerpt)
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'git diff failed rc={diff_rc}: {stderr_excerpt}',
+        now=now,
+      )
+      return
+  except subprocess.TimeoutExpired as e:
+    logger.error('[State] git diff subprocess timeout: %s', e)
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly git diff timed out: {e}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+    return
+  except Exception as e:
+    logger.error('[State] git diff unexpected error: %s: %s',
+                 type(e).__name__, e)
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly git diff error: {type(e).__name__}: {e}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+    return
+
+  # D-10 inline identity flags; D-11 verbatim commit message;
+  # explicit 'state.json' positional arg scopes the commit precisely.
+  # OWN try/except so commit failures log '[State] git commit failed'
+  # — distinct from push failures (REVIEW LOW).
+  try:
+    subprocess.run(
+      [
+        'git',
+        '-c', 'user.email=droplet@trading-signals',
+        '-c', 'user.name=DO Droplet',
+        'commit',
+        '-m', 'chore(state): daily signal update [skip ci]',
+        'state.json',
+      ],
+      check=True,
+      capture_output=True,
+      timeout=30,
+    )
+  except subprocess.CalledProcessError as e:
+    stderr_excerpt = (e.stderr or b'').decode('utf-8', errors='replace')[:200]
+    logger.error(
+      '[State] git commit failed (rc=%d): %s',
+      e.returncode, stderr_excerpt,
+    )
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly state.json commit failed: rc={e.returncode} stderr={stderr_excerpt}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+    return
+  except subprocess.TimeoutExpired as e:
+    logger.error('[State] git commit subprocess timeout: %s', e)
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly state.json commit timed out: {e}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+    return
+  except Exception as e:
+    logger.error('[State] git commit unexpected error: %s: %s',
+                 type(e).__name__, e)
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly state.json commit error: {type(e).__name__}: {e}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+    return
+
+  # D-13 no auto-rebase retry; fail-loud on push.
+  # OWN try/except so push failures log '[State] git push failed'
+  # — distinct from commit failures (REVIEW LOW).
+  try:
+    subprocess.run(
+      ['git', 'push', 'origin', 'main'],
+      check=True,
+      capture_output=True,
+      timeout=60,
+    )
+    logger.info('[State] state.json pushed to origin/main')
+  except subprocess.CalledProcessError as e:
+    stderr_excerpt = (e.stderr or b'').decode('utf-8', errors='replace')[:200]
+    logger.error(
+      '[State] git push failed (rc=%d): %s',
+      e.returncode, stderr_excerpt,
+    )
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly state.json push failed: rc={e.returncode} stderr={stderr_excerpt}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+  except subprocess.TimeoutExpired as e:
+    logger.error('[State] git push subprocess timeout: %s', e)
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly state.json push timed out: {e}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+  except Exception as e:
+    logger.error('[State] git push unexpected error: %s: %s',
+                 type(e).__name__, e)
+    try:
+      state_manager.append_warning(
+        state,
+        source='state_pusher',
+        message=f'Nightly state.json push error: {type(e).__name__}: {e}',
+        now=now,
+      )
+    except Exception as append_err:
+      logger.error('[State] append_warning also failed: %s: %s',
+                   type(append_err).__name__, append_err)
+
+
+# =========================================================================
 # Phase 8 D-05/D-06/D-07 crash-email helpers — outer safety net
 # =========================================================================
 
@@ -1069,6 +1282,9 @@ def run_daily_check(
   # happen under --test. Phase 6 may revisit if operator wants --test to
   # render a preview dashboard.
   _render_dashboard_never_crash(state, Path('dashboard.html'), run_date)
+  # Phase 10 INFRA-02 / D-08: push state.json to origin/main via deploy
+  # key; never crashes on failure.
+  _push_state_to_git(state, run_date)
   elapsed_total = time.perf_counter() - run_start_monotonic
   _format_run_summary_footer(
     logger, run_date, elapsed_total,
@@ -1278,6 +1494,7 @@ def _handle_reset(args: argparse.Namespace) -> int:
   # --- Build + save ---
   state = state_manager.reset_state()
   state['initial_account'] = float(initial_account)
+  state['account'] = float(initial_account)  # Phase 10 BUG-01 D-01: sync account to initial_account
   state['contracts'] = {'SPI200': spi_contract, 'AUDUSD': audusd_contract}
   state_manager.save_state(state)
   logger.info(

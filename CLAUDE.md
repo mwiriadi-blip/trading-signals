@@ -43,7 +43,7 @@ Hexagonal-lite. Pure math in `signal_engine.py` (indicators + vote) and `sizing_
 
 ## Operator Decisions (locked in during project init)
 
-- **Deployment:** GitHub Actions is the primary path (cron `0 0 * * 1-5` UTC = 08:00 AWST Mon-Fri); Replit Always On is alternative
+- **Deployment:** DigitalOcean droplet systemd is the primary path (Phase 11+). GitHub Actions cron is disabled (`.github/workflows/daily.yml.disabled` — retained for rollback per Phase 10 INFRA-03). Replit Always On remains documented as an alternative in `docs/DEPLOY.md` (docs file is stale; see Phase 10 CONTEXT §Deferred Ideas).
 - **Sizing:** No `max(1, …)` floor — if sized contracts = 0, skip the trade and warn
 - **FLAT close:** LONG→FLAT closes the LONG; SHORT→FLAT closes the SHORT
 - **Trailing stop:** Intraday HIGH/LOW drives both peak updates and hit detection

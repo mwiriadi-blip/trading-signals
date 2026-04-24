@@ -354,7 +354,7 @@ class TestGHAWorkflow:
     guaranteed to succeed.
   '''
 
-  WORKFLOW_PATH = '.github/workflows/daily.yml'
+  WORKFLOW_PATH = '.github/workflows/daily.yml.disabled'
 
   def test_workflow_file_exists(self) -> None:
     import os

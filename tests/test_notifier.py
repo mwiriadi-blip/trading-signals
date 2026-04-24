@@ -37,6 +37,7 @@ import notifier
 from notifier import (  # noqa: F401 — re-exported for convenience in tests
   compose_email_body,
   compose_email_subject,
+  send_crash_email,
   send_daily_email,
 )
 from system_params import (
@@ -66,6 +67,37 @@ GOLDEN_EMPTY_PATH = NOTIFIER_FIXTURE_DIR / 'golden_empty.html'
 # C-1 reviews fix: PERTH.localize(...) is correct; tzinfo=PERTH is not.
 PERTH = pytz.timezone('Australia/Perth')
 FROZEN_NOW = PERTH.localize(datetime(2026, 4, 22, 9, 0))
+
+
+# =========================================================================
+# Phase 12 D-19 + D-16: module-level autouse fixture pinning SIGNALS_EMAIL_FROM
+# =========================================================================
+# After D-16 removes the hardcoded _EMAIL_FROM constant, every test whose
+# path reaches send_daily_email / send_crash_email must see an env-provided
+# sender value — otherwise the dispatch short-circuits with missing_sender.
+# Pinning here to the same value baked into the committed golden HTMLs keeps
+# TestGoldenEmail byte-equal across env configurations. Individual tests in
+# TestEmailFromEnvVar override by calling monkeypatch.delenv / setenv('')
+# within their own bodies — pytest's last-mutation-wins semantics mean this
+# fixture is the default and per-test mutations override.
+#
+# Deliberately broad (12-REVIEWS.md LOW): every test class touches email
+# rendering or dispatch one way or another. Narrowing scope risks test
+# failures post signature migration.
+
+@pytest.fixture(autouse=True)
+def _pin_signals_email_from(monkeypatch):
+  '''Phase 12 D-19 + D-16: module-level default for SIGNALS_EMAIL_FROM.
+
+  After D-16 removes the hardcoded _EMAIL_FROM constant, every test that
+  renders email body content must see an env-provided sender value,
+  otherwise send_daily_email short-circuits with missing_sender. Pinning
+  to the same value as the committed golden HTMLs keeps TestGoldenEmail
+  byte-equal across env configurations.
+  '''
+  monkeypatch.setenv(
+    'SIGNALS_EMAIL_FROM', 'signals@carbonbookkeeping.com.au',
+  )
 
 
 # =========================================================================
@@ -228,13 +260,13 @@ class TestComposeBody:
 
   def test_body_has_doctype_and_html(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert body.startswith('<!DOCTYPE html>'), f'expected DOCTYPE prefix; got: {body[:32]!r}'
     assert body.endswith('</html>\n'), f'expected </html>\\n suffix; got: {body[-32:]!r}'
 
   def test_body_sections_in_d10_order(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     idx_title = body.index('Trading Signals')
     idx_signal = body.index('Signal Status')
     idx_positions = body.index('Open Positions')
@@ -255,38 +287,38 @@ class TestComposeBody:
 
   def test_body_no_style_block(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<style>' not in body
     assert '</style>' not in body
 
   def test_body_no_media_query(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '@media' not in body
 
   def test_body_has_palette_inline_bg(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '#0f1117' in body
 
   def test_body_has_max_width_600(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'max-width:600px' in body
 
   def test_body_has_viewport_meta(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in body
 
   def test_body_has_role_presentation(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'role="presentation"' in body
 
   def test_body_has_bgcolor_belt_and_braces(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'bgcolor="#0f1117"' in body
 
   def test_compose_body_naive_datetime_raises(self) -> None:
@@ -294,7 +326,7 @@ class TestComposeBody:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     naive = datetime(2026, 4, 22, 9, 0)
     with pytest.raises(ValueError, match='naive datetime='):
-      compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, naive)
+      compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, naive, from_addr='signals@carbonbookkeeping.com.au')
 
   # -----------------------------------------------------------------
   # ACTION REQUIRED conditional + copy (D-06, D-11)
@@ -302,24 +334,24 @@ class TestComposeBody:
 
   def test_action_required_present_on_change(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'ACTION REQUIRED' in body
     assert 'border-left:4px solid #ef4444' in body
 
   def test_action_required_absent_on_no_change(self) -> None:
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'ACTION REQUIRED' not in body
 
   def test_action_required_absent_on_first_run(self) -> None:
     '''D-06: first-run (all old None) is NO CHANGE — ACTION REQUIRED omitted.'''
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'ACTION REQUIRED' not in body
 
   def test_action_required_contains_per_instrument_diffs(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # SPI200 diff: LONG → SHORT; AUDUSD diff: FLAT → LONG.
     # Slice to the ACTION REQUIRED section so we're testing the diff region.
     ar_start = body.index('ACTION REQUIRED')
@@ -331,7 +363,7 @@ class TestComposeBody:
   def test_action_required_contains_close_position_copy(self) -> None:
     '''D-11 close-position copy sourced from trade_log[-1] (SPI200 close today).'''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # Fixture trade_log[-1] is SPI200 LONG close on 2026-04-22 with
     # n_contracts=2, entry_price=8204.5 → "(2 contracts @ entry $8,204.50)"
     assert 'Close existing LONG position (2 contracts @ entry $8,204.50)' in body
@@ -339,7 +371,7 @@ class TestComposeBody:
   def test_action_required_uses_unicode_arrow(self) -> None:
     '''Fix 5: raw Unicode → (U+2192), never &rarr; HTML entity.'''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '→' in body
     assert '&rarr;' not in body
 
@@ -349,18 +381,18 @@ class TestComposeBody:
 
   def test_empty_state_renders_no_open_positions(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'No open positions' in body
 
   def test_empty_state_equity_is_initial_account(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # empty_state.json has account=100000.0, equity_history=[]
     assert '$100,000.00' in body
 
   def test_empty_state_renders_no_closed_trades(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': None, 'AUDUSD=X': None}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'No closed trades' in body
 
   # -----------------------------------------------------------------
@@ -370,21 +402,21 @@ class TestComposeBody:
   def test_xss_escape_on_exit_reason(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     state['trade_log'][-1]['exit_reason'] = '<script>alert(1)</script>'
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<script>alert(1)</script>' not in body
     assert '&lt;script&gt;alert(1)&lt;/script&gt;' in body
 
   def test_xss_escape_on_instrument_value(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     state['trade_log'][-1]['instrument'] = '<script>x</script>'
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<script>x</script>' not in body
     assert '&lt;script&gt;x&lt;/script&gt;' in body
 
   def test_xss_escape_on_direction_value(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     state['positions']['SPI200']['direction'] = '<img src=x onerror=y>'
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert '<img src=x onerror=y>' not in body
     assert '&lt;img src=x onerror=y&gt;' in body
 
@@ -394,22 +426,22 @@ class TestComposeBody:
 
   def test_has_header_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Trading Signals' in body
 
   def test_has_signal_status_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Signal Status' in body
 
   def test_has_positions_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Open Positions' in body
 
   def test_has_todays_pnl_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     # html.escape(quote=True) renders ' as &#x27; and & as &amp;
     # so "Today's P&L" appears as "Today&#x27;s P&amp;L" in the body.
     assert (
@@ -420,17 +452,17 @@ class TestComposeBody:
 
   def test_has_running_equity_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Running equity' in body or 'Running Equity' in body
 
   def test_has_closed_trades_section(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Last 5 Closed Trades' in body
 
   def test_has_footer_disclaimer(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Not financial advice' in body
 
   # -----------------------------------------------------------------
@@ -444,13 +476,13 @@ class TestComposeBody:
     (leaf-discipline per Phase 5 D-15).
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'SPI 200 &amp; AUD/USD mechanical system' in body or \
            'SPI 200 & AUD/USD mechanical system' in body
 
   def test_header_contains_signal_as_of(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     assert 'Signal as of' in body
 
   # -----------------------------------------------------------------
@@ -464,7 +496,7 @@ class TestComposeBody:
     Expected: 0.6502 - 3.0 * 0.0042 = 0.6376. Currency format: $0.64.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     audusd_pos = state['positions']['AUDUSD']
     expected_trail = audusd_pos['peak_price'] - TRAIL_MULT_LONG * audusd_pos['atr_entry']
     # _fmt_currency_email uses 2dp — AUDUSD rendering accepts this per UI-SPEC
@@ -481,7 +513,7 @@ class TestComposeBody:
     Expected: 8285.0 + 2.0 * 50.0 = 8385.00. Currency: $8,385.00.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     spi_pos = state['positions']['SPI200']
     expected_trail = spi_pos['trough_price'] + TRAIL_MULT_SHORT * spi_pos['atr_entry']
     expected_str = f'${expected_trail:,.2f}'
@@ -501,7 +533,7 @@ class TestComposeBody:
     Rendered via _fmt_pnl_with_colour_email → SHORT red span with -$12.50.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     pos = state['positions']['AUDUSD']
     current = state['signals']['AUDUSD']['last_close']
     gross = (current - pos['entry_price']) * AUDUSD_NOTIONAL * pos['n_contracts']
@@ -523,7 +555,7 @@ class TestComposeBody:
     unrealised = 0.0 - 3.0 = -3.00.
     '''
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
-    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    body = compose_email_body(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     pos = state['positions']['SPI200']
     current = state['signals']['SPI200']['last_close']
     # SHORT: profit when current < entry → direction_mult = -1
@@ -1244,7 +1276,7 @@ class TestGoldenEmail:
   def test_golden_with_change_matches_committed(self) -> None:
     state = json.loads(SAMPLE_STATE_WITH_CHANGE_PATH.read_text())
     old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
-    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     golden = GOLDEN_WITH_CHANGE_PATH.read_text(encoding='utf-8')
     assert rendered == golden, (
       'compose_email_body drifted from golden_with_change.html. '
@@ -1255,7 +1287,7 @@ class TestGoldenEmail:
   def test_golden_no_change_matches_committed(self) -> None:
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
     old_signals = {'^AXJO': 1, 'AUDUSD=X': 0}
-    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     golden = GOLDEN_NO_CHANGE_PATH.read_text(encoding='utf-8')
     assert rendered == golden, (
       'compose_email_body drifted from golden_no_change.html. '
@@ -1265,7 +1297,7 @@ class TestGoldenEmail:
   def test_golden_empty_matches_committed(self) -> None:
     state = json.loads(EMPTY_STATE_PATH.read_text())
     old_signals = {'^AXJO': None, 'AUDUSD=X': None}
-    rendered = compose_email_body(state, old_signals, FROZEN_NOW)
+    rendered = compose_email_body(state, old_signals, FROZEN_NOW, from_addr='signals@carbonbookkeeping.com.au')
     golden = GOLDEN_EMPTY_PATH.read_text(encoding='utf-8')
     assert rendered == golden, (
       'compose_email_body drifted from golden_empty.html. '
@@ -1957,3 +1989,241 @@ class TestPostToResendContentType:
         'k', 'f@x.com', 't@x.com', 'subj',
         html_body=None, text_body=None, backoff_s=0,
       )
+
+
+# =========================================================================
+# Phase 10 CHORE-02 / D-05: ruff CI regression guard for notifier.py
+# =========================================================================
+
+def test_ruff_clean_notifier() -> None:
+  '''CHORE-02 / D-05: notifier.py must be ruff-CLEAN (zero warnings of
+  ANY category) AND specifically have zero F401 (unused-import) entries.
+
+  PRIMARY GATE (D-05 + ROADMAP SC-2): asserts `result.returncode == 0`.
+  This catches ALL ruff warnings — F401, E-series style errors,
+  W-series whitespace, UP-series py-upgrade suggestions, etc. — not
+  just unused imports. Any new ruff warning in notifier.py reds this.
+
+  SECONDARY DIAGNOSTIC: parses the JSON and asserts zero entries with
+  `code == 'F401'`. When the primary gate reds, the diagnostic
+  narrows the failure to "is it the Phase 10 F401 regression or
+  something else?".
+
+  Invokes `ruff check notifier.py --output-format=json` via subprocess
+  (ruff 0.6.9, pinned in requirements.txt). Template per
+  10-RESEARCH.md §Pattern 2. Stable across ruff 0.6.x per JSON output
+  schema.
+
+  REVIEW REVISION (10-REVIEWS.md HIGH): the earlier draft asserted
+  only on the F401 filter, NOT on returncode. This allowed any
+  non-F401 ruff warning to pass. Now both are enforced.
+  '''
+  import json
+  import subprocess
+
+  result = subprocess.run(
+    ['ruff', 'check', 'notifier.py', '--output-format=json'],
+    capture_output=True,
+    text=True,
+    timeout=30,
+  )
+  entries = json.loads(result.stdout) if result.stdout.strip() else []
+  # SECONDARY DIAGNOSTIC first — gives a clearer error message when
+  # the regression is specifically F401 (the category this phase
+  # closed). Only then check the PRIMARY gate so an E501 regression
+  # (say) produces a clean "ruff exits 1" message instead of being
+  # swallowed by a spurious F401 assertion.
+  f401_entries = [e for e in entries if e.get('code') == 'F401']
+  assert len(f401_entries) == 0, (
+    f'CHORE-02 / D-05: notifier.py must have zero F401 (unused-import) '
+    f'warnings; found {len(f401_entries)}: '
+    f'{[(e.get("location", {}).get("row"), e.get("message")) for e in f401_entries]}'
+  )
+  # PRIMARY GATE: D-05 + ROADMAP SC-2 "ruff check notifier.py returns
+  # zero warnings" — enforced via returncode, which ruff sets to 1
+  # whenever ANY issue exists (of any rule category).
+  assert result.returncode == 0, (
+    f'CHORE-02 / D-05 / SC-2: ruff check notifier.py must exit 0 '
+    f'(no warnings of ANY category). Got returncode={result.returncode}. '
+    f'Full entries: {entries}. '
+    f'stderr: {result.stderr[:200] if result.stderr else "(empty)"}'
+  )
+
+
+def test_ruff_clean_notifier_detects_f401_regression(tmp_path) -> None:
+  '''CHORE-02 / D-05 sensitivity check: prove the guard actually RED-lights
+  on an F401 regression. Writes a temp module with an unused import and
+  asserts `ruff check <temp_file>` returns non-zero AND emits at least one
+  F401 entry.
+
+  This replaces the "manually re-add SPI_MULT and verify RED" ceremony
+  in the earlier plan draft — it exercises the same invariant (guard
+  is F401-sensitive) via a self-contained fixture, so no notifier.py
+  mutation is required during the test run.
+
+  REVIEW REVISION (10-REVIEWS.md Codex LOW): removed the manual
+  re-remove-import ceremony; this temp-file test replaces it.
+  '''
+  import json
+  import subprocess
+
+  # Fixture with a clear, unused import — must unambiguously trigger F401.
+  fixture = tmp_path / 'f401_regression_probe_clean.py'
+  fixture.write_text(
+    "'''F401 regression probe — unused import, no noqa.'''\n"
+    'import os\n'
+  )
+  result = subprocess.run(
+    ['ruff', 'check', str(fixture), '--output-format=json'],
+    capture_output=True,
+    text=True,
+    timeout=30,
+  )
+  assert result.returncode != 0, (
+    f'Sensitivity check failed: ruff exited 0 on a file with an '
+    f'unused import — guard would miss F401 regressions. '
+    f'stdout: {result.stdout[:200]}'
+  )
+  entries = json.loads(result.stdout) if result.stdout.strip() else []
+  f401_entries = [e for e in entries if e.get('code') == 'F401']
+  assert len(f401_entries) >= 1, (
+    f'Sensitivity check failed: ruff did NOT emit an F401 entry for '
+    f'an obvious unused import. Entries: {entries}'
+  )
+
+
+# =========================================================================
+# Phase 12 INFRA-01 + D-17 — SIGNALS_EMAIL_FROM env-var contract
+# =========================================================================
+
+
+class TestEmailFromEnvVar:
+  '''Phase 12 INFRA-01 + D-17 — SIGNALS_EMAIL_FROM env-var contract.
+
+  D-14: missing/empty → log ERROR + return SendStatus(ok=False,
+        reason='missing_sender'); NO Resend POST.
+  D-15: per-send read inside send_daily_email (not at import time).
+  D-16: _EMAIL_FROM module constant removed.
+
+  SendStatus stays 2-field (ok, reason) per research finding #2 —
+  extending the NamedTuple cascades into main.py orchestrator code.
+  '''
+
+  def test_from_addr_reads_env_var(self, tmp_path, monkeypatch) -> None:
+    '''SIGNALS_EMAIL_FROM present → Resend payload `from` field matches.
+
+    Spy on notifier.requests.post to capture the POST payload; assert
+    the `from` key equals the env var value (not the old hardcoded
+    address, not `onboarding@resend.dev`).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SIGNALS_EMAIL_FROM', 'test@example.com')
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    captured: list = []
+
+    def _fake_post(url, **kw):
+      captured.append({'url': url, **kw})
+      return _FakeResp(200)
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    status = send_daily_email(state, old_signals, FROZEN_NOW)
+    assert status.ok is True
+    assert len(captured) == 1
+    assert captured[0]['json']['from'] == 'test@example.com'
+
+  def test_missing_env_var_skips_email_with_warning(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''SIGNALS_EMAIL_FROM unset → log ERROR + SendStatus(ok=False,
+    reason='missing_sender'); Resend.post NOT called. NEVER falls back
+    to onboarding@resend.dev.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('SIGNALS_EMAIL_FROM', raising=False)
+    # Set RESEND_API_KEY so the missing_sender path (not no_api_key)
+    # is what we're testing.
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    called = {'n': 0}
+
+    def _fake_post(*a, **kw):
+      called['n'] += 1
+      raise AssertionError(
+        'notifier.requests.post must NOT be called when '
+        'SIGNALS_EMAIL_FROM is missing'
+      )
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    with caplog.at_level(logging.ERROR, logger='notifier'):
+      status = send_daily_email(state, old_signals, FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'missing_sender'
+    assert called['n'] == 0
+    assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
+    # 12-REVIEWS.md LOW — missing-sender path MUST NOT touch disk.
+    assert not (tmp_path / 'last_email.html').exists(), (
+      'missing-sender path wrote last_email.html — violates '
+      'no-side-effects contract'
+    )
+
+  def test_empty_env_var_treated_as_missing(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''SIGNALS_EMAIL_FROM='' (empty string) → same path as missing.
+
+    `.strip()` on the env value collapses whitespace-only and empty
+    strings into the same "not set" bucket.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SIGNALS_EMAIL_FROM', '')
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    called = {'n': 0}
+
+    def _fake_post(*a, **kw):
+      called['n'] += 1
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    with caplog.at_level(logging.ERROR, logger='notifier'):
+      status = send_daily_email(state, old_signals, FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'missing_sender'
+    assert called['n'] == 0
+    assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
+    # 12-REVIEWS.md LOW — missing-sender path MUST NOT touch disk.
+    assert not (tmp_path / 'last_email.html').exists()
+
+  def test_crash_email_missing_env_var_skips_with_warning(
+      self, tmp_path, monkeypatch, caplog) -> None:
+    '''12-REVIEWS.md LOW — crash-email path has same missing-sender
+    behavior as daily-email path (parity with test #2).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('SIGNALS_EMAIL_FROM', raising=False)
+    monkeypatch.setenv('RESEND_API_KEY', 'test_key')
+
+    called = {'n': 0}
+
+    def _fake_post(*a, **kw):
+      called['n'] += 1
+
+    monkeypatch.setattr('notifier.requests.post', _fake_post)
+
+    try:
+      raise RuntimeError('simulated crash for test')
+    except RuntimeError as exc:
+      with caplog.at_level(logging.ERROR, logger='notifier'):
+        status = send_crash_email(exc, 'test state summary', FROZEN_NOW)
+    assert status.ok is False
+    assert status.reason == 'missing_sender'
+    assert called['n'] == 0
+    assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
+    assert not (tmp_path / 'last_email.html').exists()
