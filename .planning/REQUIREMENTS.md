@@ -56,7 +56,7 @@
 - [ ] **INFRA-01**: Operator-supplied domain verified on Resend (replaces `onboarding@resend.dev` test sender); `SIGNALS_EMAIL_FROM` env var reads the verified sender so code doesn't hardcode the domain
 - [ ] **INFRA-02**: Droplet has a GitHub deploy key with write access; nightly cron pushes `state.json` commits to `origin/main` so git holds state history
 - [ ] **INFRA-03**: `daily.yml.disabled` — GHA cron workflow removed/renamed; droplet systemd is the sole runner (no duplicate email risk)
-- [ ] **INFRA-04**: Deployment script (`deploy.sh` on droplet) does: `git pull && pip install -r requirements.txt && systemctl restart trading-signals trading-signals-web` — idempotent; callable from a post-push webhook or manual run
+- [x] **INFRA-04**: Deployment script (`deploy.sh` on droplet) does: `git pull && pip install -r requirements.txt && systemctl restart trading-signals trading-signals-web` — idempotent; callable from a post-push webhook or manual run
 
 ## CHORE — v1.0 tech debt (selected)
 
