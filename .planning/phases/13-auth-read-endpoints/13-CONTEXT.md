@@ -45,16 +45,20 @@ Layer shared-secret auth on top of the Phase 11 web skeleton, then expose the da
 
 - **D-04: AUTH-02 response on failure — 401 with plain-text body `unauthorized`.** Matches REQUIREMENTS.md AUTH-02 verbatim. No hints about header name, no WWW-Authenticate challenge (that implies browser Basic/Digest flow which is not what this is). Content-Type: `text/plain; charset=utf-8`. No body metadata, no JSON — the spec says plain text.
 
-- **D-05: AUTH-03 audit log — WARN with IP + user-agent(truncated to 60 chars) + path.**
+- **D-05: AUTH-03 audit log — WARN with IP (from `X-Forwarded-For`) + user-agent(truncated to 120 chars) + path.**
+  Reconciled with ROADMAP.md Phase 13 SC-5 (post-discuss, 2026-04-25): SC-5 mandates 120-char UA truncation and `X-Forwarded-For` as the IP source. Original discuss-phase options locked 60 chars and `request.client.host` — both superseded by SC-5 authority. Client IP must come from `X-Forwarded-For` because Phase 12 put nginx in front; `request.client.host` resolves to 127.0.0.1 (nginx) behind the reverse proxy.
   ```python
+  xff = request.headers.get('x-forwarded-for', '')
+  # X-Forwarded-For may be a comma-separated chain "client, proxy1, proxy2" — take the first
+  client_ip = xff.split(',')[0].strip() if xff else (request.client.host if request.client else '-')
   logger.warning(
     '[Web] auth failure: ip=%s ua=%r path=%s',
-    request.client.host if request.client else '-',
-    (request.headers.get('user-agent') or '')[:60],
+    client_ip,
+    (request.headers.get('user-agent') or '')[:120],
     request.url.path,
   )
   ```
-  Three fields are enough to pattern-match probes, distinguish bot scans from real misconfig, and line up with journald's natural single-line format. `%r` on UA so control chars are escaped (nobody ships a literal newline through journald). Truncation length 60 is a judgement call — long enough to read the bot family, short enough to keep each log line a single terminal row.
+  Three fields are enough to pattern-match probes, distinguish bot scans from real misconfig, and line up with journald's natural single-line format. `%r` on UA so control chars are escaped. Falls back to `request.client.host` if `X-Forwarded-For` is absent (shouldn't happen through nginx, but defensive).
 
 - **D-06: Middleware order — AuthMiddleware is declared LAST in `create_app()` so it runs FIRST.** FastAPI/Starlette middleware execution order is reverse of registration. Any future middleware (request-id injection, response compression) should be registered BEFORE auth so they wrap it. Planner: include a comment in `create_app()` noting this for future phases.
 
