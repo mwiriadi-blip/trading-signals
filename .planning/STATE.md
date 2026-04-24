@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-24T11:44:27.402Z"
+last_updated: "2026-04-24T11:57:30.818Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 6
-  percent: 75
+  completed_plans: 8
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -28,12 +28,12 @@ progress:
 ## Current Position
 
 Phase: 11 (Web Skeleton — FastAPI + uvicorn + systemd) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
 - **Last activity:** 2026-04-24
-- **Progress:** [████████░░] 75%
+- **Progress:** [██████████] 100%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -85,6 +85,7 @@ Plan: 3 of 4
 | Phase 11 P01 | 432s | 3 tasks | 6 files |
 | Phase 11 P02 | 5min | 2 tasks | 2 files |
 | Phase 11 P03 | 5min | 2 tasks | 2 files |
+| Phase 11 P04 | 279 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -157,6 +158,10 @@ Plan: 3 of 4
 - REVIEWS MEDIUM #7: pip install --upgrade pip dropped from deploy.sh D-23 sequence
 - REVIEWS HIGH #4: two separate sudo -n systemctl restart calls in deploy.sh (one per unit, not combined)
 - REVIEWS HIGH #3: curl retry loop (10 attempts @ 1s) replaces sleep 3 heuristic in deploy.sh
+- Created SETUP-DROPLET.md as new sibling doc (not extending Phase 10) for cleaner per-phase separation
+- Sudoers: two comma-separated rules matching deploy.sh split sudo -n calls; /usr/bin/systemctl path (verify with which systemctl)
+- Passwordless sudo verification step added (REVIEWS HIGH #4) to catch sudoers miss before first deploy
+- .env NOT required in Phase 11 (EnvironmentFile=- in unit file per REVIEWS MEDIUM #5)
 
 ### Todos Carried Forward
 
