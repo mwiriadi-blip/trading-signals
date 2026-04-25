@@ -577,6 +577,9 @@ def step(
             'peak_price': bar['close'] if direction_str == 'LONG' else None,
             'trough_price': bar['close'] if direction_str == 'SHORT' else None,
             'atr_entry': indicators.get('atr', float('nan')),
+            # REVIEW HR-03 / Phase 14 D-09: v3 schema requires manual_stop on every
+            # Position dict. Daily-loop opens always start with no operator override.
+            'manual_stop': None,
           }
         else:
           # SIZE-05: contracts == 0, no new position.

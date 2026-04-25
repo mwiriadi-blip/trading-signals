@@ -1284,3 +1284,83 @@ class TestManualStopOverride:
       f'Pitfall 5: position.get(manual_stop) on missing key must return '
       f'None and fall through to computed; expected 7950.0, got {result!r}'
     )
+
+
+# =========================================================================
+# REVIEW HR-03 — sizing_engine.step() must build v3 positions with manual_stop=None
+# =========================================================================
+
+
+class TestStepProducesV3Schema:
+  '''Phase 14 REVIEW HR-03 regression: every position dict that step() emits
+  must include the manual_stop key (v3 schema, Phase 14 D-09).
+
+  Before the HR-03 fix, sizing_engine.step() built fresh-open / reversal
+  position dicts WITHOUT 'manual_stop'. Defensive .get() in get_trailing_stop
+  hid the violation at runtime, but the v3 schema contract was broken — and
+  state_manager.save_state would persist v3-non-conforming dicts to disk.
+  '''
+
+  def test_step_open_position_includes_manual_stop_key(self) -> None:
+    '''FLAT -> LONG fresh open via step() must produce a position_after dict
+    that has 'manual_stop' key set to None (v3 schema).'''
+    fix = _load_phase2_fixture('transition_none_to_long')
+    result = _call_step(fix)
+    assert result.position_after is not None, (
+      'transition_none_to_long should produce a non-null position_after'
+    )
+    assert 'manual_stop' in result.position_after, (
+      'HR-03: step() position_after dict missing manual_stop key; '
+      f'got keys={sorted(result.position_after.keys())}'
+    )
+    assert result.position_after['manual_stop'] is None, (
+      'HR-03: daily-loop opens always start with manual_stop=None; '
+      f'got {result.position_after["manual_stop"]!r}'
+    )
+
+  def test_step_reversal_open_position_includes_manual_stop_key(self) -> None:
+    '''LONG -> SHORT reversal via step() must produce a position_after dict
+    that has 'manual_stop' key set to None (v3 schema).
+
+    Reversal goes through the same fresh-build branch as FLAT -> open, so
+    HR-03 affects both code paths identically. The committed Phase 2
+    transition_long_to_short fixture happens to size=0 (very low rvol),
+    so we hand-build a higher-signal reversal scenario that produces
+    contracts > 0 and exercises the position-build branch directly.
+    '''
+    # Build a reversal scenario with rvol/atr that produce contracts > 0.
+    prev_position: Position = {
+      'direction': 'LONG',
+      'entry_price': 7000.0,
+      'entry_date': '2026-01-02',
+      'n_contracts': 2,
+      'pyramid_level': 0,
+      'peak_price': 7050.0,
+      'trough_price': None,
+      'atr_entry': 30.0,
+      'manual_stop': None,
+    }
+    bar = {'date': '2026-01-03', 'open': 7000.0, 'high': 7020.0, 'low': 6980.0, 'close': 6990.0, 'volume': 5000.0}
+    # atr=20, rvol=0.10 -> SHORT sizing yields contracts=3 (verified empirically),
+    # so the reversal-with-open branch fires and step() runs the position-build dict literal.
+    indicators = {'adx': 30.0, 'atr': 20.0, 'mom1': -0.04, 'mom12': -0.06, 'mom3': -0.05, 'ndi': 35.0, 'pdi': 15.0, 'rvol': 0.10}
+    result = step(
+      position=prev_position, bar=bar, indicators=indicators,
+      old_signal=LONG, new_signal=SHORT,
+      account=100_000.0, multiplier=5.0, cost_aud_open=3.0,
+    )
+    assert result.position_after is not None, (
+      'reversal scenario should produce a non-null position_after (the new SHORT) — '
+      f'got sizing_decision={result.sizing_decision}'
+    )
+    assert result.position_after['direction'] == 'SHORT', (
+      f'reversal expected SHORT, got {result.position_after["direction"]}'
+    )
+    assert 'manual_stop' in result.position_after, (
+      'HR-03: step() reversal position_after dict missing manual_stop key; '
+      f'got keys={sorted(result.position_after.keys())}'
+    )
+    assert result.position_after['manual_stop'] is None, (
+      'HR-03: reversal open always starts with manual_stop=None; '
+      f'got {result.position_after["manual_stop"]!r}'
+    )
