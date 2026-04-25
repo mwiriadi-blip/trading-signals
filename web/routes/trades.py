@@ -356,8 +356,11 @@ def _render_close_form_partial(state, instrument, pos) -> str:
     f'<button type="button" class="btn-row" '
     f'hx-get="/trades/cancel-row?instrument={esc(instrument)}" '
     f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML">Cancel</button>'
+    # REVIEW CR-01: hx-ext="json-enc" converts the form-encoded body produced
+    # by hx-include="closest tr" + hx-vals into JSON before POST. Without it
+    # the FastAPI handler (Pydantic body parameter, no Form(...)) returns 400.
     f'<button type="button" class="btn-row btn-close" '
-    f'hx-post="/trades/close" hx-include="closest tr" '
+    f'hx-post="/trades/close" hx-ext="json-enc" hx-include="closest tr" '
     f'hx-vals=\'{{"instrument": "{esc(instrument)}"}}\' '
     f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML">Confirm close</button>'
     f'</td></tr>'
@@ -375,8 +378,9 @@ def _render_modify_form_partial(state, instrument, pos) -> str:
     f'<button type="button" class="btn-row" '
     f'hx-get="/trades/cancel-row?instrument={esc(instrument)}" '
     f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML">Cancel</button>'
+    # REVIEW CR-01: hx-ext="json-enc" — see _render_close_form_partial above.
     f'<button type="button" class="btn-row btn-modify" '
-    f'hx-post="/trades/modify" hx-include="closest tr" '
+    f'hx-post="/trades/modify" hx-ext="json-enc" hx-include="closest tr" '
     f'hx-vals=\'{{"instrument": "{esc(instrument)}"}}\' '
     f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML">Save</button>'
     f'</td></tr>'

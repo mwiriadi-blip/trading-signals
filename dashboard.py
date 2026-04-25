@@ -122,6 +122,18 @@ _CHARTJS_SRI = 'sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VB
 _HTMX_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js'
 _HTMX_SRI = 'sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2'
 
+# REVIEW CR-01: HTMX's default request encoding is application/x-www-form-urlencoded.
+# FastAPI handlers in web/routes/trades.py declare bodies as Pydantic model
+# parameters (no Form(...) annotation), so FastAPI parses the body as JSON.
+# Without an extension to convert form -> JSON, every browser POST 400s.
+# json-enc converts form fields to a JSON object via the `htmx:configRequest`
+# hook before submission, matching what FastAPI/Pydantic expects.
+# SRI verified 2026-04-25 via:
+#   curl -sL https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js \
+#     | openssl dgst -sha384 -binary | openssl base64 -A
+_HTMX_JSON_ENC_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js'
+_HTMX_JSON_ENC_SRI = 'sha384-nRnAvEUI7N/XvvowiMiq7oEI04gOXMCqD3Bidvedw+YNbj7zTQACPlRI3Jt3vYM4'
+
 # Phase 14 UI-SPEC §Decision 4: inline JS for hx-on::after-request 4xx surfacing.
 # The ONLY client-side script Phase 14 ships beyond HTMX itself.
 # innerHTML is used for layout speed; e.reason and 409 body text are server-controlled
@@ -938,6 +950,7 @@ def _render_open_form() -> str:
     '  <p class="eyebrow">OPEN NEW POSITION</p>\n'
     '  <form\n'
     '    hx-post="/trades/open"\n'
+    '    hx-ext="json-enc"\n'
     '    hx-swap="none"\n'
     '    hx-on::after-request="handleTradesError(event)"\n'
     '  >\n'
@@ -1400,6 +1413,11 @@ def _render_html_shell(body: str) -> str:
     f'integrity="{_CHARTJS_SRI}" crossorigin="anonymous"></script>\n'
     f'  <script src="{_HTMX_URL}" '
     f'integrity="{_HTMX_SRI}" crossorigin="anonymous"></script>\n'
+    # REVIEW CR-01: json-enc converts form-encoded body to JSON for FastAPI
+    # Pydantic body parsing. Loads AFTER core HTMX so the extension can
+    # register itself; activated per-form via hx-ext="json-enc".
+    f'  <script src="{_HTMX_JSON_ENC_URL}" '
+    f'integrity="{_HTMX_JSON_ENC_SRI}" crossorigin="anonymous"></script>\n'
     '  <script>\n'
     + _HANDLE_TRADES_ERROR_JS +
     '  </script>\n'

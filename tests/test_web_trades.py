@@ -788,6 +788,97 @@ class TestExtraFieldsForbidden:
 
 
 # =========================================================================
+# TestJsonEncExtension — REVIEW CR-01: hx-ext="json-enc" on close + modify
+# form partials, and form-encoded defense-in-depth
+# =========================================================================
+
+
+class TestJsonEncExtension:
+  '''REVIEW CR-01 regression: HTMX form-encoded submissions are converted to
+  JSON via the json-enc extension before POST. The dashboard.py-side test
+  (TestRenderDashboardHTMXVendorPin) covers the script tag + open form;
+  these tests cover the partials rendered by web/routes/trades.py and the
+  defense-in-depth behavior when a request DOES come in form-encoded.
+  '''
+
+  def test_close_form_partial_has_json_enc_attribute(
+    self, client_with_state_v3, auth_headers,
+  ):
+    '''The close-form partial Confirm-close button must include
+    hx-ext="json-enc" so the resulting POST body is JSON, not form-encoded.
+    '''
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_open_position(direction='LONG'))
+    r = client.get('/trades/close-form?instrument=SPI200', headers=auth_headers)
+    assert r.status_code == 200
+    # The attribute must appear on the Confirm close button (the one that
+    # POSTs to /trades/close), not just somewhere in the response.
+    body = r.text
+    confirm_post_idx = body.find('hx-post="/trades/close"')
+    assert confirm_post_idx >= 0, 'Confirm close hx-post missing from partial'
+    # Find the surrounding <button ...> tag.
+    button_start = body.rfind('<button', 0, confirm_post_idx)
+    button_end = body.find('>', confirm_post_idx)
+    assert button_start >= 0 and button_end >= 0
+    button_attrs = body[button_start:button_end]
+    assert 'hx-ext="json-enc"' in button_attrs, (
+      f'CR-01: close-form Confirm button must declare hx-ext="json-enc"; '
+      f'got attrs={button_attrs!r}'
+    )
+
+  def test_modify_form_partial_has_json_enc_attribute(
+    self, client_with_state_v3, auth_headers,
+  ):
+    '''The modify-form partial Save button must include hx-ext="json-enc".'''
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_open_position(direction='LONG'))
+    r = client.get('/trades/modify-form?instrument=SPI200', headers=auth_headers)
+    assert r.status_code == 200
+    body = r.text
+    save_post_idx = body.find('hx-post="/trades/modify"')
+    assert save_post_idx >= 0, 'Save hx-post missing from partial'
+    button_start = body.rfind('<button', 0, save_post_idx)
+    button_end = body.find('>', save_post_idx)
+    assert button_start >= 0 and button_end >= 0
+    button_attrs = body[button_start:button_end]
+    assert 'hx-ext="json-enc"' in button_attrs, (
+      f'CR-01: modify-form Save button must declare hx-ext="json-enc"; '
+      f'got attrs={button_attrs!r}'
+    )
+
+  def test_open_form_encoded_post_returns_400_with_field_errors(
+    self, client_with_state_v3, htmx_headers,
+  ):
+    '''REVIEW CR-01 defense-in-depth: a form-encoded POST (NOT JSON) must
+    surface as 400 with field-level errors — NOT 500/422 — so a future
+    regression where someone removes json-enc would manifest as a clear
+    operator error rather than a server crash.
+
+    The handler declares the body as a Pydantic model parameter (no
+    Form(...) annotation), so FastAPI parses the body as JSON. When the
+    body is form-encoded, JSON parsing fails -> RequestValidationError
+    -> remapped to 400 by web/app.py. This test locks that behavior.
+    '''
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_no_positions())
+    # Override Content-Type to ensure form-encoded path
+    headers = dict(htmx_headers)
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    r = client.post(
+      '/trades/open', headers=headers,
+      data={
+        'instrument': 'SPI200', 'direction': 'LONG',
+        'entry_price': '7800.0', 'contracts': '2',
+      },
+    )
+    # Accept 400 (Pydantic remap) — never 500, never 422 (we remap 422).
+    assert r.status_code == 400, (
+      f'CR-01 defense-in-depth: form-encoded POST must return 400 '
+      f'(remapped from Pydantic 422), got {r.status_code}: {r.text!r}'
+    )
+
+
+# =========================================================================
 # TestHTMXResponses — TRADE-05 partial response shapes
 # =========================================================================
 

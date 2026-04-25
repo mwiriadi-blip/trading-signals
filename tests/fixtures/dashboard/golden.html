@@ -6,6 +6,7 @@
   <title>Trading Signals — Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" integrity="sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js" integrity="sha384-nRnAvEUI7N/XvvowiMiq7oEI04gOXMCqD3Bidvedw+YNbj7zTQACPlRI3Jt3vYM4" crossorigin="anonymous"></script>
   <script>
 
 function handleTradesError(evt) {
@@ -491,6 +492,7 @@ footer {
   <p class="eyebrow">OPEN NEW POSITION</p>
   <form
     hx-post="/trades/open"
+    hx-ext="json-enc"
     hx-swap="none"
     hx-on::after-request="handleTradesError(event)"
   >

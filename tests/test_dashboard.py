@@ -936,19 +936,21 @@ class TestRenderBlocks:
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
 
-    # Assertion (a): the rendered HTML must contain EXACTLY FOUR </script>
+    # Assertion (a): the rendered HTML must contain EXACTLY FIVE </script>
     # close tags — one for the Chart.js CDN <script src="..."></script> in
     # <head>, one for the HTMX 1.9.12 CDN <script src="..."></script> in
-    # <head> (Phase 14 TRADE-05), one for the inline handleTradesError JS
-    # block in <head> (Phase 14 UI-SPEC §Decision 4), and one that closes
-    # the Chart.js instantiation IIFE in <body>. If the injected </script>
-    # leaked through unescaped, this count would be 5 (or more); that is
-    # the exact failure mode C-4 wants to catch.
-    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more <script> tags in <head>.)
-    assert html_text.count('</script>') == 4, (
+    # <head> (Phase 14 TRADE-05), one for the HTMX json-enc extension CDN
+    # <script src="..."></script> in <head> (REVIEW CR-01), one for the
+    # inline handleTradesError JS block in <head> (Phase 14 UI-SPEC §Decision 4),
+    # and one that closes the Chart.js instantiation IIFE in <body>. If the
+    # injected </script> leaked through unescaped, this count would be 6 (or more);
+    # that is the exact failure mode C-4 wants to catch.
+    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more in <head>; CR-01 fix adds 1.)
+    assert html_text.count('</script>') == 5, (
       f'unexpected </script> count {html_text.count("</script>")} — '
-      'injection defence failed. Expected exactly 4 (Chart.js CDN close + '
-      'HTMX CDN close + inline handleTradesError close + Chart.js IIFE close).'
+      'injection defence failed. Expected exactly 5 (Chart.js CDN close + '
+      'HTMX CDN close + HTMX json-enc CDN close + inline handleTradesError close + '
+      'Chart.js IIFE close).'
     )
 
     # Assertion (b): the escaped form (json.dumps + .replace('</', '<\\/'))
@@ -1211,6 +1213,50 @@ class TestRenderDashboardHTMXVendorPin:
     rendered = out.read_text()
     assert 'id="confirmation-banner"' in rendered, (
       'UI-SPEC §Decision 3: #confirmation-banner div missing from shell'
+    )
+
+  # ---- REVIEW CR-01: HTMX json-enc extension ------------------------------
+
+  _EXPECTED_JSON_ENC_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js'
+  _EXPECTED_JSON_ENC_SRI = 'sha384-nRnAvEUI7N/XvvowiMiq7oEI04gOXMCqD3Bidvedw+YNbj7zTQACPlRI3Jt3vYM4'
+
+  def test_json_enc_extension_script_present(self, tmp_path) -> None:
+    '''REVIEW CR-01: the json-enc extension script tag must be emitted with
+    the verified SRI hash. Without it, HTMX submits form-encoded bodies
+    while FastAPI handlers expect JSON — every browser POST 400s.
+    '''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert self._EXPECTED_JSON_ENC_URL in rendered, (
+      f'CR-01: json-enc URL not found; expected {self._EXPECTED_JSON_ENC_URL}'
+    )
+    assert self._EXPECTED_JSON_ENC_SRI in rendered, (
+      f'CR-01: json-enc SRI hash not found; expected {self._EXPECTED_JSON_ENC_SRI}'
+    )
+    # The json-enc script must come AFTER the core HTMX script (extension
+    # registers itself onto the global htmx object).
+    htmx_idx = rendered.find('htmx.min.js')
+    json_enc_idx = rendered.find('json-enc.js')
+    assert htmx_idx >= 0 and json_enc_idx > htmx_idx, (
+      'CR-01: json-enc must load AFTER core HTMX script'
+    )
+
+  def test_open_form_has_json_enc_attribute(self, tmp_path) -> None:
+    '''REVIEW CR-01: the open form must declare hx-ext="json-enc" so HTMX
+    converts the form-encoded submission into JSON before POSTing.
+    '''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    # The attribute must be inside the open form (between hx-post="/trades/open"
+    # and the closing > of the <form> tag).
+    open_post_idx = rendered.find('hx-post="/trades/open"')
+    assert open_post_idx >= 0, 'open form hx-post attribute missing'
+    form_close_idx = rendered.find('>', open_post_idx)
+    form_attrs = rendered[open_post_idx:form_close_idx]
+    assert 'hx-ext="json-enc"' in form_attrs, (
+      f'CR-01: open form must declare hx-ext="json-enc"; got attrs={form_attrs!r}'
     )
 
 
