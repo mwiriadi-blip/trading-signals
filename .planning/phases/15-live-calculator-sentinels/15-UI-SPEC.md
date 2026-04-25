@@ -57,7 +57,7 @@ No new vendor libraries in Phase 15. The forward-look HTMX interaction reuses th
 
 | Token | Value | Existing usage | Phase 15 usage |
 |-------|-------|----------------|----------------|
-| `--space-1` | 4px | inline gaps | gap between manual-stop label and computed-stop label in the side-by-side cell |
+| `--space-1` | 4px | inline gaps | gap between manual-stop label and computed-stop label in the side-by-side cell; `.calc-input` vertical padding; `.sentinel-body li` bottom margin |
 | `--space-2` | 8px | tight padding | separator space between elements in calculator sub-row; pill margins |
 | `--space-3` | 12px | table cell padding | banner padding (horizontal) |
 | `--space-4` | 16px | default element spacing | banner margin-top / margin-bottom; entry-target block internal spacing |
@@ -65,7 +65,7 @@ No new vendor libraries in Phase 15. The forward-look HTMX interaction reuses th
 | `--space-8` | 32px | section margin-bottom | section break above the drift banner region |
 | `--space-12` | 48px | major breaks | n/a in Phase 15 |
 
-**Exceptions:** none. All spacing in new Phase 15 surfaces uses one of the seven existing tokens.
+**Exceptions:** none. All spacing in new Phase 15 surfaces uses one of the seven existing tokens. Zero raw pixel values outside the token set.
 
 ---
 
@@ -75,14 +75,14 @@ No new vendor libraries in Phase 15. The forward-look HTMX interaction reuses th
 
 | Role | Size | Weight | Line Height | Phase 15 usage |
 |------|------|--------|-------------|----------------|
-| Body | `var(--fs-body)` = 14px | 400 | 1.5 | Calculator sub-row values; drift banner body text; email drift banner body text |
+| Body | `var(--fs-body)` = 14px | 400 | 1.5 | Calculator sub-row values; drift banner body text; email drift banner body text; **sentinel heading** (see note below) |
 | Label | `var(--fs-label)` = 12px | 600 | 1.5 | Calculator sub-row column headers and dimension labels (`STOP`, `DIST $`, `DIST %`, `NEXT ADD`, `LEVEL`); forward-look inline label text; entry-target block dimension labels |
 | Heading | `var(--fs-heading)` = 20px | 600 | 1.2 | n/a — no new section headings in Phase 15 |
 | Display | `var(--fs-display)` = 28px | 600 | 1.2 | n/a — no new display values |
 
 **Number rendering:** all computed numeric values in calculator rows (stop price, distance, next-add price) MUST use `font-family: var(--font-mono)` and `font-variant-numeric: tabular-nums` — matches the existing `.data-table td.num` pattern.
 
-**Drift banner header text:** `font-size: 16px; font-weight: 700; letter-spacing: 0.02em;` — mirrors the exact pattern used for `━━━ Stale state ━━━` in `notifier.py:606-607` and for Phase 8 corruption banner. This keeps all critical banners visually identical in weight.
+**Drift banner header text:** `font-size: var(--fs-body); font-weight: 600; letter-spacing: 0.02em;` — uses the inherited body size (14px) mapped to `--fs-body` with `letter-spacing` providing visual differentiation from plain body text. This keeps the type scale at exactly 4 inherited sizes (12, 14, 20, 28px) and 2 weights (400, 600).
 
 **Forward-look input:** `font-family: var(--font-mono); font-size: var(--fs-body); font-variant-numeric: tabular-nums` — matches `.open-form input` from Phase 14 Decision 7. Size `min-width: 80px; max-width: 100px` to keep the inline input compact within the table cell.
 
@@ -147,7 +147,7 @@ No new vendor libraries in Phase 15. The forward-look HTMX interaction reuses th
 | Side-by-side stop cell: manual label | `manual: {stop}` | `_COLOR_FLAT` for `manual:` label; `_COLOR_TEXT` for the value |
 | Side-by-side stop cell: computed annotation | `computed: {stop} (will close)` | `_COLOR_TEXT_DIM` for `computed:` label; `(will close)` in `<em>` italic; `_COLOR_TEXT_MUTED` for value |
 | Side-by-side stop cell: separator | ` \| ` | Plain ASCII pipe with a space either side; `--color-text-dim` |
-| Drift banner header | `Drift detected` | `font-size: 16px; font-weight: 700; letter-spacing: 0.02em;` — matches existing critical banner header pattern |
+| Drift banner header | `Drift detected` | `font-size: var(--fs-body); font-weight: 600; letter-spacing: 0.02em;` — inherits body size; letter-spacing differentiates from body prose |
 | Drift banner body (per-instrument line) | See §Banner copy templates below | One bullet `•` per drifted instrument |
 | Drift banner: drift-only line | `You hold {DIRECTION} {instrument}, today's signal is FLAT — consider closing.` | DIRECTION coloured by `_COLOR_LONG` or `_COLOR_SHORT`; full sentence, terminal period |
 | Drift banner: reversal line | `You hold {DIRECTION} {instrument}, today's signal is {signal_direction} — reversal recommended (close {DIRECTION}, open {new_dir}).` | Both directions coloured; full sentence, terminal period |
@@ -374,7 +374,7 @@ Rendered as a `<div class="sentinel-banner ...">` immediately before the Open Po
   color: var(--color-text);
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  padding: 2px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   font-size: var(--fs-label);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -409,8 +409,8 @@ td.calc-cell.entry-target {
 .sentinel-drift { border-left: 4px solid var(--color-flat); }
 .sentinel-reversal { border-left: 4px solid var(--color-short); }
 .sentinel-heading {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--fs-body);
+  font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--color-text);
   margin: 0 0 var(--space-2);
@@ -422,7 +422,7 @@ td.calc-cell.entry-target {
   font-size: var(--fs-body);
   line-height: 1.6;
 }
-.sentinel-body li { margin: 0 0 4px; list-style: disc; }
+.sentinel-body li { margin: 0 0 var(--space-1); list-style: disc; }
 .sentinel-body li:last-child { margin-bottom: 0; }
 ```
 
@@ -440,7 +440,7 @@ The email drift banner is rendered via inline-CSS table rows (no CSS classes in 
              border-left:4px solid #ef4444;
              font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
              font-size:14px;color:#e5e7eb;line-height:1.5;">
-    <p style="margin:0 0 4px 0;font-size:16px;font-weight:700;
+    <p style="margin:0 0 4px 0;font-size:14px;font-weight:600;
               color:#e5e7eb;letter-spacing:0.02em;">
       ━━━ Drift detected ━━━
     </p>
@@ -577,8 +577,8 @@ Phase 15 ships no new vendor libraries. HTMX 1.9.12 was already pinned in Phase 
 - [ ] **Dimension 1 Copywriting:** All calculator labels, banner headers, banner body templates, entry-target lines, and forward-look hints declared verbatim — PASS pending checker review
 - [ ] **Dimension 2 Visuals:** Calculator sub-row markup contract + sentinel banner markup contract + email banner inline-CSS contract + CSS extensions block declared — PASS pending checker review
 - [ ] **Dimension 3 Color:** Palette inherited from `system_params._COLOR_*`; accent allowlist explicit (LONG=entry-target+drift label, SHORT=reversal banner border+SHORT label, FLAT=drift banner border+manual-stop label); 60/30/10 split documented — PASS pending checker review
-- [ ] **Dimension 4 Typography:** Inherited 4 sizes / 2 weights / mono+sans stack from v1.0 `_INLINE_CSS`; no new tokens — PASS pending checker review
-- [ ] **Dimension 5 Spacing:** Inherited 7-token scale (4/8/12/16/24/32/48) from v1.0 `_INLINE_CSS`; no new tokens — PASS pending checker review
+- [ ] **Dimension 4 Typography:** Inherited 4 sizes (12, 14, 20, 28px) / 2 weights (400, 600) / mono+sans stack from v1.0 `_INLINE_CSS`; sentinel heading mapped to `--fs-body` (14px) + `letter-spacing: 0.02em` for visual differentiation; no new tokens — PASS pending checker review
+- [ ] **Dimension 5 Spacing:** Inherited 7-token scale (4/8/12/16/24/32/48) from v1.0 `_INLINE_CSS`; all Phase 15 CSS uses token references only (`var(--space-N)`); zero raw pixel spacing values outside the token set — PASS pending checker review
 - [ ] **Dimension 6 Registry Safety:** No shadcn, no third-party UI registry; no new vendor libraries in Phase 15 — PASS pending checker review
 
 **Approval:** pending
