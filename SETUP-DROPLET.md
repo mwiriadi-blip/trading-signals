@@ -9,6 +9,8 @@
 - Plan 11-01..11-03 artifacts present: `web/app.py`, `systemd/trading-signals-web.service`, `deploy.sh`
 - `.env` file is **NOT required** for Phase 11. The unit file uses `EnvironmentFile=-` (leading dash = systemd treats the file as optional). Phase 13 will introduce `WEB_AUTH_SECRET` and require `.env`.
 
+> **Note (Phase 13):** Phase 13 (AUTH) makes `.env` REQUIRED — see [§Configure auth secret](#configure-auth-secret-phase-13-auth-01) below. Phase 11's "optional .env" note is historical context.
+
 This runbook is run ONCE per droplet. After completion, all updates flow through `bash deploy.sh`.
 
 ---
@@ -40,6 +42,52 @@ Validate unit file syntax:
 sudo systemd-analyze verify /etc/systemd/system/trading-signals-web.service
 # Expected: no output (silence = success)
 ```
+
+---
+
+## Configure auth secret (Phase 13 AUTH-01)
+
+Phase 13 introduces shared-secret header auth. The web service refuses to start if `WEB_AUTH_SECRET` is missing, empty, or shorter than 32 characters (D-16, D-17 — fail-closed).
+
+Generate a 32-character hex secret (≈128 bits of entropy):
+
+```bash
+openssl rand -hex 16
+# Example output: a1b2c3d4e5f67890abcdef1234567890  (32 hex chars)
+```
+
+Fallback if `openssl` is not on the droplet:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(16))"
+```
+
+Append the secret to `/home/trader/trading-signals/.env` (create the file if absent — `EnvironmentFile=-` makes it optional in Phase 11, but Phase 13 D-16 fail-closed requires it):
+
+```bash
+echo "WEB_AUTH_SECRET=<paste-32-char-hex-here>" >> /home/trader/trading-signals/.env
+chmod 600 /home/trader/trading-signals/.env
+```
+
+Restart the web unit and verify it boots cleanly:
+
+```bash
+sudo systemctl restart trading-signals-web
+journalctl -u trading-signals-web -n 20 --no-pager
+# Expected: no `RuntimeError: WEB_AUTH_SECRET env var is missing or empty` line.
+```
+
+Test the auth gate end-to-end (after Phase 12 nginx is wired, replace `127.0.0.1:8000` with `https://signals.<owned-domain>.com`):
+
+```bash
+curl -sI http://127.0.0.1:8000/
+# Expected: HTTP/1.1 401 Unauthorized
+
+curl -sI -H "X-Trading-Signals-Auth: <your-secret>" http://127.0.0.1:8000/
+# Expected: HTTP/1.1 200 OK (or 503 if dashboard.html not yet rendered).
+```
+
+> **Rotation:** Operator-manual; not tooled in v1.1. To rotate: regenerate with `openssl rand -hex 16`, edit `.env`, `sudo systemctl restart trading-signals-web`. Deferred to v1.2 — see CONTEXT.md D-20.
 
 ---
 
@@ -232,7 +280,6 @@ ss -tlnp | grep 8000
 ## What's NOT in this doc
 
 - HTTPS / nginx / Let's Encrypt → Phase 12
-- Auth secret → Phase 13 (will require `.env` with WEB_AUTH_SECRET)
 - Domain / DNS → operator prerequisite
 - GitHub deploy key → Phase 10
 

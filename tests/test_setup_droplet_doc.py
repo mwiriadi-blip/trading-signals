@@ -41,6 +41,36 @@ class TestDocStructure:
   def test_section_troubleshooting(self, doc_text):
     assert re.search(r'^## Troubleshooting$', doc_text, re.MULTILINE)
 
+  def test_section_configure_auth_secret(self, doc_text):
+    '''Phase 13 D-19: SETUP-DROPLET.md gets new H2 for auth secret.'''
+    assert re.search(r'^## Configure auth secret', doc_text, re.MULTILINE), (
+      'SETUP-DROPLET.md missing "## Configure auth secret" H2 section'
+    )
+
+  def test_auth_secret_section_has_openssl_command(self, doc_text):
+    '''D-19 step 1: openssl rand -hex 16 command must be present.'''
+    assert 'openssl rand -hex 16' in doc_text, (
+      'SETUP-DROPLET.md auth-secret section missing openssl command'
+    )
+
+  def test_auth_secret_section_has_chmod_600(self, doc_text):
+    '''D-19 step 2: chmod 600 on .env must be present.'''
+    assert 'chmod 600' in doc_text and '.env' in doc_text, (
+      'SETUP-DROPLET.md auth-secret section missing chmod 600 .env'
+    )
+
+  def test_auth_secret_section_has_systemctl_restart(self, doc_text):
+    '''D-19 step 3: systemctl restart trading-signals-web must be present.'''
+    assert 'sudo systemctl restart trading-signals-web' in doc_text, (
+      'SETUP-DROPLET.md auth-secret section missing systemctl restart'
+    )
+
+  def test_auth_secret_min_length_documented(self, doc_text):
+    '''D-17: 32-character minimum should be mentioned.'''
+    assert '32' in doc_text and ('character' in doc_text.lower() or 'hex' in doc_text.lower()), (
+      'SETUP-DROPLET.md auth-secret section missing 32-char length spec'
+    )
+
 
 class TestSystemdInstall:
   def test_copy_unit_file_command(self, doc_text):
