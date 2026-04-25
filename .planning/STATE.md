@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
-status: planning
-last_updated: "2026-04-25T06:06:57.838Z"
+status: executing
+last_updated: "2026-04-25T08:42:33.773Z"
 last_activity: 2026-04-25
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 22
-  completed_plans: 17
-  percent: 77
+  completed_plans: 18
+  percent: 82
 ---
 
 # STATE — Trading Signals
@@ -23,15 +23,15 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 13 — Auth + Read Endpoints
+- **Current focus:** Phase 14 — Trade Journal — Mutation Endpoints
 
 ## Current Position
 
-Phase: 14
-Plan: Not started
+Phase: 14 (Trade Journal — Mutation Endpoints) — EXECUTING
+Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Ready to plan
+- **Status:** Ready to execute
 - **Last activity:** 2026-04-25
 - **Progress:** [████████░░] 82%
 
@@ -88,6 +88,7 @@ Plan: Not started
 | Phase 11 P04 | 279 | 2 tasks | 2 files |
 | Phase 13 P01 | 7m22s | 3 tasks | 9 files |
 | Phase 13 P02 | 5m37s | 2 tasks | 6 files |
+| Phase 14 P01 | 7min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -170,6 +171,8 @@ Plan: Not started
 - Plan 13-02: from conftest import fails because pytest testpaths does not put tests/ on sys.path; inlined VALID_SECRET + AUTH_HEADER_NAME in tests/test_web_app_factory.py with comments pointing back to single-source conftest.py (Rule 1 deviation)
 - Plan 13-02: AuthMiddleware ships full Pattern 1 body in this plan (not a stub) so the openapi_url=401-without-auth ordering test (D-06 proof) passes here; Plan 13-03 will own comprehensive middleware test classes
 - Plan 13-02: route handlers ship as 503 stubs (deterministic content) rather than NotImplementedError so smoke tests + the import graph remain clean for parallel Wave 2 execution
+- Phase 14 D-02 hex-boundary promotion: Option A (promote both sizing_engine + system_params) chosen — single-source-of-truth for MAX_PYRAMID_LEVEL preserved
+- Phase 14 v2->v3 migration round-trip fixture: tests/fixtures/state_v2_no_manual_stop.json with two open Positions (LONG with peak, SHORT with trough) covers both branches of Phase 2 D-08 invariant
 
 ### Todos Carried Forward
 
