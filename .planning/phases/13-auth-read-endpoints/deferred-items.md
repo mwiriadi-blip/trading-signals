@@ -31,6 +31,14 @@ when `DataFetchError` is raised by `data_fetcher.fetch_ohlcv`. This indicates
 `main.main(['--once'])` is no longer mapping `DataFetchError` → exit 2 (ERR-01)
 the way the test expects.
 
+**Plan 13-03 observation (2026-04-25):** A different `tests/test_main.py` test
+(`TestCLI::test_force_email_sends_live_email`) also fails today because today
+is Saturday (`weekday=5`) and `main.main(['--force-email'])` weekend-skips
+before reaching the email path. The test does not freeze a weekday date and
+is therefore date-dependent — failing every Saturday/Sunday. Verified pre-
+existing on base commit `c7f5c76` before plan 13-03 changes. Same out-of-
+scope cluster as the 16 failures above; rolling into the same deferred fix.
+
 **Possible causes (not investigated in 13-01 — out of scope):**
 - main.py orchestrator was refactored in Phase 9/10 and the typed-exception
   boundary may have shifted.
