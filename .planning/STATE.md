@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-25T09:56:38.985Z"
+last_updated: "2026-04-25T10:08:53.191Z"
 last_activity: 2026-04-25
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 22
-  completed_plans: 19
-  percent: 86
+  completed_plans: 20
+  percent: 91
 ---
 
 # STATE — Trading Signals
@@ -28,12 +28,12 @@ progress:
 ## Current Position
 
 Phase: 14 (Trade Journal — Mutation Endpoints) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
 - **Last activity:** 2026-04-25
-- **Progress:** [█████████░] 86%
+- **Progress:** [█████████░] 91%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -90,6 +90,7 @@ Plan: 3 of 5
 | Phase 13 P02 | 5m37s | 2 tasks | 6 files |
 | Phase 14 P01 | 7min | 2 tasks | 7 files |
 | Phase 14 P02 | 67min | 3 tasks | 5 files |
+| Phase 14 P03 | 4m31s | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -177,6 +178,8 @@ Plan: 3 of 5
 - Plan 14-02: mutate_state(mutator, path) holds fcntl.LOCK_EX across the FULL load -> mutate -> save critical section, closing the cross-process lost-update race (REVIEWS HIGH #1; T-14-01 -> FULLY MITIGATED). POSIX flock-on-different-fd is NOT reentrant within a single process — refactored into locked + unlocked I/O kernel pair (_atomic_write/_atomic_write_unlocked, save_state/_save_state_unlocked) to avoid the deadlock the plan-as-written would have shipped.
 - Plan 14-02: STATE_SCHEMA_VERSION bumped 2 -> 3; Position TypedDict gains manual_stop: float | None field; _migrate_v2_to_v3 backfills manual_stop=None on every non-None Position dict (idempotent dict-spread; D-15 silent migration). Existing droplet v2 state.json files migrate transparently on first post-deploy load_state.
 - Plan 14-02: main.py daily loop migrates 3 save_state call sites to mutate_state — run_daily_check step 9 (W3 #1), _dispatch_email_and_maintain_warnings (W3 #2), _handle_reset (outside W3). Mutator key-replay closure pattern: captured-snapshot mutator re-applies the run's accumulated mutations onto the fresh-loaded state under lock. W3 invariant (2 saves per run) preserved; W3 regression test migrated to count mutate_state calls.
+- Phase 14 D-09: sizing_engine.get_trailing_stop honors position.manual_stop override (precedence: NaN guard > manual_stop > computed peak/trough); defensive .get() handles pre-migration position dicts
+- Phase 14 D-15: check_stop_hit (daily-loop exit detection) intentionally does NOT honor manual_stop — display-only scope; Phase 15 candidate to align
 
 ### Todos Carried Forward
 

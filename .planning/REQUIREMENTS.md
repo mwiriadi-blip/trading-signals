@@ -31,7 +31,8 @@
 - [ ] **TRADE-01**: `POST /trades/open` accepts `{instrument, direction, entry_price, contracts, executed_at?}` and appends an open position to `state.positions`
 - [ ] **TRADE-02**: Request validation: `instrument ∈ {SPI200, AUDUSD}`, `direction ∈ {LONG, SHORT}`, `entry_price > 0` and finite, `contracts ≥ 1` integer; returns 400 with field-level errors on violation
 - [ ] **TRADE-03**: `POST /trades/close` accepts `{instrument, exit_price, executed_at?}` and appends to `state.trade_log` with realised P&L + updates `state.account`
-- [ ] **TRADE-04**: `POST /trades/modify` accepts `{instrument, new_stop?, new_contracts?}` to manually adjust a position's trailing stop or size
+- [x] **TRADE-04
+**: `POST /trades/modify` accepts `{instrument, new_stop?, new_contracts?}` to manually adjust a position's trailing stop or size
 - [ ] **TRADE-05**: Dashboard at `GET /` includes HTMX-powered forms for open/close/modify (no full page reload; POSTs return partial HTML fragments)
 - [x] **TRADE-06**: Every mutation endpoint goes through `state_manager.save_state()`; endpoints never touch `state['warnings']` directly (sole-writer invariant from v1.0 respected)
 
