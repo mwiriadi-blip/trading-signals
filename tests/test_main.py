@@ -1908,8 +1908,10 @@ class TestWarningCarryOverFlow:
 
   def test_happy_path_save_state_called_exactly_twice(
       self, _ctx, monkeypatch) -> None:
-    '''W3: full run_daily_check → _dispatch_email_and_maintain_warnings
-    happy path → state_manager.save_state called EXACTLY 2 times.
+    '''W3 (Phase 14 REVIEWS HIGH #1: counted at the mutate_state layer
+    rather than save_state). full run_daily_check ->
+    _dispatch_email_and_maintain_warnings happy path ->
+    state_manager.mutate_state called EXACTLY 2 times.
     '''
     tmp_path, _ = _ctx
     import notifier
@@ -1918,28 +1920,36 @@ class TestWarningCarryOverFlow:
       lambda s, o, r, is_test=False: notifier.SendStatus(ok=True, reason=None),
     )
 
-    save_calls: list = []
+    mutate_calls: list = []
     import state_manager as _sm
-    orig_save = _sm.save_state
+    orig_mutate = _sm.mutate_state
 
-    def _recording_save(state, path=None):
-      save_calls.append(dict(state))
-      if path:
-        return orig_save(state, path=path)
-      return orig_save(state)
+    def _recording_mutate(mutator, path=None):
+      # Phase 14 REVIEWS HIGH #1: W3 invariant counted at mutate_state layer.
+      # mutate_state internally calls _save_state_unlocked (NOT save_state),
+      # so monkeypatching save_state would no longer capture daily-loop saves.
+      if path is None:
+        result = orig_mutate(mutator)
+      else:
+        result = orig_mutate(mutator, path=path)
+      mutate_calls.append(dict(result))
+      return result
 
-    monkeypatch.setattr('state_manager.save_state', _recording_save)
+    monkeypatch.setattr('state_manager.mutate_state', _recording_mutate)
     # --force-email triggers the dispatch helper. run_daily_check saves once
     # (step 9); _dispatch_email_and_maintain_warnings saves once (post-dispatch).
     rc = main.main(['--force-email'])
     assert rc == 0
-    assert len(save_calls) == 2, (
-      f'W3: expected 2 saves per run, got {len(save_calls)}'
+    assert len(mutate_calls) == 2, (
+      f'W3 (Phase 14): expected 2 mutate_state calls per run, got {len(mutate_calls)}'
     )
 
   def test_stale_info_popped_before_save(self, monkeypatch) -> None:
-    '''B3: _stale_info is popped BEFORE save — the state dict passed to
-    save_state does not contain _stale_info.
+    '''B3 (Phase 14 REVIEWS HIGH #1): _stale_info is popped BEFORE the
+    persisted save — the state observed at mutate_state time does not
+    contain _stale_info. The dispatch helper now calls mutate_state
+    (which under the hood _save_state_unlocked-writes the post-mutator
+    fresh-loaded state), so we capture at the mutator-replay layer.
     '''
     import notifier
     from datetime import datetime, timezone
@@ -1948,40 +1958,50 @@ class TestWarningCarryOverFlow:
       'warnings': [],
       '_stale_info': {'days_stale': 5, 'last_run_date': '2026-04-18'},
     }
-    save_key_snapshots: list = []
+    captured_keys: list = []
 
-    def _recording_save(state, path=None):
-      save_key_snapshots.append(list(state.keys()))
+    def _recording_mutate(mutator, path=None):
+      # Phase 14 REVIEWS HIGH #1: capture the in-memory state's keys at
+      # mutate_state invocation time. The dispatch helper runs `state.pop
+      # ('_stale_info', None)` BEFORE mutate_state, so this snapshot
+      # shows the post-pop key set without any disk I/O.
+      captured_keys.append(list(state.keys()))
+      return state
 
     monkeypatch.setattr(main, '_send_email_never_crash',
                         lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
-    monkeypatch.setattr('state_manager.save_state', _recording_save)
+    monkeypatch.setattr('state_manager.mutate_state', _recording_mutate)
     now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
     main._dispatch_email_and_maintain_warnings(
       state, {}, now, is_test=False, persist=True,
     )
-    assert save_key_snapshots, 'save_state must be called on persist=True'
-    assert all('_stale_info' not in keys for keys in save_key_snapshots), (
-      '_stale_info must not be present in state when save_state is called'
+    assert captured_keys, 'mutate_state must be called on persist=True'
+    assert all('_stale_info' not in keys for keys in captured_keys), (
+      '_stale_info must not be present in state when mutate_state is called'
     )
     assert '_stale_info' not in state
 
   def test_dispatch_status_none_appends_warning(self, monkeypatch) -> None:
     '''Review-driven R2 (Codex MEDIUM silent-skip): _send_email_never_crash
-    returns None (notifier import failure) → notifier-sourced warning
+    returns None (notifier import failure) -> notifier-sourced warning
     appended with "import or runtime error" in the message.
+
+    Phase 14 REVIEWS HIGH #1: the dispatch helper now calls mutate_state
+    (was save_state). Capture warnings at the mutate_state mutator-replay
+    invocation point.
     '''
     from datetime import datetime, timezone
 
     state = {'warnings': []}
-    save_snapshots: list = []
+    warning_snapshots: list = []
 
-    def _recording_save(state, path=None):
-      save_snapshots.append([dict(w) for w in state.get('warnings', [])])
+    def _recording_mutate(mutator, path=None):
+      warning_snapshots.append([dict(w) for w in state.get('warnings', [])])
+      return state
 
     monkeypatch.setattr(main, '_send_email_never_crash',
                         lambda *a, **kw: None)
-    monkeypatch.setattr('state_manager.save_state', _recording_save)
+    monkeypatch.setattr('state_manager.mutate_state', _recording_mutate)
     now = datetime(2026, 4, 23, 0, 0, tzinfo=timezone.utc)
     main._dispatch_email_and_maintain_warnings(
       state, {}, now, is_test=False, persist=True,
@@ -1990,11 +2010,12 @@ class TestWarningCarryOverFlow:
     w = state['warnings'][0]
     assert w['source'] == 'notifier'
     assert 'import or runtime error' in w['message']
-    # Verify clear_warnings ran BEFORE the append — at save time, warnings
-    # list contains ONLY the new entry, not any legacy entries.
-    assert len(save_snapshots) == 1
-    assert len(save_snapshots[0]) == 1
-    assert save_snapshots[0][0]['source'] == 'notifier'
+    # Verify clear_warnings ran BEFORE the append — at mutate_state
+    # invocation time, warnings list contains ONLY the new entry, not any
+    # legacy entries.
+    assert len(warning_snapshots) == 1
+    assert len(warning_snapshots[0]) == 1
+    assert warning_snapshots[0][0]['source'] == 'notifier'
 
 
 # =========================================================================

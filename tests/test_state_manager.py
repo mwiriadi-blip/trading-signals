@@ -1157,8 +1157,8 @@ class TestMigrateV2Backfill:
     )
 
   def test_migrate_walks_schema_version_to_current(self) -> None:
-    '''STATE-04 (Phase 8 extension): after _migrate, schema_version equals
-    STATE_SCHEMA_VERSION (now 2 per Phase 8).'''
+    '''STATE-04 (Phase 14 extension): after _migrate, schema_version equals
+    STATE_SCHEMA_VERSION (now 3 per Phase 14 D-09).'''
     state = {
       # no schema_version → defaults to 0
       'account': INITIAL_ACCOUNT, 'last_run': None,
@@ -1168,7 +1168,7 @@ class TestMigrateV2Backfill:
     }
     migrated = _migrate(state)
     assert migrated['schema_version'] == STATE_SCHEMA_VERSION
-    assert STATE_SCHEMA_VERSION == 2, 'Phase 8 bumps STATE_SCHEMA_VERSION to 2'
+    assert STATE_SCHEMA_VERSION == 3, 'Phase 14 bumps STATE_SCHEMA_VERSION to 3'
 
 
 class TestSaveStateExcludesUnderscoreKeys:
@@ -1385,39 +1385,395 @@ class TestClearWarnings:
 
 class TestFcntlLock:
   '''Phase 14 D-13: cross-process state.json coordination via fcntl.LOCK_EX.
-  Plan 14-02 implements; this skeleton lets Wave 1 fixtures land predictably.
 
-  Test surface (Plan 14-02):
-    - Single-process happy path: fcntl.flock acquired + released around
-      the existing tempfile->fsync->replace->dir-fsync sequence.
-    - Multiprocess contention: a child process holding LOCK_EX for ~0.5s
-      causes the main process save_state to block >= 0.4s and < 1.0s
-      (RESEARCH §Pattern 9 line 743).
-    - Lock release on exception: if _atomic_write raises mid-write, the
-      finally clause must still call fcntl.LOCK_UN + close(lock_fd).
+  Lock is on the destination state.json. Acquired in _atomic_write before
+  tempfile->replace; released by explicit LOCK_UN + os.close. Blocking-
+  indefinite per D-13.
+
+  Cross-process correctness verified via multiprocessing.Process holder
+  that opens state.json + flock(LOCK_EX) + sleeps 0.5s; main test calls
+  save_state() and asserts elapsed >= 0.4s (proves contention) and < 1.5s
+  (proves no zombie wait).
   '''
 
-  def test_placeholder_wave_0(self):
-    pytest.skip('Wave 0 skeleton; Plan 14-02 implements')
+  @staticmethod
+  def _hold_lock_for(path_str, hold_seconds, ready_event):
+    import fcntl, os, time
+    fd = os.open(path_str, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+      fcntl.flock(fd, fcntl.LOCK_EX)
+      ready_event.set()
+      time.sleep(hold_seconds)
+    finally:
+      fcntl.flock(fd, fcntl.LOCK_UN)
+      os.close(fd)
+
+  def test_save_state_blocks_when_external_lock_held(self, tmp_path) -> None:
+    import multiprocessing as mp
+    import time
+    path = tmp_path / 'state.json'
+    save_state(reset_state(), path=path)
+    ctx = mp.get_context('spawn')
+    ready = ctx.Event()
+    proc = ctx.Process(target=self._hold_lock_for, args=(str(path), 0.5, ready))
+    proc.start()
+    try:
+      assert ready.wait(timeout=2.0)
+      state = reset_state()
+      state['account'] = 12345.0
+      start = time.perf_counter()
+      save_state(state, path=path)
+      elapsed = time.perf_counter() - start
+    finally:
+      proc.join(timeout=2.0)
+      if proc.is_alive():
+        proc.terminate()
+        proc.join()
+    assert elapsed >= 0.4, f'D-13: did not block; elapsed={elapsed:.3f}s'
+    assert elapsed < 1.5, f'D-13: too slow after release; elapsed={elapsed:.3f}s'
+    assert load_state(path=path)['account'] == 12345.0
+
+  def test_save_state_releases_lock_after_successful_write(self, tmp_path) -> None:
+    import fcntl
+    import time
+    path = tmp_path / 'state.json'
+    start = time.perf_counter()
+    save_state(reset_state(), path=path)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.1
+    fd = os.open(str(path), os.O_RDWR)
+    try:
+      fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+      fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+      os.close(fd)
+
+  def test_save_state_releases_lock_after_failed_os_replace(self, tmp_path) -> None:
+    import fcntl
+    path = tmp_path / 'state.json'
+    save_state(reset_state(), path=path)
+    new_state = reset_state()
+    new_state['account'] = 7777.0
+    with patch('state_manager.os.replace', side_effect=OSError('disk full')):
+      with pytest.raises(OSError, match='disk full'):
+        save_state(new_state, path=path)
+    fd = os.open(str(path), os.O_RDWR)
+    try:
+      fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+      fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+      os.close(fd)
+
+  def test_two_sequential_save_state_calls_both_succeed(self, tmp_path) -> None:
+    path = tmp_path / 'state.json'
+    for i in range(2):
+      state = reset_state()
+      state['account'] = float(i)
+      save_state(state, path=path)
+    assert load_state(path=path)['account'] == 1.0
+
+
+# =========================================================================
+# Phase 14 D-13 + REVIEWS HIGH #1 — mutate_state full critical-section lock
+# =========================================================================
+
+class TestMutateState:
+  '''Phase 14 D-13 + REVIEWS HIGH #1: mutate_state holds fcntl.LOCK_EX
+  across the FULL load -> mutate -> save critical section.
+
+  Without this helper, fcntl on save_state alone admits stale-read lost
+  updates: two writers can both load the same pre-mutation snapshot, both
+  acquire+release the save lock, second clobbers first. mutate_state
+  closes that race.
+
+  Tests cover:
+    - happy-path: load -> mutate -> save round-trip
+    - cross-process: two processes both call mutate_state with non-
+      conflicting mutations; both mutations visible in final state
+      (the previous fcntl-on-save-only design FAILED this test by losing
+      one of the mutations)
+    - mutator exception: lock released, state unchanged
+    - reentrancy: save_state nested inside mutator on a DIFFERENT path
+      succeeds (intra-process flock-on-different-fd-of-different-file
+      is OK; flock-on-different-fd-of-SAME-file would deadlock and is
+      structurally avoided by mutate_state's _save_state_unlocked path)
+    - return value: mutate_state returns the post-save state
+  '''
+
+  def test_load_mutate_save_atomic(self, tmp_path) -> None:
+    '''Happy path: mutator applied, state persisted.'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+    save_state(reset_state(), path=path)
+
+    def _bump(state):
+      state['account'] = 99999.0
+
+    result = mutate_state(_bump, path=path)
+    assert result['account'] == 99999.0
+    assert load_state(path=path)['account'] == 99999.0
+
+  @staticmethod
+  def _subprocess_mutate(path_str, key, value, ready_event, go_event):
+    '''Subprocess body: signal ready, wait for go, then mutate_state.'''
+    import sys
+    import os as _os
+    from pathlib import Path as _Path
+    # Ensure project on sys.path (parent of tests/)
+    proj = _os.path.dirname(_os.path.dirname(_os.path.abspath(path_str)))
+    # The test's tmp_path is OUTSIDE the project tree on macOS;
+    # locate the project root instead via the test's discoverable tree.
+    # Walk up from cwd until we find state_manager.py.
+    p = _os.getcwd()
+    while p and not _os.path.exists(_os.path.join(p, 'state_manager.py')):
+      parent = _os.path.dirname(p)
+      if parent == p:
+        break
+      p = parent
+    if p not in sys.path:
+      sys.path.insert(0, p)
+    from state_manager import mutate_state
+    ready_event.set()
+    go_event.wait(timeout=5.0)
+
+    def _apply(state):
+      state[key] = value
+
+    mutate_state(_apply, path=_Path(path_str))
+
+  def test_concurrent_writers_no_lost_update(self, tmp_path) -> None:
+    '''REVIEWS HIGH #1: two processes both call mutate_state with non-
+    conflicting mutations. The previous fcntl-on-save-only design lost
+    one of the mutations because both processes loaded the SAME pre-lock
+    snapshot. mutate_state closes the race: both mutations land.'''
+    import multiprocessing as mp
+    path = tmp_path / 'state.json'
+    seed = reset_state()
+    seed['account'] = 100000.0
+    save_state(seed, path=path)
+
+    ctx = mp.get_context('spawn')
+    ready_a, ready_b = ctx.Event(), ctx.Event()
+    go_a, go_b = ctx.Event(), ctx.Event()
+
+    # Process A writes to 'last_run'; Process B writes to 'account'.
+    proc_a = ctx.Process(
+      target=self._subprocess_mutate,
+      args=(str(path), 'last_run', '2026-04-25', ready_a, go_a),
+    )
+    proc_b = ctx.Process(
+      target=self._subprocess_mutate,
+      args=(str(path), 'account', 50000.0, ready_b, go_b),
+    )
+    proc_a.start()
+    proc_b.start()
+    try:
+      assert ready_a.wait(timeout=5.0) and ready_b.wait(timeout=5.0)
+      # Release both at the same time: lock contention is the key
+      go_a.set()
+      go_b.set()
+    finally:
+      proc_a.join(timeout=10.0)
+      proc_b.join(timeout=10.0)
+      if proc_a.is_alive():
+        proc_a.terminate()
+      if proc_b.is_alive():
+        proc_b.terminate()
+
+    final = load_state(path=path)
+    # BOTH mutations must be visible (no lost update).
+    assert final['last_run'] == '2026-04-25', (
+      'REVIEWS HIGH #1: last_run mutation lost — '
+      'mutate_state did not serialize load-mutate-save'
+    )
+    assert final['account'] == 50000.0, (
+      'REVIEWS HIGH #1: account mutation lost — '
+      'mutate_state did not serialize load-mutate-save'
+    )
+
+  def test_mutator_exception_releases_lock(self, tmp_path) -> None:
+    '''A failing mutator must propagate the exception AND release the lock.
+    State on disk should be unchanged (load_state's last successful read
+    is the pre-mutate snapshot; save_state was never called).'''
+    import fcntl
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+    seed = reset_state()
+    seed['account'] = 12345.0
+    save_state(seed, path=path)
+
+    def _broken(state):
+      state['account'] = 99.0  # would mutate, but...
+      raise ValueError('mutator boom')
+
+    with pytest.raises(ValueError, match='mutator boom'):
+      mutate_state(_broken, path=path)
+
+    # Lock released
+    fd = os.open(str(path), os.O_RDWR)
+    try:
+      fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+      fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+      os.close(fd)
+
+    # State unchanged on disk (mutator's in-memory mutation never reached save_state)
+    assert load_state(path=path)['account'] == 12345.0
+
+  def test_reentrancy_save_state_within_mutate_state(self, tmp_path) -> None:
+    '''A mutator that internally calls save_state(other_state, path=other_path)
+    on a DIFFERENT file MUST succeed (independent inode -> independent flock
+    namespace). For the SAME path, the mutate_state -> save_state nested call
+    chain WOULD deadlock on POSIX flock-on-different-fd semantics; that is
+    structurally avoided inside mutate_state via _save_state_unlocked. This
+    test verifies the cross-file nesting case (legitimate use during a
+    transient repair where the mutator writes a sidecar file).'''
+    from state_manager import mutate_state
+    path_outer = tmp_path / 'state.json'
+    path_inner = tmp_path / 'other.json'
+    save_state(reset_state(), path=path_outer)
+
+    def _nest(state):
+      state['account'] = 1.0
+      # Nested save on a DIFFERENT path inside the outer lock — succeeds
+      inner = reset_state()
+      inner['account'] = 2.0
+      save_state(inner, path=path_inner)
+
+    mutate_state(_nest, path=path_outer)
+    assert load_state(path=path_outer)['account'] == 1.0
+    assert load_state(path=path_inner)['account'] == 2.0
+
+  def test_returns_post_save_state(self, tmp_path) -> None:
+    '''mutate_state returns the post-save state dict.'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+    save_state(reset_state(), path=path)
+
+    def _set(state):
+      state['account'] = 42.0
+
+    result = mutate_state(_set, path=path)
+    assert isinstance(result, dict)
+    assert result['account'] == 42.0
 
 
 # =========================================================================
 # Phase 14 D-09 — schema migration v2 -> v3 (Position.manual_stop backfill)
 # =========================================================================
 
+_V2_FIXTURE = Path('tests/fixtures/state_v2_no_manual_stop.json')
+
+
 class TestSchemaMigrationV2ToV3:
   '''Phase 14 D-09: _migrate_v2_to_v3 backfills manual_stop=None on every
-  non-None Position dict in state['positions']. Plan 14-02 implements.
+  non-None Position dict in state['positions'].
 
   Round-trip discipline (RESEARCH §Pattern 11):
     load(v2 fixture) -> assert manual_stop is None on each position
       -> save_state -> re-load -> assert schema_version == 3 +
       manual_stop preserved.
 
-  Fixture: tests/fixtures/state_v2_no_manual_stop.json (created in
-  Plan 14-01) — schema_version=2 with two open positions and NO
-  manual_stop key.
+  Fixture: tests/fixtures/state_v2_no_manual_stop.json — schema_version=2
+  with two open positions and NO manual_stop key.
   '''
 
-  def test_placeholder_wave_0(self):
-    pytest.skip('Wave 0 skeleton; Plan 14-02 implements')
+  def test_v2_fixture_loads_with_manual_stop_backfilled_on_open_positions(
+      self, tmp_path) -> None:
+    '''Load v2 fixture; both open positions have manual_stop=None added.'''
+    # Copy fixture into tmp_path so load_state's corruption-recovery + save
+    # writes don't mutate the committed fixture file.
+    import shutil
+    target = tmp_path / 'state.json'
+    shutil.copyfile(_V2_FIXTURE, target)
+    state = load_state(path=target)
+    assert state['schema_version'] == 3, (
+      f'Phase 14 D-09: load_state must walk v2 -> v3; got {state["schema_version"]}'
+    )
+    spi = state['positions']['SPI200']
+    audusd = state['positions']['AUDUSD']
+    assert spi is not None and audusd is not None
+    assert 'manual_stop' in spi, (
+      f'D-09: SPI200 manual_stop key missing post-migration; pos={spi}'
+    )
+    assert spi['manual_stop'] is None, (
+      f'D-09: SPI200 manual_stop must default to None; got {spi["manual_stop"]!r}'
+    )
+    assert audusd['manual_stop'] is None, (
+      f'D-09: AUDUSD manual_stop must default to None; got {audusd["manual_stop"]!r}'
+    )
+
+  def test_save_then_load_v3_round_trips(self, tmp_path) -> None:
+    '''Load v2 -> save -> re-load yields schema_version=3 with manual_stop=None.'''
+    import shutil
+    target = tmp_path / 'state.json'
+    shutil.copyfile(_V2_FIXTURE, target)
+    state = load_state(path=target)
+    save_state(state, path=target)
+    reloaded = load_state(path=target)
+    assert reloaded['schema_version'] == 3
+    assert reloaded['positions']['SPI200']['manual_stop'] is None
+    assert reloaded['positions']['AUDUSD']['manual_stop'] is None
+
+  def test_migration_idempotent(self) -> None:
+    '''Applying _migrate_v2_to_v3 twice produces identical output.'''
+    from state_manager import _migrate_v2_to_v3
+    s = {
+      'positions': {
+        'SPI200': {'entry_price': 7800.0, 'direction': 'LONG'},
+        'AUDUSD': None,
+      },
+    }
+    once = _migrate_v2_to_v3(s)
+    twice = _migrate_v2_to_v3(once)
+    assert once == twice, (
+      f'D-09 idempotency: once={once!r} twice={twice!r}'
+    )
+
+  def test_migration_preserves_existing_manual_stop(self) -> None:
+    '''Pre-existing manual_stop=7700.0 is NOT overwritten to None.'''
+    from state_manager import _migrate_v2_to_v3
+    s = {
+      'positions': {
+        'SPI200': {
+          'entry_price': 7800.0,
+          'direction': 'LONG',
+          'manual_stop': 7700.0,
+        },
+      },
+    }
+    out = _migrate_v2_to_v3(s)
+    assert out['positions']['SPI200']['manual_stop'] == 7700.0, (
+      f'D-09: existing manual_stop=7700.0 must be preserved; '
+      f'got {out["positions"]["SPI200"]["manual_stop"]!r}'
+    )
+
+  def test_none_position_stays_none(self) -> None:
+    '''Position slots with value None remain None (no dict to backfill).'''
+    from state_manager import _migrate_v2_to_v3
+    s = {'positions': {'SPI200': None, 'AUDUSD': None}}
+    out = _migrate_v2_to_v3(s)
+    assert out['positions']['SPI200'] is None
+    assert out['positions']['AUDUSD'] is None
+
+  def test_v3_open_position_round_trips_through_save_state(self, tmp_path) -> None:
+    '''In-memory v3 with manual_stop=7700.0 saves+reloads bit-identically.'''
+    path = tmp_path / 'state.json'
+    state = reset_state()
+    state['positions']['SPI200'] = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'entry_date': '2026-04-15',
+      'n_contracts': 1,
+      'pyramid_level': 0,
+      'peak_price': 7900.0,
+      'trough_price': None,
+      'atr_entry': 50.0,
+      'manual_stop': 7700.0,
+    }
+    save_state(state, path=path)
+    reloaded = load_state(path=path)
+    assert reloaded['positions']['SPI200']['manual_stop'] == 7700.0, (
+      'v3 round-trip: manual_stop=7700.0 must persist + reload'
+    )
+    assert reloaded['schema_version'] == 3
