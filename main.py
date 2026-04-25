@@ -567,8 +567,26 @@ def _dispatch_email_and_maintain_warnings(
   # (c) belt + suspenders: clear the transient _stale_info key
   #     before save (D-14 filter also handles this).
   state.pop('_stale_info', None)
-  # (d) single post-dispatch save.
-  state_manager.save_state(state)
+  # (d) single post-dispatch save via mutate_state.
+  # Phase 14 REVIEWS HIGH #1: mutate_state holds the lock across
+  # read-modify-write. Same key-replay shape as run_daily_check step 9 —
+  # the post-dispatch state's `warnings` key may have been touched by
+  # clear_warnings/append_warning above (TRADE-06 sole-writer preserved).
+  # W3 invariant preserved: this counts as save #2 of the 2-saves-per-run
+  # contract.
+  _final = state
+  def _apply_warning_flush(fresh_state: dict) -> None:
+    '''Replay the post-dispatch state onto fresh_state. Same set of
+    mutated keys as the run_daily_check save, plus the cleared/appended
+    warnings list.
+    '''
+    for key in (
+      'positions', 'signals', 'account', 'trade_log',
+      'equity_history', 'last_run', 'warnings',
+    ):
+      if key in _final:
+        fresh_state[key] = _final[key]
+  state_manager.mutate_state(_apply_warning_flush)
 
 
 # =========================================================================
@@ -990,10 +1008,12 @@ def run_daily_check(
           position_after (AC-1 ordering fix — 04-03-PLAN.md).
        h. state['positions'][state_key] = result.position_after
        i. update_equity_history for the instrument (STATE-06)
-    4. Structural --test guard (CLI-01): if args.test, SKIP save_state and
+    4. Structural --test guard (CLI-01): if args.test, SKIP the save and
        return 0. This is the STRUCTURAL read-only guarantee — no runtime
        test-mode flag in state_manager.
-    5. state_manager.save_state(state) exactly ONCE at end (D-11).
+    5. state_manager.mutate_state(_apply_daily_run) exactly ONCE at end
+       (D-11; Phase 14 REVIEWS HIGH #1: was save_state, now mutate_state
+       to hold fcntl.LOCK_EX across the full read-modify-write).
     6. return 0 on success; exceptions bubble to top-level boundary
        (Wave 3 adds the typed-exception handler in `if __name__ == '__main__'`).
 
@@ -1267,8 +1287,31 @@ def run_daily_check(
     )
     return 0, state, old_signals, run_date
 
-  # Step 9: atomic save_state + success footer.
-  state_manager.save_state(state)
+  # Step 9: atomic save via mutate_state.
+  # Phase 14 REVIEWS HIGH #1: mutate_state holds the lock across read-modify-write.
+  # The captured `state` from step 2's load_state is REPLACED by mutate_state's
+  # fresh load under fcntl.LOCK_EX; we re-apply the daily run's accumulated
+  # mutations to that fresh state. Costs one extra load (~5ms) and pays for
+  # itself by closing the cross-process lost-update race against web POST
+  # handlers (Plan 14-04). W3 invariant preserved: this counts as save #1
+  # of the 2-saves-per-run contract.
+  _accumulated = state
+  def _apply_daily_run(fresh_state: dict) -> None:
+    '''Replay the daily run's accumulated mutations onto fresh_state.
+    Daily-run mutated keys: positions, signals, account, trade_log,
+    equity_history, last_run, warnings.
+    '''
+    for key in (
+      'positions', 'signals', 'account', 'trade_log',
+      'equity_history', 'last_run', 'warnings',
+    ):
+      if key in _accumulated:
+        fresh_state[key] = _accumulated[key]
+  state = state_manager.mutate_state(_apply_daily_run)
+  # Phase 8 review-driven amendment: refresh module-level cache to the
+  # post-save state (mutate_state returns it). The crash-email path reads
+  # via _LAST_LOADED_STATE; keep it in sync with disk.
+  _LAST_LOADED_STATE = state
   logger.info(
     '[State] state.json saved (account=$%.2f, trades=%d, positions=%d)',
     state['account'],
@@ -1364,10 +1407,11 @@ def _handle_reset(args: argparse.Namespace) -> int:
     1 — operator cancelled (EOF, blank YES, q, invalid input, non-finite)
     2 — non-TTY without companion flags OR argparse-level error
 
-  Note: this function contains its OWN state_manager.save_state call,
-  distinct from the one inside run_daily_check. The C-7 AST gate
-  (revision 2026-04-22) is scoped to run_daily_check only; this second
-  site at module level is expected and valid.
+  Note: this function contains its OWN state_manager.mutate_state call
+  (Phase 14 REVIEWS HIGH #1: was save_state), distinct from the two
+  inside run_daily_check + _dispatch_email_and_maintain_warnings. The
+  C-7 AST gate (revision 2026-04-22) is scoped to run_daily_check only;
+  this --reset site at module level is expected and valid.
   '''
   import math
 
@@ -1492,11 +1536,22 @@ def _handle_reset(args: argparse.Namespace) -> int:
     return 1
 
   # --- Build + save ---
-  state = state_manager.reset_state()
-  state['initial_account'] = float(initial_account)
-  state['account'] = float(initial_account)  # Phase 10 BUG-01 D-01: sync account to initial_account
-  state['contracts'] = {'SPI200': spi_contract, 'AUDUSD': audusd_contract}
-  state_manager.save_state(state)
+  # Phase 14 REVIEWS HIGH #1: --reset is also a writer; route through
+  # mutate_state for cross-process safety (lock held across the full
+  # replace-with-fresh + save). Note: --reset is OUTSIDE the daily-run
+  # W3 invariant (one-shot CLI, not part of the run_daily_check 2-saves
+  # contract).
+  fresh_state = state_manager.reset_state()
+  fresh_state['initial_account'] = float(initial_account)
+  fresh_state['account'] = float(initial_account)  # Phase 10 BUG-01 D-01
+  fresh_state['contracts'] = {'SPI200': spi_contract, 'AUDUSD': audusd_contract}
+  def _apply_reset(s: dict) -> None:
+    '''--reset semantics: discard whatever's in the freshly-loaded state
+    under lock, replace with the operator-supplied fresh state.
+    '''
+    s.clear()
+    s.update(fresh_state)
+  state = state_manager.mutate_state(_apply_reset)
   logger.info(
     '[State] state.json reset (initial_account=$%.2f, SPI200=%s, AUDUSD=%s)',
     initial_account, spi_contract, audusd_contract,

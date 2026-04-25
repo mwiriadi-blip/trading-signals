@@ -161,10 +161,21 @@ MIGRATIONS: dict = {
 # Private helpers
 # =========================================================================
 
-def _atomic_write(data: str, path: Path) -> None:
-  '''STATE-02 / D-08 (amended by D-17, then by Phase 14 D-13):
-  tempfile + fsync(file) + os.replace + fsync(parent dir),
-  serialized cross-process via fcntl.LOCK_EX advisory lock on the destination file.
+def _atomic_write_unlocked(data: str, path: Path) -> None:
+  '''STATE-02 / D-08 (amended by D-17): tempfile + fsync(file) + os.replace +
+  fsync(parent dir). NO LOCK ACQUISITION — caller is responsible for holding
+  fcntl.LOCK_EX on `path` if cross-process serialization is required.
+
+  This unlocked helper is the I/O kernel of the durable write. Used by:
+    - _atomic_write (acquires the lock + delegates)
+    - mutate_state (already holds the lock from its outer flock window)
+
+  Splitting prevents the intra-process flock-on-different-fd deadlock that
+  would arise if mutate_state's inner save_state path tried to acquire a
+  SECOND fcntl.LOCK_EX on the same file (POSIX/BSD flock locks the
+  open-file-description; two fds in the same process do NOT share lock
+  ownership and the second acquire blocks forever waiting for the first
+  to release).
 
   Durability sequence (D-17 ordering — corrected from RESEARCH.md §Pattern 1):
     1. write data to tempfile in same directory as target
@@ -173,15 +184,45 @@ def _atomic_write(data: str, path: Path) -> None:
     4. os.replace(tempfile, target)      -- atomic rename
     5. fsync(parent dir fd) on POSIX     -- rename itself durable on disk
 
-  Why fsync-AFTER-replace: parent-dir fsync's purpose is to make the
-  DIRECTORY ENTRY UPDATE (the rename) durable. fsync'ing before the
-  replace only persists the not-yet-renamed temp file's directory entry.
-  Atomicity (no torn writes) is preserved either way; durability against
-  power loss AFTER the rename is only guaranteed by the post-replace fsync.
-
   Tempfile cleanup: try/finally unlinks the tempfile if any step before
   os.replace raises (Pitfall 1). On success, tmp_path_str is set to None
   so the finally clause is a no-op.
+  '''
+  parent = path.parent
+  tmp_path_str = None
+  try:
+    with tempfile.NamedTemporaryFile(
+      dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
+    ) as tmp:
+      tmp_path_str = tmp.name
+      tmp.write(data)
+      tmp.flush()
+      os.fsync(tmp.fileno())
+    # tempfile closed; D-17: os.replace BEFORE parent-dir fsync
+    os.replace(tmp_path_str, path)
+    if os.name == 'posix':
+      dir_fd = os.open(str(parent), os.O_RDONLY)
+      try:
+        os.fsync(dir_fd)
+      finally:
+        os.close(dir_fd)
+    tmp_path_str = None  # success: do not delete in finally
+  finally:
+    if tmp_path_str is not None:
+      try:
+        os.unlink(tmp_path_str)
+      except FileNotFoundError:
+        pass
+
+
+def _atomic_write(data: str, path: Path) -> None:
+  '''STATE-02 / D-08 (amended by D-17, then by Phase 14 D-13):
+  tempfile + fsync(file) + os.replace + fsync(parent dir),
+  serialized cross-process via fcntl.LOCK_EX advisory lock on the destination file.
+
+  Wraps _atomic_write_unlocked with a fresh fcntl.LOCK_EX acquire/release
+  cycle. Public API for callers that DON'T already hold the lock (e.g.,
+  save_state called directly, --reset, test fixtures).
 
   Phase 14 D-13 lock semantics:
     - fcntl.flock advisory lock on the DESTINATION file's open fd
@@ -191,41 +232,26 @@ def _atomic_write(data: str, path: Path) -> None:
     - Blocking-indefinite (no timeout) per D-13
     - Lock fd opened via os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
     - POSIX-only (Linux droplet + macOS dev); not portable to Windows
-    - REENTRANCY: fcntl.flock is reentrant within a single process — when
-      called from inside mutate_state's outer flock window, this acquire
-      is a kernel no-op. Cross-process safety preserved (separate fds).
+    - INTRA-PROCESS REENTRANCY (Rule 1 fix vs original RESEARCH §Pattern 9
+      which mistakenly claimed reentrancy across DIFFERENT fds): on POSIX,
+      flock locks the open-file-description, NOT the inode/path. Two fds in
+      the SAME process to the SAME file do NOT share lock ownership, and a
+      second LOCK_EX acquire blocks forever waiting for the first to release.
+      The mutate_state -> save_state -> _atomic_write call chain WOULD
+      deadlock here. Solution: mutate_state holds its own outer flock and
+      calls _atomic_write_unlocked directly via _save_state_unlocked,
+      bypassing this re-acquisition. Cross-process safety preserved
+      (different processes -> different open-file-descriptions -> independent
+      lock ownership semantics still serialize correctly).
   '''
-  parent = path.parent
-  tmp_path_str = None
   lock_fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
   try:
     fcntl.flock(lock_fd, fcntl.LOCK_EX)  # blocks until exclusive lock acquired
     try:
-      with tempfile.NamedTemporaryFile(
-        dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
-      ) as tmp:
-        tmp_path_str = tmp.name
-        tmp.write(data)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-      # tempfile is now closed (NamedTemporaryFile context exit)
-      # D-17: os.replace BEFORE parent-dir fsync (rename durability)
-      os.replace(tmp_path_str, path)
-      if os.name == 'posix':
-        dir_fd = os.open(str(parent), os.O_RDONLY)
-        try:
-          os.fsync(dir_fd)
-        finally:
-          os.close(dir_fd)
-      tmp_path_str = None  # success: do not delete in inner finally
+      _atomic_write_unlocked(data, path)
     finally:
-      if tmp_path_str is not None:
-        try:
-          os.unlink(tmp_path_str)
-        except FileNotFoundError:
-          pass
+      fcntl.flock(lock_fd, fcntl.LOCK_UN)
   finally:
-    fcntl.flock(lock_fd, fcntl.LOCK_UN)
     os.close(lock_fd)
 
 def _migrate(state: dict) -> dict:
@@ -411,7 +437,7 @@ def reset_state(initial_account: float = INITIAL_ACCOUNT) -> dict:
     },
   }
 
-def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
+def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = False) -> dict:
   '''STATE-01 / STATE-03 / STATE-04 / D-18: load state.json; recover on corruption.
 
   If path does not exist: returns reset_state() output (fresh state).
@@ -433,6 +459,12 @@ def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
   know about (D-05 narrow definition; silently nuking state on a code-side
   typo would mask bugs). The validator runs OUTSIDE the JSONDecodeError
   try/except so its ValueError is not caught as corruption.
+
+  Phase 14 D-13 _under_lock parameter (PRIVATE — underscore-prefixed):
+    Set to True ONLY by mutate_state, which already holds fcntl.LOCK_EX
+    on `path`. When True, the corruption-recovery save uses
+    _save_state_unlocked (no second lock acquire) to avoid the intra-
+    process flock-on-different-fd deadlock.
   '''
   if not path.exists():
     return reset_state()                  # B-3: no auto-save on missing file
@@ -457,7 +489,10 @@ def load_state(path: Path = Path(STATE_FILE), now=None) -> dict:
       f'recovered from corruption; backup at {backup_name}',
       now=now,
     )
-    save_state(state, path=path)
+    if _under_lock:
+      _save_state_unlocked(state, path=path)
+    else:
+      save_state(state, path=path)
     return state
   # Happy path: migrate, then D-18 validate, then return
   state = _migrate(state)
@@ -499,6 +534,19 @@ def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
   data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False)
   _atomic_write(data, path)
 
+
+def _save_state_unlocked(state: dict, path: Path) -> None:
+  '''Same as save_state but uses _atomic_write_unlocked — caller MUST already
+  hold fcntl.LOCK_EX on `path`. Used exclusively by mutate_state to avoid the
+  intra-process flock-on-different-fd deadlock (see _atomic_write docstring).
+
+  D-14 underscore-key filter applies identically; allow_nan=False preserved.
+  '''
+  persisted = {k: v for k, v in state.items() if not k.startswith('_')}
+  data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False)
+  _atomic_write_unlocked(data, path)
+
+
 def mutate_state(
   mutator: Callable[[dict], None],
   path: Path = Path(STATE_FILE),
@@ -514,12 +562,11 @@ def mutate_state(
   Contract:
     - mutator receives a freshly loaded state dict (post-migration).
     - mutator MUTATES the dict in place; return value ignored.
-    - The dict is then saved exactly once.
+    - The dict is then saved exactly once via _save_state_unlocked
+      (REUSES the lock acquired here — see _atomic_write docstring for
+      why the inner save_state path can NOT re-acquire the same lock
+      from a different fd in the same process without deadlocking).
     - Cross-process coordination via fcntl.LOCK_EX on the destination file.
-    - Reentrancy: fcntl.flock is reentrant within a single process. The
-      inner save_state's flock acquisition is a kernel no-op when the
-      outer mutate_state lock is already held. Cross-process safety
-      is preserved (separate file descriptors).
 
   Usage:
     def _bump_account(state):
@@ -532,9 +579,9 @@ def mutate_state(
   try:
     fcntl.flock(fd, fcntl.LOCK_EX)
     try:
-      state = load_state(path=path)
+      state = load_state(path=path, _under_lock=True)
       mutator(state)
-      save_state(state, path=path)
+      _save_state_unlocked(state, path=path)
       return state
     finally:
       fcntl.flock(fd, fcntl.LOCK_UN)
