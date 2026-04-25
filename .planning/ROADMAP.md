@@ -119,7 +119,13 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   4. `POST /trades/modify` can update a position's trailing stop or contract count independently (either field optional); attempts to set `new_contracts: 0` or a non-finite `new_stop` return 400
   5. Dashboard `GET /` includes three HTMX forms (open / close / modify) that POST to their endpoints and swap in the server-returned partial without a full page reload; a selenium-lite or httpx-driven test asserts the HTMX response includes a `hx-swap`-compatible fragment, not a full `<html>` document
   6. No mutation endpoint writes to `state['warnings']` directly — a regression test AST-walks the web module's handlers and asserts none of them reference `state['warnings'] =` or `.append` on that list (v1.0 sole-writer invariant preserved; only the signal orchestrator touches warnings)
-**Plans**: TBD
+**Plans**: 5 plans
+  - [ ] `14-01-PLAN.md` — Wave 0 scaffolding: hex-boundary update (sizing_engine + system_params promoted out of FORBIDDEN_FOR_WEB, mirroring Phase 13 D-07's dashboard promotion); v2-schema fixture state_v2_no_manual_stop.json; skeleton test classes in tests/test_web_trades.py + 2 in tests/test_state_manager.py + 1 in tests/test_sizing_engine.py + 3 in tests/test_dashboard.py; htmx_headers + client_with_state_v3 fixtures in conftest.py
+  - [ ] `14-02-PLAN.md` — Wave 1 state_manager: fcntl.LOCK_EX advisory lock around _atomic_write (D-13 cross-process safety); _migrate_v2_to_v3 backfilling manual_stop=None on Position dicts (D-09); STATE_SCHEMA_VERSION 2→3; Position TypedDict gains manual_stop: float | None; TestFcntlLock (4 tests, multiprocess fixture) + TestSchemaMigrationV2ToV3 (6 tests)
+  - [ ] `14-03-PLAN.md` — Wave 1 sizing_engine: get_trailing_stop honors position.manual_stop (D-09 precedence after NaN guard, before LONG/SHORT switch); defensive .get() handles pre-migration positions; TestManualStopOverride (5 tests including NaN passthrough and missing-key)
+  - [ ] `14-04-PLAN.md` — Wave 2 web/routes/trades.py (NEW): three POST endpoints (open/close/modify) + three GET HTMX support endpoints (close-form/modify-form/cancel-row); Pydantic v2 models with Literal enums + Field constraints + model_validator (D-04 + D-12 model_fields_set); 422→400 remap exception handler (D-04); D-05 inline gross_pnl anti-pitfall in close handler; web/app.py registers trades_route + handler; tests/test_web_trades.py 13 classes ~50 tests including TestSoleWriterInvariant AST guard (TRADE-06)
+  - [ ] `14-05-PLAN.md` — Wave 2 dashboard.py: HTMX 1.9.12 SRI vendor pin; _render_positions_table extends with Actions column + per-row IDs + manual badge (UI-SPEC §Decision 1, 2, 6); _render_open_form helper (UI-SPEC §Decision 7); _compute_trail_stop_display lockstep parity with sizing_engine.get_trailing_stop manual_stop precedence; inline handleTradesError JS (UI-SPEC §Decision 4); _INLINE_CSS extended with Phase 14 component rules; #confirmation-banner slot; TestRenderDashboardHTMXVendorPin + TestRenderPositionsTableHTMXForm + TestRenderManualStopBadge (17 tests)
+**Plans (wave structure)**: Wave 0 = [14-01] sequential (test-infra scaffolding + hex-boundary update); Wave 1 = [14-02, 14-03] parallel (disjoint v1.0 hex modules: state_manager.py vs sizing_engine.py); Wave 2 = [14-04, 14-05] parallel (disjoint files: web/routes/trades.py + web/app.py vs dashboard.py)
 **UI hint**: yes
 
 ### Phase 15: Live Calculator + Sentinels
@@ -172,7 +178,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 | 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 4/4 | Complete (code); 4 operator-manual verifications pending on droplet | 2026-04-24 |
 | 12. HTTPS + Domain Wiring | v1.1 | 0/4 | Not started | - |
 | 13. Auth + Read Endpoints | v1.1 | 5/5 | Complete    | 2026-04-25 |
-| 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |
+| 14. Trade Journal — Mutation Endpoints | v1.1 | 0/5 | Not started | - |
 | 15. Live Calculator + Sentinels | v1.1 | 0/? | Not started | - |
 | 16. Hardening + UAT Completion | v1.1 | 0/? | Not started | - |
 
