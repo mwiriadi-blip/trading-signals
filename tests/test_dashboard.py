@@ -162,6 +162,41 @@ def _make_state(
   }
 
 
+def _make_render_state_with_position(manual_stop=None):
+  '''Phase 14 render-test helper: state dict suitable for render_dashboard()
+  with one open SPI200 LONG position. Optional manual_stop value.
+
+  Mirrors state_manager.reset_state shape with the Phase 14 v3 schema
+  (position dict carries `manual_stop` field). Includes _resolved_contracts
+  so _compute_unrealised_pnl_display sources the right tier.
+  '''
+  return {
+    'schema_version': 3,
+    'account': 100_000.0,
+    'last_run': '2026-04-25',
+    'positions': {
+      'SPI200': {
+        'direction': 'LONG', 'entry_price': 7800.0, 'entry_date': '2026-04-20',
+        'n_contracts': 2, 'pyramid_level': 0,
+        'peak_price': 8100.0, 'trough_price': None,
+        'atr_entry': 50.0, 'manual_stop': manual_stop,
+      },
+      'AUDUSD': None,
+    },
+    'signals': {
+      'SPI200': {'last_close': 8000.0},
+      'AUDUSD': {},
+    },
+    'trade_log': [], 'equity_history': [], 'warnings': [],
+    'initial_account': 100_000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    },
+  }
+
+
 # =========================================================================
 # Test classes — one per concern dimension (D-13)
 # =========================================================================
@@ -664,12 +699,16 @@ class TestRenderBlocks:
     assert 'Lvl 0' in output       # pyramid
     assert '$7,950.00' in output   # trail stop = 8100 - 3*50
 
-  def test_positions_table_empty_state_colspan_8(self) -> None:
-    '''UI-SPEC F-4: 8-column empty state supersedes stale CONTEXT D-13 colspan="7".'''
+  def test_positions_table_empty_state_colspan_9(self) -> None:
+    '''Phase 14 UI-SPEC §Decision 2: empty-state colspan bumped 8 → 9 to span
+    the new Actions column. Was colspan="8" pre-Phase-14 (UI-SPEC F-4 / CONTEXT
+    D-13 history retained for trail).
+    '''
     state = _make_state()
     state['positions'] = {'SPI200': None, 'AUDUSD': None}
     output = dashboard._render_positions_table(state)
-    assert 'colspan="8"' in output
+    assert 'colspan="9"' in output
+    assert 'colspan="8"' not in output, 'stale colspan=8 must not appear'
     assert '— No open positions —' in output
 
   def test_positions_table_last_close_missing_renders_em_dash(self) -> None:
@@ -897,17 +936,19 @@ class TestRenderBlocks:
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
 
-    # Assertion (a): the rendered HTML must contain EXACTLY TWO </script>
+    # Assertion (a): the rendered HTML must contain EXACTLY FOUR </script>
     # close tags — one for the Chart.js CDN <script src="..."></script> in
-    # <head>, and one that closes the Chart.js instantiation IIFE in <body>.
-    # If the injected </script> leaked through unescaped, this count would be
-    # 3 (or more); that is the exact failure mode C-4 wants to catch.
-    # (Rule 1 auto-fix from plan assertion '== 1': plan's count omitted the
-    # CDN loader's self-closing </script>. Legitimate real-world count is 2.)
-    assert html_text.count('</script>') == 2, (
+    # <head>, one for the HTMX 1.9.12 CDN <script src="..."></script> in
+    # <head> (Phase 14 TRADE-05), one for the inline handleTradesError JS
+    # block in <head> (Phase 14 UI-SPEC §Decision 4), and one that closes
+    # the Chart.js instantiation IIFE in <body>. If the injected </script>
+    # leaked through unescaped, this count would be 5 (or more); that is
+    # the exact failure mode C-4 wants to catch.
+    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more <script> tags in <head>.)
+    assert html_text.count('</script>') == 4, (
       f'unexpected </script> count {html_text.count("</script>")} — '
-      'injection defence failed. Expected exactly 2 (CDN loader close + '
-      'Chart.js IIFE close).'
+      'injection defence failed. Expected exactly 4 (Chart.js CDN close + '
+      'HTMX CDN close + inline handleTradesError close + Chart.js IIFE close).'
     )
 
     # Assertion (b): the escaped form (json.dumps + .replace('</', '<\\/'))
@@ -1109,8 +1150,9 @@ class TestTotalReturnInitialAccount:
 # =========================================================================
 
 class TestRenderDashboardHTMXVendorPin:
-  '''Phase 14 TRADE-05: HTMX 1.9.12 SRI script tag emitted in <head>.
-  Plan 14-05 implements.
+  '''Phase 14 TRADE-05 + UI-SPEC §HTMX vendor pin: HTMX 1.9.12 SRI-pinned
+  <script> in <head>, AFTER Chart.js, plus inline handleTradesError JS.
+  Confirmation banner slot present in body wrapper.
 
   Exact pin (UI-SPEC + RESEARCH §Pattern 7):
     URL: https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js
@@ -1119,30 +1161,270 @@ class TestRenderDashboardHTMXVendorPin:
   Mirrors the Chart.js precedent at dashboard.py:115-116 (Phase 5).
   '''
 
-  def test_placeholder_wave_0(self):
-    pytest.skip('Wave 0 skeleton; Plan 14-05 implements')
+  _EXPECTED_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js'
+  _EXPECTED_SRI = 'sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2'
+
+  def test_htmx_script_tag_present_with_exact_sri(self, tmp_path) -> None:
+    '''The exact pinned URL + SRI + crossorigin attributes are emitted.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert self._EXPECTED_URL in rendered, (
+      f'HTMX URL not found in rendered HTML; expected {self._EXPECTED_URL}'
+    )
+    assert self._EXPECTED_SRI in rendered, (
+      f'HTMX SRI not found in rendered HTML; expected {self._EXPECTED_SRI}'
+    )
+    assert 'crossorigin="anonymous"' in rendered, (
+      'HTMX <script> must include crossorigin="anonymous"'
+    )
+
+  def test_htmx_script_appears_after_chartjs_in_head(self, tmp_path) -> None:
+    '''Parse order matters: HTMX must be AFTER Chart.js (UI-SPEC §HTMX vendor pin
+    load location: "<head> after Chart.js").
+    '''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    chartjs_idx = rendered.find('chart.js@4.4.6')
+    htmx_idx = rendered.find('htmx.org@1.9.12')
+    assert chartjs_idx >= 0, 'Chart.js <script> missing from rendered HTML'
+    assert htmx_idx >= 0, 'HTMX <script> missing from rendered HTML'
+    assert htmx_idx > chartjs_idx, (
+      f'UI-SPEC: HTMX must be AFTER Chart.js; '
+      f'chartjs_idx={chartjs_idx}, htmx_idx={htmx_idx}'
+    )
+
+  def test_handle_trades_error_js_inline(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 4: inline JS handler for hx-on::after-request.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'function handleTradesError' in rendered, (
+      'UI-SPEC §Decision 4: inline handleTradesError JS missing'
+    )
+
+  def test_confirmation_banner_slot_present(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 3: <div id="confirmation-banner"> for OOB swap.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'id="confirmation-banner"' in rendered, (
+      'UI-SPEC §Decision 3: #confirmation-banner div missing from shell'
+    )
 
 
 class TestRenderPositionsTableHTMXForm:
-  '''Phase 14 TRADE-05 (REVIEWS HIGH #3 revised): the positions table
-  carries an Open form section (<section class="open-form">), per-row
-  Actions cells, per-row id="position-row-{instrument}", close/modify
-  buttons, and per-instrument <tbody id="position-group-{instrument}">
-  wrappers (REVIEWS HIGH #3 — single-tbody-level swap topology).
-  Plan 14-05 implements.
+  '''Phase 14 TRADE-05 + UI-SPEC §Decision 1, 2, 3, 7: open form, action
+  buttons, target IDs.
   '''
 
-  def test_placeholder_wave_0(self):
-    pytest.skip('Wave 0 skeleton; Plan 14-05 implements')
+  def test_open_form_section_present(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 1: <section class="open-form"> ABOVE the positions table.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'class="open-form"' in rendered
+    assert 'OPEN NEW POSITION' in rendered  # eyebrow per UI-SPEC §Copywriting
+    # Order: open-form section MUST appear BEFORE the Open Positions <h2>
+    of_idx = rendered.find('class="open-form"')
+    h2_idx = rendered.find('id="heading-positions"')
+    assert of_idx < h2_idx, (
+      f'UI-SPEC §Decision 1: open form must appear ABOVE Open Positions; '
+      f'open-form idx={of_idx}, heading idx={h2_idx}'
+    )
+
+  def test_open_form_hx_post_targets_positions_tbody(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 3: open swap target = #positions-tbody, swap=innerHTML.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'hx-post="/trades/open"' in rendered
+    assert 'hx-target="#positions-tbody"' in rendered
+    assert 'hx-swap="innerHTML"' in rendered
+    assert 'hx-on::after-request="handleTradesError(event)"' in rendered
+
+  def test_open_form_required_fields_present(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 7: 4 required fields (instrument, direction, entry_price, contracts).'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'name="instrument"' in rendered
+    assert 'name="direction"' in rendered
+    assert 'name="entry_price"' in rendered
+    assert 'name="contracts"' in rendered
+    # All required inputs have for/id label wiring (CLAUDE.md §Frontend HTML shells without JavaScript)
+    assert 'for="open-form-instrument"' in rendered
+    assert 'id="open-form-instrument"' in rendered
+    assert 'for="open-form-entry-price"' in rendered
+    assert 'id="open-form-entry-price"' in rendered
+
+  def test_open_form_advanced_collapsed_details(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 7: <details class="form-advanced"> wraps optional fields.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'class="form-advanced"' in rendered
+    assert '<summary>Advanced</summary>' in rendered
+    assert 'name="executed_at"' in rendered
+    assert 'name="peak_price"' in rendered
+    assert 'name="trough_price"' in rendered
+    assert 'name="pyramid_level"' in rendered
+
+  def test_actions_column_header_present(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 2: 9th <th scope="col">Actions</th> in positions thead.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert '<th scope="col">Actions</th>' in rendered
+
+  def test_positions_tbody_has_id(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 3: tbody id="positions-tbody" is the open swap target.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'id="positions-tbody"' in rendered
+
+  def test_position_row_has_id_and_action_buttons(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 2: each row has id="position-row-{instrument}" +
+    Close + Modify buttons with correct hx-get / hx-target / hx-swap.
+    '''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'id="position-row-SPI200"' in rendered
+    assert 'class="btn-row btn-close"' in rendered
+    assert 'class="btn-row btn-modify"' in rendered
+    assert 'hx-get="/trades/close-form?instrument=SPI200"' in rendered
+    assert 'hx-get="/trades/modify-form?instrument=SPI200"' in rendered
+    assert 'hx-target="#position-row-SPI200"' in rendered
+    assert 'hx-swap="outerHTML"' in rendered
+    # Close + Modify are type="button" (not submit; not inside a form) per UI-SPEC §Accessibility
+    assert 'type="button" class="btn-row btn-close"' in rendered
+
+  def test_empty_state_uses_colspan_9(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 2: empty-state row spans 9 columns (Actions added).'''
+    empty_state = _make_render_state_with_position()
+    empty_state['positions']['SPI200'] = None
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(empty_state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'colspan="9"' in rendered
+    assert '— No open positions —' in rendered
+    # No stale 8-colspan in the empty-state row
+    assert 'colspan="8" class="empty-state"' not in rendered
 
 
 class TestRenderManualStopBadge:
-  '''Phase 14 D-09 + UI-SPEC §Decision 6: when position['manual_stop'] is
-  not None, the Trail Stop cell carries an inline <span class="badge
-  badge-manual">manual</span>. Trail Stop displayed value equals manual_stop
-  (NOT computed peak-trail) per UI-SPEC final code block at line 386-392.
-  Plan 14-05 implements.
+  '''Phase 14 D-09 + UI-SPEC §Decision 6: manual_stop visualization.
+
+  When position.manual_stop is None: no badge; displayed Trail Stop is computed.
+  When position.manual_stop is set: badge present; displayed Trail Stop equals
+  the override value (NOT the computed value).
   '''
 
-  def test_placeholder_wave_0(self):
-    pytest.skip('Wave 0 skeleton; Plan 14-05 implements')
+  def test_no_badge_when_manual_stop_is_none(self, tmp_path) -> None:
+    '''Default v1.0 behavior preserved: manual_stop=None → no badge.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(
+      _make_render_state_with_position(manual_stop=None), out_path=out, now=FROZEN_NOW,
+    )
+    rendered = out.read_text()
+    assert 'class="badge badge-manual"' not in rendered, (
+      'manual_stop=None must NOT render a badge'
+    )
+    # Computed trail = 8100 - 3*50 = 7950.0
+    assert '$7,950' in rendered, (
+      'manual_stop=None must show computed trail = 8100 - 3*50 = 7950'
+    )
+
+  def test_badge_present_when_manual_stop_set(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 6: <span class="badge badge-manual">manual</span>.'''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(
+      _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
+    )
+    rendered = out.read_text()
+    assert 'class="badge badge-manual"' in rendered, (
+      'UI-SPEC §Decision 6: badge must be present when manual_stop is set'
+    )
+    assert '>manual</span>' in rendered, (
+      'UI-SPEC §Decision 6: badge text = "manual" (lowercase)'
+    )
+    # title= tooltip per UI-SPEC §Decision 6 + §Copywriting
+    assert 'Operator override' in rendered
+
+  def test_displayed_value_equals_manual_stop_not_computed(self, tmp_path) -> None:
+    '''UI-SPEC §Decision 6: displayed Trail Stop value = manual_stop verbatim
+    (NOT the computed peak-trail). Computed would be 7950; manual is 7700.
+    '''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(
+      _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
+    )
+    rendered = out.read_text()
+    assert '$7,700' in rendered, (
+      'UI-SPEC §Decision 6: displayed Trail Stop must equal manual_stop=7700; '
+      'computed peak-trail (7950) must NOT appear when manual_stop is set'
+    )
+    assert '$7,950' not in rendered, (
+      'UI-SPEC §Decision 6: computed peak-trail must be SUPPRESSED when manual_stop is set'
+    )
+
+  def test_compute_trail_stop_display_lockstep_parity_with_sizing_engine(self) -> None:
+    '''CLAUDE.md hex-lite lockstep: dashboard._compute_trail_stop_display
+    and sizing_engine.get_trailing_stop must return bit-identical values
+    for any Position dict, including manual_stop set/unset cases.
+
+    Locks the discipline that future Phase 14+ changes to either side
+    cannot drift without a red test.
+    '''
+    from dashboard import _compute_trail_stop_display
+    from sizing_engine import get_trailing_stop
+
+    # Case 1: LONG manual_stop set → both return 7700.0
+    pos = {
+      'direction': 'LONG', 'entry_price': 7000.0, 'entry_date': '2026-04-15',
+      'n_contracts': 2, 'pyramid_level': 0,
+      'peak_price': 8100.0, 'trough_price': None,
+      'atr_entry': 50.0, 'manual_stop': 7700.0,
+    }
+    assert _compute_trail_stop_display(pos) == get_trailing_stop(pos, 8050.0, 50.0) == 7700.0
+
+    # Case 2: LONG manual_stop None → both return computed 7950.0
+    pos['manual_stop'] = None
+    assert _compute_trail_stop_display(pos) == get_trailing_stop(pos, 8050.0, 50.0) == 7950.0
+
+    # Case 3: SHORT manual_stop set
+    short_pos = {
+      'direction': 'SHORT', 'entry_price': 7000.0, 'entry_date': '2026-04-15',
+      'n_contracts': 2, 'pyramid_level': 0,
+      'peak_price': None, 'trough_price': 6900.0,
+      'atr_entry': 50.0, 'manual_stop': 7050.0,
+    }
+    assert _compute_trail_stop_display(short_pos) == get_trailing_stop(short_pos, 6950.0, 50.0) == 7050.0
+
+  def test_no_badge_for_audusd_when_spi_has_manual_stop(self, tmp_path) -> None:
+    '''Per-row badge isolation: setting manual_stop on SPI200 must not
+    leak the badge to AUDUSD's row.
+    '''
+    state = _make_render_state_with_position(manual_stop=7700.0)
+    # Add an AUDUSD position WITHOUT manual_stop
+    state['positions']['AUDUSD'] = {
+      'direction': 'LONG', 'entry_price': 0.6450, 'entry_date': '2026-04-20',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': 0.6500, 'trough_price': None,
+      'atr_entry': 0.012, 'manual_stop': None,
+    }
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    spi_start = rendered.find('id="position-row-SPI200"')
+    audusd_start = rendered.find('id="position-row-AUDUSD"')
+    assert spi_start >= 0 and audusd_start >= 0
+    spi_end = rendered.find('</tr>', spi_start)
+    audusd_end = rendered.find('</tr>', audusd_start)
+    spi_row = rendered[spi_start:spi_end]
+    audusd_row = rendered[audusd_start:audusd_end]
+    assert 'badge-manual' in spi_row, 'SPI200 row must contain badge'
+    assert 'badge-manual' not in audusd_row, 'AUDUSD row must NOT contain badge'
