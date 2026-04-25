@@ -101,7 +101,7 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   5. Every 401 response writes a journald log line at WARN level including source IP (`X-Forwarded-For` from nginx) and truncated User-Agent (first 120 chars); `journalctl -u trading-signals-web --since '5 min ago' | grep 'auth failure'` shows the expected entries after a test run
 **Plans**: 5 plans
   - [ ] `13-01-PLAN.md` — Wave 0 scaffolding: retrofit Phase 11 healthz fixture for D-16 fail-closed, remove `dashboard` from FORBIDDEN_FOR_WEB (D-07), create skeleton test files + tests/conftest.py shared helpers, extend SETUP-DROPLET.md with "Configure auth secret" section (D-19)
-  - [ ] `13-02-PLAN.md` — Wave 1 factory amendment: web/app.py adds _read_auth_secret (D-16/D-17 fail-closed), passes docs_url=None + redoc_url=None + openapi_url=None (D-21 + research extension D-22), registers AuthMiddleware LAST (D-06); ships full AuthMiddleware body + route-module stubs so factory boots end-to-end + 8 TestSecretValidation/TestDocsDisabled tests
+  - [x] `13-02-PLAN.md` — Wave 1 factory amendment: web/app.py adds _read_auth_secret (D-16/D-17 fail-closed), passes docs_url=None + redoc_url=None + openapi_url=None (D-21 + research extension D-22), registers AuthMiddleware LAST (D-06); ships full AuthMiddleware body + route-module stubs so factory boots end-to-end + 8 TestSecretValidation/TestDocsDisabled tests
   - [ ] `13-03-PLAN.md` — Wave 2 auth middleware tests: tests/test_web_auth_middleware.py populated with 17 methods across 6 classes (TestAuthRequired, TestAuthPasses, TestExemption, TestUnauthorizedResponse, TestAuditLog, TestConstantTimeCompare) covering AUTH-01 + AUTH-02 + AUTH-03 + D-01..D-06 (XFF first-entry, UA truncation 120, %r escape, AST guard against ==)
   - [ ] `13-04-PLAN.md` — Wave 2 state route: web/routes/state.py replaces stub with D-12 strip + D-13 Cache-Control: no-store + D-14 trust load_state + D-15 compact JSON; tests/test_web_state.py populated with 7 TestStateResponse methods covering WEB-06
   - [ ] `13-05-PLAN.md` — Wave 2 dashboard route: web/routes/dashboard.py replaces stub with D-07 mtime-staleness regen + D-09 disk path + D-10 never-crash (WARN log + serve stale on render exception; 503 first-run) + D-11 concurrency posture; tests/test_web_dashboard.py populated with 12 methods across TestDashboardResponse/TestStaleness/TestRenderFailure/TestFirstRun covering WEB-05
@@ -171,7 +171,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 | 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/4 | Not started | - |
 | 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 4/4 | Complete (code); 4 operator-manual verifications pending on droplet | 2026-04-24 |
 | 12. HTTPS + Domain Wiring | v1.1 | 0/4 | Not started | - |
-| 13. Auth + Read Endpoints | v1.1 | 0/5 | Not started | - |
+| 13. Auth + Read Endpoints | v1.1 | 2/5 | In progress (Wave 0 + Wave 1 complete; Wave 2 = 13-03/04/05 parallel) | - |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |
 | 15. Live Calculator + Sentinels | v1.1 | 0/? | Not started | - |
 | 16. Hardening + UAT Completion | v1.1 | 0/? | Not started | - |

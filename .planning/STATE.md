@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-25T02:47:00.021Z"
+last_updated: "2026-04-25T02:57:47.808Z"
 last_activity: 2026-04-25
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 17
-  completed_plans: 13
-  percent: 76
+  completed_plans: 14
+  percent: 82
 ---
 
 # STATE — Trading Signals
@@ -28,12 +28,12 @@ progress:
 ## Current Position
 
 Phase: 13 (Auth + Read Endpoints) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
 - **Last activity:** 2026-04-25
-- **Progress:** [████████░░] 76%
+- **Progress:** [████████░░] 82%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -87,6 +87,7 @@ Plan: 2 of 5
 | Phase 11 P03 | 5min | 2 tasks | 2 files |
 | Phase 11 P04 | 279 | 2 tasks | 2 files |
 | Phase 13 P01 | 7m22s | 3 tasks | 9 files |
+| Phase 13 P02 | 5m37s | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,9 @@ Plan: 2 of 5
 - Plan 13-01 (Wave 0): autouse WEB_AUTH_SECRET fixture in tests/conftest.py is the structural fix for REVIEWS HIGH (codex finding) — covers the 11 direct create_app() invocations in tests/test_web_healthz.py test bodies that don't go through app_instance fixture
 - Plan 13-01: VALID_SECRET = 'a' * 32 lives ONCE in tests/conftest.py per REVIEWS LOW #6 single-source invariant; downstream test files import the name (no redefinition)
 - Plan 13-01: tests/test_web_healthz.py FORBIDDEN_FOR_WEB drops 'dashboard' (Phase 13 D-07 promotes dashboard to allowed adapter import for web/routes/dashboard.py); AST guard renamed test_web_adapter_imports_are_local_not_module_top with absent-file skip-guard for Wave 0
+- Plan 13-02: from conftest import fails because pytest testpaths does not put tests/ on sys.path; inlined VALID_SECRET + AUTH_HEADER_NAME in tests/test_web_app_factory.py with comments pointing back to single-source conftest.py (Rule 1 deviation)
+- Plan 13-02: AuthMiddleware ships full Pattern 1 body in this plan (not a stub) so the openapi_url=401-without-auth ordering test (D-06 proof) passes here; Plan 13-03 will own comprehensive middleware test classes
+- Plan 13-02: route handlers ship as 503 stubs (deterministic content) rather than NotImplementedError so smoke tests + the import graph remain clean for parallel Wave 2 execution
 
 ### Todos Carried Forward
 
