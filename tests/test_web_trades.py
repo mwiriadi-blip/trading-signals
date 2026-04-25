@@ -1002,6 +1002,83 @@ class TestSoleWriterInvariant:
           violations.append(f'line {node.lineno}: mutates <expr>["warnings"]')
     assert violations == [], '\n'.join(violations)
 
+  def test_no_warnings_aug_assign_in_trades_handlers(self):
+    '''REVIEWS LOW #8: state['warnings'] += [...] must also be rejected.
+
+    AST AugAssign branch is not covered by Assign or Call walks above.
+    The Assign walker only sees `=`; the Call walker only sees method calls
+    like .append. AugAssign (`+=`, `-=`, etc.) needs its own walk.
+    '''
+    src = WEB_ROUTES_TRADES_PATH.read_text()
+    tree = ast.parse(src)
+    violations = []
+    for node in ast.walk(tree):
+      if isinstance(node, ast.AugAssign):
+        tgt = node.target
+        if (isinstance(tgt, ast.Subscript)
+            and isinstance(tgt.slice, ast.Constant)
+            and tgt.slice.value == 'warnings'):
+          violations.append(f'line {node.lineno}: AugAssign on <expr>["warnings"]')
+    assert violations == [], '\n'.join(violations)
+
+  def test_aug_assign_walker_fires_on_warnings_target(self):
+    '''Sanity: when seeded with a violating snippet, the walker reports it.
+
+    Confirms the AST AugAssign walk in test_no_warnings_aug_assign_in_trades_handlers
+    is real (not a tautology that always passes). Parse a fake source string
+    containing the forbidden pattern and assert the walker FINDS it.
+    '''
+    bad_src = "def x():\n    state['warnings'] += ['err']\n"
+    tree = ast.parse(bad_src)
+    violations = []
+    for node in ast.walk(tree):
+      if isinstance(node, ast.AugAssign):
+        tgt = node.target
+        if (isinstance(tgt, ast.Subscript)
+            and isinstance(tgt.slice, ast.Constant)
+            and tgt.slice.value == 'warnings'):
+          violations.append('found')
+    assert violations == ['found']
+
+
+# =========================================================================
+# TestRequestValidationErrorRemap — REVIEWS LOW #10 regression
+# =========================================================================
+
+
+class TestRequestValidationErrorRemap:
+  '''REVIEWS LOW #10: confirm 422->400 remap doesn't accidentally change
+  existing /api/state and / behavior beyond status remap on malformed inputs.
+
+  The remap fires only on Pydantic schema-validation failures. It must NOT
+  affect FastAPI's own 405 (Method Not Allowed) or 404 responses, which are
+  raised before the request body is parsed by Pydantic.
+  '''
+
+  def test_existing_routes_unaffected_by_remap(self, client_with_state_v3, auth_headers):
+    '''POST to /api/state (which is GET-only) returns 405 Method Not Allowed —
+    NOT 400 (because there's no Pydantic body to validate, the remap doesn't
+    fire).'''
+    client, _, _ = client_with_state_v3
+    r = client.post('/api/state', headers=auth_headers, json={})
+    assert r.status_code == 405, (
+      f'REVIEWS LOW #10: existing routes must keep their canonical status; '
+      f'got {r.status_code} (expected 405 Method Not Allowed)'
+    )
+
+  def test_remap_fires_only_on_pydantic_validation_failure(
+    self, client_with_state_v3, htmx_headers,
+  ):
+    '''Negative test: malformed body to /trades/open IS remapped to 400.'''
+    client, _, _ = client_with_state_v3
+    r = client.post(
+      '/trades/open', headers=htmx_headers,
+      json={'instrument': 'BTC'},  # invalid: not in Literal enum
+    )
+    assert r.status_code == 400, f'remap did not fire; got {r.status_code}'
+    body = r.json()
+    assert 'errors' in body
+
 
 # =========================================================================
 # TestEndToEnd — round-trip integration
