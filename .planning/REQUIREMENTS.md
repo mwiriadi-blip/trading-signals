@@ -14,15 +14,15 @@
 - [x] **WEB-02**: uvicorn serves the app on `localhost:8000`; nginx reverse-proxies from port 443 → 8000
 - [ ] **WEB-03**: nginx serves HTTPS via Let's Encrypt cert for `signals.<owned-domain>.com`; auto-renew via certbot timer
 - [ ] **WEB-04**: HTTP (port 80) redirects to HTTPS; HSTS header set (`Strict-Transport-Security: max-age=31536000; includeSubDomains`)
-- [ ] **WEB-05**: `GET /` returns the current `dashboard.html` content; refresh triggers regeneration if state changed since last render
-- [ ] **WEB-06**: `GET /api/state` returns the full `state.json` as `application/json` (for CLI/mobile consumers)
+- [x] **WEB-05**: `GET /` returns the current `dashboard.html` content; refresh triggers regeneration if state changed since last render
+- [x] **WEB-06**: `GET /api/state` returns the full `state.json` as `application/json` (for CLI/mobile consumers)
 - [x] **WEB-07**: `GET /healthz` returns 200 with `{"status": "ok", "last_run": "..."}` for liveness checks; exempt from auth
 
 ## AUTH — Single-operator access control
 
 - [x] **AUTH-01
 **: All non-`/healthz` endpoints require a shared-secret header `X-Trading-Signals-Auth`; value stored in droplet `.env` as `WEB_AUTH_SECRET`
-- [ ] **AUTH-02**: Missing or wrong auth header returns 401 with a plain-text `unauthorized` body (no leaked info; no hints)
+- [x] **AUTH-02**: Missing or wrong auth header returns 401 with a plain-text `unauthorized` body (no leaked info; no hints)
 - [x] **AUTH-03
 **: Auth failures log at WARN with source IP and truncated user-agent to journald for audit trail
 

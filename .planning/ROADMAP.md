@@ -31,7 +31,7 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
 - [ ] **Phase 10: Foundation — v1.0 Cleanup & Deploy Key** — BUG-01 + ruff cleanup + droplet deploy key wiring + retire GHA cron; no domain needed yet
 - [ ] **Phase 11: Web Skeleton — FastAPI + uvicorn + systemd** — FastAPI app serving `/healthz` behind uvicorn on localhost:8000 as a systemd unit, with an idempotent deploy.sh; no HTTPS yet
 - [ ] **Phase 12: HTTPS + Domain Wiring** — nginx reverse proxy + Let's Encrypt cert + HSTS + Resend domain verification (depends on operator-purchased domain)
-- [ ] **Phase 13: Auth + Read Endpoints** — Shared-secret header auth, 401 handling with audit log, `GET /` (dashboard) and `GET /api/state` (JSON) behind auth
+- [x] **Phase 13: Auth + Read Endpoints** — Shared-secret header auth, 401 handling with audit log, `GET /` (dashboard) and `GET /api/state` (JSON) behind auth (completed 2026-04-25)
 - [ ] **Phase 14: Trade Journal — Mutation Endpoints** — `POST /trades/open|close|modify` with field validation, HTMX forms in the dashboard, sole-writer invariant preserved
 - [ ] **Phase 15: Live Calculator + Sentinels** — Per-instrument stop + pyramid display, forward-looking peak-stop calculator, entry-target / add-target rendering, drift + reversal banners on dashboard and in email
 - [ ] **Phase 16: Hardening + UAT Completion** — F1 full-chain integration test + Phase 6 HUMAN-UAT scenarios verified via hosted dashboard; final gate before milestone close
@@ -171,7 +171,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 | 10. Foundation — v1.0 Cleanup & Deploy Key | v1.1 | 0/4 | Not started | - |
 | 11. Web Skeleton — FastAPI + uvicorn + systemd | v1.1 | 4/4 | Complete (code); 4 operator-manual verifications pending on droplet | 2026-04-24 |
 | 12. HTTPS + Domain Wiring | v1.1 | 0/4 | Not started | - |
-| 13. Auth + Read Endpoints | v1.1 | 2/5 | In progress (Wave 0 + Wave 1 complete; Wave 2 = 13-03/04/05 parallel) | - |
+| 13. Auth + Read Endpoints | v1.1 | 5/5 | Complete    | 2026-04-25 |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/? | Not started | - |
 | 15. Live Calculator + Sentinels | v1.1 | 0/? | Not started | - |
 | 16. Hardening + UAT Completion | v1.1 | 0/? | Not started | - |
