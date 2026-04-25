@@ -33,7 +33,7 @@
 - [ ] **TRADE-03**: `POST /trades/close` accepts `{instrument, exit_price, executed_at?}` and appends to `state.trade_log` with realised P&L + updates `state.account`
 - [ ] **TRADE-04**: `POST /trades/modify` accepts `{instrument, new_stop?, new_contracts?}` to manually adjust a position's trailing stop or size
 - [ ] **TRADE-05**: Dashboard at `GET /` includes HTMX-powered forms for open/close/modify (no full page reload; POSTs return partial HTML fragments)
-- [ ] **TRADE-06**: Every mutation endpoint goes through `state_manager.save_state()`; endpoints never touch `state['warnings']` directly (sole-writer invariant from v1.0 respected)
+- [x] **TRADE-06**: Every mutation endpoint goes through `state_manager.save_state()`; endpoints never touch `state['warnings']` directly (sole-writer invariant from v1.0 respected)
 
 ## CALC — Live stop-loss + pyramid calculator
 
