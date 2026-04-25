@@ -738,10 +738,18 @@ def _compute_trail_stop_display(position: dict) -> float:
   manual = position.get('manual_stop')
   if manual is not None:
     return manual
+  # REVIEW HR-02: explicit `is None` to match sizing_engine.py:247-254 semantics.
+  # The previous `or` truthiness check dropped 0.0 (a valid peak/trough value
+  # for AUDUSD-near-zero edge cases) to entry_price — diverging from the
+  # sizing engine's lockstep contract. Use `is None` so 0.0 propagates.
   if position['direction'] == 'LONG':
-    peak = position.get('peak_price') or position['entry_price']
+    peak = position.get('peak_price')
+    if peak is None:
+      peak = position['entry_price']
     return peak - TRAIL_MULT_LONG * atr_entry
-  trough = position.get('trough_price') or position['entry_price']
+  trough = position.get('trough_price')
+  if trough is None:
+    trough = position['entry_price']
   return trough + TRAIL_MULT_SHORT * atr_entry
 
 

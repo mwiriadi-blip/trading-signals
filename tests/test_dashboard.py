@@ -1435,6 +1435,60 @@ class TestRenderManualStopBadge:
       'trough + 2*atr; lockstep parity with sizing_engine'
     )
 
+  def test_compute_trail_stop_display_lockstep_parity_with_zero_peak_long(self) -> None:
+    '''REVIEW HR-02 regression: peak_price=0.0 (a valid float, NOT None) must
+    propagate through dashboard._compute_trail_stop_display unchanged so the
+    displayed stop matches sizing_engine.get_trailing_stop.
+
+    Pre-fix bug: dashboard used `position.get(peak_price) or entry_price` —
+    truthiness drops 0.0 to entry_price, diverging from sizing_engine which
+    uses explicit `is None`. Hypothetical AUDUSD-near-zero edge case but
+    the contract is "lockstep" — must hold for every float, including 0.0.
+    '''
+    from dashboard import _compute_trail_stop_display
+    from sizing_engine import get_trailing_stop
+
+    pos = {
+      'direction': 'LONG', 'entry_price': 100.0, 'entry_date': '2026-04-15',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': 0.0,  # valid float zero — must NOT fall through to entry
+      'trough_price': None,
+      'atr_entry': 50.0, 'manual_stop': None,
+    }
+    # Both should compute peak (0.0) - 3*50 = -150.0; truthiness bug would
+    # have used entry (100) - 3*50 = -50.0 in the dashboard side only.
+    dashboard_val = _compute_trail_stop_display(pos)
+    sizing_val = get_trailing_stop(pos, 50.0, 50.0)
+    assert dashboard_val == sizing_val == -150.0, (
+      f'HR-02: dashboard and sizing_engine must agree on peak_price=0.0 case; '
+      f'dashboard={dashboard_val!r}, sizing={sizing_val!r} (expected -150.0)'
+    )
+
+  def test_compute_trail_stop_display_lockstep_parity_with_zero_trough_short(self) -> None:
+    '''REVIEW HR-02 regression: SHORT branch — trough_price=0.0 must propagate.
+
+    Pre-fix bug: dashboard's `or` truthiness dropped 0.0 to entry_price.
+    Symmetric to the LONG case above.
+    '''
+    from dashboard import _compute_trail_stop_display
+    from sizing_engine import get_trailing_stop
+
+    pos = {
+      'direction': 'SHORT', 'entry_price': 100.0, 'entry_date': '2026-04-15',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': None,
+      'trough_price': 0.0,  # valid float zero — must NOT fall through to entry
+      'atr_entry': 50.0, 'manual_stop': None,
+    }
+    # Both should compute trough (0.0) + 2*50 = 100.0; truthiness bug would
+    # have used entry (100) + 2*50 = 200.0 in the dashboard side only.
+    dashboard_val = _compute_trail_stop_display(pos)
+    sizing_val = get_trailing_stop(pos, 50.0, 50.0)
+    assert dashboard_val == sizing_val == 100.0, (
+      f'HR-02: dashboard and sizing_engine must agree on trough_price=0.0 case; '
+      f'dashboard={dashboard_val!r}, sizing={sizing_val!r} (expected 100.0)'
+    )
+
   def test_no_badge_for_audusd_when_spi_has_manual_stop(self, tmp_path) -> None:
     '''Per-row badge isolation: setting manual_stop on SPI200 must not
     leak the badge to AUDUSD's row.
