@@ -181,9 +181,13 @@ class TestHealthzDegradedPath:
 class TestWebHexBoundary:
   '''AST guard: web/ must NOT import pure-math hex modules.'''
 
+  # Phase 13 D-07: dashboard is now an ALLOWED adapter import for
+  # web/routes/dashboard.py (web layer calls dashboard.render_dashboard()
+  # on stale-state regen). Removing 'dashboard' from this set is the
+  # hex-boundary extension.
   FORBIDDEN_FOR_WEB = frozenset({
     'signal_engine', 'sizing_engine', 'system_params',
-    'data_fetcher', 'notifier', 'dashboard', 'main',
+    'data_fetcher', 'notifier', 'main',
   })
 
   def test_web_modules_do_not_import_hex_core(self):
@@ -205,17 +209,37 @@ class TestWebHexBoundary:
             violations.append(f'{py_file}:{node.lineno}: from {node.module}')
     assert violations == [], '\n'.join(violations)
 
-  def test_web_app_does_not_import_state_manager_at_module_top(self):
-    '''C-2: state_manager import must be LOCAL, not module-top.'''
+  def test_dashboard_is_not_forbidden_for_web_phase_13_D07(self):
+    '''Regression: Phase 13 D-07 promotes dashboard to allowed import.'''
+    assert 'dashboard' not in self.FORBIDDEN_FOR_WEB
+
+  def test_web_adapter_imports_are_local_not_module_top(self):
+    '''C-2 + Phase 13 hex extension: state_manager AND dashboard imports must be LOCAL.'''
     import ast
 
-    for py_path in [WEB_APP_PATH, WEB_HEALTHZ_PATH]:
+    forbidden_module_top = frozenset({'state_manager', 'dashboard'})
+
+    web_files = [
+      WEB_APP_PATH,
+      WEB_HEALTHZ_PATH,
+      Path('web/routes/dashboard.py'),
+      Path('web/routes/state.py'),
+      Path('web/middleware/auth.py'),
+    ]
+    for py_path in web_files:
+      if not py_path.exists():
+        # Wave 0: not all files exist yet. Skip; Wave 1+ will populate.
+        continue
       tree = ast.parse(py_path.read_text())
       for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module:
           top = node.module.split('.')[0]
-          assert top != 'state_manager', f'{py_path}: state_manager module-top import'
+          assert top not in forbidden_module_top, (
+            f'{py_path}: {top} module-top import (C-2 violation)'
+          )
         if isinstance(node, ast.Import):
           for alias in node.names:
             top = alias.name.split('.')[0]
-            assert top != 'state_manager', f'{py_path}: state_manager module-top import'
+            assert top not in forbidden_module_top, (
+              f'{py_path}: {top} module-top import (C-2 violation)'
+            )
