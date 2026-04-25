@@ -451,8 +451,7 @@ footer {
   <p class="eyebrow">OPEN NEW POSITION</p>
   <form
     hx-post="/trades/open"
-    hx-target="#positions-tbody"
-    hx-swap="innerHTML"
+    hx-swap="none"
     hx-on::after-request="handleTradesError(event)"
   >
     <div class="field">
@@ -522,7 +521,7 @@ footer {
         <th scope="col">Actions</th>
       </tr>
     </thead>
-    <tbody id="positions-tbody">
+    <tbody id="positions-empty">
       <tr>
         <td colspan="9" class="empty-state">— No open positions —</td>
       </tr>

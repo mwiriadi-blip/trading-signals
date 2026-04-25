@@ -491,8 +491,7 @@ footer {
   <p class="eyebrow">OPEN NEW POSITION</p>
   <form
     hx-post="/trades/open"
-    hx-target="#positions-tbody"
-    hx-swap="innerHTML"
+    hx-swap="none"
     hx-on::after-request="handleTradesError(event)"
   >
     <div class="field">
@@ -562,7 +561,7 @@ footer {
         <th scope="col">Actions</th>
       </tr>
     </thead>
-    <tbody id="positions-tbody">
+    <tbody id="position-group-SPI200" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' hx-trigger="positions-changed from:body" hx-get="/?fragment=position-group-SPI200" hx-swap="innerHTML">
       <tr id="position-row-SPI200">
         <td>SPI 200</td>
         <td><span style="color: #22c55e">LONG</span></td>
@@ -572,7 +571,7 @@ footer {
         <td class="num">Lvl 0</td>
         <td class="num">$7,950.00</td>
         <td class="num"><span style="color: #22c55e">+$844.00</span></td>
-        <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=SPI200" hx-target="#position-row-SPI200" hx-swap="outerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=SPI200" hx-target="#position-row-SPI200" hx-swap="outerHTML">Modify</button></td>
+        <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Modify</button></td>
       </tr>
     </tbody>
   </table>

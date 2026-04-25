@@ -132,7 +132,12 @@ def client_with_state_v3(monkeypatch):
       },
       'AUDUSD': None,
     },
-    'signals': {'SPI200': {'atr': 50.0, 'last_close': 7820.0}, 'AUDUSD': {}},
+    # Phase 14 REVIEWS MEDIUM #7: signals nested under last_scalars
+    # (matches main.py:1225 daily-loop write shape).
+    'signals': {
+      'SPI200': {'last_scalars': {'atr': 50.0}, 'last_close': 7820.0},
+      'AUDUSD': {},
+    },
     'trade_log': [], 'equity_history': [], 'warnings': [],
     'initial_account': 100_000.0,
     'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
@@ -152,6 +157,20 @@ def client_with_state_v3(monkeypatch):
     state_manager, 'save_state',
     lambda state, *_a, **_kw: captured_saves.append(dict(state))
   )
+
+  # Phase 14 Plan 14-04 + REVIEWS HIGH #1: handlers use mutate_state.
+  # The fixture must mirror the load -> mutate -> save semantic so test
+  # bodies can assert on captured_saves. Mutator is invoked on the live
+  # state_box['value'] dict (mutates in place per state_manager.mutate_state
+  # contract); the post-mutation snapshot is appended to captured_saves
+  # exactly like the save_state stub above. _OpenConflict raised inside
+  # the mutator propagates back to the handler (caught + converted to 409).
+  def _mutate_state_stub(mutator, *_a, **_kw):
+    state = state_box['value']
+    mutator(state)  # may raise; propagates out (handler catches _OpenConflict)
+    captured_saves.append(dict(state))
+    return state
+  monkeypatch.setattr(state_manager, 'mutate_state', _mutate_state_stub)
 
   client = TestClient(create_app())
 

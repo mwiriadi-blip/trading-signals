@@ -1234,14 +1234,20 @@ class TestRenderPositionsTableHTMXForm:
       f'open-form idx={of_idx}, heading idx={h2_idx}'
     )
 
-  def test_open_form_hx_post_targets_positions_tbody(self, tmp_path) -> None:
-    '''UI-SPEC §Decision 3: open swap target = #positions-tbody, swap=innerHTML.'''
+  def test_open_form_hx_post_uses_swap_none(self, tmp_path) -> None:
+    '''Phase 14 REVIEWS HIGH #3: open form uses hx-swap="none" (response is
+    empty + carries HX-Trigger event header). Per-instrument <tbody> blocks
+    listen for the event via hx-trigger="positions-changed from:body" and
+    self-refresh via fragment GET — no single #positions-tbody target exists.
+    '''
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'hx-post="/trades/open"' in rendered
-    assert 'hx-target="#positions-tbody"' in rendered
-    assert 'hx-swap="innerHTML"' in rendered
+    assert 'hx-swap="none"' in rendered
+    # Old single-tbody target must NOT appear
+    assert 'hx-target="#positions-tbody"' not in rendered
+    assert 'id="positions-tbody"' not in rendered
     assert 'hx-on::after-request="handleTradesError(event)"' in rendered
 
   def test_open_form_required_fields_present(self, tmp_path) -> None:
@@ -1278,16 +1284,25 @@ class TestRenderPositionsTableHTMXForm:
     rendered = out.read_text()
     assert '<th scope="col">Actions</th>' in rendered
 
-  def test_positions_tbody_has_id(self, tmp_path) -> None:
-    '''UI-SPEC §Decision 3: tbody id="positions-tbody" is the open swap target.'''
+  def test_per_instrument_tbody_present(self, tmp_path) -> None:
+    '''Phase 14 REVIEWS HIGH #3: each instrument has its own
+    <tbody id="position-group-{instrument}">. Old single id="positions-tbody"
+    is removed — confirmation/cancel swaps now target the per-instrument
+    tbody for valid HTML5 single-tbody-level swaps.
+    '''
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
-    assert 'id="positions-tbody"' in rendered
+    assert 'id="position-group-SPI200"' in rendered
+    # Old single tbody id is gone
+    assert 'id="positions-tbody"' not in rendered
 
   def test_position_row_has_id_and_action_buttons(self, tmp_path) -> None:
-    '''UI-SPEC §Decision 2: each row has id="position-row-{instrument}" +
-    Close + Modify buttons with correct hx-get / hx-target / hx-swap.
+    '''UI-SPEC §Decision 2 + Phase 14 REVIEWS HIGH #3: each row has
+    id="position-row-{instrument}". The Close + Modify buttons target the
+    parent per-instrument tbody (hx-target="#position-group-{instrument}",
+    hx-swap="innerHTML") so confirmation/cancel rows swap at single-tbody
+    granularity.
     '''
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
@@ -1297,8 +1312,9 @@ class TestRenderPositionsTableHTMXForm:
     assert 'class="btn-row btn-modify"' in rendered
     assert 'hx-get="/trades/close-form?instrument=SPI200"' in rendered
     assert 'hx-get="/trades/modify-form?instrument=SPI200"' in rendered
-    assert 'hx-target="#position-row-SPI200"' in rendered
-    assert 'hx-swap="outerHTML"' in rendered
+    # REVIEWS HIGH #3: action buttons target the per-instrument tbody
+    assert 'hx-target="#position-group-SPI200"' in rendered
+    assert 'hx-swap="innerHTML"' in rendered
     # Close + Modify are type="button" (not submit; not inside a form) per UI-SPEC §Accessibility
     assert 'type="button" class="btn-row btn-close"' in rendered
 
@@ -1404,6 +1420,21 @@ class TestRenderManualStopBadge:
     }
     assert _compute_trail_stop_display(short_pos) == get_trailing_stop(short_pos, 6950.0, 50.0) == 7050.0
 
+    # Case 4 (REVIEWS LOW #11): SHORT manual_stop None → computed trough + 2*atr
+    short_pos_no_manual = {
+      'direction': 'SHORT', 'entry_price': 7000.0, 'entry_date': '2026-04-15',
+      'n_contracts': 2, 'pyramid_level': 0,
+      'peak_price': None, 'trough_price': 6900.0,
+      'atr_entry': 50.0, 'manual_stop': None,
+    }
+    # Computed: 6900 + 2*50 = 7000
+    assert _compute_trail_stop_display(short_pos_no_manual) == get_trailing_stop(
+      short_pos_no_manual, 6950.0, 50.0,
+    ) == 7000.0, (
+      'REVIEWS LOW #11: SHORT manual_stop=None must fall through to computed '
+      'trough + 2*atr; lockstep parity with sizing_engine'
+    )
+
   def test_no_badge_for_audusd_when_spi_has_manual_stop(self, tmp_path) -> None:
     '''Per-row badge isolation: setting manual_stop on SPI200 must not
     leak the badge to AUDUSD's row.
@@ -1428,3 +1459,83 @@ class TestRenderManualStopBadge:
     audusd_row = rendered[audusd_start:audusd_end]
     assert 'badge-manual' in spi_row, 'SPI200 row must contain badge'
     assert 'badge-manual' not in audusd_row, 'AUDUSD row must NOT contain badge'
+
+
+class TestAuthHeaderPlaceholder:
+  '''Phase 14 REVIEWS HIGH #4: dashboard.html on disk emits literal
+  {{WEB_AUTH_SECRET}} placeholder in hx-headers attributes. The real
+  secret is substituted at request time by web/routes/dashboard.py
+  (Plan 14-04 Task 5) so the on-disk artifact NEVER carries the secret.
+
+  Phase 14 REVIEWS HIGH #3: each instrument has its own
+  <tbody id="position-group-{instrument}">. Multiple <tbody> elements
+  in one <table> is valid HTML5 and enables single-tbody-level swaps
+  for close/modify forms with no orphan rows.
+  '''
+
+  def test_render_dashboard_emits_auth_header_placeholder(
+      self, tmp_path, monkeypatch,
+  ) -> None:
+    '''REVIEWS HIGH #4: rendered dashboard.html contains literal placeholder
+    string `{{WEB_AUTH_SECRET}}`; real WEB_AUTH_SECRET value (even when set
+    in the env) does NOT appear in the disk file.
+    '''
+    # Force WEB_AUTH_SECRET to a recognisable value so we can assert it does
+    # NOT appear in the rendered output (placeholder discipline).
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(
+      _make_render_state_with_position(), out_path=out, now=FROZEN_NOW,
+    )
+    rendered = out.read_text()
+    assert '{{WEB_AUTH_SECRET}}' in rendered, (
+      'REVIEWS HIGH #4: dashboard.html must emit literal placeholder'
+    )
+    assert 'a' * 32 not in rendered, (
+      'REVIEWS HIGH #4: real WEB_AUTH_SECRET MUST NOT leak into disk file; '
+      'substitution happens at GET / request time by web/routes/dashboard.py'
+    )
+
+  def test_per_instrument_tbody_groups_present(self, tmp_path) -> None:
+    '''REVIEWS HIGH #3: each instrument has its own
+    <tbody id="position-group-{instrument}">.
+    '''
+    state = _make_render_state_with_position()
+    # Add an AUDUSD position too
+    state['positions']['AUDUSD'] = {
+      'direction': 'LONG', 'entry_price': 0.6450, 'entry_date': '2026-04-20',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': 0.6500, 'trough_price': None,
+      'atr_entry': 0.012, 'manual_stop': None,
+    }
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'id="position-group-SPI200"' in rendered
+    assert 'id="position-group-AUDUSD"' in rendered
+    # Action buttons target the per-instrument tbody, not a single positions-tbody
+    assert 'hx-target="#position-group-SPI200"' in rendered
+    assert 'hx-target="#position-group-AUDUSD"' in rendered
+
+  def test_each_instrument_in_separate_tbody(self, tmp_path) -> None:
+    '''Exactly 2 <tbody> elements within <table> when both positions open.'''
+    state = _make_render_state_with_position()
+    state['positions']['AUDUSD'] = {
+      'direction': 'LONG', 'entry_price': 0.6450, 'entry_date': '2026-04-20',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': 0.6500, 'trough_price': None,
+      'atr_entry': 0.012, 'manual_stop': None,
+    }
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    # Find the positions table block
+    m = re.search(
+      r'<h2 id="heading-positions">.*?</table>', rendered, re.DOTALL,
+    )
+    assert m is not None
+    table_block = m.group(0)
+    tbody_count = table_block.count('<tbody')
+    assert tbody_count == 2, (
+      f'REVIEWS HIGH #3: expected 2 per-instrument tbodies, found {tbody_count}'
+    )

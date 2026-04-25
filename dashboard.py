@@ -913,6 +913,15 @@ def _render_open_form() -> str:
     GET / handler (Plan 14-04 Task 5) substitutes the real secret at request
     time. Tests assert the placeholder is on disk + the real secret is absent.
 
+  Phase 14 REVIEWS HIGH #3 — per-tbody grouping topology:
+    The form's hx-swap is "none"; the response is empty + carries an HX-Trigger
+    "positions-changed" event header. Each per-instrument
+    <tbody id="position-group-{instrument}"> listens for the event via
+    hx-trigger="positions-changed from:body" and refreshes via a
+    GET /?fragment=position-group-{instrument} fetch. This keeps swaps at
+    single-tbody granularity (no orphan rows, valid HTML5 since multiple
+    <tbody> elements in one <table> is well-formed).
+
   hx-headers on the <section> propagates to all HTMX requests inside it.
   '''
   return (
@@ -921,8 +930,7 @@ def _render_open_form() -> str:
     '  <p class="eyebrow">OPEN NEW POSITION</p>\n'
     '  <form\n'
     '    hx-post="/trades/open"\n'
-    '    hx-target="#positions-tbody"\n'
-    '    hx-swap="innerHTML"\n'
+    '    hx-swap="none"\n'
     '    hx-on::after-request="handleTradesError(event)"\n'
     '  >\n'
     '    <div class="field">\n'
@@ -978,91 +986,140 @@ def _render_open_form() -> str:
   )
 
 
+def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
+  '''Phase 14 REVIEWS HIGH #3: render one <tr id="position-row-{state_key}">
+  with 9 <td> cells (8 data + 1 Actions). Extracted from the body of
+  _render_positions_table so each row can be wrapped in its own
+  <tbody id="position-group-{state_key}"> for single-tbody-level HTMX swaps.
+
+  Action buttons target the parent <tbody id="position-group-{state_key}">
+  via hx-target="#position-group-{state_key}" with hx-swap="innerHTML" so
+  close/modify confirmation panels swap cleanly without orphan rows.
+  '''
+  display = _INSTRUMENT_DISPLAY_NAMES.get(state_key, state_key)
+  signals = state.get('signals', {})
+  instrument_cell = html.escape(display, quote=True)
+  direction_int = 1 if pos['direction'] == 'LONG' else -1
+  dir_label = html.escape(pos['direction'], quote=True)
+  dir_colour = html.escape(_SIGNAL_COLOUR[direction_int], quote=True)
+  entry_cell = html.escape(_fmt_currency(pos['entry_price']), quote=True)
+  sig_entry = signals.get(state_key) or {}
+  last_close = sig_entry.get('last_close')
+  if last_close is None:
+    current_cell = html.escape(_fmt_em_dash(), quote=True)
+  else:
+    current_cell = html.escape(_fmt_currency(last_close), quote=True)
+  contracts_cell = html.escape(str(pos['n_contracts']), quote=True)
+  pyramid_cell = html.escape(f'Lvl {pos["pyramid_level"]}', quote=True)
+  trail_stop = _compute_trail_stop_display(pos)
+  trail_currency = html.escape(_fmt_currency(trail_stop), quote=True)
+  # Phase 14 D-09 + UI-SPEC §Decision 6: manual_stop badge.
+  if pos.get('manual_stop') is not None:
+    trail_cell = (
+      f'{trail_currency} '
+      f'<span class="badge badge-manual" '
+      f'title="Operator override — set via /trades/modify. '
+      f'Clear by submitting Modify with new_stop blank.">manual</span>'
+    )
+  else:
+    trail_cell = trail_currency
+  unrealised = _compute_unrealised_pnl_display(pos, state_key, last_close, state)
+  if unrealised is None:
+    pnl_cell = html.escape(_fmt_em_dash(), quote=True)
+  else:
+    pnl_cell = _fmt_pnl_with_colour(unrealised)  # already html.escape'd internally
+  state_key_esc = html.escape(state_key, quote=True)
+  return (
+    f'      <tr id="position-row-{state_key_esc}">\n'
+    f'        <td>{instrument_cell}</td>\n'
+    f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
+    f'        <td class="num">{entry_cell}</td>\n'
+    f'        <td class="num">{current_cell}</td>\n'
+    f'        <td class="num">{contracts_cell}</td>\n'
+    f'        <td class="num">{pyramid_cell}</td>\n'
+    f'        <td class="num">{trail_cell}</td>\n'
+    f'        <td class="num">{pnl_cell}</td>\n'
+    f'        <td>'
+    f'<button type="button" class="btn-row btn-close" '
+    f'hx-get="/trades/close-form?instrument={state_key_esc}" '
+    f'hx-target="#position-group-{state_key_esc}" '
+    f'hx-swap="innerHTML">Close</button>'
+    f'<button type="button" class="btn-row btn-modify" '
+    f'hx-get="/trades/modify-form?instrument={state_key_esc}" '
+    f'hx-target="#position-group-{state_key_esc}" '
+    f'hx-swap="innerHTML">Modify</button>'
+    f'</td>\n'
+    '      </tr>\n'
+  )
+
+
 def _render_positions_table(state: dict) -> str:
   '''UI-SPEC §Open positions table — 9 cols incl. Actions (DASH-05, B-1, Phase 14).
 
   Phase 14 changes (TRADE-05):
     - <section class="open-form"> emitted ABOVE the table (UI-SPEC §Decision 1)
     - 9th <th>Actions</th> column with Close + Modify per-row buttons (UI-SPEC §Decision 2)
-    - tbody has id="positions-tbody"; each row id="position-row-{instrument}"
-    - Empty-state row uses colspan="9"
     - When position['manual_stop'] is not None, the Trail Stop cell carries a
       <span class="badge badge-manual">manual</span> pill AND the displayed
       value equals manual_stop verbatim (NOT the computed peak-trail) per
       UI-SPEC §Decision 6 + Phase 14 D-09
 
+  Phase 14 REVIEWS HIGH #3 — per-instrument tbody grouping topology:
+    Each instrument's row is wrapped in its OWN
+    <tbody id="position-group-{instrument}"> (multiple <tbody> elements in
+    one <table> is valid HTML5). All HTMX close/modify swaps target this
+    <tbody> with hx-swap="innerHTML" so confirmation rows + cancel rows +
+    final result rows are SINGLE-tbody-level swaps — no orphan panels, no
+    invalid <div>-as-child-of-<tbody> shapes. Each <tbody> also carries
+    hx-trigger="positions-changed from:body" + hx-get="/?fragment=position-
+    group-{X}" so it self-refreshes when an HX-Trigger event fires from
+    /trades/* responses.
+
+  Phase 14 REVIEWS HIGH #4 — Auth header placeholder discipline:
+    Every per-instrument tbody emits the literal placeholder string
+    `{{WEB_AUTH_SECRET}}` in its hx-headers attribute. The on-disk
+    dashboard.html cache file therefore NEVER contains the real
+    WEB_AUTH_SECRET value. web/routes/dashboard.py GET / substitutes the
+    real secret at request time.
+
   Iterates _INSTRUMENT_DISPLAY_NAMES in declaration order. Rows where
   state['positions'][key] is None are omitted (partial-state rule). Empty
-  state (all None) renders one <td colspan="9"> placeholder row per F-4.
+  state (all None) renders one <td colspan="9"> placeholder row inside a
+  <tbody id="positions-empty"> per F-4 + REVIEWS HIGH #3.
   Current column sources state['signals'][key]['last_close'] (B-1 retrofit).
   '''
   positions = state.get('positions', {})
-  signals = state.get('signals', {})
-  rendered_rows = []
-  for state_key, display in _INSTRUMENT_DISPLAY_NAMES.items():
+  tbody_blocks = []
+  any_position = False
+  for state_key in _INSTRUMENT_DISPLAY_NAMES:
     pos = positions.get(state_key)
     if pos is None:
       continue
-    instrument_cell = html.escape(display, quote=True)
-    direction_int = 1 if pos['direction'] == 'LONG' else -1
-    dir_label = html.escape(pos['direction'], quote=True)
-    dir_colour = html.escape(_SIGNAL_COLOUR[direction_int], quote=True)
-    entry_cell = html.escape(_fmt_currency(pos['entry_price']), quote=True)
-    sig_entry = signals.get(state_key) or {}
-    last_close = sig_entry.get('last_close')
-    if last_close is None:
-      current_cell = html.escape(_fmt_em_dash(), quote=True)
-    else:
-      current_cell = html.escape(_fmt_currency(last_close), quote=True)
-    contracts_cell = html.escape(str(pos['n_contracts']), quote=True)
-    pyramid_cell = html.escape(f'Lvl {pos["pyramid_level"]}', quote=True)
-    trail_stop = _compute_trail_stop_display(pos)
-    trail_currency = html.escape(_fmt_currency(trail_stop), quote=True)
-    # Phase 14 D-09 + UI-SPEC §Decision 6: manual_stop badge.
-    if pos.get('manual_stop') is not None:
-      trail_cell = (
-        f'{trail_currency} '
-        f'<span class="badge badge-manual" '
-        f'title="Operator override — set via /trades/modify. '
-        f'Clear by submitting Modify with new_stop blank.">manual</span>'
-      )
-    else:
-      trail_cell = trail_currency
-    unrealised = _compute_unrealised_pnl_display(pos, state_key, last_close, state)
-    if unrealised is None:
-      pnl_cell = html.escape(_fmt_em_dash(), quote=True)
-    else:
-      pnl_cell = _fmt_pnl_with_colour(unrealised)  # already html.escape'd internally
+    any_position = True
     state_key_esc = html.escape(state_key, quote=True)
-    rendered_rows.append(
-      f'      <tr id="position-row-{state_key_esc}">\n'
-      f'        <td>{instrument_cell}</td>\n'
-      f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
-      f'        <td class="num">{entry_cell}</td>\n'
-      f'        <td class="num">{current_cell}</td>\n'
-      f'        <td class="num">{contracts_cell}</td>\n'
-      f'        <td class="num">{pyramid_cell}</td>\n'
-      f'        <td class="num">{trail_cell}</td>\n'
-      f'        <td class="num">{pnl_cell}</td>\n'
-      f'        <td>'
-      f'<button type="button" class="btn-row btn-close" '
-      f'hx-get="/trades/close-form?instrument={state_key_esc}" '
-      f'hx-target="#position-row-{state_key_esc}" '
-      f'hx-swap="outerHTML">Close</button>'
-      f'<button type="button" class="btn-row btn-modify" '
-      f'hx-get="/trades/modify-form?instrument={state_key_esc}" '
-      f'hx-target="#position-row-{state_key_esc}" '
-      f'hx-swap="outerHTML">Modify</button>'
-      f'</td>\n'
-      '      </tr>\n'
+    row_html = _render_single_position_row(state, state_key, pos)
+    # Per-instrument tbody — REVIEWS HIGH #3 + HIGH #4.
+    # f-string brace escaping: {{ → { and }} → } in the rendered output.
+    # The hx-headers attribute literally contains "{{WEB_AUTH_SECRET}}"
+    # (the on-disk placeholder) — substituted at GET / time by
+    # web/routes/dashboard.py per Plan 14-04 Task 5.
+    tbody_blocks.append(
+      f'    <tbody id="position-group-{state_key_esc}" '
+      f'''hx-headers='{{"X-Trading-Signals-Auth": "{{{{WEB_AUTH_SECRET}}}}"}}' '''
+      f'hx-trigger="positions-changed from:body" '
+      f'hx-get="/?fragment=position-group-{state_key_esc}" '
+      f'hx-swap="innerHTML">\n'
+      f'{row_html}'
+      f'    </tbody>\n'
     )
-  if not rendered_rows:
-    rendered_rows = [
+  if not any_position:
+    tbody_blocks.append(
+      '    <tbody id="positions-empty">\n'
       '      <tr>\n'
       '        <td colspan="9" class="empty-state">— No open positions —</td>\n'
       '      </tr>\n'
-    ]
-  body = ''.join(rendered_rows)
+      '    </tbody>\n'
+    )
   return (
     _render_open_form()
     + '<section aria-labelledby="heading-positions">\n'
@@ -1083,9 +1140,7 @@ def _render_positions_table(state: dict) -> str:
     '        <th scope="col">Actions</th>\n'
     '      </tr>\n'
     '    </thead>\n'
-    '    <tbody id="positions-tbody">\n'
-    f'{body}'
-    '    </tbody>\n'
+    f'{"".join(tbody_blocks)}'
     '  </table>\n'
     '</section>\n'
   )
