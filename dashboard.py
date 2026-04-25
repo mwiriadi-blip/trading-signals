@@ -115,6 +115,50 @@ logger = logging.getLogger(__name__)
 _CHARTJS_URL = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js'
 _CHARTJS_SRI = 'sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN'
 
+# Phase 14 TRADE-05 / UI-SPEC §HTMX vendor pin: HTMX 1.9.12 UMD bundle.
+# SRI verified 2026-04-25 against unpkg + jsdelivr (byte-identical).
+# Mirrors the Chart.js vendor-pin precedent above. Loads in <head> AFTER
+# Chart.js, BEFORE inline <style> (UI-SPEC §HTMX vendor pin / load location).
+_HTMX_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js'
+_HTMX_SRI = 'sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2'
+
+# Phase 14 UI-SPEC §Decision 4: inline JS for hx-on::after-request 4xx surfacing.
+# The ONLY client-side script Phase 14 ships beyond HTMX itself.
+# innerHTML is used for layout speed; e.reason and 409 body text are server-controlled
+# prose (Pydantic validators + D-01 conflict messages — NOT user-controllable).
+# If a future REQ allows operator-supplied free-text in error reasons, switch
+# to textContent per CLAUDE.md "innerHTML with dynamic data requires escaping".
+_HANDLE_TRADES_ERROR_JS = '''
+function handleTradesError(evt) {
+  if (evt.detail.successful) return;
+  var section = evt.target.closest('section');
+  if (!section) return;
+  var errorBox = section.querySelector('.error');
+  if (!errorBox) return;
+  var status = evt.detail.xhr.status;
+  if (status === 401) {
+    errorBox.innerHTML = '<p class="error-heading">Auth header missing or wrong — refresh the page</p>';
+  } else if (status === 400) {
+    var body;
+    try { body = JSON.parse(evt.detail.xhr.responseText); } catch (e) {
+      errorBox.innerHTML = '<p class="error-heading">Server error — see journald</p>';
+      errorBox.hidden = false;
+      return;
+    }
+    var heading = '<p class="error-heading">Could not save trade:</p>';
+    var rows = (body.errors || []).map(function (e) {
+      return '<div class="error-row"><code>' + e.field + '</code>: ' + e.reason + '</div>';
+    }).join('');
+    errorBox.innerHTML = heading + '<div class="error-rows">' + rows + '</div>';
+  } else if (status === 409) {
+    errorBox.innerHTML = '<p class="error-heading">' + evt.detail.xhr.responseText + '</p>';
+  } else {
+    errorBox.innerHTML = '<p class="error-heading">Server error — see journald: journalctl -u trading-signals-web</p>';
+  }
+  errorBox.hidden = false;
+}
+'''
+
 
 # =========================================================================
 # Display-name + contract-spec dicts — Wave 1 lookup sources
@@ -353,6 +397,166 @@ footer {{
     padding-right: 16px;
   }}
 }}
+/* =========================================================================
+ * Phase 14 — Trade Journal HTMX components
+ * UI-SPEC §Decision 1 (open form), §Decision 2 (action buttons),
+ * §Decision 4 (error region), §Decision 6 (manual badge), §Decision 7 (form layout)
+ * All tokens inherited from :root above; no new design tokens.
+ * ========================================================================= */
+.open-form {{ margin-bottom: var(--space-6); }}
+.open-form form {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}}
+.open-form .field {{
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 140px;
+  flex: 1;
+}}
+.open-form label {{
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}}
+.open-form input,
+.open-form select {{
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-body);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}}
+.open-form select {{
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}}
+.open-form input:focus,
+.open-form select:focus {{
+  outline: none;
+  border-color: var(--color-text-muted);
+  box-shadow: 0 0 0 1px var(--color-text-muted);
+}}
+.open-form details {{
+  width: 100%;
+  margin-top: var(--space-2);
+}}
+.open-form summary {{
+  cursor: pointer;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) 0;
+}}
+.open-form .advanced-helper {{
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+  margin: var(--space-2) 0;
+}}
+.open-form small {{
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+}}
+.btn-primary {{
+  background: transparent;
+  color: var(--color-long);
+  border: 1px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}}
+.btn-primary:hover {{ background: rgba(34, 197, 94, 0.10); }}
+.btn-primary:disabled {{
+  color: var(--color-text-dim);
+  border-color: var(--color-text-dim);
+  cursor: not-allowed;
+  background: transparent;
+}}
+.btn-row {{
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px var(--space-3);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}}
+.btn-row.btn-close {{ color: var(--color-short); border-color: var(--color-short); }}
+.btn-row.btn-close:hover {{ background: rgba(239, 68, 68, 0.10); }}
+.btn-row.btn-modify {{ color: var(--color-flat); border-color: var(--color-flat); }}
+.btn-row.btn-modify:hover {{ background: rgba(234, 179, 8, 0.10); }}
+.btn-row + .btn-row {{ margin-left: var(--space-2); }}
+.badge {{
+  display: inline-block;
+  padding: 2px 6px;
+  margin-left: var(--space-2);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  text-transform: lowercase;
+  border-radius: 4px;
+  letter-spacing: 0;
+}}
+.badge-manual {{
+  background: rgba(234, 179, 8, 0.10);
+  color: var(--color-flat);
+}}
+.error {{
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-short);
+  background: var(--color-surface);
+  padding: var(--space-3);
+  margin-top: var(--space-4);
+  border-radius: 4px;
+}}
+.error-heading {{
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--color-text);
+  margin: 0 0 var(--space-2);
+}}
+.error-row {{
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0;
+  padding: 2px 0;
+}}
+.error-row code {{
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}}
+#confirmation-banner {{
+  margin: var(--space-4) 0;
+}}
+.banner-success {{
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-3);
+  color: var(--color-text);
+  margin: 0;
+}}
+@media (max-width: 720px) {{
+  .open-form .field {{ min-width: 100%; }}
+}}
 '''
 
 
@@ -516,8 +720,24 @@ def _compute_trail_stop_display(position: dict) -> float:
 
   LONG: peak_price - TRAIL_MULT_LONG * atr_entry (fallback: entry_price if peak_price None)
   SHORT: trough_price + TRAIL_MULT_SHORT * atr_entry (fallback: entry_price if trough_price None)
+
+  Phase 14 D-09 + UI-SPEC §Decision 6: manual_stop precedence — when operator
+  has set a stop via /trades/modify (position['manual_stop'] is not None),
+  return that value directly. Mirrors sizing_engine.get_trailing_stop precedence
+  (CLAUDE.md hex-lite lockstep). NaN guard on atr_entry runs FIRST so the
+  parity test against sizing_engine.get_trailing_stop holds bit-identically
+  for the NaN-pass-through case (B-1).
+
+  Pitfall 5: position.get('manual_stop') so pre-migration position dicts
+  (no key) silently fall through to computed.
   '''
   atr_entry = position['atr_entry']
+  if not math.isfinite(atr_entry):
+    return float('nan')  # B-1: NaN-pass-through (lockstep with sizing_engine)
+  # Phase 14 D-09: manual_stop takes precedence over computed trailing stop.
+  manual = position.get('manual_stop')
+  if manual is not None:
+    return manual
   if position['direction'] == 'LONG':
     peak = position.get('peak_price') or position['entry_price']
     return peak - TRAIL_MULT_LONG * atr_entry
@@ -680,12 +900,100 @@ def _render_signal_cards(state: dict) -> str:
   return ''.join(parts)
 
 
+def _render_open_form() -> str:
+  '''UI-SPEC §Decision 1 + §Decision 7: Open New Position form, ABOVE the
+  Open Positions table. 4 required fields inline; 4 optional in collapsed
+  <details>. POST /trades/open via HTMX; 4xx errors surface in inline
+  .error region via hx-on::after-request handler (UI-SPEC §Decision 4).
+
+  Phase 14 REVIEWS HIGH #4 — Auth header discipline:
+    The `hx-headers` attribute on the <section> emits the literal placeholder
+    string `{{WEB_AUTH_SECRET}}`. The on-disk dashboard.html cache file therefore
+    NEVER contains the real WEB_AUTH_SECRET value. The web/routes/dashboard.py
+    GET / handler (Plan 14-04 Task 5) substitutes the real secret at request
+    time. Tests assert the placeholder is on disk + the real secret is absent.
+
+  hx-headers on the <section> propagates to all HTMX requests inside it.
+  '''
+  return (
+    '<section class="open-form" '
+    '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
+    '  <p class="eyebrow">OPEN NEW POSITION</p>\n'
+    '  <form\n'
+    '    hx-post="/trades/open"\n'
+    '    hx-target="#positions-tbody"\n'
+    '    hx-swap="innerHTML"\n'
+    '    hx-on::after-request="handleTradesError(event)"\n'
+    '  >\n'
+    '    <div class="field">\n'
+    '      <label for="open-form-instrument">Instrument</label>\n'
+    '      <select id="open-form-instrument" name="instrument" required>\n'
+    '        <option value="SPI200">SPI200</option>\n'
+    '        <option value="AUDUSD">AUDUSD</option>\n'
+    '      </select>\n'
+    '    </div>\n'
+    '    <div class="field">\n'
+    '      <label for="open-form-direction">Direction</label>\n'
+    '      <select id="open-form-direction" name="direction" required>\n'
+    '        <option value="LONG">LONG</option>\n'
+    '        <option value="SHORT">SHORT</option>\n'
+    '      </select>\n'
+    '    </div>\n'
+    '    <div class="field">\n'
+    '      <label for="open-form-entry-price">Entry price</label>\n'
+    '      <input id="open-form-entry-price" name="entry_price" type="number" step="0.01" min="0.01" required>\n'
+    '    </div>\n'
+    '    <div class="field">\n'
+    '      <label for="open-form-contracts">Contracts</label>\n'
+    '      <input id="open-form-contracts" name="contracts" type="number" step="1" min="1" required>\n'
+    '    </div>\n'
+    '    <details class="form-advanced">\n'
+    '      <summary>Advanced</summary>\n'
+    '      <p class="advanced-helper">Leave blank unless back-dating a pyramided position.</p>\n'
+    '      <div class="field">\n'
+    '        <label for="open-form-executed-at">Executed at</label>\n'
+    '        <input id="open-form-executed-at" name="executed_at" type="date">\n'
+    '        <small>Optional. Defaults to today (AWST).</small>\n'
+    '      </div>\n'
+    '      <div class="field">\n'
+    '        <label for="open-form-peak-price">Peak price</label>\n'
+    '        <input id="open-form-peak-price" name="peak_price" type="number" step="0.01" min="0">\n'
+    '        <small>LONG only. Leave blank to default to entry price.</small>\n'
+    '      </div>\n'
+    '      <div class="field">\n'
+    '        <label for="open-form-trough-price">Trough price</label>\n'
+    '        <input id="open-form-trough-price" name="trough_price" type="number" step="0.01" min="0">\n'
+    '        <small>SHORT only. Leave blank to default to entry price.</small>\n'
+    '      </div>\n'
+    '      <div class="field">\n'
+    '        <label for="open-form-pyramid-level">Pyramid level</label>\n'
+    '        <input id="open-form-pyramid-level" name="pyramid_level" type="number" step="1" min="0" max="2">\n'
+    '        <small>Defaults to 0. Use only when back-dating a pyramided position.</small>\n'
+    '      </div>\n'
+    '    </details>\n'
+    '    <button type="submit" class="btn-primary">Open Position</button>\n'
+    '  </form>\n'
+    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
+    '</section>\n'
+  )
+
+
 def _render_positions_table(state: dict) -> str:
-  '''UI-SPEC §Open positions table — 8 cols incl. Current from last_close (DASH-05, B-1).
+  '''UI-SPEC §Open positions table — 9 cols incl. Actions (DASH-05, B-1, Phase 14).
+
+  Phase 14 changes (TRADE-05):
+    - <section class="open-form"> emitted ABOVE the table (UI-SPEC §Decision 1)
+    - 9th <th>Actions</th> column with Close + Modify per-row buttons (UI-SPEC §Decision 2)
+    - tbody has id="positions-tbody"; each row id="position-row-{instrument}"
+    - Empty-state row uses colspan="9"
+    - When position['manual_stop'] is not None, the Trail Stop cell carries a
+      <span class="badge badge-manual">manual</span> pill AND the displayed
+      value equals manual_stop verbatim (NOT the computed peak-trail) per
+      UI-SPEC §Decision 6 + Phase 14 D-09
 
   Iterates _INSTRUMENT_DISPLAY_NAMES in declaration order. Rows where
   state['positions'][key] is None are omitted (partial-state rule). Empty
-  state (all None) renders one <td colspan="8"> placeholder row per F-4.
+  state (all None) renders one <td colspan="9"> placeholder row per F-4.
   Current column sources state['signals'][key]['last_close'] (B-1 retrofit).
   '''
   positions = state.get('positions', {})
@@ -709,14 +1017,25 @@ def _render_positions_table(state: dict) -> str:
     contracts_cell = html.escape(str(pos['n_contracts']), quote=True)
     pyramid_cell = html.escape(f'Lvl {pos["pyramid_level"]}', quote=True)
     trail_stop = _compute_trail_stop_display(pos)
-    trail_cell = html.escape(_fmt_currency(trail_stop), quote=True)
+    trail_currency = html.escape(_fmt_currency(trail_stop), quote=True)
+    # Phase 14 D-09 + UI-SPEC §Decision 6: manual_stop badge.
+    if pos.get('manual_stop') is not None:
+      trail_cell = (
+        f'{trail_currency} '
+        f'<span class="badge badge-manual" '
+        f'title="Operator override — set via /trades/modify. '
+        f'Clear by submitting Modify with new_stop blank.">manual</span>'
+      )
+    else:
+      trail_cell = trail_currency
     unrealised = _compute_unrealised_pnl_display(pos, state_key, last_close, state)
     if unrealised is None:
       pnl_cell = html.escape(_fmt_em_dash(), quote=True)
     else:
       pnl_cell = _fmt_pnl_with_colour(unrealised)  # already html.escape'd internally
+    state_key_esc = html.escape(state_key, quote=True)
     rendered_rows.append(
-      '      <tr>\n'
+      f'      <tr id="position-row-{state_key_esc}">\n'
       f'        <td>{instrument_cell}</td>\n'
       f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
       f'        <td class="num">{entry_cell}</td>\n'
@@ -725,17 +1044,28 @@ def _render_positions_table(state: dict) -> str:
       f'        <td class="num">{pyramid_cell}</td>\n'
       f'        <td class="num">{trail_cell}</td>\n'
       f'        <td class="num">{pnl_cell}</td>\n'
+      f'        <td>'
+      f'<button type="button" class="btn-row btn-close" '
+      f'hx-get="/trades/close-form?instrument={state_key_esc}" '
+      f'hx-target="#position-row-{state_key_esc}" '
+      f'hx-swap="outerHTML">Close</button>'
+      f'<button type="button" class="btn-row btn-modify" '
+      f'hx-get="/trades/modify-form?instrument={state_key_esc}" '
+      f'hx-target="#position-row-{state_key_esc}" '
+      f'hx-swap="outerHTML">Modify</button>'
+      f'</td>\n'
       '      </tr>\n'
     )
   if not rendered_rows:
     rendered_rows = [
       '      <tr>\n'
-      '        <td colspan="8" class="empty-state">— No open positions —</td>\n'
+      '        <td colspan="9" class="empty-state">— No open positions —</td>\n'
       '      </tr>\n'
     ]
   body = ''.join(rendered_rows)
   return (
-    '<section aria-labelledby="heading-positions">\n'
+    _render_open_form()
+    + '<section aria-labelledby="heading-positions">\n'
     '  <h2 id="heading-positions">Open Positions</h2>\n'
     '  <table class="data-table">\n'
     '    <caption class="visually-hidden">Open positions with current price, '
@@ -750,9 +1080,10 @@ def _render_positions_table(state: dict) -> str:
     '        <th scope="col">Pyramid</th>\n'
     '        <th scope="col">Trail Stop</th>\n'
     '        <th scope="col">Unrealised P&amp;L</th>\n'
+    '        <th scope="col">Actions</th>\n'
     '      </tr>\n'
     '    </thead>\n'
-    '    <tbody>\n'
+    '    <tbody id="positions-tbody">\n'
     f'{body}'
     '    </tbody>\n'
     '  </table>\n'
@@ -973,11 +1304,21 @@ def _render_equity_chart_container(state: dict) -> str:
 
 
 def _render_html_shell(body: str) -> str:
-  '''UI-SPEC §Component Hierarchy — <!DOCTYPE> + <head> + Chart.js script + inline CSS + <body>.
+  '''UI-SPEC §Component Hierarchy — <!DOCTYPE> + <head> + Chart.js + HTMX + inline CSS + <body>.
 
-  Chart.js 4.4.6 loads in <head> with SRI; the inline chart-instantiation
-  <script> is IN the body (emitted by _render_equity_chart_container).
-  Single-file, inline CSS, no external stylesheet (DASH-01).
+  Chart.js 4.4.6 loads in <head> with SRI. Phase 14 adds HTMX 1.9.12 SRI-pinned
+  AFTER Chart.js (UI-SPEC §HTMX vendor pin / load location: "<head> after Chart.js,
+  before inline <style>"), plus the inline handleTradesError JS handler for
+  hx-on::after-request 4xx surfacing (UI-SPEC §Decision 4 — only client-side
+  script Phase 14 ships beyond HTMX itself).
+
+  The inline chart-instantiation <script> is IN the body (emitted by
+  _render_equity_chart_container). Single-file, inline CSS, no external
+  stylesheet (DASH-01).
+
+  Phase 14 UI-SPEC §Decision 3: emits <div id="confirmation-banner"> at the
+  top of the body wrapper as the OOB swap target for success messages from
+  /trades/* responses.
   '''
   return (
     '<!DOCTYPE html>\n'
@@ -986,12 +1327,18 @@ def _render_html_shell(body: str) -> str:
     '  <meta charset="utf-8">\n'
     '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
     '  <title>Trading Signals — Dashboard</title>\n'
-    f'  <style>{_INLINE_CSS}</style>\n'
     f'  <script src="{_CHARTJS_URL}" '
     f'integrity="{_CHARTJS_SRI}" crossorigin="anonymous"></script>\n'
+    f'  <script src="{_HTMX_URL}" '
+    f'integrity="{_HTMX_SRI}" crossorigin="anonymous"></script>\n'
+    '  <script>\n'
+    + _HANDLE_TRADES_ERROR_JS +
+    '  </script>\n'
+    f'  <style>{_INLINE_CSS}</style>\n'
     '</head>\n'
     '<body>\n'
     '  <div class="container">\n'
+    '    <div id="confirmation-banner"></div>\n'
     f'{body}'
     '  </div>\n'
     '</body>\n'

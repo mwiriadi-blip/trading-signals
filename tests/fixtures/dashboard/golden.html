@@ -4,6 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Trading Signals — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" integrity="sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+  <script>
+
+function handleTradesError(evt) {
+  if (evt.detail.successful) return;
+  var section = evt.target.closest('section');
+  if (!section) return;
+  var errorBox = section.querySelector('.error');
+  if (!errorBox) return;
+  var status = evt.detail.xhr.status;
+  if (status === 401) {
+    errorBox.innerHTML = '<p class="error-heading">Auth header missing or wrong — refresh the page</p>';
+  } else if (status === 400) {
+    var body;
+    try { body = JSON.parse(evt.detail.xhr.responseText); } catch (e) {
+      errorBox.innerHTML = '<p class="error-heading">Server error — see journald</p>';
+      errorBox.hidden = false;
+      return;
+    }
+    var heading = '<p class="error-heading">Could not save trade:</p>';
+    var rows = (body.errors || []).map(function (e) {
+      return '<div class="error-row"><code>' + e.field + '</code>: ' + e.reason + '</div>';
+    }).join('');
+    errorBox.innerHTML = heading + '<div class="error-rows">' + rows + '</div>';
+  } else if (status === 409) {
+    errorBox.innerHTML = '<p class="error-heading">' + evt.detail.xhr.responseText + '</p>';
+  } else {
+    errorBox.innerHTML = '<p class="error-heading">Server error — see journald: journalctl -u trading-signals-web</p>';
+  }
+  errorBox.hidden = false;
+}
+  </script>
   <style>
 :root {
   --color-bg: #0f1117;
@@ -220,11 +253,171 @@ footer {
     padding-right: 16px;
   }
 }
+/* =========================================================================
+ * Phase 14 — Trade Journal HTMX components
+ * UI-SPEC §Decision 1 (open form), §Decision 2 (action buttons),
+ * §Decision 4 (error region), §Decision 6 (manual badge), §Decision 7 (form layout)
+ * All tokens inherited from :root above; no new design tokens.
+ * ========================================================================= */
+.open-form { margin-bottom: var(--space-6); }
+.open-form form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}
+.open-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 140px;
+  flex: 1;
+}
+.open-form label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.open-form input,
+.open-form select {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-body);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.open-form select {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.open-form input:focus,
+.open-form select:focus {
+  outline: none;
+  border-color: var(--color-text-muted);
+  box-shadow: 0 0 0 1px var(--color-text-muted);
+}
+.open-form details {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+.open-form summary {
+  cursor: pointer;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) 0;
+}
+.open-form .advanced-helper {
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+  margin: var(--space-2) 0;
+}
+.open-form small {
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+}
+.btn-primary {
+  background: transparent;
+  color: var(--color-long);
+  border: 1px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.btn-primary:hover { background: rgba(34, 197, 94, 0.10); }
+.btn-primary:disabled {
+  color: var(--color-text-dim);
+  border-color: var(--color-text-dim);
+  cursor: not-allowed;
+  background: transparent;
+}
+.btn-row {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px var(--space-3);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.btn-row.btn-close { color: var(--color-short); border-color: var(--color-short); }
+.btn-row.btn-close:hover { background: rgba(239, 68, 68, 0.10); }
+.btn-row.btn-modify { color: var(--color-flat); border-color: var(--color-flat); }
+.btn-row.btn-modify:hover { background: rgba(234, 179, 8, 0.10); }
+.btn-row + .btn-row { margin-left: var(--space-2); }
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-left: var(--space-2);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  text-transform: lowercase;
+  border-radius: 4px;
+  letter-spacing: 0;
+}
+.badge-manual {
+  background: rgba(234, 179, 8, 0.10);
+  color: var(--color-flat);
+}
+.error {
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-short);
+  background: var(--color-surface);
+  padding: var(--space-3);
+  margin-top: var(--space-4);
+  border-radius: 4px;
+}
+.error-heading {
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--color-text);
+  margin: 0 0 var(--space-2);
+}
+.error-row {
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0;
+  padding: 2px 0;
+}
+.error-row code {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+#confirmation-banner {
+  margin: var(--space-4) 0;
+}
+.banner-success {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-3);
+  color: var(--color-text);
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .open-form .field { min-width: 100%; }
+}
 </style>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" integrity="sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN" crossorigin="anonymous"></script>
 </head>
 <body>
   <div class="container">
+    <div id="confirmation-banner"></div>
 <header>
   <h1>Trading Signals</h1>
   <p class="subtitle">SPI 200 &amp; AUD/USD mechanical system</p>
@@ -294,6 +487,64 @@ footer {
     })();
   </script>
 </section>
+<section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">OPEN NEW POSITION</p>
+  <form
+    hx-post="/trades/open"
+    hx-target="#positions-tbody"
+    hx-swap="innerHTML"
+    hx-on::after-request="handleTradesError(event)"
+  >
+    <div class="field">
+      <label for="open-form-instrument">Instrument</label>
+      <select id="open-form-instrument" name="instrument" required>
+        <option value="SPI200">SPI200</option>
+        <option value="AUDUSD">AUDUSD</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="open-form-direction">Direction</label>
+      <select id="open-form-direction" name="direction" required>
+        <option value="LONG">LONG</option>
+        <option value="SHORT">SHORT</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="open-form-entry-price">Entry price</label>
+      <input id="open-form-entry-price" name="entry_price" type="number" step="0.01" min="0.01" required>
+    </div>
+    <div class="field">
+      <label for="open-form-contracts">Contracts</label>
+      <input id="open-form-contracts" name="contracts" type="number" step="1" min="1" required>
+    </div>
+    <details class="form-advanced">
+      <summary>Advanced</summary>
+      <p class="advanced-helper">Leave blank unless back-dating a pyramided position.</p>
+      <div class="field">
+        <label for="open-form-executed-at">Executed at</label>
+        <input id="open-form-executed-at" name="executed_at" type="date">
+        <small>Optional. Defaults to today (AWST).</small>
+      </div>
+      <div class="field">
+        <label for="open-form-peak-price">Peak price</label>
+        <input id="open-form-peak-price" name="peak_price" type="number" step="0.01" min="0">
+        <small>LONG only. Leave blank to default to entry price.</small>
+      </div>
+      <div class="field">
+        <label for="open-form-trough-price">Trough price</label>
+        <input id="open-form-trough-price" name="trough_price" type="number" step="0.01" min="0">
+        <small>SHORT only. Leave blank to default to entry price.</small>
+      </div>
+      <div class="field">
+        <label for="open-form-pyramid-level">Pyramid level</label>
+        <input id="open-form-pyramid-level" name="pyramid_level" type="number" step="1" min="0" max="2">
+        <small>Defaults to 0. Use only when back-dating a pyramided position.</small>
+      </div>
+    </details>
+    <button type="submit" class="btn-primary">Open Position</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
 <section aria-labelledby="heading-positions">
   <h2 id="heading-positions">Open Positions</h2>
   <table class="data-table">
@@ -308,10 +559,11 @@ footer {
         <th scope="col">Pyramid</th>
         <th scope="col">Trail Stop</th>
         <th scope="col">Unrealised P&amp;L</th>
+        <th scope="col">Actions</th>
       </tr>
     </thead>
-    <tbody>
-      <tr>
+    <tbody id="positions-tbody">
+      <tr id="position-row-SPI200">
         <td>SPI 200</td>
         <td><span style="color: #22c55e">LONG</span></td>
         <td class="num">$8,000.00</td>
@@ -320,6 +572,7 @@ footer {
         <td class="num">Lvl 0</td>
         <td class="num">$7,950.00</td>
         <td class="num"><span style="color: #22c55e">+$844.00</span></td>
+        <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=SPI200" hx-target="#position-row-SPI200" hx-swap="outerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=SPI200" hx-target="#position-row-SPI200" hx-swap="outerHTML">Modify</button></td>
       </tr>
     </tbody>
   </table>
