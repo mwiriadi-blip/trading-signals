@@ -135,12 +135,16 @@ def _make_position(
   trough_price: float | None = None,
   atr_entry: float = 53.0,
   entry_date: str = '2026-01-02',
+  manual_stop: float | None = None,
 ) -> Position:
   '''Build a Position TypedDict with sensible defaults for unit tests.
 
   Defaults to LONG with atr_entry=53 (matches RESEARCH §Pattern 2 reference numbers).
   peak_price/trough_price default to None so tests must override the relevant one
   to test stop-hit math beyond the entry-price fallback.
+
+  manual_stop defaults to None (Phase 14 D-09 default — falls through to v1.0
+  computed peak/trough trailing stop). Tests override to verify the override path.
   '''
   return {
     'direction': direction,
@@ -151,6 +155,7 @@ def _make_position(
     'peak_price': peak_price,
     'trough_price': trough_price,
     'atr_entry': atr_entry,
+    'manual_stop': manual_stop,  # Phase 14 D-09: operator override; None = computed default
   }
 
 
@@ -1180,24 +1185,102 @@ class TestStep:
 # =========================================================================
 
 class TestManualStopOverride:
-  '''Phase 14 D-09: get_trailing_stop returns position['manual_stop'] when set,
-  falls back to peak/trough computed stop when None. Plan 14-03 implements.
+  '''Phase 14 D-09: get_trailing_stop honors position['manual_stop'] override.
 
-  Order matters: NaN-passthrough guard runs FIRST (B-1 invariant);
-  manual_stop branch is BETWEEN the NaN guard and the LONG/SHORT switch.
-  Defensive .get('manual_stop') (not subscript) so pre-migration positions
-  don't KeyError (RESEARCH §Pitfall 5).
+  Precedence (locked by these tests):
+    1. NaN guard on atr_entry (B-1) runs FIRST — returns float('nan')
+       regardless of manual_stop value.
+    2. manual_stop branch — when not None, returns the value verbatim
+       (no peak/trough math, no ATR multiple).
+    3. LONG branch — peak - TRAIL_MULT_LONG * atr_entry
+    4. SHORT branch — trough + TRAIL_MULT_SHORT * atr_entry
 
-  Test surface (Plan 14-03):
-    - manual_stop is None -> get_trailing_stop returns peak-trail (LONG)
-      or trough-trail (SHORT) — existing behaviour.
-    - manual_stop is float -> get_trailing_stop returns manual_stop
-      verbatim (no peak/trough math, no ATR multiple).
-    - manual_stop key absent (pre-migration Position dict) -> .get returns
-      None default -> falls through to peak/trough branch.
-    - NaN-passthrough still runs first regardless of manual_stop value
-      (B-1 invariant preserved).
+  Defensive .get('manual_stop') so pre-migration position dicts (no key)
+  silently fall through to computed (RESEARCH §Pitfall 5). The v2->v3
+  migration in state_manager (Plan 14-02) backfills None on every Position,
+  but defensive .get protects against transient calls during migration.
+
+  Lockstep parity (CLAUDE.md hex-lite): dashboard._compute_trail_stop_display
+  MUST implement identical precedence — verified by Plan 14-05's parity test.
   '''
 
-  def test_placeholder_wave_0(self):
-    pytest.skip('Wave 0 skeleton; Plan 14-03 implements')
+  def test_manual_stop_overrides_long_computed(self) -> None:
+    '''LONG with manual_stop=7700.0; computed would be 8100 - 3*50 = 7950.
+    Returns the override directly, NOT the computed.'''
+    pos = _make_position(
+      direction='LONG', peak_price=8100.0, atr_entry=50.0,
+      manual_stop=7700.0,
+    )
+    result = get_trailing_stop(pos, current_price=8050.0, atr=50.0)
+    assert result == 7700.0, (
+      f'D-09: LONG with manual_stop=7700.0 must return 7700.0 directly; '
+      f'got {result!r} (computed peak-trail would be 7950.0)'
+    )
+
+  def test_manual_stop_overrides_short_computed(self) -> None:
+    '''SHORT with manual_stop=7950.0; computed would be 7800 + 2*50 = 7900.
+    Returns the override directly. We pick 7950.0 (NOT 7900.0) so the
+    test's invariant is "override-not-computed" rather than a coincidental
+    numeric collision with the computed result.'''
+    pos = _make_position(
+      direction='SHORT', trough_price=7800.0, atr_entry=50.0,
+      manual_stop=7950.0,  # NOT the computed 7900.0
+    )
+    result = get_trailing_stop(pos, current_price=7850.0, atr=50.0)
+    assert result == 7950.0, (
+      f'D-09: SHORT with manual_stop=7950.0 must return 7950.0 directly; '
+      f'got {result!r} (computed trough+trail would be 7900.0)'
+    )
+
+  def test_manual_stop_none_falls_back_to_computed(self) -> None:
+    '''manual_stop=None preserves v1.0 computed peak/trough trailing stop.
+    LONG: peak=8100, atr_entry=50 -> stop = 8100 - 3*50 = 7950.0.'''
+    pos = _make_position(
+      direction='LONG', peak_price=8100.0, atr_entry=50.0,
+      manual_stop=None,
+    )
+    result = get_trailing_stop(pos, current_price=8050.0, atr=50.0)
+    assert result == 7950.0, (
+      f'D-09: manual_stop=None must fall through to computed v1.0 stop; '
+      f'expected 7950.0, got {result!r}'
+    )
+
+  def test_manual_stop_with_nan_atr_entry_returns_nan(self) -> None:
+    '''B-1 NaN-passthrough preserved: NaN atr_entry returns float(nan)
+    BEFORE the manual_stop branch is reached. Locks the discipline that
+    the manual_stop branch is positioned AFTER the NaN guard.'''
+    pos = _make_position(
+      direction='LONG', peak_price=8100.0, atr_entry=float('nan'),
+      manual_stop=7700.0,
+    )
+    result = get_trailing_stop(pos, current_price=8050.0, atr=50.0)
+    assert math.isnan(result), (
+      f'B-1: NaN atr_entry must produce NaN result REGARDLESS of '
+      f'manual_stop value; got {result!r}'
+    )
+
+  def test_manual_stop_via_get_with_missing_key_falls_back_to_computed(self) -> None:
+    '''Pre-migration position dict (no manual_stop key at all):
+    position.get('manual_stop') returns None -> falls through to computed.
+    Locks the defensive .get() choice (RESEARCH §Pitfall 5). Mitigates
+    T-14-07 (E: pre-migration KeyError crash).'''
+    # Build a pos WITHOUT the manual_stop key (simulates pre-migration data
+    # loaded transiently before _migrate_v2_to_v3 backfills). _make_position
+    # always sets manual_stop, so we construct a bare dict instead.
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7000.0,
+      'entry_date': '2026-01-15',
+      'n_contracts': 2,
+      'pyramid_level': 0,
+      'peak_price': 8100.0,
+      'trough_price': None,
+      'atr_entry': 50.0,
+      # NO 'manual_stop' key
+    }
+    result = get_trailing_stop(pos, current_price=8050.0, atr=50.0)
+    # Computed: 8100 - 3*50 = 7950
+    assert result == 7950.0, (
+      f'Pitfall 5: position.get(manual_stop) on missing key must return '
+      f'None and fall through to computed; expected 7950.0, got {result!r}'
+    )

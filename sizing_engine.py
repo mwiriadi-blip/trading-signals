@@ -215,6 +215,14 @@ def get_trailing_stop(
   current_price parameter is reserved for future callers; today the function
   only needs peak/trough/entry/atr_entry. Kept in signature for API stability.
 
+  Phase 14 D-09 manual_stop precedence: when position['manual_stop'] is not
+  None (operator override set via POST /trades/modify), the function returns
+  that value directly, bypassing the peak/trough computed stop. When None
+  (the v1.0 default), falls through to the computed trailing stop. NaN
+  guard on atr_entry runs FIRST so NaN passthrough is preserved regardless
+  of the override. Defensive position.get('manual_stop') so pre-migration
+  state dicts (no key) silently fall through (RESEARCH §Pitfall 5).
+
   Args:
     position:      open position TypedDict (D-08)
     current_price: reserved; not used in trail-stop math (D-16)
@@ -228,6 +236,13 @@ def get_trailing_stop(
   atr_entry = position['atr_entry']
   if not math.isfinite(atr_entry):
     return float('nan')  # B-1: NaN-pass-through
+  # Phase 14 D-09: manual_stop takes precedence over computed trailing stop.
+  # When operator has set a stop via /trades/modify, return it directly.
+  # When None (default), fall through to v1.0 computed trailing stop.
+  # Defensive .get() handles pre-migration position dicts (no key) — RESEARCH Pitfall 5.
+  manual = position.get('manual_stop')
+  if manual is not None:
+    return manual
   if position['direction'] == 'LONG':
     peak = position['peak_price']
     if peak is None:
@@ -273,6 +288,18 @@ def check_stop_hit(
   False defers the decision. If position['atr_entry'] is NaN, also return
   False (a NaN-stop comparison would be False anyway, but we make it
   explicit to short-circuit the math).
+
+  Phase 14 D-15 (REVIEWS MEDIUM #6) — manual_stop NOT honored here, intentionally:
+    get_trailing_stop honors position['manual_stop'] (D-09) for display
+    and operator-facing reporting. check_stop_hit is invoked by the daily
+    signal loop (main.run_daily_check), which is OUT OF Phase 14 scope —
+    the loop continues to use the v1.0 computed stop level for hit
+    detection. Phase 15 candidate (deferred): align check_stop_hit with
+    manual_stop so dashboard and exit-detection no longer diverge. If a
+    future phase wants the daily loop to honor manual_stop, a parallel
+    branch must be added here. As of Phase 14, the discrepancy is
+    documented and accepted: the operator can override the displayed
+    stop without changing the loop's trigger condition.
 
   Args:
     position: open position TypedDict (D-08)
