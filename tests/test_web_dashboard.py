@@ -356,3 +356,101 @@ class TestFirstRun:
       f'Expected Content-Type "text/plain; charset=utf-8", '
       f'got {r.headers.get("content-type")!r}'
     )
+
+
+class TestAuthSecretPlaceholderSubstitution:
+  '''REVIEWS HIGH #4: dashboard.html on disk emits literal placeholder;
+  the GET / handler substitutes at request time so the on-disk artifact
+  never carries the real WEB_AUTH_SECRET value.
+
+  Threat T-14-15 (auth-secret leak via on-disk dashboard.html cache) is
+  MITIGATED by this discipline. These tests lock the contract: disk file
+  contains the placeholder (or no secret); response body contains the
+  real secret; placeholder string never leaks into the response.
+  '''
+
+  def test_dashboard_html_disk_does_not_contain_real_secret(self):
+    '''Disk file MUST NOT contain the real secret.
+
+    Plan 14-05 emits the literal {{WEB_AUTH_SECRET}} placeholder. Until
+    Plan 14-05 lands, the on-disk dashboard.html may not include the
+    placeholder yet — so we ONLY assert "real secret absent". Once
+    Plan 14-05 lands, additionally assert placeholder presence.
+    '''
+    disk_html = Path('dashboard.html').read_text() if Path('dashboard.html').exists() else ''
+    if not disk_html:
+      pytest.skip('dashboard.html not present in repo (rendered by daily run)')
+    secret = 'a' * 32  # the test secret value from conftest
+    assert secret not in disk_html, (
+      'REVIEWS HIGH #4: real WEB_AUTH_SECRET must NOT leak into disk file'
+    )
+
+  def test_get_root_response_substitutes_placeholder(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''The TestClient response body MUST contain the real secret in
+    hx-headers when the on-disk dashboard.html contains the placeholder.
+
+    Synthesizes a dashboard.html with the placeholder so the test is
+    independent of Plan 14-05's emission timing.
+    '''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body data-auth="{{WEB_AUTH_SECRET}}">test</body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/', headers=auth_headers)
+    assert r.status_code == 200
+    assert 'a' * 32 in r.text, (
+      'REVIEWS HIGH #4: real WEB_AUTH_SECRET must be substituted into response'
+    )
+
+  def test_get_root_response_does_not_leak_placeholder(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''The literal {{WEB_AUTH_SECRET}} string MUST NOT appear in the
+    response body when the placeholder is present on disk and a real
+    secret is set in the env (the autouse conftest fixture sets it).'''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body data-auth="{{WEB_AUTH_SECRET}}">test</body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/', headers=auth_headers)
+    assert r.status_code == 200
+    assert '{{WEB_AUTH_SECRET}}' not in r.text, (
+      'REVIEWS HIGH #4: placeholder must be substituted, not leaked'
+    )
+
+  def test_get_root_with_fragment_returns_tbody_inner(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''?fragment=position-group-SPI200 returns ONLY that tbody's inner HTML
+    (used by Plan 14-05's per-tbody listener for HX-Trigger refresh).'''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body><table>'
+      '<tbody id="position-group-SPI200"><tr><td>SPI</td></tr></tbody>'
+      '<tbody id="position-group-AUDUSD"><tr><td>AUD</td></tr></tbody>'
+      '</table></body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/?fragment=position-group-SPI200', headers=auth_headers)
+    assert r.status_code == 200
+    body = r.text
+    # Body must NOT contain a full <html>; it's a tbody inner partial
+    assert '<html' not in body.lower()
+    assert 'SPI' in body
+    assert 'AUD' not in body  # only the requested fragment
+
+  def test_get_root_with_unknown_fragment_returns_404(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''Unknown fragment id returns 404 (not 200 with empty body).'''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body><p>no tbody here</p></body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/?fragment=position-group-NONEXISTENT', headers=auth_headers)
+    assert r.status_code == 404

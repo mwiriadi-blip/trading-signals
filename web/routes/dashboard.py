@@ -1,4 +1,4 @@
-'''GET / — Phase 13 WEB-05 + D-07..D-11.
+'''GET / — Phase 13 WEB-05 + D-07..D-11 + Phase 14 REVIEWS HIGH #4.
 
 Serves the v1.0 dashboard.html behind shared-secret auth. Regenerates the
 file lazily when state.json has been written more recently than the cached
@@ -6,10 +6,27 @@ dashboard.html. Never crashes — render failure logs WARN and serves the
 stale on-disk copy. First-run before any signal run has rendered → 503
 plain-text "dashboard not ready".
 
+Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4):
+  The on-disk dashboard.html (rendered by main.run_daily_check via Plan 14-05)
+  emits hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' with a
+  literal placeholder. This handler reads the bytes, substitutes the
+  placeholder with the actual env-var value at request time, and returns
+  the patched bytes. The disk file never carries the real secret.
+
+  Threat T-14-15 (auth-secret leak via on-disk dashboard.html cache) is
+  MITIGATED by this placeholder-substitution discipline. Tests in
+  tests/test_web_dashboard.py::TestAuthSecretPlaceholderSubstitution lock
+  the discipline via three assertions.
+
+  ?fragment=position-group-{instrument} query param returns ONLY that
+  tbody's inner HTML (used by the per-tbody listener wired in Plan 14-05
+  for HX-Trigger refresh on positions-changed events).
+
 Contract (CONTEXT.md 2026-04-25):
-  D-07: GET / serves dashboard.html via FileResponse; regenerates only when
-        state.json mtime > dashboard.html mtime. FileResponse adds
-        Content-Length, Last-Modified, ETag, conditional GET (304) automatically.
+  D-07: GET / serves dashboard.html via Response (NOT FileResponse — we now
+        modify content per request to substitute the auth-secret placeholder;
+        FileResponse streams unmodified bytes). Conditional-GET semantics
+        are sacrificed for auth-secret hygiene.
   D-08: Staleness = os.stat(state.json).st_mtime_ns > os.stat(dashboard.html).st_mtime_ns
         — strict greater-than. Both files use atomic tempfile+replace
         (Phase 3 + Phase 5), so mtime semantics are reliable.
@@ -23,10 +40,8 @@ Contract (CONTEXT.md 2026-04-25):
         read is stable within the window. No file locking needed.
 
 SC-2 lock (REVIEWS MEDIUM #3):
-  The handler regenerates BEFORE serving so the FileResponse streams the
-  newly-written bytes — not a pre-regen snapshot. Locked by
-  tests/test_web_dashboard.py::TestStaleness::test_stale_state_triggers_regen_and_serves_regenerated_bytes
-  which asserts the response body byte-equals the regenerated file content.
+  The handler regenerates BEFORE serving so the response streams the
+  newly-written + secret-substituted bytes — not a pre-regen snapshot.
 
 Architecture (CLAUDE.md hex-lite + Phase 10 D-15 + Phase 13 D-07 extension):
   web/routes/ is an adapter hex.
@@ -44,14 +59,21 @@ Log prefix: [Web].
 '''
 import logging
 import os
+import re
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py default
 _STATE_PATH = 'state.json'
+
+# Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder with
+# env secret at request time so on-disk dashboard.html never carries the
+# real value. Plan 14-05 emits the literal placeholder in hx-headers.
+_PLACEHOLDER = b'{{WEB_AUTH_SECRET}}'
 
 
 def _is_stale() -> bool:
@@ -77,7 +99,20 @@ def register(app: FastAPI) -> None:
   '''Register GET / on the given FastAPI instance.'''
 
   @app.get('/')
-  def get_dashboard():
+  def get_dashboard(fragment: str | None = None):
+    '''Phase 13 GET / + Phase 14 REVIEWS HIGH #4 (placeholder substitution).
+
+    The on-disk dashboard.html (rendered by main.run_daily_check via
+    Plan 14-05) emits the literal placeholder {{WEB_AUTH_SECRET}} inside
+    the form's hx-headers attribute. This handler reads the bytes,
+    substitutes the placeholder with the actual env-var value at request
+    time, and returns the patched bytes. The disk file never contains
+    the real secret.
+
+    ?fragment=position-group-{instrument}: returns ONLY that tbody's
+    inner HTML (used by Plan 14-05's per-tbody listener for partial
+    refresh on positions-changed events).
+    '''
     # D-07 / Phase 11 C-2: local imports preserve hex boundary.
     from dashboard import render_dashboard
     from state_manager import load_state
@@ -99,10 +134,34 @@ def register(app: FastAPI) -> None:
         media_type='text/plain; charset=utf-8',
       )
 
-    # D-07: FileResponse handles ETag/Last-Modified/Content-Length/conditional-GET.
-    # SC-2: regen (above) completes BEFORE this FileResponse is constructed,
-    # so the served bytes reflect the freshly-regenerated file content.
-    return FileResponse(
-      _DASHBOARD_PATH,
+    # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder
+    # with env secret at request time so on-disk dashboard.html never
+    # carries the real value.
+    content = Path(_DASHBOARD_PATH).read_bytes()
+    secret = os.environ.get('WEB_AUTH_SECRET', '').encode('utf-8')
+    content = content.replace(_PLACEHOLDER, secret)
+
+    if fragment is not None:
+      # Extract the tbody whose id matches `fragment`. Returns inner HTML only.
+      # Quick-and-dirty regex (string-search) — dashboard markup is
+      # server-controlled, not user input, so regex against rendered HTML
+      # is safe (re.escape on the user-supplied fragment value blocks any
+      # regex-injection attempt).
+      m = re.search(
+        rb'<tbody id="' + re.escape(fragment.encode('utf-8')) + rb'">(.*?)</tbody>',
+        content, re.DOTALL,
+      )
+      if not m:
+        return Response(
+          content=b'', status_code=404,
+          media_type='text/html; charset=utf-8',
+        )
+      return Response(
+        content=m.group(1),
+        media_type='text/html; charset=utf-8',
+      )
+
+    return Response(
+      content=content,
       media_type='text/html; charset=utf-8',
     )
