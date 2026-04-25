@@ -1013,13 +1013,19 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
   pyramid_cell = html.escape(f'Lvl {pos["pyramid_level"]}', quote=True)
   trail_stop = _compute_trail_stop_display(pos)
   trail_currency = html.escape(_fmt_currency(trail_stop), quote=True)
-  # Phase 14 D-09 + UI-SPEC §Decision 6: manual_stop badge.
+  # Phase 14 D-09 + UI-SPEC §Decision 6 + CONTEXT D-15: manual_stop badge.
+  # Tooltip explicitly says "(manual; dashboard only)" per CONTEXT D-15 promise:
+  # manual_stop is DISPLAY-ONLY in Phase 14 — sizing_engine.check_stop_hit
+  # (daily exit-detection loop) does NOT honor manual_stop. The badge surfaces
+  # the override so the operator audits at-a-glance; the daily loop continues
+  # to use the v1.0 computed trailing stop until a future phase aligns them.
   if pos.get('manual_stop') is not None:
     trail_cell = (
       f'{trail_currency} '
       f'<span class="badge badge-manual" '
-      f'title="Operator override — set via /trades/modify. '
-      f'Clear by submitting Modify with new_stop blank.">manual</span>'
+      f'title="Operator override (manual; dashboard only) — set via /trades/modify; '
+      f'daily loop uses computed stop. Clear by submitting Modify with new_stop blank.">'
+      f'manual</span>'
     )
   else:
     trail_cell = trail_currency
