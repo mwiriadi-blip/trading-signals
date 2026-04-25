@@ -1173,3 +1173,31 @@ class TestStep:
     assert abs(result.closed_trade.realised_pnl - expected_pnl) < 1e-9, (
       f'B-5 gap: realised_pnl {result.closed_trade.realised_pnl} != {expected_pnl}'
     )
+
+
+# =========================================================================
+# Phase 14 D-09 — manual_stop precedence in get_trailing_stop
+# =========================================================================
+
+class TestManualStopOverride:
+  '''Phase 14 D-09: get_trailing_stop returns position['manual_stop'] when set,
+  falls back to peak/trough computed stop when None. Plan 14-03 implements.
+
+  Order matters: NaN-passthrough guard runs FIRST (B-1 invariant);
+  manual_stop branch is BETWEEN the NaN guard and the LONG/SHORT switch.
+  Defensive .get('manual_stop') (not subscript) so pre-migration positions
+  don't KeyError (RESEARCH §Pitfall 5).
+
+  Test surface (Plan 14-03):
+    - manual_stop is None -> get_trailing_stop returns peak-trail (LONG)
+      or trough-trail (SHORT) — existing behaviour.
+    - manual_stop is float -> get_trailing_stop returns manual_stop
+      verbatim (no peak/trough math, no ATR multiple).
+    - manual_stop key absent (pre-migration Position dict) -> .get returns
+      None default -> falls through to peak/trough branch.
+    - NaN-passthrough still runs first regardless of manual_stop value
+      (B-1 invariant preserved).
+  '''
+
+  def test_placeholder_wave_0(self):
+    pytest.skip('Wave 0 skeleton; Plan 14-03 implements')

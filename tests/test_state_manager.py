@@ -1377,3 +1377,47 @@ class TestClearWarnings:
     result = clear_warnings(state)
     assert result['warnings'] == []
     assert result is state
+
+
+# =========================================================================
+# Phase 14 D-13 — fcntl exclusive lock around _atomic_write
+# =========================================================================
+
+class TestFcntlLock:
+  '''Phase 14 D-13: cross-process state.json coordination via fcntl.LOCK_EX.
+  Plan 14-02 implements; this skeleton lets Wave 1 fixtures land predictably.
+
+  Test surface (Plan 14-02):
+    - Single-process happy path: fcntl.flock acquired + released around
+      the existing tempfile->fsync->replace->dir-fsync sequence.
+    - Multiprocess contention: a child process holding LOCK_EX for ~0.5s
+      causes the main process save_state to block >= 0.4s and < 1.0s
+      (RESEARCH §Pattern 9 line 743).
+    - Lock release on exception: if _atomic_write raises mid-write, the
+      finally clause must still call fcntl.LOCK_UN + close(lock_fd).
+  '''
+
+  def test_placeholder_wave_0(self):
+    pytest.skip('Wave 0 skeleton; Plan 14-02 implements')
+
+
+# =========================================================================
+# Phase 14 D-09 — schema migration v2 -> v3 (Position.manual_stop backfill)
+# =========================================================================
+
+class TestSchemaMigrationV2ToV3:
+  '''Phase 14 D-09: _migrate_v2_to_v3 backfills manual_stop=None on every
+  non-None Position dict in state['positions']. Plan 14-02 implements.
+
+  Round-trip discipline (RESEARCH §Pattern 11):
+    load(v2 fixture) -> assert manual_stop is None on each position
+      -> save_state -> re-load -> assert schema_version == 3 +
+      manual_stop preserved.
+
+  Fixture: tests/fixtures/state_v2_no_manual_stop.json (created in
+  Plan 14-01) — schema_version=2 with two open positions and NO
+  manual_stop key.
+  '''
+
+  def test_placeholder_wave_0(self):
+    pytest.skip('Wave 0 skeleton; Plan 14-02 implements')

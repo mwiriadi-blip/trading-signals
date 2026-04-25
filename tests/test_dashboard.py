@@ -1102,3 +1102,47 @@ class TestTotalReturnInitialAccount:
       'equity_history': [],
     }
     assert dashboard._compute_total_return(state) == '+0.0%'
+
+
+# =========================================================================
+# Phase 14 TRADE-05 — HTMX form markup in render_dashboard output
+# =========================================================================
+
+class TestRenderDashboardHTMXVendorPin:
+  '''Phase 14 TRADE-05: HTMX 1.9.12 SRI script tag emitted in <head>.
+  Plan 14-05 implements.
+
+  Exact pin (UI-SPEC + RESEARCH §Pattern 7):
+    URL: https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js
+    SRI: sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2
+
+  Mirrors the Chart.js precedent at dashboard.py:115-116 (Phase 5).
+  '''
+
+  def test_placeholder_wave_0(self):
+    pytest.skip('Wave 0 skeleton; Plan 14-05 implements')
+
+
+class TestRenderPositionsTableHTMXForm:
+  '''Phase 14 TRADE-05 (REVIEWS HIGH #3 revised): the positions table
+  carries an Open form section (<section class="open-form">), per-row
+  Actions cells, per-row id="position-row-{instrument}", close/modify
+  buttons, and per-instrument <tbody id="position-group-{instrument}">
+  wrappers (REVIEWS HIGH #3 — single-tbody-level swap topology).
+  Plan 14-05 implements.
+  '''
+
+  def test_placeholder_wave_0(self):
+    pytest.skip('Wave 0 skeleton; Plan 14-05 implements')
+
+
+class TestRenderManualStopBadge:
+  '''Phase 14 D-09 + UI-SPEC §Decision 6: when position['manual_stop'] is
+  not None, the Trail Stop cell carries an inline <span class="badge
+  badge-manual">manual</span>. Trail Stop displayed value equals manual_stop
+  (NOT computed peak-trail) per UI-SPEC final code block at line 386-392.
+  Plan 14-05 implements.
+  '''
+
+  def test_placeholder_wave_0(self):
+    pytest.skip('Wave 0 skeleton; Plan 14-05 implements')
