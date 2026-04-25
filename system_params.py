@@ -108,7 +108,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
 MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
-STATE_SCHEMA_VERSION: int = 2       # bump on each schema change (STATE-04); Phase 8 → v2 (CONF-01/CONF-02)
+STATE_SCHEMA_VERSION: int = 3       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09)
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================
@@ -147,6 +147,9 @@ class Position(TypedDict):
     trough_price:  Lowest LOW since entry for SHORT; None for LONG (D-08)
     atr_entry:     ATR at time of entry — used for stop distance + pyramid
                    thresholds (D-15: stop anchored to entry ATR, not today's)
+    manual_stop:   Operator override for trailing stop. None = use the
+                   computed peak/trough trailing stop (v1.0 default).
+                   Set via /trades/modify endpoint (Phase 14 D-09).
   '''
   direction: Literal['LONG', 'SHORT']
   entry_price: float
@@ -156,6 +159,8 @@ class Position(TypedDict):
   peak_price: float | None       # LONG: highest HIGH since entry; None for SHORT
   trough_price: float | None     # SHORT: lowest LOW since entry; None for LONG
   atr_entry: float
+  manual_stop: float | None      # Phase 14 D-09: operator override for trailing stop;
+                                 # None = use computed peak/trough trailing stop (v1.0 default)
 
 
 # =========================================================================

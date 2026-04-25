@@ -30,7 +30,30 @@ capture: `state = append_warning(state, ...)`.
 save_state OSError handling (RESEARCH §Open Question 2): re-raise. Silent
 save failures cause data loss; orchestrator (Phase 4) handles the exception
 explicitly per CLAUDE.md "data integrity > silent failure" stance.
+
+Phase 14 D-13 amendment to D-15: state_manager is now a peer writer to
+state.json with the FastAPI web layer (web/routes/trades.py mutations).
+Cross-process coordination via fcntl.LOCK_EX advisory lock acquired in
+_atomic_write. Lock held across the tempfile→fsync→replace→dir-fsync
+critical section; released by explicit fcntl.LOCK_UN + os.close on the
+lock fd.
+
+REVIEWS HIGH #1 fix: fcntl on save_state ALONE serializes the WRITE
+but not the READ-MODIFY-WRITE — two writers can both load the same
+pre-lock snapshot, both serialize the write, and the second save
+clobbers the first. The new public helper mutate_state(mutator, path)
+holds the lock across the FULL load → mutate → save critical section.
+Web routes and main.py daily loop both call mutate_state. fcntl.flock
+is reentrant within a single process, so the inner save_state's lock
+acquisition is a kernel no-op when the outer mutate_state lock is
+already held; cross-process safety is preserved (separate file
+descriptors).
+
+The sole-writer invariant for state['warnings'] (TRADE-06) is
+unchanged: only state_manager.append_warning writes to that key; web
+handlers never call it.
 '''
+import fcntl  # Phase 14 D-13: cross-process advisory lock around _atomic_write + mutate_state
 import json  # noqa: F401 — used in save_state/load_state (Waves 1/2)
 import math  # used in _validate_trade (D-19) + update_equity_history (B-4) finiteness checks
 import os  # noqa: F401 — used in _atomic_write/_backup_corrupt (Waves 1/2)
@@ -43,7 +66,7 @@ from datetime import (  # noqa: F401 — used in append_warning/_backup_corrupt 
   timezone,
 )
 from pathlib import Path
-from typing import Any  # noqa: F401 — retained for Waves 1-3 type hints
+from typing import Any, Callable  # noqa: F401 — Callable used in mutate_state signature (Phase 14)
 
 from system_params import (
   INITIAL_ACCOUNT,  # used in reset_state + MIGRATIONS[2] (Phase 8)
@@ -101,9 +124,37 @@ def _migrate_v1_to_v2(s: dict) -> dict:
   }
 
 
+def _migrate_v2_to_v3(s: dict) -> dict:
+  '''Phase 14 D-09: backfill manual_stop=None on every existing Position dict.
+
+  Position TypedDict gained manual_stop in Phase 14. Existing v2 state files
+  have positions like {SPI200: None, AUDUSD: {direction:..., entry_price:...}}
+  — the dict-valued positions need manual_stop=None added; None positions
+  stay None (no position to migrate).
+
+  Idempotent: running on already-v3 data is a no-op (manual_stop preserved
+  via pos.get(...) returning the existing value, then dict-merge keeping it).
+  load_state passes the result through _validate_loaded_state which checks
+  KEY PRESENCE only — manual_stop value is enforced by sizing_engine
+  get_trailing_stop NaN guards (Plan 14-03).
+
+  D-15 silent migration: no append_warning, no log. Backfill is transparent
+  to the operator (mirrors _migrate_v1_to_v2 contract).
+  '''
+  positions = s.get('positions', {})
+  new_positions = {}
+  for instrument, pos in positions.items():
+    if pos is None:
+      new_positions[instrument] = None
+    else:
+      new_positions[instrument] = {**pos, 'manual_stop': pos.get('manual_stop')}
+  return {**s, 'positions': new_positions}
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
+  3: _migrate_v2_to_v3,  # Phase 14 D-09: backfill manual_stop on existing Positions
 }
 
 # =========================================================================
@@ -111,7 +162,9 @@ MIGRATIONS: dict = {
 # =========================================================================
 
 def _atomic_write(data: str, path: Path) -> None:
-  '''STATE-02 / D-08 (amended by D-17): tempfile + fsync(file) + os.replace + fsync(parent dir).
+  '''STATE-02 / D-08 (amended by D-17, then by Phase 14 D-13):
+  tempfile + fsync(file) + os.replace + fsync(parent dir),
+  serialized cross-process via fcntl.LOCK_EX advisory lock on the destination file.
 
   Durability sequence (D-17 ordering — corrected from RESEARCH.md §Pattern 1):
     1. write data to tempfile in same directory as target
@@ -129,33 +182,51 @@ def _atomic_write(data: str, path: Path) -> None:
   Tempfile cleanup: try/finally unlinks the tempfile if any step before
   os.replace raises (Pitfall 1). On success, tmp_path_str is set to None
   so the finally clause is a no-op.
+
+  Phase 14 D-13 lock semantics:
+    - fcntl.flock advisory lock on the DESTINATION file's open fd
+    - Held across the entire critical section (write tempfile -> fsync ->
+      rename -> dir fsync)
+    - Released by explicit fcntl.LOCK_UN + os.close(lock_fd) in outer finally
+    - Blocking-indefinite (no timeout) per D-13
+    - Lock fd opened via os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
+    - POSIX-only (Linux droplet + macOS dev); not portable to Windows
+    - REENTRANCY: fcntl.flock is reentrant within a single process — when
+      called from inside mutate_state's outer flock window, this acquire
+      is a kernel no-op. Cross-process safety preserved (separate fds).
   '''
   parent = path.parent
   tmp_path_str = None
+  lock_fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
   try:
-    with tempfile.NamedTemporaryFile(
-      dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
-    ) as tmp:
-      tmp_path_str = tmp.name
-      tmp.write(data)
-      tmp.flush()
-      os.fsync(tmp.fileno())
-    # tempfile is now closed (NamedTemporaryFile context exit)
-    # D-17: os.replace BEFORE parent-dir fsync (rename durability)
-    os.replace(tmp_path_str, path)
-    if os.name == 'posix':
-      dir_fd = os.open(str(parent), os.O_RDONLY)
-      try:
-        os.fsync(dir_fd)
-      finally:
-        os.close(dir_fd)
-    tmp_path_str = None  # success: do not delete in finally
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)  # blocks until exclusive lock acquired
+    try:
+      with tempfile.NamedTemporaryFile(
+        dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
+      ) as tmp:
+        tmp_path_str = tmp.name
+        tmp.write(data)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+      # tempfile is now closed (NamedTemporaryFile context exit)
+      # D-17: os.replace BEFORE parent-dir fsync (rename durability)
+      os.replace(tmp_path_str, path)
+      if os.name == 'posix':
+        dir_fd = os.open(str(parent), os.O_RDONLY)
+        try:
+          os.fsync(dir_fd)
+        finally:
+          os.close(dir_fd)
+      tmp_path_str = None  # success: do not delete in inner finally
+    finally:
+      if tmp_path_str is not None:
+        try:
+          os.unlink(tmp_path_str)
+        except FileNotFoundError:
+          pass
   finally:
-    if tmp_path_str is not None:
-      try:
-        os.unlink(tmp_path_str)
-      except FileNotFoundError:
-        pass
+    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    os.close(lock_fd)
 
 def _migrate(state: dict) -> dict:
   '''STATE-04: walk schema_version forward to STATE_SCHEMA_VERSION.
@@ -427,6 +498,48 @@ def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
   persisted = {k: v for k, v in state.items() if not k.startswith('_')}
   data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False)
   _atomic_write(data, path)
+
+def mutate_state(
+  mutator: Callable[[dict], None],
+  path: Path = Path(STATE_FILE),
+) -> dict:
+  '''Phase 14 D-13 + REVIEWS HIGH #1: lock around the full READ-MODIFY-WRITE.
+
+  Provides the load -> mutate -> save critical section as a single atomic
+  unit for any caller (web POST handlers, daily loop). Without this wrapper,
+  fcntl on save_state alone admits stale-read lost updates: two writers can
+  both load the same pre-mutation snapshot, both acquire+release the save
+  lock, second clobbers first.
+
+  Contract:
+    - mutator receives a freshly loaded state dict (post-migration).
+    - mutator MUTATES the dict in place; return value ignored.
+    - The dict is then saved exactly once.
+    - Cross-process coordination via fcntl.LOCK_EX on the destination file.
+    - Reentrancy: fcntl.flock is reentrant within a single process. The
+      inner save_state's flock acquisition is a kernel no-op when the
+      outer mutate_state lock is already held. Cross-process safety
+      is preserved (separate file descriptors).
+
+  Usage:
+    def _bump_account(state):
+      state['account'] += 100.0
+    mutate_state(_bump_account)
+
+  Returns the post-mutation state dict (after save).
+  '''
+  fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
+  try:
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+      state = load_state(path=path)
+      mutator(state)
+      save_state(state, path=path)
+      return state
+    finally:
+      fcntl.flock(fd, fcntl.LOCK_UN)
+  finally:
+    os.close(fd)
 
 def append_warning(state: dict, source: str, message: str, now=None) -> dict:
   '''D-09 / D-10 / D-11: append {date, source, message}; FIFO trim to MAX_WARNINGS.
