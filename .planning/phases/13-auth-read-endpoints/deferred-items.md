@@ -62,3 +62,15 @@ behavior — whichever reflects the intended ERR-01 contract.
 .venv/bin/pytest tests/test_main.py::TestOrchestrator::test_fetch_failure_exits_nonzero_no_save_state -x
 # Confirm pre-existing: AssertionError 'expected exit 2 for DataFetchError, got 0'
 ```
+
+## tests/test_main.py::TestCLI::test_force_email_sends_live_email — date-dependent failure
+
+**Discovered by:** Plan 13-04 executor (worktree agent-acc5a2a55897f266f)
+**Date:** 2026-04-25
+**Status:** Pre-existing on plan base c7f5c76 — confirmed with stash + checkout test.
+
+The test invokes `main.main(['--force-email'])` and expects `send_daily_email` to be called once. On 2026-04-25 (Saturday, weekday=5) main hits the weekend-skip branch at main.py:1043 and short-circuits before sending email, so `len(sent) == 0` and the assertion fires.
+
+Out of scope for Phase 13 (web/routes only). Not introduced by Phase 13 changes — reproduced cleanly with state.py + test_web_state.py reverted to base. Likely a pytest-freezer freeze missing or a `--force-email` design that should bypass the weekday gate.
+
+Suggested follow-up: a Phase 13.x or Phase 16 hardening task to either (a) freeze the test to a weekday, or (b) make `--force-email` bypass the weekend-skip per its name.
