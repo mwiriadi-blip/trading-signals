@@ -65,7 +65,7 @@ from typing import Literal
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,13 @@ class OpenTradeRequest(BaseModel):
   Literal enums + Field(gt=0) constraints catch malformed types/values
   BEFORE the handler runs. The 422 response is auto-remapped to 400 by
   the app-level RequestValidationError handler (Pattern 6).
+
+  REVIEW HR-01: extra='forbid' rejects unknown fields with a 400 — without
+  this, Pydantic's default 'ignore' would silently drop typos like
+  `entry_priec` and apply the (defaulted) wrong value, masking operator errors.
   '''
+
+  model_config = ConfigDict(extra='forbid')
 
   instrument: Literal['SPI200', 'AUDUSD']
   direction: Literal['LONG', 'SHORT']
@@ -139,7 +145,12 @@ class OpenTradeRequest(BaseModel):
 
 
 class CloseTradeRequest(BaseModel):
-  '''POST /trades/close body — D-08 (executed_at default to today AWST).'''
+  '''POST /trades/close body — D-08 (executed_at default to today AWST).
+
+  REVIEW HR-01: extra='forbid' rejects unknown fields (typos surface as 400).
+  '''
+
+  model_config = ConfigDict(extra='forbid')
 
   instrument: Literal['SPI200', 'AUDUSD']
   exit_price: float = Field(gt=0)
@@ -163,7 +174,14 @@ class ModifyTradeRequest(BaseModel):
   `model_fields_set`, NOT in the type annotation. Both `field: float | None = None`
   forms produce identical JSON schemas — only `model_fields_set` reveals
   whether the operator sent the key or omitted it.
+
+  REVIEW HR-01: extra='forbid' rejects unknown fields. Critical here:
+  a typo like `new_top` (instead of `new_stop`) would otherwise be silently
+  dropped, producing a no-op modify that returns 200 — masking the operator
+  error and leaving the position with stale stop/contracts.
   '''
+
+  model_config = ConfigDict(extra='forbid')
 
   instrument: Literal['SPI200', 'AUDUSD']
   new_stop: float | None = None

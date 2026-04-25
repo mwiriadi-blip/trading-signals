@@ -720,6 +720,74 @@ class TestErrorResponses:
 
 
 # =========================================================================
+# TestExtraFieldsForbidden — REVIEW HR-01: extra='forbid' on all 3 models
+# =========================================================================
+
+
+class TestExtraFieldsForbidden:
+  '''Phase 14 REVIEW HR-01 regression: Pydantic v2 default extra='ignore'
+  silently drops typoed fields, masking operator errors. With
+  ConfigDict(extra='forbid') any unknown field returns 400.
+
+  Critical example from REVIEW: POST /trades/modify {new_top: 7700} would
+  previously return 200 with no-op (typo silently dropped — operator thinks
+  the stop was set, but it wasn't). With extra='forbid', the typo surfaces.
+  '''
+
+  def test_open_unknown_field_returns_400(self, client_with_state_v3, htmx_headers):
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_no_positions())
+    r = client.post('/trades/open', headers=htmx_headers, json={
+      'instrument': 'SPI200', 'direction': 'LONG',
+      'entry_price': 7800.0, 'contracts': 2,
+      'unknown_typo_field': 'oops',
+    })
+    assert r.status_code == 400, r.text
+    body = r.json()
+    # Pydantic v2 reports extra='forbid' as type 'extra_forbidden' with msg
+    # 'Extra inputs are not permitted'.
+    reasons = ' '.join(e.get('reason', '') for e in body['errors']).lower()
+    fields = {e.get('field') for e in body['errors']}
+    assert 'extra' in reasons or 'unknown_typo_field' in fields, (
+      f'HR-01: expected extra-forbidden error; got body={body!r}'
+    )
+
+  def test_close_unknown_field_returns_400(self, client_with_state_v3, htmx_headers):
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_open_position(direction='LONG'))
+    r = client.post('/trades/close', headers=htmx_headers, json={
+      'instrument': 'SPI200', 'exit_price': 7900.0,
+      'unexpected_arg': 42,
+    })
+    assert r.status_code == 400, r.text
+    body = r.json()
+    reasons = ' '.join(e.get('reason', '') for e in body['errors']).lower()
+    fields = {e.get('field') for e in body['errors']}
+    assert 'extra' in reasons or 'unexpected_arg' in fields, (
+      f'HR-01: expected extra-forbidden error; got body={body!r}'
+    )
+
+  def test_modify_typoed_new_stop_returns_400(self, client_with_state_v3, htmx_headers):
+    '''The exact scenario from REVIEW.md: POST {new_top: ...} (typo for
+    new_stop) MUST be rejected, not silently dropped.'''
+    client, set_state, captured_saves = client_with_state_v3
+    set_state(_v3_state_with_open_position(direction='LONG'))
+    r = client.post('/trades/modify', headers=htmx_headers, json={
+      'instrument': 'SPI200',
+      'new_top': 7700.0,  # typo — should NOT be silently accepted
+    })
+    assert r.status_code == 400, r.text
+    body = r.json()
+    reasons = ' '.join(e.get('reason', '') for e in body['errors']).lower()
+    fields = {e.get('field') for e in body['errors']}
+    assert 'extra' in reasons or 'new_top' in fields, (
+      f'HR-01: typoed new_top must surface as extra-forbidden; got body={body!r}'
+    )
+    # No save should occur on a 400.
+    assert len(captured_saves) == 0
+
+
+# =========================================================================
 # TestHTMXResponses — TRADE-05 partial response shapes
 # =========================================================================
 
