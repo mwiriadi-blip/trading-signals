@@ -20,9 +20,11 @@
 
 ## AUTH — Single-operator access control
 
-- [ ] **AUTH-01**: All non-`/healthz` endpoints require a shared-secret header `X-Trading-Signals-Auth`; value stored in droplet `.env` as `WEB_AUTH_SECRET`
+- [x] **AUTH-01
+**: All non-`/healthz` endpoints require a shared-secret header `X-Trading-Signals-Auth`; value stored in droplet `.env` as `WEB_AUTH_SECRET`
 - [ ] **AUTH-02**: Missing or wrong auth header returns 401 with a plain-text `unauthorized` body (no leaked info; no hints)
-- [ ] **AUTH-03**: Auth failures log at WARN with source IP and truncated user-agent to journald for audit trail
+- [x] **AUTH-03
+**: Auth failures log at WARN with source IP and truncated user-agent to journald for audit trail
 
 ## TRADE — Interactive trade journal
 

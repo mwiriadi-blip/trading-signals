@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-24T23:57:15.710Z"
-last_activity: "2026-04-24 — Completed quick task 260425-91t: document SIGNALS_EMAIL_FROM env-var contract in .env.example + PROJECT.md (no source change — Phase 12 D-16 already removed the hardcoded constant)"
+last_updated: "2026-04-25T02:47:00.021Z"
+last_activity: 2026-04-25
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 17
-  completed_plans: 12
-  percent: 71
+  completed_plans: 13
+  percent: 76
 ---
 
 # STATE — Trading Signals
@@ -23,17 +23,17 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 12 — https-domain-wiring
+- **Current focus:** Phase 13 — Auth + Read Endpoints
 
 ## Current Position
 
-Phase: 12 (https-domain-wiring) — EXECUTING
-Plan: 1 of 4
+Phase: 13 (Auth + Read Endpoints) — EXECUTING
+Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Executing Phase 12
-- **Last activity:** 2026-04-24 — Completed quick task 260425-91t: document SIGNALS_EMAIL_FROM env-var contract in .env.example + PROJECT.md (no source change — Phase 12 D-16 already removed the hardcoded constant)
-- **Progress:** [██████████] 100%
+- **Status:** Ready to execute
+- **Last activity:** 2026-04-25
+- **Progress:** [████████░░] 76%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -86,6 +86,7 @@ Plan: 1 of 4
 | Phase 11 P02 | 5min | 2 tasks | 2 files |
 | Phase 11 P03 | 5min | 2 tasks | 2 files |
 | Phase 11 P04 | 279 | 2 tasks | 2 files |
+| Phase 13 P01 | 7m22s | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -162,6 +163,9 @@ Plan: 1 of 4
 - Sudoers: two comma-separated rules matching deploy.sh split sudo -n calls; /usr/bin/systemctl path (verify with which systemctl)
 - Passwordless sudo verification step added (REVIEWS HIGH #4) to catch sudoers miss before first deploy
 - .env NOT required in Phase 11 (EnvironmentFile=- in unit file per REVIEWS MEDIUM #5)
+- Plan 13-01 (Wave 0): autouse WEB_AUTH_SECRET fixture in tests/conftest.py is the structural fix for REVIEWS HIGH (codex finding) — covers the 11 direct create_app() invocations in tests/test_web_healthz.py test bodies that don't go through app_instance fixture
+- Plan 13-01: VALID_SECRET = 'a' * 32 lives ONCE in tests/conftest.py per REVIEWS LOW #6 single-source invariant; downstream test files import the name (no redefinition)
+- Plan 13-01: tests/test_web_healthz.py FORBIDDEN_FOR_WEB drops 'dashboard' (Phase 13 D-07 promotes dashboard to allowed adapter import for web/routes/dashboard.py); AST guard renamed test_web_adapter_imports_are_local_not_module_top with absent-file skip-guard for Wave 0
 
 ### Todos Carried Forward
 
