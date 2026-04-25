@@ -17,6 +17,17 @@ Phase 13 changes (D-01..D-22):
   - AuthMiddleware registered LAST so it runs FIRST (D-06).
   - Three routes registered: /healthz (Phase 11) + / (Phase 13) + /api/state (Phase 13).
 
+Phase 14 changes (D-13/D-14):
+  - Phase 10 D-15 ("web is read-only on state.json") is AMENDED:
+    web/routes/trades.py introduces /trades/{open,close,modify} POST
+    endpoints that mutate state.json. Cross-process coordination via
+    fcntl.LOCK_EX in state_manager.mutate_state (Plan 14-02).
+  - 422 -> 400 remap installed via add_exception_handler — Pydantic
+    validation errors return JSONResponse with body
+    {"errors": [{"field": ..., "reason": ...}]} per TRADE-02.
+  - Hex-boundary inheritance: sizing_engine + system_params now allowed
+    for web/routes/trades.py per Plan 14-01 FORBIDDEN_FOR_WEB update.
+
 Log prefix: [Web] for all web-process log lines.
 '''
 import logging
@@ -28,6 +39,7 @@ from web.middleware.auth import AuthMiddleware
 from web.routes import dashboard as dashboard_route
 from web.routes import healthz as healthz_route
 from web.routes import state as state_route
+from web.routes import trades as trades_route
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +99,21 @@ def create_app() -> FastAPI:
   healthz_route.register(application)
   dashboard_route.register(application)
   state_route.register(application)
+  trades_route.register(application)
+
+  # Phase 14 D-04 / TRADE-02: 422 -> 400 remap with field-level error JSON.
+  # Single global handler covers all routes (Plan 14-04).
+  from fastapi.exceptions import RequestValidationError
+  application.add_exception_handler(
+    RequestValidationError, trades_route._validation_exception_handler,
+  )
 
   # D-06: AuthMiddleware MUST be registered LAST — Starlette runs middleware
   # in REVERSE of registration, so 'last registered' = 'first to dispatch'.
   # Future middleware (request-id, compression) goes ABOVE this line.
   application.add_middleware(AuthMiddleware, secret=secret)
 
-  logger.info('[Web] FastAPI app created (Phase 13 — /, /api/state, /healthz; auth=on)')
+  logger.info('[Web] FastAPI app created (Phase 14 — /, /api/state, /healthz, /trades/{open,close,modify}; auth=on)')
   return application
 
 
