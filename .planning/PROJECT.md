@@ -123,4 +123,14 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-04-24 after v1.0 milestone shipped*
+*Last updated: 2026-04-25 after v1.1 Phase 13 (Auth + Read Endpoints) completion*
+
+## v1.1 Progress
+
+- [x] **Phase 10**: Foundation — v1.0 Cleanup & Deploy Key (shipped 2026-04-24)
+- [x] **Phase 11**: Web Skeleton — FastAPI + uvicorn + systemd (shipped 2026-04-24)
+- [x] **Phase 12**: HTTPS + Domain Wiring (shipped 2026-04-24, droplet apply pending)
+- [x] **Phase 13**: Auth + Read Endpoints (shipped 2026-04-25 — 4 manual UAT items pending operator droplet acceptance)
+- [ ] **Phase 14**: Trade Journal — Mutation Endpoints
+- [ ] **Phase 15**: Live Calculator + Sentinels
+- [ ] **Phase 16**: Hardening + UAT Completion
