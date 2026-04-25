@@ -185,8 +185,19 @@ class TestWebHexBoundary:
   # web/routes/dashboard.py (web layer calls dashboard.render_dashboard()
   # on stale-state regen). Removing 'dashboard' from this set is the
   # hex-boundary extension.
+  # Phase 14 D-02 (this phase): sizing_engine is promoted to allowed
+  # for web/routes/trades.py (which imports check_pyramid for the
+  # pyramid-up gate per 14-PATTERNS.md Option A).
+  # Phase 14 (Plan 14-01 deviation log): system_params ALSO promoted in
+  # the same edit because Pydantic model_validator bodies in
+  # web/routes/trades.py import MAX_PYRAMID_LEVEL locally (RESEARCH §Pattern
+  # 1 line 343). The ast.walk in test_web_modules_do_not_import_hex_core
+  # walks ALL nodes including local imports inside function bodies, so
+  # a forbidden module cannot be locally-imported anywhere in web/. Inlining
+  # MAX_PYRAMID_LEVEL=2 as a duplicate constant (Option B) was rejected
+  # to preserve single-source-of-truth.
   FORBIDDEN_FOR_WEB = frozenset({
-    'signal_engine', 'sizing_engine', 'system_params',
+    'signal_engine',
     'data_fetcher', 'notifier', 'main',
   })
 
@@ -212,6 +223,19 @@ class TestWebHexBoundary:
   def test_dashboard_is_not_forbidden_for_web_phase_13_D07(self):
     '''Regression: Phase 13 D-07 promotes dashboard to allowed import.'''
     assert 'dashboard' not in self.FORBIDDEN_FOR_WEB
+
+  def test_sizing_engine_is_not_forbidden_for_web_phase_14_D02(self):
+    '''Regression: Phase 14 D-02 promotes sizing_engine to allowed import
+    (web/routes/trades.py imports check_pyramid for the pyramid-up gate).'''
+    assert 'sizing_engine' not in self.FORBIDDEN_FOR_WEB
+
+  def test_system_params_is_not_forbidden_for_web_phase_14(self):
+    '''Regression: Phase 14 promotes system_params alongside sizing_engine.
+    web/routes/trades.py imports MAX_PYRAMID_LEVEL inside its Pydantic
+    model_validator body (RESEARCH §Pattern 1 line 343). The AST walker
+    sees this local import as a violation; promoting system_params resolves
+    it. Single-source-of-truth preserved (no duplicate constant).'''
+    assert 'system_params' not in self.FORBIDDEN_FOR_WEB
 
   def test_web_adapter_imports_are_local_not_module_top(self):
     '''C-2 + Phase 13 hex extension: state_manager AND dashboard imports must be LOCAL.'''

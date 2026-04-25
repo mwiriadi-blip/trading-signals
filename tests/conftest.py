@@ -63,3 +63,99 @@ def valid_secret() -> str:
 def auth_headers(valid_secret) -> dict:
   '''Phase 13 AUTH-01: header dict for authorized TestClient requests.'''
   return {AUTH_HEADER_NAME: valid_secret}
+
+
+# =============================================================================
+# Phase 14 — HTMX-aware fixtures (Plan 14-01 Wave 0)
+# =============================================================================
+#
+# These fixtures support tests/test_web_trades.py (skeleton in Plan 14-01,
+# populated in Plan 14-04). Two pieces:
+#
+#   htmx_headers          — auth_headers + 'HX-Request': 'true' so handlers
+#                           can detect HTMX-originated requests (UI-SPEC
+#                           §Decision 3 — banner OOB swap on success).
+#
+#   client_with_state_v3  — TestClient + state-stub + save-capture tuple.
+#                           Default seed state is post-Plan-14-02 v3 shape:
+#                           schema_version=3 with manual_stop=None on every
+#                           open Position. Phase 14 D-07 reads
+#                           _resolved_contracts directly so we MUST seed it
+#                           (load_state would normally rematerialize it but
+#                           we monkeypatch load_state — see RESEARCH §Pitfall 6).
+#
+# Save-capture closure: every state passed to save_state lands in
+# captured_saves so D-11 atomic-single-save tests can assert
+# `len(captured_saves) == 1`. Tests use lambda *_a, **_kw: ... rather than
+# positional-only stubs so callers passing path=... kwarg don't break.
+#
+# CRITICAL: `sys.modules.pop('web.app', None)` runs BEFORE create_app() so a
+# previous test's app instance can't leak into this fixture's TestClient
+# (RESEARCH §Pitfall 4 — autouse fixture in this file already sets
+# WEB_AUTH_SECRET, but the imported app module caches its own state).
+
+
+@pytest.fixture
+def htmx_headers(auth_headers) -> dict:
+  '''Phase 14: auth headers + HX-Request signal so handlers can detect
+  HTMX-originated requests (UI-SPEC §Decision 3 — banner OOB swap on success).'''
+  return {**auth_headers, 'HX-Request': 'true'}
+
+
+@pytest.fixture
+def client_with_state_v3(monkeypatch):
+  '''Phase 14 mirror of tests/test_web_state.py::client_with_state — yields
+  a TestClient + (set_state, captured_saves) tuple. captured_saves accumulates
+  every state dict that save_state was called with (no disk I/O).
+
+  Default seed: a v3-schema state with one open SPI200 LONG position whose
+  manual_stop is None (post-migration shape per Phase 14 D-09). Tests adjust
+  via set_state.
+
+  Returns: (client, set_state, captured_saves) tuple.
+  '''
+  from fastapi.testclient import TestClient
+  import sys
+  sys.modules.pop('web.app', None)
+  from web.app import create_app
+
+  default_state = {
+    'schema_version': 3,
+    'account': 100_000.0,
+    'last_run': '2026-04-25',
+    'positions': {
+      'SPI200': {
+        'direction': 'LONG', 'entry_price': 7800.0, 'entry_date': '2026-04-20',
+        'n_contracts': 2, 'pyramid_level': 0,
+        'peak_price': 7850.0, 'trough_price': None, 'atr_entry': 50.0,
+        'manual_stop': None,  # Phase 14 D-09
+      },
+      'AUDUSD': None,
+    },
+    'signals': {'SPI200': {'atr': 50.0, 'last_close': 7820.0}, 'AUDUSD': {}},
+    'trade_log': [], 'equity_history': [], 'warnings': [],
+    'initial_account': 100_000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    },
+  }
+  state_box = {'value': default_state}
+  captured_saves = []
+
+  import state_manager
+  monkeypatch.setattr(
+    state_manager, 'load_state', lambda *_a, **_kw: state_box['value']
+  )
+  monkeypatch.setattr(
+    state_manager, 'save_state',
+    lambda state, *_a, **_kw: captured_saves.append(dict(state))
+  )
+
+  client = TestClient(create_app())
+
+  def set_state(payload):
+    state_box['value'] = payload
+
+  return client, set_state, captured_saves

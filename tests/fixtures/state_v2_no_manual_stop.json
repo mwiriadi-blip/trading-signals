@@ -1,0 +1,41 @@
+{
+  "account": 99500.0,
+  "contracts": {
+    "AUDUSD": "audusd-mini",
+    "SPI200": "spi-mini"
+  },
+  "equity_history": [
+    {"date": "2026-04-20", "equity": 99500.0}
+  ],
+  "initial_account": 100000.0,
+  "last_run": "2026-04-22",
+  "positions": {
+    "AUDUSD": {
+      "atr_entry": 0.012,
+      "direction": "SHORT",
+      "entry_date": "2026-04-15",
+      "entry_price": 0.6450,
+      "n_contracts": 1,
+      "peak_price": null,
+      "pyramid_level": 0,
+      "trough_price": 0.6420
+    },
+    "SPI200": {
+      "atr_entry": 50.0,
+      "direction": "LONG",
+      "entry_date": "2026-04-10",
+      "entry_price": 7800.0,
+      "n_contracts": 2,
+      "peak_price": 7850.0,
+      "pyramid_level": 0,
+      "trough_price": null
+    }
+  },
+  "schema_version": 2,
+  "signals": {
+    "AUDUSD": 0,
+    "SPI200": 1
+  },
+  "trade_log": [],
+  "warnings": []
+}
