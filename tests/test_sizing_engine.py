@@ -1364,3 +1364,60 @@ class TestStepProducesV3Schema:
       'HR-03: reversal open always starts with manual_stop=None; '
       f'got {result.position_after["manual_stop"]!r}'
     )
+
+
+class TestDetectDrift:
+  '''Phase 15 SENTINEL-01/02 + D-01/D-04/D-14: pure-math drift detector.
+
+  Wave 0 skeleton — test bodies populated in Plan 02 (15-02-PLAN.md).
+  Method names must match VALIDATION.md exactly so the verification table
+  maps cleanly to actual collected test ids.
+  '''
+
+  def test_drift_long_vs_flat(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_drift_short_vs_flat(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_reversal_long_vs_short(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_reversal_short_vs_long(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_no_event_when_position_flat(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_no_event_when_signal_missing(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_no_event_when_signal_dict_signal_is_none(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_signal_int_shape_compat(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_drift_event_message_long_vs_flat_exact(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_drift_event_message_reversal_long_to_short_exact(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_two_instruments_both_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')
+
+  def test_returns_empty_list_when_no_positions(self) -> None:
+    import pytest
+    pytest.skip('Plan 02: detect_drift implementation pending')

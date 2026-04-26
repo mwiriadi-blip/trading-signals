@@ -555,7 +555,11 @@ FORBIDDEN_MODULES_MAIN = frozenset({
 # scientific stack (numpy, pandas) or network/fetch libs (yfinance, requests).
 FORBIDDEN_MODULES_DASHBOARD = frozenset({
   # Sibling hexes — dashboard.py is a peer, never imports them
-  'signal_engine', 'sizing_engine', 'data_fetcher', 'notifier', 'main',
+  # NOTE: sizing_engine is ALLOWED as of Phase 15 (CALC-01..04 calculator
+  # sub-row uses sizing_engine LOCALLY per C-2; CONTEXT D-01 explicit approval).
+  # MODULE-TOP imports of sizing_engine in dashboard.py remain forbidden
+  # (enforced by test_dashboard_no_module_top_sizing_engine_import — REVIEWS M-2).
+  'signal_engine', 'data_fetcher', 'notifier', 'main',
   # Heavy scientific stack (stdlib statistics + math are sufficient per D-07)
   'numpy', 'pandas',
   # Fetch / network — dashboard never touches network (Chart.js loads client-side)
@@ -879,6 +883,43 @@ class TestDeterminism:
       f'Allowed: stdlib (html, json, math, os, statistics, tempfile, datetime, '
       f'pathlib, logging) + pytz + state_manager + system_params. Dashboard IS '
       f'the render I/O hex — that is its PURPOSE.'
+    )
+
+  def test_dashboard_no_module_top_sizing_engine_import(self) -> None:
+    '''C-2 hex-discipline (Phase 15 D-01 + Phase 14 D-02 + REVIEWS M-2):
+    sizing_engine is allowed in dashboard.py ONLY as a function-body
+    (local) import. A module-top `from sizing_engine import ...` would
+    bypass C-2's "import-only-when-needed" pattern AND would also pass
+    FORBIDDEN_MODULES_DASHBOARD (since sizing_engine is no longer in
+    that frozenset as of Phase 15). This test is the explicit guard.
+
+    Walks dashboard.py at the AST module-body level (tree.body) — NOT
+    ast.walk — so LOCAL imports inside function/closure bodies do not
+    trigger the assertion. Only TOP-LEVEL Import / ImportFrom statements
+    are inspected.
+    '''
+    import ast
+    from pathlib import Path
+    source = Path('dashboard.py').read_text()
+    tree = ast.parse(source)
+    offenders: list[str] = []
+    for node in tree.body:
+      if isinstance(node, ast.ImportFrom):
+        mod = node.module or ''
+        if mod == 'sizing_engine' or mod.startswith('sizing_engine.'):
+          offenders.append(f'line {node.lineno}: from {mod} import ...')
+      elif isinstance(node, ast.Import):
+        for alias in node.names:
+          name = alias.name
+          if name == 'sizing_engine' or name.startswith('sizing_engine.'):
+            offenders.append(f'line {node.lineno}: import {name}')
+    assert not offenders, (
+      'C-2 hex-discipline violation (Phase 15 REVIEWS M-2): '
+      'dashboard.py contains MODULE-TOP imports of sizing_engine. '
+      'Move them inside the function body that needs them (LOCAL import). '
+      'Phase 15 D-01 unlocked sizing_engine for dashboard.py, but only as '
+      'a LOCAL import — module-top imports remain forbidden. Offenders: '
+      + '; '.join(offenders)
     )
 
   @pytest.mark.parametrize('module_path', [NOTIFIER_PATH])

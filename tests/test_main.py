@@ -2642,3 +2642,28 @@ class TestRunDailyCheckPushesState:
       'CLI smoke: main(["--force-email"]) dispatch must still reach '
       '_push_state_to_git exactly once'
     )
+
+
+class TestDriftWarningLifecycle:
+  '''Phase 15 D-02 + W3 invariant: drift warnings cleared then recomputed
+  at signal-loop start; mutate_state still called exactly twice per run.
+  Wave 0 skeleton — ALL bodies populated in Plan 04 (per REVIEWS M-1
+  Path A: skip-test escape hatches removed; all 4 methods MUST be
+  implemented and passing).
+  '''
+
+  def test_drift_cleared_then_recomputed(self) -> None:
+    import pytest
+    pytest.skip('Plan 04: run_daily_check drift block pending')
+
+  def test_w3_invariant_preserved(self) -> None:
+    import pytest
+    pytest.skip('Plan 04: W3 invariant preservation pending')
+
+  def test_drift_warnings_present_in_dispatched_state(self) -> None:
+    import pytest
+    pytest.skip('Plan 04: drift warnings reach email dispatch path pending')
+
+  def test_no_drift_warning_when_signals_match_positions(self) -> None:
+    import pytest
+    pytest.skip('Plan 04: detect_drift returns empty list path pending')

@@ -2227,3 +2227,55 @@ class TestEmailFromEnvVar:
     assert called['n'] == 0
     assert '[Email] SIGNALS_EMAIL_FROM not set' in caplog.text
     assert not (tmp_path / 'last_email.html').exists()
+
+
+class TestDriftBanner:
+  '''Phase 15 SENTINEL-03 + D-03/D-12: email drift banner.
+  Wave 0 skeleton — bodies populated in Plan 07.
+  '''
+
+  def test_has_critical_banner_drift_source(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: _has_critical_banner extension pending')
+
+  def test_has_critical_banner_no_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: _has_critical_banner extension pending')
+
+  def test_drift_banner_in_email_body(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: email drift banner rendering pending')
+
+  def test_drift_banner_body_parity_with_dashboard(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: D-12 lockstep parity pending')
+
+  def test_drift_banner_in_email_body_and_subject_critical_prefix(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: subject [!] prefix integration pending')
+
+  def test_email_banner_border_red_for_reversal(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: inline-CSS border color logic pending')
+
+  def test_email_banner_border_amber_for_drift_only(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: inline-CSS border color logic pending')
+
+
+class TestBannerStackOrder:
+  '''Phase 15 D-13: banner stack hierarchy corruption > stale > reversal > drift.
+  Wave 0 skeleton — bodies populated in Plan 07.
+  '''
+
+  def test_banner_hierarchy_corruption_beats_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: stack hierarchy DOM order pending')
+
+  def test_banner_hierarchy_stale_beats_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: stack hierarchy DOM order pending')
+
+  def test_drift_banner_inserted_before_hero_card(self) -> None:
+    import pytest
+    pytest.skip('Plan 07: drift banner insertion point pending')
