@@ -1271,6 +1271,21 @@ def run_daily_check(
   for source, message in pending_warnings:
     state = state_manager.append_warning(state, source, message)
 
+  # Step 6b: drift recompute (Phase 15 D-02 + SENTINEL-01..03)
+  # Sequence: clear stale drift warnings -> detect fresh drift events ->
+  # append each as a 'drift'-source warning. ALL in-memory mutations only —
+  # NO additional mutate_state call. The terminal mutate_state at step 9
+  # captures these changes via _accumulated. (Pitfall 5 in 15-RESEARCH.md;
+  # W3 invariant: exactly 2 mutate_state calls per run.)
+  state = state_manager.clear_warnings_by_source(state, 'drift')
+  drift_events = sizing_engine.detect_drift(state['positions'], state['signals'])
+  for ev in drift_events:
+    state = state_manager.append_warning(state, 'drift', ev.message)
+    logger.info(
+      '[Sched] drift detected for %s: held=%s signal=%s severity=%s',
+      ev.instrument, ev.held_direction, ev.signal_direction, ev.severity,
+    )
+
   # Step 7: bookkeeping — last_run.
   state['last_run'] = run_date_iso
 

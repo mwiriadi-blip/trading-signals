@@ -2650,20 +2650,254 @@ class TestDriftWarningLifecycle:
   Wave 0 skeleton — ALL bodies populated in Plan 04 (per REVIEWS M-1
   Path A: skip-test escape hatches removed; all 4 methods MUST be
   implemented and passing).
+
+  Fixture pattern lifted from TestWarningCarryOverFlow._ctx +
+  TestOrchestrator.test_reversal_preserves_new_position. All tests:
+    - chdir to tmp_path so state.json resolves in isolation
+    - _seed_fresh_state writes the initial state; test modifies then
+      re-saves to inject a pre-existing LONG SPI200 position
+    - _install_fixture_fetch stubs data_fetcher.fetch_ohlcv with real
+      committed fixture data (avoids network)
+    - main.signal_engine.get_signal is patched to return a controlled
+      signal value so drift detection is deterministic
+    - main.sizing_engine.step is patched to a no-op that preserves the
+      pre-existing position (avoids sizing math changing the position)
+    - notifier.send_daily_email is stubbed so --force-email path works
+    - freeze_time pins Mon 2026-04-27 08:00 AWST to bypass weekday gate
+
+  fetch stub path: main.data_fetcher.fetch_ohlcv (confirmed from
+  _install_fixture_fetch at module level).
   '''
 
-  def test_drift_cleared_then_recomputed(self) -> None:
-    import pytest
-    pytest.skip('Plan 04: run_daily_check drift block pending')
+  # Shared position fixture — minimal fields for detect_drift (reads only
+  # 'direction') + enough for sizing_engine.step no-op.
+  _LONG_SPI200 = {
+    'direction': 'LONG',
+    'entry_price': 7800.0,
+    'entry_date': '2026-04-20',
+    'n_contracts': 2,
+    'pyramid_level': 0,
+    'peak_price': 7850.0,
+    'trough_price': None,
+    'atr_entry': 50.0,
+    'manual_stop': None,
+  }
 
-  def test_w3_invariant_preserved(self) -> None:
-    import pytest
-    pytest.skip('Plan 04: W3 invariant preservation pending')
+  def _setup(self, tmp_path, monkeypatch, spi200_signal: int):
+    '''Shared test scaffold.
 
-  def test_drift_warnings_present_in_dispatched_state(self) -> None:
-    import pytest
-    pytest.skip('Plan 04: drift warnings reach email dispatch path pending')
+    Args:
+      tmp_path: pytest tmp_path fixture.
+      monkeypatch: pytest monkeypatch fixture.
+      spi200_signal: int signal to return for SPI200 (LONG=1, SHORT=-1, FLAT=0).
+        AUDUSD always returns FLAT (0) — no AUDUSD position seeded.
 
-  def test_no_drift_warning_when_signals_match_positions(self) -> None:
-    import pytest
-    pytest.skip('Plan 04: detect_drift returns empty list path pending')
+    Returns:
+      state_file_path (Path) pointing to the seeded state.json.
+    '''
+    import notifier
+    from sizing_engine import StepResult
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+
+    state_file_path = tmp_path / 'state.json'
+
+    # Seed state with a LONG SPI200 position.
+    seed = state_manager.reset_state()
+    seed['positions']['SPI200'] = dict(self._LONG_SPI200)
+    seed['signals']['SPI200'] = {
+      'signal': 1, 'signal_as_of': '2026-04-20', 'as_of_run': '2026-04-20',
+      'last_scalars': {'atr': 50.0}, 'last_close': 7800.0,
+    }
+    seed['signals']['AUDUSD'] = {
+      'signal': 0, 'signal_as_of': '2026-04-20', 'as_of_run': '2026-04-20',
+      'last_scalars': {'atr': 0.001}, 'last_close': 0.645,
+    }
+    state_manager.save_state(seed, path=state_file_path)
+
+    _install_fixture_fetch(monkeypatch)
+
+    # Patch get_signal: SPI200 gets spi200_signal (call 1), AUDUSD gets FLAT (call 2).
+    spi200_call_count = {'n': 0}
+    def _fake_get_signal(_df):
+      spi200_call_count['n'] += 1
+      return spi200_signal if spi200_call_count['n'] == 1 else 0
+    monkeypatch.setattr(main.signal_engine, 'get_signal', _fake_get_signal)
+
+    # No-op step: preserve existing position, no trades, no pyramid.
+    call_counts = {'step': 0}
+    def _noop_step(position, bar, indicators, old_signal, new_signal,
+                   account, multiplier, cost_aud_open):
+      call_counts['step'] += 1
+      return StepResult(
+        position_after=position,  # preserve unchanged
+        closed_trade=None,
+        sizing_decision=None,
+        pyramid_decision=None,
+        unrealised_pnl=0.0,
+        warnings=[],
+      )
+    monkeypatch.setattr(main.sizing_engine, 'step', _noop_step)
+
+    # Stub email send so --force-email path completes without network.
+    monkeypatch.setattr(
+      notifier, 'send_daily_email',
+      lambda s, o, r, is_test=False: notifier.SendStatus(ok=True, reason=None),
+    )
+
+    return state_file_path
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_drift_cleared_then_recomputed(self, tmp_path, monkeypatch) -> None:
+    '''REVIEWS M-1: Phase 15 D-02. Stale drift warnings cleared at signal-loop
+    start; fresh drift events from detect_drift appended.
+
+    Pre-state: a stale 'drift' warning + an open SPI200 LONG position.
+    Signal: LONG (matching position) -> detect_drift returns [] ->
+    stale warning cleared, no new drift warning appended.
+
+    Uses --once (no email dispatch) so warnings are NOT cleared by the
+    Phase 8 dispatch helper — the final saved state reflects exactly what
+    the drift block wrote.
+    '''
+    from datetime import UTC, datetime
+
+    state_file_path = self._setup(
+      tmp_path, monkeypatch, spi200_signal=1,  # LONG matches position
+    )
+
+    # Inject a stale drift warning into the seeded state.
+    stale_state = state_manager.load_state(path=state_file_path)
+    fixed_now = datetime(2026, 4, 20, 9, 30, 0, tzinfo=UTC)
+    stale_state = state_manager.append_warning(
+      stale_state, 'drift', 'STALE: should be cleared', now=fixed_now,
+    )
+    state_manager.save_state(stale_state, path=state_file_path)
+
+    # Run via --once so the Phase 8 dispatch helper does NOT clear warnings.
+    # The final state reflects exactly what the drift block wrote.
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    # Assert: stale drift warning gone; no new drift (LONG position + LONG signal).
+    final = state_manager.load_state(path=state_file_path)
+    post_drift = [
+      w for w in final.get('warnings', []) if w.get('source') == 'drift'
+    ]
+    assert all('STALE' not in w['message'] for w in post_drift), (
+      'stale drift warning was not cleared at signal-loop start'
+    )
+    assert len(post_drift) == 0, (
+      f'expected 0 drift warnings (LONG position + LONG signal match); '
+      f'got {len(post_drift)}: {post_drift}'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_w3_invariant_preserved(self, tmp_path, monkeypatch) -> None:
+    '''REVIEWS M-1: Phase 15 + Phase 14 W3. mutate_state called exactly 2
+    times per run. Pitfall 5 (15-RESEARCH.md): drift block must NOT add a
+    third save. Test uses a FLAT signal so detect_drift DOES fire (proves
+    the drift block ran) AND still didn't bump the save count.
+    '''
+    import state_manager as _sm
+
+    self._setup(tmp_path, monkeypatch, spi200_signal=0)  # FLAT mismatches LONG
+
+    # Instrument mutate_state to count calls.
+    orig_mutate = _sm.mutate_state
+    call_count = {'n': 0}
+    def _counting_mutate(mutator, *args, **kwargs):
+      call_count['n'] += 1
+      return orig_mutate(mutator, *args, **kwargs)
+    monkeypatch.setattr(_sm, 'mutate_state', _counting_mutate)
+
+    # Run via --force-email to trigger both daily-check save + dispatch save.
+    rc = main.main(['--force-email'])
+    assert rc == 0
+
+    assert call_count['n'] == 2, (
+      f'W3 invariant broken: mutate_state called {call_count["n"]} times '
+      f'(expected exactly 2). Pitfall 5 in 15-RESEARCH.md: drift block must '
+      f'NOT add a third save.'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_drift_warnings_present_in_dispatched_state(
+      self, tmp_path, monkeypatch) -> None:
+    '''REVIEWS M-1: Phase 15 SENTINEL-03 prerequisite. When position+signal
+    mismatch, drift warnings reach the post-run state['warnings'] so the
+    email dispatch path can render them.
+    '''
+    # Capture the in-flight state passed to _dispatch_email_and_maintain_warnings
+    # BEFORE Phase 8's clear_warnings runs. The final saved state will have
+    # empty warnings (cleared by the dispatch helper), so we intercept at the
+    # dispatch boundary to confirm drift warnings were present at hand-off.
+    captured_dispatch_warnings: list = []
+    real_dispatch = main._dispatch_email_and_maintain_warnings
+
+    def _capturing_dispatch(state, old_signals, now, is_test, persist):
+      captured_dispatch_warnings.extend(
+        w for w in state.get('warnings', []) if w.get('source') == 'drift'
+      )
+      return real_dispatch(state, old_signals, now, is_test, persist)
+
+    monkeypatch.setattr(
+      main, '_dispatch_email_and_maintain_warnings', _capturing_dispatch,
+    )
+
+    self._setup(tmp_path, monkeypatch, spi200_signal=0)  # FLAT mismatches LONG
+    rc = main.main(['--force-email'])
+    assert rc == 0
+
+    assert len(captured_dispatch_warnings) >= 1, (
+      f'expected at least one drift warning for LONG position + FLAT signal '
+      f'at dispatch time; got {captured_dispatch_warnings}'
+    )
+    msg = captured_dispatch_warnings[0]['message']
+    assert 'You hold LONG SPI200' in msg, (
+      f'drift warning message does not match D-14 template: {msg!r}'
+    )
+    assert 'consider closing' in msg, (
+      f'drift warning message missing FLAT-severity action: {msg!r}'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_no_drift_warning_when_signals_match_positions(
+      self, tmp_path, monkeypatch) -> None:
+    '''REVIEWS M-1: when run produces signals matching existing positions,
+    no drift warnings are appended (and any pre-existing drift warnings are
+    cleared by the lifecycle).
+
+    Uses --once (no email dispatch) so warnings are NOT wiped by Phase 8
+    dispatch helper — final state reflects exactly what drift block wrote.
+    '''
+    from datetime import UTC, datetime
+
+    state_file_path = self._setup(
+      tmp_path, monkeypatch, spi200_signal=1,  # LONG matches LONG position
+    )
+
+    # Also inject a stale drift warning to prove clear_warnings_by_source fires.
+    stale_state = state_manager.load_state(path=state_file_path)
+    fixed_now = datetime(2026, 4, 20, 9, 30, 0, tzinfo=UTC)
+    stale_state = state_manager.append_warning(
+      stale_state, 'drift', 'stale drift from yesterday', now=fixed_now,
+    )
+    state_manager.save_state(stale_state, path=state_file_path)
+
+    # --once skips email dispatch so clear_warnings is NOT called by Phase 8.
+    # Drift block's clear_warnings_by_source('drift') is the ONLY thing that
+    # can remove the stale warning; detect_drift finds no mismatch -> no new
+    # drift warning appended.
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    final = state_manager.load_state(path=state_file_path)
+    drift_warnings = [
+      w for w in final.get('warnings', []) if w.get('source') == 'drift'
+    ]
+    assert drift_warnings == [], (
+      f'expected 0 drift warnings for LONG position + LONG signal match; '
+      f'got {len(drift_warnings)}: {drift_warnings}'
+    )
