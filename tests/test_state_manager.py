@@ -1379,6 +1379,33 @@ class TestClearWarnings:
     assert result is state
 
 
+class TestClearWarningsBySource:
+  '''Phase 15 D-02: clear_warnings_by_source filters state['warnings'] by
+  `source` key, leaving non-matching warnings intact. Pure dict-op; sole
+  writer to state['warnings']. Wave 0 skeleton — bodies populated in Plan 03.
+  '''
+
+  def test_removes_matching_source(self) -> None:
+    import pytest
+    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+
+  def test_leaves_other_sources_intact(self) -> None:
+    import pytest
+    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+
+  def test_idempotent_on_no_match(self) -> None:
+    import pytest
+    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+
+  def test_returns_same_state_reference(self) -> None:
+    import pytest
+    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+
+  def test_handles_missing_warnings_key(self) -> None:
+    import pytest
+    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+
+
 # =========================================================================
 # Phase 14 D-13 — fcntl exclusive lock around _atomic_write
 # =========================================================================
