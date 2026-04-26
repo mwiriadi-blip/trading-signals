@@ -1,47 +1,35 @@
 ---
 phase: 15-live-calculator-sentinels
 verified: 2026-04-26T10:00:00+08:00
-status: gaps_found
-score: 4/6 must-haves verified
+re_verified: 2026-04-26T12:30:00+08:00
+status: passed
+score: 6/6 must-haves verified
 overrides_applied: 0
-gaps:
-  - truth: "When signal == LONG and positions[instrument] is empty, the row shows an entry target block with next-close threshold, suggested contracts, and initial trailing stop"
-    status: failed
-    reason: "_render_entry_target_row is defined and tested in isolation but never called from _render_positions_table or any other render path. The function is an orphaned helper — it exists in dashboard.py but produces no output in the rendered dashboard."
-    artifacts:
-      - path: "dashboard.py"
-        issue: "_render_positions_table loops with 'if pos is None: continue' — instruments with no position are silently skipped. No code path calls _render_entry_target_row during render. The only call sites are in tests/test_dashboard.py (unit tests of the function itself)."
-    missing:
-      - "Wire _render_entry_target_row into _render_positions_table: after the existing position-row loop, add a second loop over _INSTRUMENT_DISPLAY_NAMES that skips instruments already handled (pos is not None) and calls _render_entry_target_row; when it returns non-empty, append the tbody block (as in the worktree version at .claude/worktrees/agent-ad87c846b0fdd71e1/dashboard.py lines 1543-1562)"
-
-  - truth: "Pyramid section shows level N active; next add at price P (+Y×ATR_entry) and new stop after add: S"
-    status: failed
-    reason: "_render_calc_row uses pos.get('current_level', 0) but the Position TypedDict (system_params.py line 158) stores this field as 'pyramid_level'. Real production positions never have a 'current_level' key. As a result the LEVEL cell always displays 'level 0/2' regardless of the actual pyramid level, and the NEXT ADD price is always computed as entry + 1*atr_entry (level 0 formula)."
-    artifacts:
-      - path: "dashboard.py"
-        issue: "Line 1211: current_level = int(pos.get('current_level', 0)) — missing fallback to 'pyramid_level'. The unit tests in TestRenderCalculatorRow pass because they inject 'current_level' directly into the fixture dict, masking the production bug."
-      - path: "tests/test_dashboard.py"
-        issue: "Lines 1675, 1701, 1769, 1789, 1812, 1836, 1876 — all fixtures use 'current_level' instead of 'pyramid_level', so tests do not catch the production mismatch."
-    missing:
-      - "Change dashboard.py line 1211 from: current_level = int(pos.get('current_level', 0)) to: current_level = int(pos.get('current_level', pos.get('pyramid_level', 0)))"
-      - "Update TestRenderCalculatorRow fixtures to use 'pyramid_level' (the real TypedDict key) to ensure tests catch regressions"
-
-  - truth: "Golden snapshot byte-matches committed golden.html"
-    status: failed
-    reason: "tests/test_dashboard.py::TestGoldenSnapshot::test_golden_snapshot_matches_committed FAILS. The golden.html was regenerated in commit 8bbb1f6 (feat 15-08) but the UAT fix 'name=z' on the forward-look input was added in commit 6ad306e AFTER the golden was regenerated. The rendered output now contains name=\"z\" in the HTMX input but the golden file does not."
-    artifacts:
-      - path: "tests/fixtures/dashboard/golden.html"
-        issue: "Golden file is stale — missing name=\"z\" attribute on forward-stop input element. Rendered output diverges at byte 23548."
-    missing:
-      - "Re-run: python tests/regenerate_dashboard_golden.py && git add tests/fixtures/dashboard/golden.html && git commit"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 4/6 must-haves verified
+  gaps_closed:
+    - truth: "Entry-target row wired into render path (CALC-02)"
+      closure_commit: "f591197"
+      closure_evidence: "dashboard.py::_render_positions_table now has a second loop that calls _render_entry_target_row(state, state_key) for each FLAT-position instrument and wraps non-empty output in <tbody id=\"entry-target-{state_key_esc}\">"
+    - truth: "Pyramid level reads correct field (CALC-04)"
+      closure_commit: "f591197"
+      closure_evidence: "dashboard.py line 1214: current_level = int(pos.get('pyramid_level', pos.get('current_level', 0))) — dual-key fallback wrapped in try/except (TypeError, ValueError) for defensive int conversion"
+    - truth: "Golden snapshot byte-matches committed golden.html"
+      closure_commit: "f591197"
+      closure_evidence: "tests/regenerate_dashboard_golden.py re-run after the H-1/H-2/M-3/L-3 fixes landed; golden.html and golden_empty.html updated; TestGoldenSnapshot + TestEmptyState pass."
+  gaps_remaining: []
+  regressions: []
+gaps: []
 ---
 
 # Phase 15: Live Calculator + Sentinels Verification Report
 
 **Phase Goal:** Turn the dashboard from a passive log into an active decision-support tool — surface the current trailing stop, next pyramid-add price, forward-looking peak stop, and entry target from `sizing_engine`; flag drift when `state.positions` disagrees with today's signal on dashboard AND in the daily email.
-**Verified:** 2026-04-26T10:00:00+08:00
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-04-26T10:00:00+08:00 (initial: gaps_found)
+**Re-verified:** 2026-04-26T12:30:00+08:00 (passed)
+**Status:** passed (was gaps_found; all 3 gaps closed in commit `f591197` — entry-target wiring, pyramid_level dual-key fallback, golden regen)
+**Re-verification:** Yes — closing 3 gaps from initial pass
 
 ## Goal Achievement
 
