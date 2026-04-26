@@ -244,26 +244,53 @@
   ],
   "last_run": "2026-04-21",
   "positions": {
-    "AUDUSD": null,
+    "AUDUSD": {
+      "atr_entry": 0.0042,
+      "direction": "SHORT",
+      "entry_date": "2026-04-10",
+      "entry_price": 0.6650,
+      "manual_stop": 0.6600,
+      "n_contracts": 2,
+      "peak_price": null,
+      "pyramid_level": 0,
+      "trough_price": 0.6580
+    },
     "SPI200": {
       "atr_entry": 50.0,
       "direction": "LONG",
       "entry_date": "2026-04-10",
       "entry_price": 8000.0,
+      "manual_stop": null,
       "n_contracts": 2,
       "peak_price": 8100.0,
       "pyramid_level": 0,
       "trough_price": null
     }
   },
-  "schema_version": 1,
+  "schema_version": 3,
   "signals": {
     "AUDUSD": {
       "as_of_run": "2026-04-21T09:00:00+08:00",
-      "last_close": 0.6502,
+      "last_close": 0.6580,
+      "last_scalars": {
+        "adx": 27.3,
+        "atr": 0.0042,
+        "mom1": 0.015,
+        "mom12": 0.022,
+        "mom3": 0.018,
+        "ndi": 14.0,
+        "pdi": 29.1,
+        "rvol": 0.95
+      },
+      "signal": 1,
+      "signal_as_of": "2026-04-21"
+    },
+    "SPI200": {
+      "as_of_run": "2026-04-21T09:00:00+08:00",
+      "last_close": 8085.0,
       "last_scalars": {
         "adx": 18.3,
-        "atr": 0.0042,
+        "atr": 50.0,
         "mom1": -0.005,
         "mom12": 0.014,
         "mom3": 0.001,
@@ -272,22 +299,6 @@
         "rvol": 0.95
       },
       "signal": 0,
-      "signal_as_of": "2026-04-21"
-    },
-    "SPI200": {
-      "as_of_run": "2026-04-21T09:00:00+08:00",
-      "last_close": 8085.0,
-      "last_scalars": {
-        "adx": 32.5,
-        "atr": 50.0,
-        "mom1": 0.031,
-        "mom12": 0.092,
-        "mom3": 0.048,
-        "ndi": 12.4,
-        "pdi": 28.1,
-        "rvol": 1.12
-      },
-      "signal": 1,
       "signal_as_of": "2026-04-21"
     }
   },
@@ -363,6 +374,17 @@
       "net_pnl": 197.0
     }
   ],
-  "warnings": [],
+  "warnings": [
+    {
+      "date": "2026-04-26",
+      "message": "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      "source": "drift"
+    },
+    {
+      "date": "2026-04-26",
+      "message": "You hold SHORT AUDUSD, today's signal is LONG — reversal recommended (close SHORT, open LONG).",
+      "source": "drift"
+    }
+  ],
   "wins": 0
 }
