@@ -64,7 +64,7 @@
 
 - [ ] **CHORE-01**: F1 full-chain integration test — one test exercising fetch (mocked yfinance) → signals → sizing → dashboard render → email render without mocking internal composition; catches cross-module regressions
 - [ ] **CHORE-02**: ruff F401 cleanup in `notifier.py` (19 pre-existing unused-import warnings); regression test asserts zero ruff warnings at CI time
-- [ ] **CHORE-03**: Phase 6 HUMAN-UAT scenarios (3 pending) — now verifiable via hosted dashboard; update `06-HUMAN-UAT.md` status to `complete` after operator confirms
+- [x] **CHORE-03**: Phase 6 HUMAN-UAT scenarios (3 pending) — now verifiable via hosted dashboard; update `06-HUMAN-UAT.md` status to `complete` after operator confirms
 
 ---
 

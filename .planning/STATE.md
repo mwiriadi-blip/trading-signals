@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-26T10:39:35.449Z"
+last_updated: "2026-04-26T11:52:37.185Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 35
-  completed_plans: 30
-  percent: 86
+  completed_plans: 34
+  percent: 97
 ---
 
 # STATE — Trading Signals
@@ -28,12 +28,12 @@ progress:
 ## Current Position
 
 Phase: 16 (Hardening + UAT Completion) — EXECUTING
-Plan: 1 of 5
+Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Executing Phase 16
+- **Status:** Ready to execute
 - **Last activity:** 2026-04-26
-- **Progress:** [█████████░] 91%
+- **Progress:** [██████████] 97%
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
@@ -91,6 +91,7 @@ Plan: 1 of 5
 | Phase 14 P01 | 7min | 2 tasks | 7 files |
 | Phase 14 P02 | 67min | 3 tasks | 5 files |
 | Phase 14 P03 | 4m31s | 1 tasks | 2 files |
+| Phase 16 P04 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -180,6 +181,7 @@ Plan: 1 of 5
 - Plan 14-02: main.py daily loop migrates 3 save_state call sites to mutate_state — run_daily_check step 9 (W3 #1), _dispatch_email_and_maintain_warnings (W3 #2), _handle_reset (outside W3). Mutator key-replay closure pattern: captured-snapshot mutator re-applies the run's accumulated mutations onto the fresh-loaded state under lock. W3 invariant (2 saves per run) preserved; W3 regression test migrated to count mutate_state calls.
 - Phase 14 D-09: sizing_engine.get_trailing_stop honors position.manual_stop override (precedence: NaN guard > manual_stop > computed peak/trough); defensive .get() handles pre-migration position dicts
 - Phase 14 D-15: check_stop_hit (daily-loop exit detection) intentionally does NOT honor manual_stop — display-only scope; Phase 15 candidate to align
+- [Phase ?]: All 3 UAT scenarios partial on 2026-04-26: STATE.md ## Completed Items records partial/2026-04-26 per REVIEWS H-3; D-17 fallback applied
 
 ### Todos Carried Forward
 
