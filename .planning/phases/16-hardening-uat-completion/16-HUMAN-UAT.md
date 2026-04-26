@@ -64,11 +64,23 @@ status: pending
 
 **Scenario ID: UAT-16-B**
 **Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Gmail desktop + Gmail mobile sections)
-**Verification status:** pending
-**Operator verification date:** —
+**Verification status:** partial
+**Operator verification date:** 2026-04-26
 **Operator notes:**
 
-> _(operator fills in after running the scenario)_
+> Path C accepted: Phase 15 Checkpoint 4 (Gmail render proxy via `notifier.compose_email_body` rendered locally and inspected in Chrome) is the closest evidence we have. That verification confirmed:
+>
+> - `━━━ Drift detected ━━━` header renders with the Phase 8 stale-state banner pattern
+> - Both drift bullet points byte-identical to dashboard rendering (D-12 lockstep parity)
+> - Banner positioned ABOVE the "Trading Signals" hero card (D-13 hierarchy)
+> - Subject `[!]` prefix correctly emitted via `_has_critical_banner` extension to `'drift'` source key (SENTINEL-03)
+> - Inline-CSS pattern matches the existing Phase 8 critical banners (corruption / stale) which already render correctly in Gmail per prior milestones
+>
+> **What's NOT verified by Path C:** Gmail's actual CSS-stripping behavior on the v1.1 markup specifically. Gmail aggressively strips `<style>` blocks and some inline rules, but the project uses inline `style="..."` attributes throughout (Phase 6 D-15 leaf-discipline) which historically survive Gmail's stripping. Phase 8 banners (corruption/stale) used the same inline-CSS pattern and were verified in real Gmail in v1.0 — Phase 15's drift banner reuses that pattern verbatim, so the inheritance gives strong confidence.
+>
+> **Real-mobile-Gmail verification deferred:** waiting for the natural 08:00 AWST daily cycle to deliver an email containing a drift banner — at that point the operator can open it in Gmail mobile app and confirm. This is implicitly tracked by UAT-16-C (which requires drift banner observation in real weekday Gmail) — UAT-16-B verification will be a side-effect of UAT-16-C closure.
+>
+> **Action item flagged for v1.2 backlog:** if Gmail mobile rendering reveals issues with the v1.1-specific markup (drift banner, side-by-side stop cell in email if added later), open a focused fix-phase. For now, the inheritance from Phase 8 patterns + Chrome local-render proof is acceptable evidence for v1.1 milestone close.
 
 **How to verify:**
 1. Trigger a daily run on the droplet — either wait for the scheduled 08:00 AWST cycle, or run `python main.py --once --force-email` over SSH (whichever is operationally cheaper).
@@ -112,7 +124,7 @@ status: pending
 | Scenario | Status | Operator Date | Linked Completed-Items row in STATE.md |
 |----------|--------|---------------|-----------------------------------------|
 | UAT-16-A | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
-| UAT-16-B | pending | — | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-B | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 | UAT-16-C | pending | — | uat_gap (Phase 06 HUMAN-UAT) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 
 **Notes:**
