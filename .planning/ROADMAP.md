@@ -160,7 +160,13 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   2. The F1 integration test catches a deliberately-planted cross-module regression (e.g., rename `get_signal` → `compute_signal` without updating `main.py`) — a meta-test confirms F1 red-lights on that planted break when run locally before being reverted
   3. Phase 6 `06-HUMAN-UAT.md` has its 3 pending scenarios marked `complete` with operator-recorded notes: (a) dashboard loads correctly on mobile via the hosted URL, (b) email renders correctly in real Gmail on mobile, (c) drift banner (from Phase 15) renders correctly in both dashboard and email on at least one real weekday run
   4. `STATE.md §Deferred Items` no longer lists the three Phase 6 HUMAN-UAT items, the Phase 5 dashboard visual check, or the Phase 6 email rendering check — all moved to a Completed section with the operator's verification date
-**Plans**: TBD
+**Plans**: 5 plans
+  - [ ] `16-01-PLAN.md` — Deploy Phases 13/14/15 to droplet (Wave 1; D-11 first task; operator-driven SSH + bash deploy.sh + smoke-check)
+  - [ ] `16-02-PLAN.md` — F1 full-chain integration test (CHORE-01 SC-1 + SC-2; tests/test_integration_f1.py with test_full_chain_fetch_to_email + test_f1_catches_planted_regression)
+  - [ ] `16-03-PLAN.md` — Create 16-HUMAN-UAT.md with 3 scenarios in D-10 5-field schema (CHORE-03; new file in Phase 16 dir, archived 06-HUMAN-UAT.md unmodified per D-09)
+  - [ ] `16-04-PLAN.md` — STATE.md ## Completed Items section with 3 migrated rows linked to 16-HUMAN-UAT.md (CHORE-03 SC-4; D-14, D-15)
+  - [ ] `16-05-PLAN.md` — Operator UAT verification gate (3 human-verify checkpoints — UAT-16-A mobile dashboard, UAT-16-B mobile Gmail, UAT-16-C drift banner real weekday; UAT-16-C may stay PARTIAL per D-17)
+**Plans (wave structure)**: Wave 1 = [16-01, 16-02, 16-03] parallel (disjoint files: deploy is operator-side, F1 test creates tests/test_integration_f1.py, UAT scaffold creates 16-HUMAN-UAT.md); Wave 2 = [16-04] after 16-03 (STATE.md edits link into 16-HUMAN-UAT.md scenario anchors); Wave 3 = [16-05] after 16-01 + 16-03 (operator UAT needs deployed stack + UAT artifact in place)
 **UI hint**: yes
 
 ## Phase Dependencies (build order)
@@ -189,7 +195,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 | 13. Auth + Read Endpoints | v1.1 | 5/5 | Complete    | 2026-04-25 |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/5 | Not started | - |
 | 15. Live Calculator + Sentinels | v1.1 | 0/8 | Not started | - |
-| 16. Hardening + UAT Completion | v1.1 | 0/? | Not started | - |
+| 16. Hardening + UAT Completion | v1.1 | 0/5 | Not started | - |
 
 Plan counts filled in by `/gsd-plan-phase <N>` as each phase is planned.
 
