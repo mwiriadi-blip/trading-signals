@@ -1401,36 +1401,53 @@ class TestRenderManualStopBadge:
     )
 
   def test_badge_present_when_manual_stop_set(self, tmp_path) -> None:
-    '''UI-SPEC §Decision 6: <span class="badge badge-manual">manual</span>.'''
-    out = tmp_path / 'd.html'
-    dashboard.render_dashboard(
-      _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
-    )
-    rendered = out.read_text()
-    assert 'class="badge badge-manual"' in rendered, (
-      'UI-SPEC §Decision 6: badge must be present when manual_stop is set'
-    )
-    assert '>manual</span>' in rendered, (
-      'UI-SPEC §Decision 6: badge text = "manual" (lowercase)'
-    )
-    # title= tooltip per UI-SPEC §Decision 6 + §Copywriting
-    assert 'Operator override' in rendered
-
-  def test_displayed_value_equals_manual_stop_not_computed(self, tmp_path) -> None:
-    '''UI-SPEC §Decision 6: displayed Trail Stop value = manual_stop verbatim
-    (NOT the computed peak-trail). Computed would be 7950; manual is 7700.
+    '''Phase 15 D-10: side-by-side stop cell when manual_stop is set.
+    Replaces Phase 14 badge with explicit `manual: $X | computed: $Y (will close)`
+    structure. Asserts the trail-stop-split markup is present.
     '''
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(
       _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
     )
     rendered = out.read_text()
-    assert '$7,700' in rendered, (
-      'UI-SPEC §Decision 6: displayed Trail Stop must equal manual_stop=7700; '
-      'computed peak-trail (7950) must NOT appear when manual_stop is set'
+    assert 'class="trail-stop-split"' in rendered, (
+      'D-10: trail-stop-split container must be present when manual_stop is set'
     )
-    assert '$7,950' not in rendered, (
-      'UI-SPEC §Decision 6: computed peak-trail must be SUPPRESSED when manual_stop is set'
+    assert 'class="manual-stop-val"' in rendered, (
+      'D-10: manual-stop-val span must wrap the manual value'
+    )
+    assert 'class="computed-stop-val"' in rendered, (
+      'D-10: computed-stop-val span must wrap the computed value'
+    )
+    assert '(will close)' in rendered, (
+      'D-10 + D-15: (will close) annotation clarifies which value the daily loop respects'
+    )
+    assert 'manual: $7,700' in rendered, (
+      'D-10: manual value (7700) must be visible in the manual: prefix'
+    )
+
+  def test_displayed_value_equals_manual_stop_not_computed(self, tmp_path) -> None:
+    '''Phase 15 D-10 + D-15: side-by-side cell shows BOTH manual and computed
+    values. The (will close) annotation goes on the COMPUTED value because
+    sizing_engine.check_stop_hit honors the computed stop, not manual_stop
+    (D-15: manual_stop is DISPLAY-ONLY in Phase 14/15; full alignment deferred).
+    Computed = peak (8100) - 3*atr (50) = 7950. Manual = 7700.
+    '''
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(
+      _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
+    )
+    rendered = out.read_text()
+    assert '$7,700' in rendered, 'D-10: manual value must be displayed'
+    assert '$7,950' in rendered, (
+      'D-10: computed value must ALSO be displayed (side-by-side, not suppressed)'
+    )
+    # (will close) is on the COMPUTED value per D-15
+    idx_computed = rendered.find('computed:')
+    idx_will_close = rendered.find('(will close)')
+    assert idx_computed >= 0 and idx_will_close >= 0
+    assert 0 < idx_will_close - idx_computed < 200, (
+      'D-15: (will close) annotation must be adjacent to the computed value'
     )
 
   def test_compute_trail_stop_display_lockstep_parity_with_sizing_engine(self) -> None:
@@ -1536,11 +1553,11 @@ class TestRenderManualStopBadge:
     )
 
   def test_no_badge_for_audusd_when_spi_has_manual_stop(self, tmp_path) -> None:
-    '''Per-row badge isolation: setting manual_stop on SPI200 must not
-    leak the badge to AUDUSD's row.
+    '''Phase 15 D-10: per-row isolation — side-by-side stop cell on SPI200
+    must not leak to AUDUSD's row. AUDUSD (no manual_stop) shows the
+    single computed stop value, no trail-stop-split markup.
     '''
     state = _make_render_state_with_position(manual_stop=7700.0)
-    # Add an AUDUSD position WITHOUT manual_stop
     state['positions']['AUDUSD'] = {
       'direction': 'LONG', 'entry_price': 0.6450, 'entry_date': '2026-04-20',
       'n_contracts': 1, 'pyramid_level': 0,
@@ -1557,8 +1574,12 @@ class TestRenderManualStopBadge:
     audusd_end = rendered.find('</tr>', audusd_start)
     spi_row = rendered[spi_start:spi_end]
     audusd_row = rendered[audusd_start:audusd_end]
-    assert 'badge-manual' in spi_row, 'SPI200 row must contain badge'
-    assert 'badge-manual' not in audusd_row, 'AUDUSD row must NOT contain badge'
+    assert 'trail-stop-split' in spi_row, (
+      'D-10: SPI200 (manual_stop set) must contain trail-stop-split markup'
+    )
+    assert 'trail-stop-split' not in audusd_row, (
+      'D-10: AUDUSD (no manual_stop) must NOT contain trail-stop-split markup'
+    )
 
 
 class TestAuthHeaderPlaceholder:
