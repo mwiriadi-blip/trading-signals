@@ -5,14 +5,14 @@
 **Start phase:** 10 (continuing from v1.0 which closed at Phase 9)
 **Granularity:** fine
 **Parallelization:** true
-**Coverage:** 31/31 v1.1 requirements mapped (WEB 7, AUTH 3, TRADE 6, CALC 4, SENTINEL 3, BUG 1, INFRA 4, CHORE 3)
+**Coverage:** 35/35 v1.1 requirements mapped (WEB 7, AUTH 7, TRADE 6, CALC 4, SENTINEL 3, BUG 1, INFRA 4, CHORE 3) — AUTH-04..AUTH-07 added 2026-04-27 with Phase 16.1 insertion
 
 **Core Value (v1.1):** Transform the v1.0 email-only CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels. Architecture locked: DO droplet runtime (systemd) + GitHub (source + state history via deploy-key push-back) + FastAPI + uvicorn + nginx + Let's Encrypt + HTMX (no React) + shared-secret header auth.
 
 ## Milestones
 
 - [x] **v1.0 MVP — Mechanical Signal System** — Phases 1-9 (shipped 2026-04-24). See [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md).
-- [ ] **v1.1 Interactive Trading Workstation** — Phases 10-16 (in progress from 2026-04-24).
+- [ ] **v1.1 Interactive Trading Workstation** — Phases 10-16, plus inserted Phase 16.1 (in progress from 2026-04-24).
 
 ## Prerequisites (v1.1)
 
@@ -271,12 +271,20 @@ Per-phase counts: Phase 10 = 4, Phase 11 = 4, Phase 12 = 3, Phase 13 = 5, Phase 
 *Roadmap created: 2026-04-24 (v1.1 milestone kickoff)*
 *Ready for: `/gsd-discuss-phase 10` (or parallel `/gsd-discuss-phase 11` once Phase 10 plans exist)*
 
-### Phase 16.1: Phone-friendly auth UX for dashboard access (INSERTED)
+### Phase 16.1: Phone-friendly auth UX for dashboard access (INSERTED 2026-04-27, URGENT)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 16
-**Plans:** 0 plans
+**Goal**: Add an iOS-native authentication path to the dashboard so the operator can use `signals.<owned-domain>.com` from a real iPhone (Safari and Chrome) without installing a header-injection extension. Phase 13's `X-Trading-Signals-Auth` header gate stays in place and continues to work for `curl`, scripts, and Phase 14 HTMX trade-mutation forms — the new path is **additive**, not replacing. Mechanism (HTTP Basic Auth as v1.1.1 patch vs login form + cookie session as proper v1.2 UX vs Cloudflare Access vs magic link) chosen during `/gsd-discuss-phase 16.1` from the four candidates pre-documented in [.planning/todos/pending/2026-04-27-phone-friendly-auth-ux-for-dashboard-access.md](todos/pending/2026-04-27-phone-friendly-auth-ux-for-dashboard-access.md).
 
-Plans:
-- [ ] TBD (run /gsd-plan-phase 16.1 to break down)
+**Depends on**: Phase 13 (loosened from "Phase 16" per insertion-commit note: 16.1 only needs the existing `AuthMiddleware` from Phase 13 to extend; it does not need Phase 16's UAT-completion to ship). Can run in parallel with the natural weekday-gated wait for UAT-16-C closure.
+
+**Requirements**: AUTH-04, AUTH-05, AUTH-06, AUTH-07
+
+**Success Criteria** (what must be TRUE):
+  1. Visiting `https://signals.<owned-domain>.com/` from a real iPhone (Safari **and** Chrome, no extension installed) yields a usable rendered dashboard, not the plain-text `unauthorized` response. Verified by an operator-performed phone UAT scenario captured in `16.1-HUMAN-UAT.md` (mirrors the Phase 16 UAT pattern).
+  2. The existing header path is preserved verbatim — `curl -H "X-Trading-Signals-Auth: <secret>" https://signals.<owned-domain>.com/` returns HTTP 200 + dashboard HTML; HTMX forms in `web/templates/dashboard.html` (which carry `hx-headers='{"X-Trading-Signals-Auth": "..."}'`) keep submitting trades successfully without modification. A regression test in `tests/test_web_auth.py` asserts both paths authenticate to 200 against a single endpoint.
+  3. Auth strength is preserved — `WEB_AUTH_SECRET` stays in droplet `.env` only (no new database, no on-disk credential store); `hmac.compare_digest` stays on the comparison hot-path; a code-search test asserts no plaintext-comparison operator (`==`) is used against `WEB_AUTH_SECRET` anywhere in `web/`.
+  4. `/healthz` stays exempt (per Phase 13 D-02 EXEMPT_PATHS) — `curl https://signals.<owned-domain>.com/healthz` returns 200 with no auth, regression test asserts. For any unauthenticated request that did NOT come through the new operator-UX path (raw `curl` without header, no cookie, no Basic Auth), the failure response is still `401 unauthorized` plain text — no body change, no header leak about the new path's existence.
+
+**Plans**: TBD (run /gsd-discuss-phase 16.1 first to capture mechanism decision + constraints, then /gsd-plan-phase 16.1 to break down)
+
+**UI hint**: yes (login form / Basic Auth dialog / cookie-session UX — depends on mechanism chosen in discuss-phase)

@@ -1,9 +1,9 @@
 # Requirements — Trading Signals v1.1
 
 **Milestone:** v1.1 Interactive Trading Workstation
-**Defined:** 2026-04-24
-**Total:** 31 requirements across 8 categories
-**Mapped to phases:** 31/31 (by `/gsd-roadmapper` 2026-04-24)
+**Defined:** 2026-04-24 (Phase 16.1 AUTH-04..AUTH-07 inserted 2026-04-27)
+**Total:** 35 requirements across 8 categories
+**Mapped to phases:** 35/35
 **Coverage:** 100% (0 orphans, 0 duplicates)
 
 ---
@@ -25,6 +25,10 @@
 - [x] **AUTH-02**: Missing or wrong auth header returns 401 with a plain-text `unauthorized` body (no leaked info; no hints)
 - [x] **AUTH-03
 **: Auth failures log at WARN with source IP and truncated user-agent to journald for audit trail
+- [ ] **AUTH-04**: Operator can authenticate to the dashboard from iOS Safari and iOS Chrome using only browser-native UI (no extension installed) — visiting `https://signals.<owned-domain>.com/` from a real iPhone yields a usable rendered dashboard, not the plain-text `unauthorized` response. Concrete mechanism (HTTP Basic Auth, login form + cookie session, Cloudflare Access, magic link) chosen during `/gsd-discuss-phase 16.1`.
+- [ ] **AUTH-05**: New auth path is **additive**, not replacing — the existing `X-Trading-Signals-Auth` header still authenticates a request. Phase 14 HTMX forms in the dashboard (which carry `hx-headers='{"X-Trading-Signals-Auth": "..."}'`) keep working unchanged; `curl -H "X-Trading-Signals-Auth: <secret>" https://signals.<owned-domain>.com/` still returns 200.
+- [ ] **AUTH-06**: Auth strength does not weaken — single-operator scope preserved; `WEB_AUTH_SECRET` stays in droplet `.env` only (no database, no on-disk credential store); `hmac.compare_digest` stays for constant-time comparison; no new HTTP method, header, or path opens an unauthenticated route.
+- [ ] **AUTH-07**: `/healthz` stays exempt from the new auth path (per Phase 13 D-02 EXEMPT_PATHS); for any unauthenticated request that did NOT come through the new operator-UX path (e.g. raw `curl` without header), the failure response stays `401 unauthorized` plain text — the existing curl/script integration contract is preserved verbatim.
 
 ## TRADE — Interactive trade journal
 
@@ -109,9 +113,13 @@ Each REQ-ID is mapped to exactly one v1.1 phase (Phases 10–16). 31/31 mapped, 
 | WEB-03 | Let's Encrypt HTTPS | 12 | Pending |
 | WEB-04 | HTTP→HTTPS redirect + HSTS | 12 | Pending |
 | INFRA-01 | Resend domain verification | 12 | Pending |
-| AUTH-01 | Shared-secret header | 13 | Pending |
-| AUTH-02 | 401 on auth failure | 13 | Pending |
-| AUTH-03 | Audit log | 13 | Pending |
+| AUTH-01 | Shared-secret header | 13 | Complete |
+| AUTH-02 | 401 on auth failure | 13 | Complete |
+| AUTH-03 | Audit log | 13 | Complete |
+| AUTH-04 | iOS-native operator auth UX (no extension) | 16.1 | Pending |
+| AUTH-05 | New path additive — header path unchanged | 16.1 | Pending |
+| AUTH-06 | Auth strength preserved (constant-time, env-only secret) | 16.1 | Pending |
+| AUTH-07 | `/healthz` exempt; curl 401 contract unchanged | 16.1 | Pending |
 | WEB-05 | GET / dashboard | 13 | Pending |
 | WEB-06 | GET /api/state | 13 | Pending |
 | TRADE-01 | POST /trades/open | 14 | Pending |
@@ -141,11 +149,12 @@ Each REQ-ID is mapped to exactly one v1.1 phase (Phases 10–16). 31/31 mapped, 
 | 14 — Trade Journal | 6 | TRADE-01..06 |
 | 15 — Calculator + Sentinels | 7 | CALC-01..04, SENTINEL-01..03 |
 | 16 — Hardening + UAT | 2 | CHORE-01, CHORE-03 |
-| **Total** | **31** | (4+4+3+5+6+7+2 = 31 ✓) |
+| 16.1 — Phone-friendly auth UX (URGENT, inserted 2026-04-27) | 4 | AUTH-04, AUTH-05, AUTH-06, AUTH-07 |
+| **Total** | **35** | (4+4+3+5+6+7+2+4 = 35 ✓) |
 
 ---
 
-*REQ-ID namespaces: WEB (7), AUTH (3), TRADE (6), CALC (4), SENTINEL (3), BUG (1), INFRA (4), CHORE (3) = 31*
+*REQ-ID namespaces: WEB (7), AUTH (7), TRADE (6), CALC (4), SENTINEL (3), BUG (1), INFRA (4), CHORE (3) = 35*
 
 ---
 
