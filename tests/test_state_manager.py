@@ -1386,24 +1386,64 @@ class TestClearWarningsBySource:
   '''
 
   def test_removes_matching_source(self) -> None:
-    import pytest
-    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+    from state_manager import (
+      append_warning,
+      clear_warnings_by_source,
+      reset_state,
+    )
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'drift', 'msg drift 1', now=fixed_now)
+    state = append_warning(state, 'drift', 'msg drift 2', now=fixed_now)
+    state = append_warning(state, 'sizing_engine', 'msg sizing', now=fixed_now)
+    assert len(state['warnings']) == 3, 'precondition: 3 warnings appended'
+    clear_warnings_by_source(state, 'drift')
+    assert len(state['warnings']) == 1
+    assert state['warnings'][0]['source'] == 'sizing_engine'
+    assert state['warnings'][0]['message'] == 'msg sizing'
 
   def test_leaves_other_sources_intact(self) -> None:
-    import pytest
-    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+    from state_manager import (
+      append_warning,
+      clear_warnings_by_source,
+      reset_state,
+    )
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'state_manager', 'corruption msg', now=fixed_now)
+    state = append_warning(state, 'sizing_engine', 'sizing msg', now=fixed_now)
+    state = append_warning(state, 'notifier', 'notif msg', now=fixed_now)
+    clear_warnings_by_source(state, 'drift')  # no drift warnings exist
+    assert len(state['warnings']) == 3
+    sources = sorted(w['source'] for w in state['warnings'])
+    assert sources == ['notifier', 'sizing_engine', 'state_manager']
 
   def test_idempotent_on_no_match(self) -> None:
-    import pytest
-    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+    from state_manager import (
+      append_warning,
+      clear_warnings_by_source,
+      reset_state,
+    )
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'sizing_engine', 'a', now=fixed_now)
+    before = list(state['warnings'])
+    clear_warnings_by_source(state, 'drift')
+    clear_warnings_by_source(state, 'drift')  # second call, no change
+    assert state['warnings'] == before
 
   def test_returns_same_state_reference(self) -> None:
-    import pytest
-    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+    from state_manager import clear_warnings_by_source, reset_state
+    state = reset_state()
+    result = clear_warnings_by_source(state, 'drift')
+    assert result is state, 'must return same dict for chaining (mirrors clear_warnings contract)'
 
   def test_handles_missing_warnings_key(self) -> None:
-    import pytest
-    pytest.skip('Plan 03: clear_warnings_by_source implementation pending')
+    from state_manager import clear_warnings_by_source
+    state: dict = {}  # no 'warnings' key at all
+    result = clear_warnings_by_source(state, 'drift')
+    assert result is state
+    assert result['warnings'] == []  # set to empty list after the call
 
 
 # =========================================================================

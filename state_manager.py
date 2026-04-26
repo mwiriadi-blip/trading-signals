@@ -642,6 +642,29 @@ def clear_warnings(state: dict) -> dict:
   state['warnings'] = []
   return state
 
+
+def clear_warnings_by_source(state: dict, source: str) -> dict:
+  '''Phase 15 D-02: filter out warnings whose `source` key matches the
+  argument. Pure dict operation — no I/O. Caller wraps in mutate_state
+  for persistence atomicity. Returns the same state dict for chaining.
+
+  Preserves D-10 sole-writer invariant — state_manager is the ONLY
+  module that mutates state['warnings']; notifier reads but never writes.
+
+  Use case (Phase 15 SENTINEL-01..03): drift warnings lifecycle —
+  clear_warnings_by_source(state, 'drift') then re-append fresh events
+  from sizing_engine.detect_drift. Surgical, leaves corruption/stale/
+  sizing_engine warnings intact.
+
+  NOTE: This is DIFFERENT from clear_warnings(state) — that one wipes
+  ALL warnings (used post-email-dispatch). Pitfall 8 in 15-RESEARCH.md.
+  '''
+  state['warnings'] = [
+    w for w in state.get('warnings', [])
+    if w.get('source') != source
+  ]
+  return state
+
 def record_trade(state: dict, trade: dict) -> dict:
   '''STATE-05 / D-13 / D-14 / D-15 / D-16 / D-19 / D-20: record a closed trade.
 
