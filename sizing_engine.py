@@ -93,6 +93,98 @@ class StepResult:
   warnings: list[str]
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class DriftEvent:
+  '''Phase 15 D-01 (SENTINEL-01/02): position-vs-signal drift event.
+
+  Fields:
+    instrument: 'SPI200' or 'AUDUSD' (state_key, not yfinance symbol).
+    held_direction: 'LONG' or 'SHORT' (the position's direction).
+    signal_direction: 'LONG', 'SHORT', or 'FLAT' (today's signal).
+    severity: 'drift' (held vs FLAT) or 'reversal' (held vs opposite directional).
+    message: operator-facing copy from D-14 template; the SHARED string between
+             dashboard and email renderers (D-12 lockstep parity).
+  '''
+  instrument: str
+  held_direction: str
+  signal_direction: str
+  severity: str
+  message: str
+
+
+def detect_drift(positions: dict, signals: dict) -> list:
+  '''Phase 15 D-01 (SENTINEL-01/02): pure-math drift detector.
+
+  Args:
+    positions: state['positions'] — keyed by 'SPI200'/'AUDUSD'; each value
+               is a Position TypedDict (or None for no open position).
+    signals:   state['signals'] — keyed by 'SPI200'/'AUDUSD'; each value
+               is either a dict with key 'signal' (LONG/SHORT/FLAT int)
+               OR a bare int (Pitfall 3 backward-compat with reset_state()).
+
+  Returns:
+    list[DriftEvent] — one event per drifted instrument; empty list when
+    no drift OR when signal data is missing (D-04 conservative skip).
+
+  D-04 conservative-skip cases (return no event for that instrument):
+    - positions[instrument] is None (no open position)
+    - signals.get(instrument) is None (signal not computed)
+    - signals[instrument] is a dict with 'signal' key set to None
+    - signals[instrument] is neither int nor dict (defensive — unknown shape)
+
+  D-14 message templates:
+    drift:    "You hold {held} {instrument}, today's signal is FLAT — consider closing."
+    reversal: "You hold {held} {instrument}, today's signal is {sig_label} —
+              reversal recommended (close {held}, open {new_dir})."
+  '''
+  events: list = []
+  for instrument in ('SPI200', 'AUDUSD'):
+    pos = positions.get(instrument)
+    if pos is None:
+      continue
+    sig_entry = signals.get(instrument)
+    if sig_entry is None:
+      continue
+    # D-04 + Pitfall 3: handle both int-shape (reset state) and dict-shape (daily run state)
+    if isinstance(sig_entry, int):
+      sig_val = sig_entry
+    elif isinstance(sig_entry, dict):
+      sig_val = sig_entry.get('signal')
+    else:
+      continue
+    if sig_val is None:
+      continue
+    held = pos.get('direction')
+    if held not in ('LONG', 'SHORT'):
+      continue
+    held_int = LONG if held == 'LONG' else SHORT
+    if sig_val == held_int:
+      continue  # position matches signal — no drift
+    signal_label = {LONG: 'LONG', SHORT: 'SHORT', FLAT: 'FLAT'}.get(sig_val)
+    if signal_label is None:
+      continue  # unknown int — defensive skip
+    if sig_val == FLAT:
+      severity = 'drift'
+      message = (
+        f'You hold {held} {instrument}, today\'s signal is FLAT — consider closing.'
+      )
+    else:
+      severity = 'reversal'
+      new_dir = 'SHORT' if held == 'LONG' else 'LONG'
+      message = (
+        f'You hold {held} {instrument}, today\'s signal is {signal_label} — '
+        f'reversal recommended (close {held}, open {new_dir}).'
+      )
+    events.append(DriftEvent(
+      instrument=instrument,
+      held_direction=held,
+      signal_direction=signal_label,
+      severity=severity,
+      message=message,
+    ))
+  return events
+
+
 # =========================================================================
 # Private helpers
 # =========================================================================
