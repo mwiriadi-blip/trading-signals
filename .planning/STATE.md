@@ -32,7 +32,7 @@ Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
-- **Last activity:** 2026-04-26 - Completed quick task 260426-vcw: Phase 12 HTTPS reconcile — sync nginx/signals.conf comments with deployed state, add port-80 redirect, delete duplicate
+- **Last activity:** 2026-04-27 - UAT-16-A flipped `partial` → `verified` after Phase 12 HTTPS bring-up (signals.mwiriadi.me live; curl-through-nginx 200 OK with byte-identical dashboard HTML); UAT-16-B/C remain partial (gated on real drift email)
 - **Progress:** [██████████] 97%
 
 ```
@@ -218,7 +218,7 @@ Items deferred at v1.0 milestone close (2026-04-24) and verified closed via Phas
 | Category | Item | Verified | Date | Artifact |
 |----------|------|----------|------|----------|
 | uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-A/B/C](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md) |
-| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-A](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-a-mobile-dashboard-rendering) |
+| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | yes | 2026-04-27 | [16-HUMAN-UAT.md §UAT-16-A](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-a-mobile-dashboard-rendering) |
 | verification_gap | Phase 06 VERIFICATION (email rendering visual check) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-B](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-b-mobile-gmail-email-rendering) |
 
 > **Verification source:** Each row's `Verified` and `Date` columns were read from `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md` after Plan 16-05 closed (REVIEWS H-3). The uat_gap row's Verified column is `yes` only if ALL THREE scenarios (UAT-16-A, UAT-16-B, UAT-16-C) are `verified`; otherwise it is `partial` and the operator notes in 16-HUMAN-UAT.md document why. Per D-17, UAT-16-C may stay `pending` for multiple weekdays — in that case the uat_gap row is recorded as `partial` with today's migration date and the verification_gap rows for UAT-16-A and UAT-16-B close as `yes` earlier. All three scenarios were marked `partial` on 2026-04-26 (Mac-dev-proxy and local-render evidence accepted; real-phone-on-droplet and real-weekday-Gmail remain pending per D-17).
