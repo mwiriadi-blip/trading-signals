@@ -100,11 +100,11 @@ status: pending
 
 **Scenario ID: UAT-16-C**
 **Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Drift banner / signal-change scenarios)
-**Verification status:** pending
-**Operator verification date:** —
+**Verification status:** partial
+**Operator verification date:** 2026-04-26
 **Operator notes:**
 
-> _(operator fills in after running the scenario)_
+> Lockstep parity proven structurally by Phase 15 `test_drift_banner_body_parity_with_dashboard` (D-12) and Phase 8 inline-CSS inheritance (corruption/stale banners verified in real Gmail v1.0). Real-day-Gmail observation deferred to natural occurrence post-launch per D-17. If a future drift email reveals Gmail-rendering issues, opens a v1.2 fix-phase.
 
 **How to verify:**
 1. Wait for organic drift on a real weekday run (this is the natural path; operator declined synthetic drift injection per CONTEXT.md Deferred Ideas).
@@ -125,7 +125,7 @@ status: pending
 |----------|--------|---------------|-----------------------------------------|
 | UAT-16-A | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 | UAT-16-B | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
-| UAT-16-C | pending | — | uat_gap (Phase 06 HUMAN-UAT) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-C | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 
 **Notes:**
 - Operator updates `Status` and `Operator Date` columns above as each scenario closes.
