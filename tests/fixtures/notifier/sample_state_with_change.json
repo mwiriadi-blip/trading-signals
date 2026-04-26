@@ -75,5 +75,11 @@
     {"date": "2026-04-21", "equity": 101000.0},
     {"date": "2026-04-22", "equity": 101234.56}
   ],
-  "warnings": []
+  "warnings": [
+    {
+      "date": "2026-04-26",
+      "message": "You hold SHORT SPI200, today's signal is LONG — reversal recommended (close SHORT, open LONG).",
+      "source": "drift"
+    }
+  ]
 }

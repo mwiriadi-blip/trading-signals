@@ -414,6 +414,96 @@ footer {
 @media (max-width: 720px) {
   .open-form .field { min-width: 100%; }
 }
+/* =========================================================================
+ * Phase 15 — Calculator sub-rows + Sentinel banners
+ * All tokens inherited from :root above; no new design tokens.
+ * ========================================================================= */
+.calc-row td.calc-cell {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.calc-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.calc-value {
+  font-size: var(--fs-body);
+  color: var(--color-text);
+}
+.calc-value.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.calc-sep {
+  color: var(--color-border);
+  margin: 0 var(--space-2);
+}
+.calc-dim {
+  color: var(--color-text-dim);
+}
+.calc-input {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-label);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+  max-width: 100px;
+}
+.calc-input:focus {
+  outline: none;
+  border-color: var(--color-text-muted);
+  box-shadow: 0 0 0 1px var(--color-text-muted);
+}
+td.calc-cell.entry-target {
+  background: var(--color-surface);
+}
+.trail-stop-split {
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.manual-stop-val { color: var(--color-flat); }
+.stop-sep { color: var(--color-text-dim); margin: 0 var(--space-1); }
+.computed-stop-val { color: var(--color-text-dim); }
+.computed-stop-val em { font-style: italic; }
+/* Sentinel banners */
+.sentinel-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.sentinel-drift { border-left: 4px solid var(--color-flat); }
+.sentinel-reversal { border-left: 4px solid var(--color-short); }
+.sentinel-heading {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+  margin: 0 0 var(--space-2);
+}
+.sentinel-body {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+.sentinel-body li { margin: 0 0 var(--space-1); list-style: disc; }
+.sentinel-body li:last-child { margin-bottom: 0; }
 </style>
 </head>
 <body>
@@ -432,15 +522,15 @@ footer {
   <div class="cards-row">
     <article class="card">
       <p class="eyebrow">SPI 200</p>
-      <p class="big-label" style="color: #22c55e">LONG</p>
-      <p class="sub">Signal as of 2026-04-21</p>
-      <p class="scalars">ADX 32.5  ·  Mom<sub>1</sub> +3.1%  ·  Mom<sub>3</sub> +4.8%  ·  Mom<sub>12</sub> +9.2%  ·  RVol 1.12</p>
-    </article>
-    <article class="card">
-      <p class="eyebrow">AUD / USD</p>
       <p class="big-label" style="color: #eab308">FLAT</p>
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 18.3  ·  Mom<sub>1</sub> -0.5%  ·  Mom<sub>3</sub> +0.1%  ·  Mom<sub>12</sub> +1.4%  ·  RVol 0.95</p>
+    </article>
+    <article class="card">
+      <p class="eyebrow">AUD / USD</p>
+      <p class="big-label" style="color: #22c55e">LONG</p>
+      <p class="sub">Signal as of 2026-04-21</p>
+      <p class="scalars">ADX 27.3  ·  Mom<sub>1</sub> +1.5%  ·  Mom<sub>3</sub> +1.8%  ·  Mom<sub>12</sub> +2.2%  ·  RVol 0.95</p>
     </article>
   </div>
 </section>
@@ -488,6 +578,13 @@ footer {
     })();
   </script>
 </section>
+  <div class="sentinel-banner sentinel-reversal" role="alert" aria-live="polite">
+    <p class="sentinel-heading">Drift detected</p>
+    <ul class="sentinel-body">
+        <li>You hold LONG SPI200, today&#x27;s signal is FLAT — consider closing.</li>
+        <li>You hold SHORT AUDUSD, today&#x27;s signal is LONG — reversal recommended (close SHORT, open LONG).</li>
+    </ul>
+  </div>
 <section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">OPEN NEW POSITION</p>
   <form
@@ -575,6 +672,71 @@ footer {
         <td class="num"><span style="color: #22c55e">+$844.00</span></td>
         <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Modify</button></td>
       </tr>
+    <tr class="calc-row" aria-label="Calculator data for SPI200">
+      <td colspan="9" class="calc-cell">
+        <span class="calc-label">STOP</span>
+        <span class="calc-value num">$7,950.00</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">DIST</span>
+        <span class="calc-value num">$135.00</span>
+        <span class="calc-dim"> / </span>
+        <span class="calc-value num">1.7%</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEXT ADD</span>
+        <span class="calc-value num">$8,050.00 <span class="calc-dim">(+1×ATR)</span></span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">LEVEL</span>
+        <span class="calc-value">level 0/2</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEW STOP</span>
+        <span class="calc-value num">$7,950.00</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">IF HIGH</span>
+        <input id="forward-stop-SPI200-z" type="number" step="0.01" min="0" hx-get="/?fragment=forward-stop&amp;instrument=SPI200" hx-trigger="input changed delay:300ms" hx-target="#forward-stop-SPI200-w" hx-include="this" class="calc-input" aria-label="Enter today&apos;s high to project trailing stop for SPI200">
+        <span class="calc-dim">stop rises to</span>
+        <span id="forward-stop-SPI200-w" class="calc-value num">—</span>
+        <span id="forward-stop-SPI200-hint" class="calc-dim">(enter high to project)</span>
+      </td>
+    </tr>
+    </tbody>
+    <tbody id="position-group-AUDUSD" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' hx-trigger="positions-changed from:body" hx-get="/?fragment=position-group-AUDUSD" hx-swap="innerHTML">
+      <tr id="position-row-AUDUSD">
+        <td>AUD / USD</td>
+        <td><span style="color: #ef4444">SHORT</span></td>
+        <td class="num">$0.67</td>
+        <td class="num">$0.66</td>
+        <td class="num">2</td>
+        <td class="num">Lvl 0</td>
+        <td class="num"><span class="trail-stop-split"><span class="manual-stop-val">manual: $0.66</span><span class="stop-sep"> | </span><span class="computed-stop-val">computed: $0.67 <em>(will close)</em></span></span></td>
+        <td class="num"><span style="color: #22c55e">+$135.00</span></td>
+        <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=AUDUSD" hx-target="#position-group-AUDUSD" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=AUDUSD" hx-target="#position-group-AUDUSD" hx-swap="innerHTML">Modify</button></td>
+      </tr>
+    <tr class="calc-row" aria-label="Calculator data for AUDUSD">
+      <td colspan="9" class="calc-cell">
+        <span class="calc-label">STOP</span>
+        <span class="calc-value num">$0.66</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">DIST</span>
+        <span class="calc-value num">$0.00</span>
+        <span class="calc-dim"> / </span>
+        <span class="calc-value num">0.3%</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEXT ADD</span>
+        <span class="calc-value num">$0.66 <span class="calc-dim">(+1×ATR)</span></span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">LEVEL</span>
+        <span class="calc-value">level 0/2</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEW STOP</span>
+        <span class="calc-value num">$0.67</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">IF HIGH</span>
+        <input id="forward-stop-AUDUSD-z" type="number" step="0.01" min="0" hx-get="/?fragment=forward-stop&amp;instrument=AUDUSD" hx-trigger="input changed delay:300ms" hx-target="#forward-stop-AUDUSD-w" hx-include="this" class="calc-input" aria-label="Enter today&apos;s high to project trailing stop for AUDUSD">
+        <span class="calc-dim">stop rises to</span>
+        <span id="forward-stop-AUDUSD-w" class="calc-value num">—</span>
+        <span id="forward-stop-AUDUSD-hint" class="calc-dim">(enter high to project)</span>
+      </td>
+    </tr>
     </tbody>
   </table>
 </section>
