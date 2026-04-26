@@ -1639,3 +1639,97 @@ class TestAuthHeaderPlaceholder:
     assert tbody_count == 2, (
       f'REVIEWS HIGH #3: expected 2 per-instrument tbodies, found {tbody_count}'
     )
+
+
+class TestRenderCalculatorRow:
+  '''Phase 15 CALC-01/02/04: per-instrument calculator sub-row rendering.
+  Wave 0 skeleton — bodies populated in Plan 05.
+  '''
+
+  def test_calc_row_long_position_renders_stop_distance_next_add(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_calc_row implementation pending')
+
+  def test_trail_stop_matches_display_helper(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_calc_row implementation pending')
+
+  def test_entry_target_row_flat_long(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: entry-target rendering pending')
+
+  def test_entry_target_row_flat_short(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: entry-target rendering pending')
+
+  def test_no_calc_row_when_flat_signal(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: FLAT+FLAT no-row branch pending')
+
+  def test_pyramid_section_level_0(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: pyramid section pending')
+
+  def test_pyramid_section_level_1(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: pyramid section pending')
+
+  def test_pyramid_section_at_max(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: pyramid section MAX_PYRAMID_LEVEL pending')
+
+  def test_distance_dollar_and_percent_formatting(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: distance cells pending')
+
+  def test_pyramid_section_includes_new_stop_after_add(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: REVIEWS H-1 — render "new stop after add: $S" pending')
+
+
+class TestRenderDriftBanner:
+  '''Phase 15 SENTINEL-01/02 + D-11/D-13: dashboard drift banner rendering.
+  Wave 0 skeleton — bodies populated in Plan 05.
+  '''
+
+  def test_amber_drift_banner(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_drift_banner pending')
+
+  def test_red_reversal_banner(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_drift_banner pending')
+
+  def test_mixed_drift_reversal_uses_reversal_color(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_drift_banner mixed-severity pending')
+
+  def test_no_banner_when_no_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_drift_banner empty branch pending')
+
+  def test_banner_lists_all_drifted_instruments(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: _render_drift_banner aggregation pending')
+
+
+class TestBannerStackOrder:
+  '''Phase 15 D-13 + REVIEWS H-2: dashboard banner stack hierarchy.
+  Mirrors tests/test_notifier.py::TestBannerStackOrder for the dashboard
+  surface — drift banner must appear AFTER any future corruption/stale
+  banners (D-13: corruption > stale > reversal > drift) and BEFORE the
+  Open Positions section heading. Wave 0 skeleton — bodies populated in
+  Plan 05 Task 3 (the dedicated banner-ordering task added per REVIEWS H-2).
+  '''
+
+  def test_dashboard_banner_hierarchy_corruption_beats_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: REVIEWS H-2 — dashboard banner stack hierarchy pending')
+
+  def test_dashboard_banner_hierarchy_stale_beats_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: REVIEWS H-2 — dashboard banner stack hierarchy pending')
+
+  def test_drift_banner_renders_before_positions_heading(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: REVIEWS H-2 — drift banner placement above positions table pending')

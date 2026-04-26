@@ -454,3 +454,92 @@ class TestAuthSecretPlaceholderSubstitution:
     )
     r = client.get('/?fragment=position-group-NONEXISTENT', headers=auth_headers)
     assert r.status_code == 404
+
+
+class TestForwardStopFragment:
+  '''Phase 15 CALC-03 + D-05/D-06/D-07: forward-look fragment GET handler.
+  Wave 0 skeleton — bodies populated in Plan 06.
+  '''
+
+  def test_long_z_above_peak_updates_w(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: forward-stop fragment handler pending')
+
+  def test_long_z_below_peak_w_unchanged(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: forward-stop fragment handler pending')
+
+  def test_short_z_below_trough_updates_w(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: forward-stop fragment handler pending')
+
+  def test_short_z_above_trough_w_unchanged(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: forward-stop fragment handler pending')
+
+  def test_manual_stop_overrides_z_input(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: manual_stop precedence pending')
+
+  def test_forward_stop_matches_sizing_engine_bit_for_bit(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: bit-identical parity test pending')
+
+  def test_degenerate_z_returns_em_dash(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: degenerate z handling pending')
+
+  def test_missing_position_returns_em_dash(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: missing-position branch pending')
+
+  def test_response_span_id_matches_instrument(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: span id pattern pending')
+
+  def test_forward_stop_fragment_requires_auth_header(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: REVIEWS L-2 — auth-header regression pending')
+
+
+class TestSideBySideStopDisplay:
+  '''Phase 15 D-10: side-by-side manual:|computed: stop cell.
+  Wave 0 skeleton — bodies populated in Plan 05.
+  '''
+
+  def test_manual_stop_side_by_side(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: side-by-side trail-stop cell pending')
+
+  def test_no_manual_stop_single_cell(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: Phase 14 regression baseline pending')
+
+  def test_will_close_annotation_in_em(self) -> None:
+    import pytest
+    pytest.skip('Plan 05: <em>(will close)</em> markup pending')
+
+
+class TestTradesDriftLifecycle:
+  '''Phase 15 D-02 + REVIEWS H-4: web mutation handlers (open/close/modify)
+  correctly recompute drift warnings via the _apply mutator drift block.
+
+  Three integration tests cover the lifecycle:
+    - open creates fresh drift warning when post-open state mismatches signals
+    - close clears stale drift while preserving non-drift warnings (corruption etc.)
+    - modify recomputes drift without nuking non-drift warnings
+
+  Wave 0 skeleton — bodies populated in Plan 06 Task 3.
+  '''
+
+  def test_open_trade_creates_drift_when_signal_mismatch(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: REVIEWS H-4 — open drift creation pending')
+
+  def test_close_trade_clears_drift(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: REVIEWS H-4 — close drift clearing + non-drift preservation pending')
+
+  def test_modify_trade_recomputes_drift_preserves_non_drift_warnings(self) -> None:
+    import pytest
+    pytest.skip('Plan 06: REVIEWS H-4 — modify drift recompute pending')
