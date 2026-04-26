@@ -17,6 +17,7 @@ Fixture strategy:
 import logging
 import os
 import time
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -755,14 +756,172 @@ class TestTradesDriftLifecycle:
   Wave 0 skeleton — bodies populated in Plan 06 Task 3.
   '''
 
-  def test_open_trade_creates_drift_when_signal_mismatch(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: REVIEWS H-4 — open drift creation pending')
+  def test_open_trade_creates_drift_when_signal_mismatch(
+    self, client_with_state_v3, htmx_headers,
+  ) -> None:
+    '''REVIEWS H-4: POST /trades/open into a state where AUDUSD signal is LONG
+    but we open SHORT AUDUSD. The _apply drift block must detect the mismatch
+    and append a fresh drift warning to state['warnings'].
 
-  def test_close_trade_clears_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: REVIEWS H-4 — close drift clearing + non-drift preservation pending')
+    Fixture choice: AUDUSD (not SPI200) to avoid the "position already exists"
+    conflict — default state has SPI200 LONG position already present.
+    AUDUSD signal is injected as LONG (signal=1) with ATR available so the
+    open is permitted (ATR check in fresh-open path).
+    '''
+    import state_manager as sm
+    from signal_engine import LONG as LONG_INT
+    client, set_state, _ = client_with_state_v3
+    # Inject AUDUSD LONG signal with ATR so the open is permitted
+    state = sm.load_state()
+    state = dict(state)
+    state['signals'] = dict(state.get('signals', {}))
+    state['signals']['AUDUSD'] = {
+      'signal': LONG_INT,
+      'last_scalars': {'atr': 0.005},
+      'last_close': 0.65,
+    }
+    # AUDUSD position must be None (no existing position)
+    state['positions'] = dict(state.get('positions', {}))
+    state['positions']['AUDUSD'] = None
+    set_state(state)
 
-  def test_modify_trade_recomputes_drift_preserves_non_drift_warnings(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: REVIEWS H-4 — modify drift recompute pending')
+    # Open SHORT AUDUSD while signal is LONG -> reversal drift
+    body = {
+      'instrument': 'AUDUSD',
+      'direction': 'SHORT',
+      'entry_price': 0.6500,
+      'contracts': 1,
+    }
+    resp = client.post('/trades/open', json=body, headers=htmx_headers)
+    assert resp.status_code in (200, 201, 204), (
+      f'open failed unexpectedly: {resp.status_code} {resp.text!r}'
+    )
+    # Re-load state: load_state() is patched to return state_box['value']
+    final = sm.load_state()
+    drift_warnings = [w for w in final.get('warnings', []) if w.get('source') == 'drift']
+    assert len(drift_warnings) >= 1, (
+      f'REVIEWS H-4: open trade with signal mismatch should create drift warning. '
+      f'warnings={final.get("warnings", [])}'
+    )
+    assert any('AUDUSD' in w.get('message', '') for w in drift_warnings), (
+      f'drift warning should mention AUDUSD; warnings={drift_warnings}'
+    )
+
+  def test_close_trade_clears_drift(
+    self, client_with_state_v3, htmx_headers,
+  ) -> None:
+    '''REVIEWS H-4: POST /trades/close on SPI200 clears drift warnings when
+    no remaining drifted positions exist. Non-drift warnings (corruption) are
+    preserved.
+
+    Pre-state: SPI200 LONG + drift warning + corruption warning.
+    Action: POST /trades/close on SPI200.
+    Expected: zero drift warnings, corruption warning preserved.
+    '''
+    from datetime import datetime
+
+    import state_manager as sm
+    client, set_state, _ = client_with_state_v3
+    # Inject pre-state warnings into the live state
+    state = sm.load_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = sm.append_warning(
+      state, 'drift',
+      "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      now=fixed_now,
+    )
+    state = sm.append_warning(
+      state, 'state_manager',
+      'recovered from corruption: state.json reset',
+      now=fixed_now,
+    )
+    set_state(state)
+
+    body = {'instrument': 'SPI200', 'exit_price': 7860.0}
+    resp = client.post('/trades/close', json=body, headers=htmx_headers)
+    assert resp.status_code in (200, 201, 204), (
+      f'close failed unexpectedly: {resp.status_code} {resp.text!r}'
+    )
+
+    final = sm.load_state()
+    warnings = final.get('warnings', [])
+    drift_warnings = [w for w in warnings if w.get('source') == 'drift']
+    corruption_warnings = [
+      w for w in warnings
+      if w.get('source') == 'state_manager'
+      and w.get('message', '').startswith('recovered from corruption')
+    ]
+    assert len(drift_warnings) == 0, (
+      f'REVIEWS H-4: close-trade should clear drift warnings. '
+      f'drift_warnings={drift_warnings}'
+    )
+    assert len(corruption_warnings) == 1, (
+      f'REVIEWS H-4: close-trade must NOT nuke non-drift warnings. '
+      f'Expected 1 corruption warning; got {len(corruption_warnings)}: {corruption_warnings}'
+    )
+
+  def test_modify_trade_recomputes_drift_preserves_non_drift_warnings(
+    self, client_with_state_v3, htmx_headers,
+  ) -> None:
+    '''REVIEWS H-4: POST /trades/modify recomputes drift. Stale drift is
+    cleared. Non-drift warnings (corruption) are preserved.
+
+    Pre-state: SPI200 LONG + stale drift warning + corruption warning.
+    SPI200 signal is set to LONG (matching position) so detect_drift
+    returns empty after modify -> stale drift disappears.
+    Action: POST /trades/modify (new_stop=7700).
+    Expected: stale drift gone, corruption preserved.
+    '''
+    from datetime import datetime
+
+    import state_manager as sm
+    from signal_engine import LONG as LONG_INT
+    client, set_state, _ = client_with_state_v3
+    # Inject SPI200 LONG signal (matches position -> no drift after recompute)
+    state = sm.load_state()
+    state = dict(state)
+    state['signals'] = dict(state.get('signals', {}))
+    state['signals']['SPI200'] = {
+      'signal': LONG_INT,
+      'last_scalars': {'atr': 50.0},
+      'last_close': 7820.0,
+    }
+    # Inject stale drift warning + corruption warning
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = sm.append_warning(
+      state, 'drift',
+      'STALE DRIFT: signal flipped before modify',
+      now=fixed_now,
+    )
+    state = sm.append_warning(
+      state, 'state_manager',
+      'recovered from corruption: state.json reset',
+      now=fixed_now,
+    )
+    set_state(state)
+
+    body = {'instrument': 'SPI200', 'new_stop': 7700.0}
+    resp = client.post('/trades/modify', json=body, headers=htmx_headers)
+    assert resp.status_code in (200, 201, 204), (
+      f'modify failed unexpectedly: {resp.status_code} {resp.text!r}'
+    )
+
+    final = sm.load_state()
+    warnings = final.get('warnings', [])
+    drift_warnings = [w for w in warnings if w.get('source') == 'drift']
+    corruption_warnings = [
+      w for w in warnings
+      if w.get('source') == 'state_manager'
+      and w.get('message', '').startswith('recovered from corruption')
+    ]
+    # Stale drift warning must be gone (clear_warnings_by_source removed it;
+    # detect_drift found no mismatch because SPI200 signal == LONG == position)
+    stale_present = any('STALE DRIFT' in w.get('message', '') for w in drift_warnings)
+    assert not stale_present, (
+      f'REVIEWS H-4: modify-trade must clear stale drift warnings. '
+      f'Stale message survived: {drift_warnings}'
+    )
+    assert len(corruption_warnings) == 1, (
+      f'REVIEWS H-4: modify-trade must NOT nuke non-drift warnings. '
+      f'Expected 1 corruption warning; got {len(corruption_warnings)}: {corruption_warnings}'
+    )
