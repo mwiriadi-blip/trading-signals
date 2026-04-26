@@ -459,65 +459,288 @@ class TestAuthSecretPlaceholderSubstitution:
 class TestForwardStopFragment:
   '''Phase 15 CALC-03 + D-05/D-06/D-07: forward-look fragment GET handler.
   Wave 0 skeleton — bodies populated in Plan 06.
+
+  Fixture note: client_with_state_v3 returns (client, set_state, captured_saves).
+  Default state has SPI200 LONG (entry=7800, peak=7850, atr_entry=50), AUDUSD=None.
+  AUDUSD SHORT tests inject a position via set_state before the request.
   '''
 
-  def test_long_z_above_peak_updates_w(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: forward-stop fragment handler pending')
+  def test_long_z_above_peak_updates_w(self, client_with_state_v3, htmx_headers) -> None:
+    '''LONG Z=7900 > peak=7850 -> synth peak=7900 -> W = 7900 - 3*50 = 7750.'''
+    from dashboard import _fmt_currency
+    from sizing_engine import get_trailing_stop
+    client, set_state, _ = client_with_state_v3
+    resp = client.get('/?fragment=forward-stop&instrument=SPI200&z=7900', headers=htmx_headers)
+    assert resp.status_code == 200
+    synth = {'direction': 'LONG', 'entry_price': 7800.0, 'atr_entry': 50.0,
+             'peak_price': 7900.0, 'manual_stop': None}
+    expected_w = get_trailing_stop(synth, 0.0, 0.0)
+    assert _fmt_currency(expected_w) in resp.text, (
+      f'Expected {_fmt_currency(expected_w)} in {resp.text!r}'
+    )
 
-  def test_long_z_below_peak_w_unchanged(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: forward-stop fragment handler pending')
+  def test_long_z_below_peak_w_unchanged(self, client_with_state_v3, htmx_headers) -> None:
+    '''LONG Z=7820 < peak=7850 -> synth peak stays 7850 -> W = 7850 - 3*50 = 7700.'''
+    from dashboard import _fmt_currency
+    from sizing_engine import get_trailing_stop
+    client, set_state, _ = client_with_state_v3
+    resp = client.get('/?fragment=forward-stop&instrument=SPI200&z=7820', headers=htmx_headers)
+    assert resp.status_code == 200
+    synth = {'direction': 'LONG', 'entry_price': 7800.0, 'atr_entry': 50.0,
+             'peak_price': 7850.0, 'manual_stop': None}
+    expected_w = get_trailing_stop(synth, 0.0, 0.0)
+    assert _fmt_currency(expected_w) in resp.text
 
-  def test_short_z_below_trough_updates_w(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: forward-stop fragment handler pending')
+  def test_short_z_below_trough_updates_w(self, client_with_state_v3, htmx_headers) -> None:
+    '''SHORT Z=0.640 below trough=0.645 -> synth trough=0.640 -> W updated.'''
+    import state_manager as sm
+    from dashboard import _fmt_currency
+    from sizing_engine import get_trailing_stop
+    client, set_state, _ = client_with_state_v3
+    # Inject AUDUSD SHORT position into state
+    state = sm.load_state()
+    state = dict(state)
+    state['positions'] = dict(state.get('positions', {}))
+    state['positions']['AUDUSD'] = {
+      'direction': 'SHORT', 'entry_price': 0.65, 'entry_date': '2026-04-20',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': None, 'trough_price': 0.645, 'atr_entry': 0.005,
+      'manual_stop': None,
+    }
+    set_state(state)
+    resp = client.get('/?fragment=forward-stop&instrument=AUDUSD&z=0.640', headers=htmx_headers)
+    assert resp.status_code == 200
+    synth = {'direction': 'SHORT', 'entry_price': 0.65, 'atr_entry': 0.005,
+             'trough_price': 0.640, 'manual_stop': None}
+    expected_w = get_trailing_stop(synth, 0.0, 0.0)
+    assert _fmt_currency(expected_w) in resp.text
 
-  def test_short_z_above_trough_w_unchanged(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: forward-stop fragment handler pending')
+  def test_short_z_above_trough_w_unchanged(self, client_with_state_v3, htmx_headers) -> None:
+    '''SHORT Z=0.660 > trough=0.645 -> synth trough stays 0.645 -> W = trough + 3*atr.'''
+    from dashboard import _fmt_currency
+    from sizing_engine import get_trailing_stop
+    client, set_state, _ = client_with_state_v3
+    # Inject AUDUSD SHORT position into state
+    import state_manager as sm
+    state = sm.load_state()
+    state = dict(state)
+    state['positions'] = dict(state.get('positions', {}))
+    state['positions']['AUDUSD'] = {
+      'direction': 'SHORT', 'entry_price': 0.65, 'entry_date': '2026-04-20',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': None, 'trough_price': 0.645, 'atr_entry': 0.005,
+      'manual_stop': None,
+    }
+    set_state(state)
+    resp = client.get('/?fragment=forward-stop&instrument=AUDUSD&z=0.660', headers=htmx_headers)
+    assert resp.status_code == 200
+    synth = {'direction': 'SHORT', 'entry_price': 0.65, 'atr_entry': 0.005,
+             'trough_price': 0.645, 'manual_stop': None}
+    expected_w = get_trailing_stop(synth, 0.0, 0.0)
+    assert _fmt_currency(expected_w) in resp.text
 
-  def test_manual_stop_overrides_z_input(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: manual_stop precedence pending')
+  def test_manual_stop_overrides_z_input(self, client_with_state_v3, htmx_headers) -> None:
+    '''D-09 precedence: when manual_stop=7700 is set, W == 7700 regardless of Z=9999.
 
-  def test_forward_stop_matches_sizing_engine_bit_for_bit(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: bit-identical parity test pending')
+    Fixture choice: inject manual_stop via set_state inside the test (no new
+    conftest fixture needed — set_state mutates the live state_box).
+    '''
+    from dashboard import _fmt_currency
+    client, set_state, _ = client_with_state_v3
+    # Inject manual_stop onto the SPI200 LONG position
+    import state_manager as sm
+    state = sm.load_state()
+    state = dict(state)
+    state['positions'] = dict(state.get('positions', {}))
+    spi_pos = dict(state['positions']['SPI200'])
+    spi_pos['manual_stop'] = 7700.0
+    state['positions']['SPI200'] = spi_pos
+    set_state(state)
+    resp = client.get('/?fragment=forward-stop&instrument=SPI200&z=9999', headers=htmx_headers)
+    assert resp.status_code == 200
+    # manual_stop is honored by get_trailing_stop; W == manual_stop == 7700
+    assert _fmt_currency(7700.0) in resp.text, (
+      f'Expected {_fmt_currency(7700.0)!r} in body {resp.text!r}'
+    )
 
-  def test_degenerate_z_returns_em_dash(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: degenerate z handling pending')
+  def test_forward_stop_matches_sizing_engine_bit_for_bit(
+    self, client_with_state_v3, htmx_headers,
+  ) -> None:
+    '''D-07 bit-identical parity: 4 LONG/SHORT × peak/trough cases.
 
-  def test_missing_position_returns_em_dash(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: missing-position branch pending')
+    The manual_stop case (case 5) is covered by test_manual_stop_overrides_z_input.
+    '''
+    from dashboard import _fmt_currency
+    from sizing_engine import get_trailing_stop
+    client, set_state, _ = client_with_state_v3
 
-  def test_response_span_id_matches_instrument(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: span id pattern pending')
+    # Inject AUDUSD SHORT position so the SHORT cases work
+    import state_manager as sm
+    state = sm.load_state()
+    state = dict(state)
+    state['positions'] = dict(state.get('positions', {}))
+    state['positions']['AUDUSD'] = {
+      'direction': 'SHORT', 'entry_price': 0.65, 'entry_date': '2026-04-20',
+      'n_contracts': 1, 'pyramid_level': 0,
+      'peak_price': None, 'trough_price': 0.645, 'atr_entry': 0.005,
+      'manual_stop': None,
+    }
+    set_state(state)
 
-  def test_forward_stop_fragment_requires_auth_header(self) -> None:
-    import pytest
-    pytest.skip('Plan 06: REVIEWS L-2 — auth-header regression pending')
+    cases = [
+      ('SPI200', '7900',
+       {'direction': 'LONG', 'entry_price': 7800.0, 'atr_entry': 50.0,
+        'peak_price': 7900.0, 'manual_stop': None}),
+      ('SPI200', '7820',
+       {'direction': 'LONG', 'entry_price': 7800.0, 'atr_entry': 50.0,
+        'peak_price': 7850.0, 'manual_stop': None}),
+      ('AUDUSD', '0.640',
+       {'direction': 'SHORT', 'entry_price': 0.65, 'atr_entry': 0.005,
+        'trough_price': 0.640, 'manual_stop': None}),
+      ('AUDUSD', '0.660',
+       {'direction': 'SHORT', 'entry_price': 0.65, 'atr_entry': 0.005,
+        'trough_price': 0.645, 'manual_stop': None}),
+    ]
+    for instrument, z, synth in cases:
+      resp = client.get(
+        f'/?fragment=forward-stop&instrument={instrument}&z={z}',
+        headers=htmx_headers,
+      )
+      assert resp.status_code == 200
+      expected_w = get_trailing_stop(synth, 0.0, 0.0)
+      assert _fmt_currency(expected_w) in resp.text, (
+        f'Bit-parity failure for instrument={instrument} z={z}: '
+        f'expected {_fmt_currency(expected_w)!r}; got {resp.text!r}'
+      )
+
+  def test_degenerate_z_returns_em_dash(self, client_with_state_v3, htmx_headers) -> None:
+    '''Degenerate Z (empty, negative, zero, non-numeric, nan) returns em-dash, never 4xx.'''
+    client, set_state, _ = client_with_state_v3
+    for bad_z in ['', '-1', '0', 'abc', 'nan']:
+      resp = client.get(
+        f'/?fragment=forward-stop&instrument=SPI200&z={bad_z}',
+        headers=htmx_headers,
+      )
+      assert resp.status_code == 200, f'degenerate Z={bad_z!r} should not 4xx'
+      assert '—' in resp.text, (
+        f'expected em-dash body for Z={bad_z!r}; got {resp.text!r}'
+      )
+
+  def test_missing_position_returns_em_dash(self, client_with_state_v3, htmx_headers) -> None:
+    '''Instrument with no position in state returns em-dash, not 4xx.'''
+    client, set_state, _ = client_with_state_v3
+    resp = client.get(
+      '/?fragment=forward-stop&instrument=NOTREAL&z=100',
+      headers=htmx_headers,
+    )
+    assert resp.status_code == 200
+    assert '—' in resp.text
+
+  def test_response_span_id_matches_instrument(
+    self, client_with_state_v3, htmx_headers,
+  ) -> None:
+    '''Response body contains the correct span id="forward-stop-SPI200-w".'''
+    client, set_state, _ = client_with_state_v3
+    resp = client.get(
+      '/?fragment=forward-stop&instrument=SPI200&z=7900',
+      headers=htmx_headers,
+    )
+    assert resp.status_code == 200
+    assert 'id="forward-stop-SPI200-w"' in resp.text
+
+  def test_forward_stop_fragment_requires_auth_header(
+    self, client_with_state_v3,
+  ) -> None:
+    '''REVIEWS L-2: the forward-stop fragment route must inherit the
+    AuthMiddleware gate (Phase 13 D-01). A request WITHOUT the
+    X-Trading-Signals-Auth header returns 401. This is the regression
+    lock against a future refactor that accidentally bypasses the middleware.
+    '''
+    client, set_state, _ = client_with_state_v3
+    # No auth header — explicit empty dict so the auth header is absent
+    resp = client.get(
+      '/?fragment=forward-stop&instrument=SPI200&z=7900',
+      headers={},
+    )
+    assert resp.status_code == 401, (
+      f'REVIEWS L-2: forward-stop fragment must require auth header. '
+      f'Got status={resp.status_code} body={resp.text!r}'
+    )
 
 
 class TestSideBySideStopDisplay:
   '''Phase 15 D-10: side-by-side manual:|computed: stop cell.
-  Wave 0 skeleton — bodies populated in Plan 05.
+  Wave 0 skeleton — bodies populated in Plan 05/06.
+
+  These tests render dashboard.py directly (no HTTP layer) and test the markup
+  for the side-by-side stop cell shipped in Plan 05.
   '''
 
   def test_manual_stop_side_by_side(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: side-by-side trail-stop cell pending')
+    '''When manual_stop is set, the cell shows class="trail-stop-split" with
+    both manual and computed values, plus the (will close) annotation.
+    '''
+    from dashboard import _render_single_position_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7950.0,
+      'current_level': 0,
+      'manual_stop': 7700.0,
+      'n_contracts': 2,
+      'pyramid_level': 0,
+      'trough_price': None,
+    }
+    state = {'positions': {'SPI200': pos}, 'signals': {}, 'account': 100000.0}
+    html_out = _render_single_position_row(state, 'SPI200', pos)
+    assert 'class="trail-stop-split"' in html_out, (
+      f'Expected trail-stop-split class; got: {html_out[:500]}'
+    )
+    assert 'manual:' in html_out, 'Expected "manual:" label in output'
+    assert 'computed:' in html_out, 'Expected "computed:" label in output'
+    assert '<em>(will close)</em>' in html_out, 'Expected (will close) annotation'
 
   def test_no_manual_stop_single_cell(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: Phase 14 regression baseline pending')
+    '''When manual_stop is None, the cell uses Phase 14 baseline (no split class).'''
+    from dashboard import _render_single_position_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7950.0,
+      'current_level': 0,
+      'manual_stop': None,
+      'n_contracts': 2,
+      'pyramid_level': 0,
+      'trough_price': None,
+    }
+    state = {'positions': {'SPI200': pos}, 'signals': {}, 'account': 100000.0}
+    html_out = _render_single_position_row(state, 'SPI200', pos)
+    # Phase 14 baseline: single-cell rendering, no trail-stop-split class
+    assert 'class="trail-stop-split"' not in html_out, (
+      'Expected NO trail-stop-split when manual_stop is None'
+    )
 
   def test_will_close_annotation_in_em(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: <em>(will close)</em> markup pending')
+    '''The (will close) annotation must be wrapped in <em> per UI-SPEC accessibility.'''
+    from dashboard import _render_single_position_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7950.0,
+      'current_level': 0,
+      'manual_stop': 7700.0,
+      'n_contracts': 2,
+      'pyramid_level': 0,
+      'trough_price': None,
+    }
+    state = {'positions': {'SPI200': pos}, 'signals': {}, 'account': 100000.0}
+    html_out = _render_single_position_row(state, 'SPI200', pos)
+    assert '<em>(will close)</em>' in html_out, (
+      'The (will close) annotation MUST be wrapped in <em> per UI-SPEC accessibility'
+    )
 
 
 class TestTradesDriftLifecycle:
