@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-26T22:17:05.856Z"
-last_activity: "2026-04-27 - Captured todo: phone-friendly auth UX (operator can't access signals.mwiriadi.me from iPhone — flagged blocker for v1.1 daily usability, candidate for v1.1.1 patch or v1.2)"
+last_updated: "2026-04-27T07:30:00.000Z"
+last_activity: "2026-04-27 - Phase 16.1 context gathered (/gsd-discuss-phase 16.1) — locked: Basic Auth + login form + cookie session (itsdangerous, 12h TTL), browser-conditional 302→/login (no WWW-Authenticate sent), two env vars (WEB_AUTH_USERNAME + WEB_AUTH_SECRET). 2 PLAN.md files. Ready for /gsd-plan-phase 16.1."
 progress:
   total_phases: 7
   completed_phases: 6
@@ -32,7 +32,7 @@ Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
-- **Last activity:** 2026-04-27 - Captured todo: phone-friendly auth UX (operator can't access signals.mwiriadi.me from iPhone — flagged blocker for v1.1 daily usability, candidate for v1.1.1 patch or v1.2)
+- **Last activity:** 2026-04-27 - Phase 16.1 context gathered (/gsd-discuss-phase 16.1) — locked: Basic Auth + login form + cookie session (itsdangerous, 12h TTL), browser-conditional 302→/login (no WWW-Authenticate sent), two env vars (WEB_AUTH_USERNAME + WEB_AUTH_SECRET). 2 PLAN.md files. Ready for /gsd-plan-phase 16.1.
 - **Progress:** [██████████] 97%
 
 ```
