@@ -32,7 +32,7 @@ Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
-- **Last activity:** 2026-04-27 - UAT-16-A flipped `partial` → `verified` after Phase 12 HTTPS bring-up (signals.mwiriadi.me live; curl-through-nginx 200 OK with byte-identical dashboard HTML); UAT-16-B/C remain partial (gated on real drift email)
+- **Last activity:** 2026-04-27 - Captured todo: phone-friendly auth UX (operator can't access signals.mwiriadi.me from iPhone — flagged blocker for v1.1 daily usability, candidate for v1.1.1 patch or v1.2)
 - **Progress:** [██████████] 97%
 
 ```
@@ -193,6 +193,12 @@ Plan: 2 of 5
 - [ ] **(v1.1) Operator purchases domain + points A-record at droplet IP** — blocks Phase 12+
 - [ ] **(v1.1) Operator provisions DO droplet** (Ubuntu LTS, systemd, public IP) — blocks Phase 11+
 - [ ] **(v1.1) Operator verifies new domain on Resend** (SPF/DKIM/DMARC) — blocks Phase 12 INFRA-01
+
+### Pending Todos
+
+| Created | Title | Area | Priority |
+|---------|-------|------|----------|
+| 2026-04-27 | [Phone-friendly auth UX for dashboard access](./todos/pending/2026-04-27-phone-friendly-auth-ux-for-dashboard-access.md) | auth | blocker |
 
 ### Blockers
 
