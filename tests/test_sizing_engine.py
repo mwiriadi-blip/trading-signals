@@ -1375,49 +1375,116 @@ class TestDetectDrift:
   '''
 
   def test_drift_long_vs_flat(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {'SPI200': {'signal': 0}}  # FLAT
+    events = detect_drift(positions, signals)
+    assert len(events) == 1
+    assert events[0].instrument == 'SPI200'
+    assert events[0].held_direction == 'LONG'
+    assert events[0].signal_direction == 'FLAT'
+    assert events[0].severity == 'drift'
 
   def test_drift_short_vs_flat(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'AUDUSD': _make_position(direction='SHORT', entry_price=0.65, atr_entry=0.005)}
+    signals = {'AUDUSD': {'signal': 0}}
+    events = detect_drift(positions, signals)
+    assert len(events) == 1
+    assert events[0].instrument == 'AUDUSD'
+    assert events[0].held_direction == 'SHORT'
+    assert events[0].signal_direction == 'FLAT'
+    assert events[0].severity == 'drift'
 
   def test_reversal_long_vs_short(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {'SPI200': {'signal': -1}}  # SHORT
+    events = detect_drift(positions, signals)
+    assert len(events) == 1
+    assert events[0].severity == 'reversal'
+    assert events[0].held_direction == 'LONG'
+    assert events[0].signal_direction == 'SHORT'
 
   def test_reversal_short_vs_long(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'AUDUSD': _make_position(direction='SHORT', entry_price=0.65, atr_entry=0.005)}
+    signals = {'AUDUSD': {'signal': 1}}  # LONG
+    events = detect_drift(positions, signals)
+    assert len(events) == 1
+    assert events[0].severity == 'reversal'
+    assert events[0].held_direction == 'SHORT'
+    assert events[0].signal_direction == 'LONG'
 
   def test_no_event_when_position_flat(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {}  # no open position for SPI200
+    signals = {'SPI200': {'signal': 0}}
+    events = detect_drift(positions, signals)
+    assert events == []
 
   def test_no_event_when_signal_missing(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {}  # no signal for SPI200
+    events = detect_drift(positions, signals)
+    assert events == []
 
   def test_no_event_when_signal_dict_signal_is_none(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {'SPI200': {'signal': None}}  # D-04 conservative skip
+    events = detect_drift(positions, signals)
+    assert events == []
 
   def test_signal_int_shape_compat(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {'SPI200': 0}  # int-shape (Phase 3 reset state); 0 = FLAT
+    events = detect_drift(positions, signals)
+    assert len(events) == 1, 'Pitfall 3: int-shape signal must not crash'
+    assert events[0].severity == 'drift'
 
   def test_drift_event_message_long_vs_flat_exact(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {'SPI200': {'signal': 0}}
+    events = detect_drift(positions, signals)
+    # D-14 exact template — string-equality byte-for-byte
+    expected = "You hold LONG SPI200, today's signal is FLAT — consider closing."
+    assert events[0].message == expected
 
   def test_drift_event_message_reversal_long_to_short_exact(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}
+    signals = {'SPI200': {'signal': -1}}
+    events = detect_drift(positions, signals)
+    expected = (
+      "You hold LONG SPI200, today's signal is SHORT — "
+      'reversal recommended (close LONG, open SHORT).'
+    )
+    assert events[0].message == expected
 
   def test_two_instruments_both_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    positions = {
+      'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0),
+      'AUDUSD': _make_position(direction='SHORT', entry_price=0.65, atr_entry=0.005),
+    }
+    signals = {
+      'SPI200': {'signal': 0},  # FLAT — drift
+      'AUDUSD': {'signal': 1},  # LONG vs held SHORT — reversal
+    }
+    events = detect_drift(positions, signals)
+    assert len(events) == 2
+    instruments = {e.instrument for e in events}
+    assert instruments == {'SPI200', 'AUDUSD'}
+    spi = next(e for e in events if e.instrument == 'SPI200')
+    aud = next(e for e in events if e.instrument == 'AUDUSD')
+    assert spi.severity == 'drift'
+    assert aud.severity == 'reversal'
 
   def test_returns_empty_list_when_no_positions(self) -> None:
-    import pytest
-    pytest.skip('Plan 02: detect_drift implementation pending')
+    from sizing_engine import detect_drift
+    events = detect_drift({}, {'SPI200': {'signal': 1}, 'AUDUSD': {'signal': -1}})
+    assert events == []
