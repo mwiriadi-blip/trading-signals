@@ -1,0 +1,109 @@
+---
+phase: 16-hardening-uat-completion
+source: [16-CONTEXT.md D-09, D-10, D-17]
+related: [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md]
+created: 2026-04-26
+status: pending
+---
+
+# Phase 16 — HUMAN-UAT (Operator Verification)
+
+> Three scenarios deferred from Phase 6 (`06-HUMAN-UAT.md`) at v1.0 milestone close. They became verifiable once Phase 13 + 14 + 15 reached the droplet via Plan 16-01 (deploy). Operator runs each scenario, fills in the 5 fields per D-10, and Plan 16-04 mirrors the verified-status rows into `STATE.md §Completed Items`.
+
+**D-10 schema (5 fields per scenario):**
+1. **Scenario ID** — stable identifier
+2. **Original scenario** — path link to the v1.0 archive
+3. **Verification status** — `pending` / `verified` / `partial`
+4. **Operator verification date** — ISO `YYYY-MM-DD` once verified
+5. **Operator notes** — free text, screenshot path, issues observed
+
+***
+
+## UAT-16-A: Mobile Dashboard Rendering
+
+**Scenario ID: UAT-16-A**
+**Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Mobile dashboard section)
+**Verification status:** pending
+**Operator verification date:** —
+**Operator notes:**
+
+> _(operator fills in after running the scenario)_
+
+**How to verify:**
+1. Open `https://signals.<owned-domain>.com/` on mobile (any modern browser — Safari, Chrome, Firefox).
+2. Set the `X-Trading-Signals-Auth` header (use a header-injection tool/extension or set in shell + curl as fallback).
+3. Confirm:
+   - Signal cards stack on narrow viewport (no horizontal scroll)
+   - Equity chart fits the viewport width
+   - Calc-rows wrap legibly without text truncation
+   - Drift banner (if a position is open and drifted) renders with visible color
+4. Capture a screenshot if any layout looks off; attach path under `Operator notes`.
+5. Update **Verification status** to `verified` (clean) or `partial` (works but with observable issues — describe in notes) and stamp **Operator verification date** as `YYYY-MM-DD`.
+
+***
+
+## UAT-16-B: Mobile Gmail Email Rendering
+
+**Scenario ID: UAT-16-B**
+**Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Gmail desktop + Gmail mobile sections)
+**Verification status:** pending
+**Operator verification date:** —
+**Operator notes:**
+
+> _(operator fills in after running the scenario)_
+
+**How to verify:**
+1. Trigger a daily run on the droplet — either wait for the scheduled 08:00 AWST cycle, or run `python main.py --once --force-email` over SSH (whichever is operationally cheaper).
+2. Open the resulting email in Gmail's mobile app on phone (NOT the web client — Gmail's mobile client strips CSS more aggressively).
+3. Confirm:
+   - Section headings render with their borders / dividers
+   - Banners (drift, reversal, equity-anomaly if any) show their colored borders
+   - P&L colors apply correctly (green positive, red negative)
+   - The `[!]` critical prefix appears in the subject when a critical banner is present
+   - Equity figure renders with thousands separator
+4. Capture a screenshot if any element fails to render; attach path under `Operator notes`.
+5. Update **Verification status** + **Operator verification date** as in UAT-16-A.
+
+***
+
+## UAT-16-C: Drift Banner in Real Weekday Email
+
+**Scenario ID: UAT-16-C**
+**Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Drift banner / signal-change scenarios)
+**Verification status:** pending
+**Operator verification date:** —
+**Operator notes:**
+
+> _(operator fills in after running the scenario)_
+
+**How to verify:**
+1. Wait for organic drift on a real weekday run (this is the natural path; operator declined synthetic drift injection per CONTEXT.md Deferred Ideas).
+2. When the daily 08:00 AWST email arrives with a drift banner present, confirm:
+   - Email's drift banner renders with the expected red/amber border (per Phase 15 D-12 lockstep parity)
+   - Subject carries the `[!]` critical prefix
+   - The **dashboard** at `https://signals.<owned-domain>.com/` shows a matching banner row for the same instrument (lockstep parity check — same banner text, same color tier)
+3. Capture screenshots of BOTH the email and the dashboard for the same drift event; attach paths under `Operator notes`.
+4. Update **Verification status** to `verified` (clean) once observed; stamp **Operator verification date**.
+
+> **D-17 note:** This scenario may take more than one weekday to observe naturally. While `pending`, `/gsd-verify-work` returns `PARTIAL — awaiting weekday operator confirmation` (D-17). Other scenarios (UAT-16-A, UAT-16-B) close earlier and do not gate on this observation. Once UAT-16-C is `verified`, re-run `/gsd-verify-work` to close Phase 16.
+
+***
+
+## Summary
+
+| Scenario | Status | Operator Date | Linked Completed-Items row in STATE.md |
+|----------|--------|---------------|-----------------------------------------|
+| UAT-16-A | pending | — | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-B | pending | — | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-C | pending | — | uat_gap (Phase 06 HUMAN-UAT) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+
+**Notes:**
+- Operator updates `Status` and `Operator Date` columns above as each scenario closes.
+- Plan 16-04 reads from this file at execute time and writes verified rows into `STATE.md §Completed Items` (Plan 16-04 is now Wave 3, AFTER 16-05 per REVIEWS H-3).
+- Per D-17, Phase 16 may close with UAT-16-C still `pending` (verify-work returns PARTIAL); milestone archive waits until UAT-16-C flips to `verified`.
+
+***
+
+*Created: 2026-04-26 by /gsd-plan-phase 16 (Plan 16-03)*
+*Per D-09: this file is the SOLE Phase 16 UAT artifact — do NOT modify the archived 06-HUMAN-UAT.md*
+*Per D-10: 5-field schema (ID / archive ref / status / date / notes) per scenario*
