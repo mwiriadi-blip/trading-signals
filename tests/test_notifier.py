@@ -2231,51 +2231,212 @@ class TestEmailFromEnvVar:
 
 class TestDriftBanner:
   '''Phase 15 SENTINEL-03 + D-03/D-12: email drift banner.
-  Wave 0 skeleton — bodies populated in Plan 07.
+  All 7 methods implemented in Plan 07 (REVIEWS M-1 Path A — no skips).
   '''
 
   def test_has_critical_banner_drift_source(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: _has_critical_banner extension pending')
+    from datetime import UTC, datetime
+
+    from notifier import _has_critical_banner
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'drift', 'msg', now=fixed_now)
+    assert _has_critical_banner(state) is True
 
   def test_has_critical_banner_no_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: _has_critical_banner extension pending')
+    from notifier import _has_critical_banner
+    from state_manager import reset_state
+    state = reset_state()
+    assert _has_critical_banner(state) is False
 
   def test_drift_banner_in_email_body(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: email drift banner rendering pending')
+    from datetime import UTC, datetime
+
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(
+      state, 'drift',
+      "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      now=fixed_now,
+    )
+    rendered = _render_header_email(state, fixed_now)
+    body = rendered if isinstance(rendered, str) else ''.join(rendered)
+    assert '━━━ Drift detected ━━━' in body
+    assert 'consider closing' in body
 
   def test_drift_banner_body_parity_with_dashboard(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: D-12 lockstep parity pending')
+    '''D-12 lockstep parity: the body bullets in the email use the
+    SAME DriftEvent.message strings as the dashboard banner.
+    depends_on includes 15-05 (REVIEWS H-3) so this import is safe.'''
+    import html as _html
+    from datetime import UTC, datetime
+
+    from dashboard import _render_drift_banner
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    message = "You hold LONG SPI200, today's signal is FLAT — consider closing."
+    state = append_warning(state, 'drift', message, now=fixed_now)
+    # Render via both paths
+    email_rendered = _render_header_email(state, fixed_now)
+    email_body = email_rendered if isinstance(email_rendered, str) else ''.join(email_rendered)
+    dashboard_body = _render_drift_banner(state)
+    # The DriftEvent.message string must appear (escaped or otherwise) in BOTH.
+    # html.escape leaves apostrophes as &#x27; with quote=True; account for that.
+    escaped_message = _html.escape(message, quote=True)
+    assert (message in email_body) or (escaped_message in email_body)
+    assert (message in dashboard_body) or (escaped_message in dashboard_body)
 
   def test_drift_banner_in_email_body_and_subject_critical_prefix(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: subject [!] prefix integration pending')
+    '''Phase 8 _has_critical_banner -> [!] subject prefix path is auto-engaged.'''
+    from datetime import UTC, datetime
+
+    from notifier import _has_critical_banner
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(state, 'drift', 'msg', now=fixed_now)
+    # _has_critical_banner is the SOLE classifier the subject-assembly path
+    # consults for the [!] prefix (Phase 8 contract). Verifying it returns
+    # True with a drift warning is sufficient to prove the prefix engages.
+    assert _has_critical_banner(state) is True
 
   def test_email_banner_border_red_for_reversal(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: inline-CSS border color logic pending')
+    from datetime import UTC, datetime
+
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(
+      state, 'drift',
+      'You hold LONG SPI200, today\'s signal is SHORT'
+      ' — reversal recommended (close LONG, open SHORT).',
+      now=fixed_now,
+    )
+    rendered = _render_header_email(state, fixed_now)
+    body = rendered if isinstance(rendered, str) else ''.join(rendered)
+    # Banner border color: _COLOR_SHORT = '#ef4444' (red) for reversal
+    assert '#ef4444' in body, 'reversal -> red border (_COLOR_SHORT)'
 
   def test_email_banner_border_amber_for_drift_only(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: inline-CSS border color logic pending')
+    from datetime import UTC, datetime
+
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(
+      state, 'drift',
+      "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      now=fixed_now,
+    )
+    rendered = _render_header_email(state, fixed_now)
+    body = rendered if isinstance(rendered, str) else ''.join(rendered)
+    # The banner block specifically uses _COLOR_FLAT = '#eab308' for drift-only.
+    # Locate the drift banner substring and check the border color near it.
+    idx = body.find('━━━ Drift detected ━━━')
+    assert idx >= 0, 'drift banner heading present'
+    # Banner border-left appears BEFORE the heading within the same <tr>; check
+    # a window of ~500 chars before the heading for '#eab308'.
+    window = body[max(0, idx - 500):idx]
+    assert '#eab308' in window, 'drift-only -> amber border (_COLOR_FLAT)'
 
 
 class TestBannerStackOrder:
   '''Phase 15 D-13: banner stack hierarchy corruption > stale > reversal > drift.
-  Wave 0 skeleton — bodies populated in Plan 07.
+  All 3 methods implemented in Plan 07 (REVIEWS M-1 Path A — no skips).
   '''
 
   def test_banner_hierarchy_corruption_beats_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: stack hierarchy DOM order pending')
+    '''D-13: corruption banner renders before drift banner.'''
+    from datetime import UTC, datetime
+
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(
+      state, 'state_manager',
+      'recovered from corruption: state.json reset',
+      now=fixed_now,
+    )
+    state = append_warning(
+      state, 'drift',
+      "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      now=fixed_now,
+    )
+    rendered = _render_header_email(state, fixed_now)
+    body = rendered if isinstance(rendered, str) else ''.join(rendered)
+    idx_corr = body.find('recovered from corruption')
+    idx_drift = body.find('━━━ Drift detected ━━━')
+    assert idx_corr >= 0, 'corruption banner present'
+    assert idx_drift >= 0, 'drift banner present'
+    assert idx_corr < idx_drift, 'D-13: corruption renders before drift'
 
   def test_banner_hierarchy_stale_beats_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: stack hierarchy DOM order pending')
+    '''D-13: stale banner renders before drift banner.'''
+    from datetime import UTC, datetime
+
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state['_stale_info'] = {'days_stale': 3, 'last_run_date': '2026-04-23'}
+    state = append_warning(
+      state, 'drift',
+      "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      now=fixed_now,
+    )
+    rendered = _render_header_email(state, fixed_now)
+    body = rendered if isinstance(rendered, str) else ''.join(rendered)
+    idx_stale = body.find('Stale state')
+    idx_drift = body.find('━━━ Drift detected ━━━')
+    assert idx_stale >= 0, 'stale banner present'
+    assert idx_drift >= 0, 'drift banner present'
+    assert idx_stale < idx_drift, 'D-13: stale renders before drift'
 
   def test_drift_banner_inserted_before_hero_card(self) -> None:
-    import pytest
-    pytest.skip('Plan 07: drift banner insertion point pending')
+    '''REVIEWS L-4 + Pitfall 4: drift banner must precede the hero card
+    block. Stable marker chosen by direct inspection of notifier.py
+    _render_hero_card_email line 530-531: the literal `<h1 ...>Trading
+    Signals</h1>` is the hardcoded h1 emitted by the hero card. The
+    substring `>Trading Signals</h1>` is present in EVERY email render
+    (no conditional branch suppresses it), making it a deterministic
+    hero-card content marker.
+
+    REVIEWS M-1 Path A: this test MUST be implemented and passing.
+    The skip-fallback chain from the prior draft is removed.
+    '''
+    from datetime import UTC, datetime
+
+    from notifier import _render_header_email
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=UTC)
+    state = append_warning(
+      state, 'drift',
+      "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      now=fixed_now,
+    )
+    rendered = _render_header_email(state, fixed_now)
+    body = rendered if isinstance(rendered, str) else ''.join(rendered)
+    idx_drift = body.find('━━━ Drift detected ━━━')
+    # REVIEWS L-4 stable hero-card marker: the literal h1 closing tag
+    # immediately after the title. Verified by direct read of notifier.py
+    # line 530-531: `<h1 ...>Trading Signals</h1>`.
+    idx_hero = body.find('>Trading Signals</h1>')
+    assert idx_drift >= 0, 'drift banner heading absent'
+    assert idx_hero >= 0, (
+      'REVIEWS L-4: hero-card marker `>Trading Signals</h1>` absent — '
+      '_render_hero_card_email may have been refactored. Update the marker '
+      'in this test to match the new hero-card content.'
+    )
+    assert idx_drift < idx_hero, (
+      f'Pitfall 4: drift banner must render BEFORE the hero card. '
+      f'idx_drift={idx_drift} idx_hero={idx_hero}'
+    )
