@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-26T09:00:07.846Z"
+last_updated: "2026-04-26T10:39:35.449Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 7
@@ -23,15 +23,15 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 15 — Live Calculator + Sentinels
+- **Current focus:** Phase 16 — Hardening + UAT Completion
 
 ## Current Position
 
-Phase: 15 (Live Calculator + Sentinels) — EXECUTING
-Plan: 1 of 8
+Phase: 16 (Hardening + UAT Completion) — EXECUTING
+Plan: 1 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Executing Phase 15
+- **Status:** Executing Phase 16
 - **Last activity:** 2026-04-26
 - **Progress:** [█████████░] 91%
 
