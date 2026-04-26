@@ -270,3 +270,13 @@ Per-phase counts: Phase 10 = 4, Phase 11 = 4, Phase 12 = 3, Phase 13 = 5, Phase 
 ---
 *Roadmap created: 2026-04-24 (v1.1 milestone kickoff)*
 *Ready for: `/gsd-discuss-phase 10` (or parallel `/gsd-discuss-phase 11` once Phase 10 plans exist)*
+
+### Phase 16.1: Phone-friendly auth UX for dashboard access (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 16
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 16.1 to break down)

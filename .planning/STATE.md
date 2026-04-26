@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-26T11:52:37.185Z"
-last_activity: 2026-04-26
+last_updated: "2026-04-26T22:17:05.856Z"
+last_activity: "2026-04-27 - Captured todo: phone-friendly auth UX (operator can't access signals.mwiriadi.me from iPhone — flagged blocker for v1.1 daily usability, candidate for v1.1.1 patch or v1.2)"
 progress:
   total_phases: 7
   completed_phases: 6
@@ -94,6 +94,10 @@ Plan: 2 of 5
 | Phase 16 P04 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 16.1 inserted after Phase 16: Phone-friendly auth UX for dashboard access (URGENT)
 
 ### Decisions
 
