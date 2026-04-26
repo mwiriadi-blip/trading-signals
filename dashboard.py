@@ -1300,7 +1300,7 @@ def _render_calc_row(state: dict, state_key: str, pos: dict) -> str:
 
   # IF HIGH — forward-look input + W placeholder + conditional hint (REVIEWS L-3)
   forward_input = (
-    f'<input id="forward-stop-{state_key_esc}-z" type="number" step="0.01" min="0" '
+    f'<input id="forward-stop-{state_key_esc}-z" name="z" type="number" step="0.01" min="0" '
     f'hx-get="/?fragment=forward-stop&amp;instrument={state_key_esc}" '
     f'hx-trigger="input changed delay:300ms" '
     f'hx-target="#forward-stop-{state_key_esc}-w" '
