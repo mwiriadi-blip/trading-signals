@@ -1208,7 +1208,14 @@ def _render_calc_row(state: dict, state_key: str, pos: dict) -> str:
   direction = pos.get('direction', 'LONG')
   entry_price = float(pos.get('entry_price', 0.0))
   atr_entry = float(pos.get('atr_entry', 0.0))
-  current_level = int(pos.get('current_level', 0))
+  # Position TypedDict (system_params.py) names the field `pyramid_level`.
+  # Phase 15 plan/tests called it `current_level`. Accept both — production
+  # uses pyramid_level; some test fixtures use current_level.
+  # Tolerate non-int values (defensive — e.g. XSS-escape regression fixtures).
+  try:
+    current_level = int(pos.get('pyramid_level', pos.get('current_level', 0)))
+  except (ValueError, TypeError):
+    current_level = 0
 
   # STOP cell — reuse Phase 14 _compute_trail_stop_display for the value
   # (handles manual_stop precedence + NaN guards).
@@ -1528,6 +1535,17 @@ def _render_positions_table(state: dict) -> str:
   for state_key in _INSTRUMENT_DISPLAY_NAMES:
     pos = positions.get(state_key)
     if pos is None:
+      # Phase 15 CALC-02: when no position is held but the signal is LONG/SHORT,
+      # render an entry-target row in its own tbody. Returns '' for FLAT signal.
+      entry_target_html = _render_entry_target_row(state, state_key)
+      if entry_target_html:
+        any_position = True
+        state_key_esc = html.escape(state_key, quote=True)
+        tbody_blocks.append(
+          f'    <tbody id="entry-target-{state_key_esc}">\n'
+          f'{entry_target_html}'
+          f'    </tbody>\n'
+        )
       continue
     any_position = True
     state_key_esc = html.escape(state_key, quote=True)

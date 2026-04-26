@@ -703,9 +703,20 @@ class TestRenderBlocks:
     '''Phase 14 UI-SPEC §Decision 2: empty-state colspan bumped 8 → 9 to span
     the new Actions column. Was colspan="8" pre-Phase-14 (UI-SPEC F-4 / CONTEXT
     D-13 history retained for trail).
+
+    Phase 15 CALC-02: empty-state placeholder only renders when there are
+    no positions AND no entry-target rows. Set signals to FLAT for both
+    instruments so the entry-target render path returns '' and the
+    empty-state branch fires.
     '''
     state = _make_state()
     state['positions'] = {'SPI200': None, 'AUDUSD': None}
+    state['signals'] = {
+      'SPI200': {'signal': 0, 'last_close': 8085.0,
+                  'last_scalars': {'atr': 50.0, 'rvol': 1.0}},
+      'AUDUSD': {'signal': 0, 'last_close': 0.6500,
+                  'last_scalars': {'atr': 0.005, 'rvol': 1.0}},
+    }
     output = dashboard._render_positions_table(state)
     assert 'colspan="9"' in output
     assert 'colspan="8"' not in output, 'stale colspan=8 must not appear'
