@@ -32,7 +32,7 @@ Plan: 2 of 5
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute
-- **Last activity:** 2026-04-26
+- **Last activity:** 2026-04-26 - Completed quick task 260426-vcw: Phase 12 HTTPS reconcile — sync nginx/signals.conf comments with deployed state, add port-80 redirect, delete duplicate
 - **Progress:** [██████████] 97%
 
 ```
@@ -204,6 +204,7 @@ None at the GSD-session level. Three operator-owned prerequisites (domain / drop
 |---|-------------|------|--------|-----------|
 | 260421-723 | Phase 1 REVIEWS pass-2 follow-up: oracle-hash comment + test_compute_indicators_is_idempotent + tests/regenerate_scenarios.py | 2026-04-21 | 2ace992 | [260421-723-add-oracle-hash-comment-test-compute-ind](./quick/260421-723-add-oracle-hash-comment-test-compute-ind/) |
 | 260425-91t | Document SIGNALS_EMAIL_FROM env-var contract in .env.example and PROJECT.md (no source change — Phase 12 D-16 already removed the hardcoded constant) | 2026-04-24 | _pending_ | [260425-91t-make-email-from-in-notifier-py-env-overr](./quick/260425-91t-make-email-from-in-notifier-py-env-overr/) |
+| 260426-vcw | Phase 12 HTTPS reconcile — sync nginx/signals.conf comments with deployed state, add port-80 redirect, delete duplicate | 2026-04-26 | 70431c9 | [260426-vcw-phase-12-https-reconcile-sync-nginx-sign](./quick/260426-vcw-phase-12-https-reconcile-sync-nginx-sign/) |
 
 ### Warnings (roadmap-level)
 
