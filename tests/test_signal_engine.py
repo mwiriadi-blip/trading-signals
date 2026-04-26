@@ -555,7 +555,11 @@ FORBIDDEN_MODULES_MAIN = frozenset({
 # scientific stack (numpy, pandas) or network/fetch libs (yfinance, requests).
 FORBIDDEN_MODULES_DASHBOARD = frozenset({
   # Sibling hexes — dashboard.py is a peer, never imports them
-  'signal_engine', 'sizing_engine', 'data_fetcher', 'notifier', 'main',
+  # NOTE: sizing_engine is ALLOWED as of Phase 15 (CALC-01..04 calculator
+  # sub-row uses sizing_engine LOCALLY per C-2; CONTEXT D-01 explicit approval).
+  # MODULE-TOP imports of sizing_engine in dashboard.py remain forbidden
+  # (enforced by test_dashboard_no_module_top_sizing_engine_import — REVIEWS M-2).
+  'signal_engine', 'data_fetcher', 'notifier', 'main',
   # Heavy scientific stack (stdlib statistics + math are sufficient per D-07)
   'numpy', 'pandas',
   # Fetch / network — dashboard never touches network (Chart.js loads client-side)
