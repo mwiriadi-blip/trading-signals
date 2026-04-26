@@ -60,10 +60,10 @@ Log prefix: [Web].
 import logging
 import os
 import re
-
-from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse, Response
 from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def register(app: FastAPI) -> None:
   '''Register GET / on the given FastAPI instance.'''
 
   @app.get('/')
-  def get_dashboard(fragment: str | None = None):
+  def get_dashboard(request: Request, fragment: str | None = None):
     '''Phase 13 GET / + Phase 14 REVIEWS HIGH #4 (placeholder substitution).
 
     The on-disk dashboard.html (rendered by main.run_daily_check via
@@ -113,6 +113,64 @@ def register(app: FastAPI) -> None:
     inner HTML (used by Plan 14-05's per-tbody listener for partial
     refresh on positions-changed events).
     '''
+    # Phase 15 CALC-03 + REVIEWS L-1: forward-stop fragment — EXACT match.
+    # Handled BEFORE the dashboard.html file-read path because this fragment
+    # does not need the on-disk dashboard.html to exist (it reads state.json
+    # directly via load_state). Degenerate Z returns em-dash, never 4xx.
+    if fragment == 'forward-stop':
+      import html as _html
+      import math as _math
+
+      from dashboard import _fmt_currency, _fmt_em_dash  # LOCAL — C-2
+      from sizing_engine import get_trailing_stop  # LOCAL — C-2
+      from state_manager import load_state as _ls  # LOCAL — C-2
+
+      instrument = request.query_params.get('instrument', '')
+      z_raw = request.query_params.get('z', '')
+      span_id_suffix = _html.escape(instrument, quote=True) if instrument else 'unknown'
+
+      def _em_dash_response():
+        body = f'<span id="forward-stop-{span_id_suffix}-w">{_fmt_em_dash()}</span>'
+        return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
+
+      try:
+        z = float(z_raw)
+      except (ValueError, TypeError):
+        return _em_dash_response()
+      if not _math.isfinite(z) or z <= 0:
+        return _em_dash_response()
+
+      try:
+        state = _ls()
+      except Exception:
+        return _em_dash_response()
+
+      pos = state.get('positions', {}).get(instrument)
+      if pos is None:
+        return _em_dash_response()
+
+      synth = dict(pos)
+      direction = synth.get('direction', 'LONG')
+      if direction == 'LONG':
+        peak = synth.get('peak_price') or synth.get('entry_price', 0.0)
+        synth['peak_price'] = max(peak, z)
+      else:
+        trough = synth.get('trough_price') or synth.get('entry_price', 0.0)
+        synth['trough_price'] = min(trough, z)
+
+      try:
+        w = get_trailing_stop(synth, 0.0, 0.0)
+      except Exception:
+        return _em_dash_response()
+
+      if not _math.isfinite(w):
+        w_html = _fmt_em_dash()
+      else:
+        w_html = _html.escape(_fmt_currency(w), quote=True)
+
+      body = f'<span id="forward-stop-{span_id_suffix}-w">{w_html}</span>'
+      return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
+
     # D-07 / Phase 11 C-2: local imports preserve hex boundary.
     from dashboard import render_dashboard
     from state_manager import load_state

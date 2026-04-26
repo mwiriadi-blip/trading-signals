@@ -59,7 +59,8 @@ import json as _json
 import logging
 import math
 import zoneinfo
-from datetime import datetime, date as _date
+from datetime import date as _date
+from datetime import datetime
 from typing import Literal
 
 from fastapi import FastAPI, Request
@@ -463,8 +464,8 @@ def register(app: FastAPI) -> None:
   def open_trade(req: OpenTradeRequest):
     '''Phase 14 TRADE-01 + D-01..D-04 + D-13 (REVIEWS HIGH #1: mutate_state).'''
     # Phase 11 C-2 + Phase 14 D-13: local imports preserve hex boundary
-    from state_manager import mutate_state
     from sizing_engine import check_pyramid
+    from state_manager import mutate_state
 
     # Captured in closure for response rendering after mutate returns.
     result_holder: dict = {'kind': None, 'extra': None}
@@ -528,6 +529,16 @@ def register(app: FastAPI) -> None:
       executed_at = req.executed_at or _now_awst().date()
       state['positions'][req.instrument] = _build_position_dict(req, executed_at, atr_entry)
       result_holder['kind'] = 'fresh_open'
+      # Phase 15 D-02: drift recompute after position mutation.
+      # Sequence: clear stale drift -> detect on post-mutation state ->
+      # append fresh drift warnings. Atomic with the position mutation
+      # (same mutate_state call). Sole-writer invariant preserved
+      # (state_manager.append_warning is the only writer to state['warnings']).
+      from sizing_engine import detect_drift  # LOCAL — C-2
+      from state_manager import append_warning, clear_warnings_by_source  # LOCAL — C-2
+      clear_warnings_by_source(state, 'drift')
+      for ev in detect_drift(state.get('positions', {}), state.get('signals', {})):
+        append_warning(state, source='drift', message=ev.message)
 
     try:
       state = mutate_state(_apply)
@@ -594,6 +605,16 @@ def register(app: FastAPI) -> None:
       }
       # record_trade mutates state in place (Phase 3 D-13/D-20)
       record_trade(state, trade)
+      # Phase 15 D-02: drift recompute after position mutation.
+      # Sequence: clear stale drift -> detect on post-mutation state ->
+      # append fresh drift warnings. Atomic with the position mutation
+      # (same mutate_state call). Sole-writer invariant preserved
+      # (state_manager.append_warning is the only writer to state['warnings']).
+      from sizing_engine import detect_drift  # LOCAL — C-2
+      from state_manager import append_warning, clear_warnings_by_source  # LOCAL — C-2
+      clear_warnings_by_source(state, 'drift')
+      for ev in detect_drift(state.get('positions', {}), state.get('signals', {})):
+        append_warning(state, source='drift', message=ev.message)
 
     try:
       mutate_state(_apply)
@@ -631,6 +652,16 @@ def register(app: FastAPI) -> None:
       # REVIEWS LOW #9 / D-10: pyramid_level resets on ANY successful modify
       # (OUTSIDE the new_contracts conditional — fires on new_stop-only modifies too).
       pos['pyramid_level'] = 0
+      # Phase 15 D-02: drift recompute after position mutation.
+      # Sequence: clear stale drift -> detect on post-mutation state ->
+      # append fresh drift warnings. Atomic with the position mutation
+      # (same mutate_state call). Sole-writer invariant preserved
+      # (state_manager.append_warning is the only writer to state['warnings']).
+      from sizing_engine import detect_drift  # LOCAL — C-2
+      from state_manager import append_warning, clear_warnings_by_source  # LOCAL — C-2
+      clear_warnings_by_source(state, 'drift')
+      for ev in detect_drift(state.get('positions', {}), state.get('signals', {})):
+        append_warning(state, source='drift', message=ev.message)
 
     try:
       state = mutate_state(_apply)
