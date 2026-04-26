@@ -561,6 +561,8 @@ def _has_critical_banner(state: dict) -> bool:
       and w.get('message', '').startswith('recovered from corruption')
     ):
       return True
+    if w.get('source') == 'drift':   # NEW Phase 15 SENTINEL-03
+      return True
   return False
 
 
@@ -635,6 +637,41 @@ def _render_header_email(state: dict, now: datetime) -> str:
       f'━━━ State was reset ━━━</p>'
       f'<p style="margin:0;color:{_COLOR_TEXT_MUTED};font-size:13px;">'
       f'{safe_msg}</p>'
+      f'</td></tr>\n'
+      f'<tr><td height="16" style="height:16px;font-size:0;line-height:0;">'
+      f'&nbsp;</td></tr>\n'
+    )
+
+  # --- CRITICAL BANNER 3: drift/reversal (Phase 15 D-03/D-12/D-13/SENTINEL-03) ---
+  # Border color follows D-13: red (_COLOR_SHORT) when any reversal severity,
+  # amber (_COLOR_FLAT) when drift-only. Body bullets reuse DriftEvent.message
+  # strings from state['warnings'] — D-12 lockstep parity with the dashboard
+  # banner in dashboard._render_drift_banner.
+  drift_warnings = [
+    w for w in state.get('warnings', [])
+    if w.get('source') == 'drift'
+  ]
+  if drift_warnings:
+    has_reversal = any(
+      'reversal recommended' in w.get('message', '')
+      for w in drift_warnings
+    )
+    border_color = _COLOR_SHORT if has_reversal else _COLOR_FLAT
+    bullet_lines = '<br>\n      '.join(
+      f'&bull; {html.escape(w.get("message", ""), quote=True)}'
+      for w in drift_warnings
+    )
+    parts.append(
+      f'<tr><td style="padding:12px 16px;background:{_COLOR_SURFACE};'
+      f'border-left:4px solid {border_color};'
+      f'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\','
+      f'Roboto,sans-serif;font-size:14px;color:{_COLOR_TEXT};'
+      f'line-height:1.5;">'
+      f'<p style="margin:0 0 4px 0;font-size:14px;font-weight:600;'
+      f'color:{_COLOR_TEXT};letter-spacing:0.02em;">'
+      f'━━━ Drift detected ━━━</p>'
+      f'<p style="margin:0;color:{_COLOR_TEXT_MUTED};font-size:13px;line-height:1.6;">'
+      f'{bullet_lines}</p>'
       f'</td></tr>\n'
       f'<tr><td height="16" style="height:16px;font-size:0;line-height:0;">'
       f'&nbsp;</td></tr>\n'
