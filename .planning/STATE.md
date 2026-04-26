@@ -208,6 +208,18 @@ None at the GSD-session level. Three operator-owned prerequisites (domain / drop
 - (v1.0 retrospective) Requirements count reconciliation: prompt stated 67 v1 requirements; REQUIREMENTS.md contains 78 across 11 categories. All 78 are mapped. Verify at Phase 1 kickoff that the operator's intent matches. — **Resolved**: v1.0 closed at 80/80 after CONF-01/02 were folded in.
 - (v1.1) REQUIREMENTS.md originally claimed 32 requirements in the namespace footer; actual count is 31 (WEB 7 + AUTH 3 + TRADE 6 + CALC 4 + SENTINEL 3 + BUG 1 + INFRA 4 + CHORE 3 = 31). Roadmap uses 31. Self-documented in REQUIREMENTS.md footer.
 
+## Completed Items
+
+Items deferred at v1.0 milestone close (2026-04-24) and verified closed via Phase 16 operator UAT (per D-14, D-15; migration runs after operator confirmation per REVIEWS H-3):
+
+| Category | Item | Verified | Date | Artifact |
+|----------|------|----------|------|----------|
+| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-A/B/C](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md) |
+| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-A](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-a-mobile-dashboard-rendering) |
+| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-B](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-b-mobile-gmail-email-rendering) |
+
+> **Verification source:** Each row's `Verified` and `Date` columns were read from `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md` after Plan 16-05 closed (REVIEWS H-3). The uat_gap row's Verified column is `yes` only if ALL THREE scenarios (UAT-16-A, UAT-16-B, UAT-16-C) are `verified`; otherwise it is `partial` and the operator notes in 16-HUMAN-UAT.md document why. Per D-17, UAT-16-C may stay `pending` for multiple weekdays — in that case the uat_gap row is recorded as `partial` with today's migration date and the verification_gap rows for UAT-16-A and UAT-16-B close as `yes` earlier. All three scenarios were marked `partial` on 2026-04-26 (Mac-dev-proxy and local-render evidence accepted; real-phone-on-droplet and real-weekday-Gmail remain pending per D-17).
+
 ## Deferred Items
 
 Items acknowledged and deferred at v1.0 milestone close on 2026-04-24:
@@ -215,11 +227,8 @@ Items acknowledged and deferred at v1.0 milestone close on 2026-04-24:
 | Category | Item | Status | v1.1 disposition |
 |----------|------|--------|------------------|
 | quick_task | 260421-723-add-oracle-hash-comment-test-compute-ind | missing | Still deferred (not v1.1 scope) |
-| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial | **Folded into v1.1 Phase 16 as CHORE-03** |
-| verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | human_needed | Becomes verifiable via hosted dashboard (v1.1 Phase 16 SC-4) |
-| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | human_needed | Becomes verifiable via Phase 12 Resend domain verification + Phase 16 operator run |
 
-These items require operator eyeballing (real Gmail inbox check, visual dashboard inspection) that cannot be automated in a GSD session. Programmatic verification for v1.0 was complete (662 tests passing, 80/80 requirements verified, 9/9 phases closed, all SCs PASS). v1.1 Phase 16 SC-3/SC-4 formally close these items once the hosted dashboard is live.
+The remaining `quick_task` item is not v1.1 scope. The 3 Phase 6 HUMAN-UAT and verification-gap items moved to `## Completed Items` above (closed via Phase 16 operator UAT — see [16-HUMAN-UAT.md](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md)).
 
 ## Session Continuity
 
