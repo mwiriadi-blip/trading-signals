@@ -1642,94 +1642,408 @@ class TestAuthHeaderPlaceholder:
 
 
 class TestRenderCalculatorRow:
-  '''Phase 15 CALC-01/02/04: per-instrument calculator sub-row rendering.
-  Wave 0 skeleton — bodies populated in Plan 05.
-  '''
+  '''Phase 15 CALC-01/02/04: per-instrument calculator sub-row rendering.'''
 
   def test_calc_row_long_position_renders_stop_distance_next_add(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_calc_row implementation pending')
+    from dashboard import _render_calc_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7850.0,
+      'current_level': 0,
+      'manual_stop': None,
+      'contracts': 2,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {'signal': 1, 'last_close': 7860.0,
+                              'last_scalars': {'atr': 50.0, 'rvol': 1.0}}},
+      'account': 100000.0,
+    }
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    assert 'STOP' in html_out
+    assert 'DIST' in html_out
+    assert 'NEXT ADD' in html_out
+    assert 'LEVEL' in html_out
+    assert 'NEW STOP' in html_out  # REVIEWS H-1
+    assert 'IF HIGH' in html_out
+    assert 'class="calc-row"' in html_out
 
   def test_trail_stop_matches_display_helper(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_calc_row implementation pending')
+    from dashboard import _render_calc_row, _compute_trail_stop_display, _fmt_currency
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7900.0,
+      'current_level': 0,
+      'manual_stop': None,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {'signal': 1, 'last_close': 7900.0,
+                              'last_scalars': {'atr': 50.0, 'rvol': 1.0}}},
+      'account': 100000.0,
+    }
+    expected_stop = _compute_trail_stop_display(pos)
+    expected_str = _fmt_currency(expected_stop)
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    assert expected_str in html_out
 
   def test_entry_target_row_flat_long(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: entry-target rendering pending')
+    from dashboard import _render_entry_target_row
+    state = {
+      'positions': {},
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'last_close': 7810.25,
+          'last_scalars': {'atr': 50.0, 'rvol': 1.0},
+        }
+      },
+      'account': 100000.0,
+      '_resolved_contracts': {'SPI200': {'multiplier': 5.0}},
+    }
+    html_out = _render_entry_target_row(state, 'SPI200')
+    assert 'Entry target' in html_out
+    assert 'LONG' in html_out
+    assert '$7,810.25' in html_out
+    assert 'entry-target' in html_out
 
   def test_entry_target_row_flat_short(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: entry-target rendering pending')
+    from dashboard import _render_entry_target_row
+    state = {
+      'positions': {},
+      'signals': {
+        'AUDUSD': {
+          'signal': -1,
+          'last_close': 0.6500,
+          'last_scalars': {'atr': 0.005, 'rvol': 1.0},
+        }
+      },
+      'account': 100000.0,
+      '_resolved_contracts': {'AUDUSD': {'multiplier': 10000.0}},
+    }
+    html_out = _render_entry_target_row(state, 'AUDUSD')
+    assert 'Entry target' in html_out
+    assert 'SHORT' in html_out
 
   def test_no_calc_row_when_flat_signal(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: FLAT+FLAT no-row branch pending')
+    from dashboard import _render_entry_target_row
+    state = {
+      'positions': {},
+      'signals': {'SPI200': {'signal': 0}},
+    }
+    html_out = _render_entry_target_row(state, 'SPI200')
+    assert html_out == ''
 
   def test_pyramid_section_level_0(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: pyramid section pending')
+    from dashboard import _render_calc_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7850.0,
+      'current_level': 0,
+      'manual_stop': None,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {'signal': 1, 'last_close': 7860.0,
+                              'last_scalars': {'atr': 50.0, 'rvol': 1.0}}},
+      'account': 100000.0,
+    }
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    assert 'level 0/2' in html_out
+    assert '(+1×ATR)' in html_out
 
   def test_pyramid_section_level_1(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: pyramid section pending')
+    from dashboard import _render_calc_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7900.0,
+      'current_level': 1,
+      'manual_stop': None,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {'signal': 1, 'last_close': 7950.0,
+                              'last_scalars': {'atr': 50.0, 'rvol': 1.0}}},
+      'account': 100000.0,
+    }
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    assert 'level 1/2' in html_out
+    # Pitfall 6: next-add LONG = entry + (level+1)*atr_entry = 7800 + 2*50 = 7900
+    assert '$7,900' in html_out
+    assert '(+2×ATR)' in html_out
 
   def test_pyramid_section_at_max(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: pyramid section MAX_PYRAMID_LEVEL pending')
+    from dashboard import _render_calc_row
+    from system_params import MAX_PYRAMID_LEVEL
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7950.0,
+      'current_level': MAX_PYRAMID_LEVEL,
+      'manual_stop': None,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {'signal': 1, 'last_close': 7950.0,
+                              'last_scalars': {'atr': 50.0, 'rvol': 1.0}}},
+      'account': 100000.0,
+    }
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    assert 'fully pyramided' in html_out
 
   def test_distance_dollar_and_percent_formatting(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: distance cells pending')
+    '''REVIEWS M-3: distance baseline = current_close, NOT entry_price.
+    Fixture: current_close (7860) != entry_price (7800). Stop = peak - 3*atr =
+    7800 - 150 = 7650. Expected dist = |7860 - 7650| = 210 (current baseline);
+    entry baseline would give 150 — different.
+    '''
+    from dashboard import _render_calc_row
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7800.0,
+      'current_level': 0,
+      'manual_stop': None,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {
+        'signal': 1,
+        'last_close': 7860.0,
+        'last_scalars': {'atr': 50.0, 'rvol': 1.0},
+      }},
+      'account': 100000.0,
+    }
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    assert '$210' in html_out, (
+      f'REVIEWS M-3: distance must use current_close (7860) baseline '
+      f'(expected $210), not entry_price (7800) baseline ($150). '
+      f'Output: {html_out!r}'
+    )
+    idx_dist = html_out.find('DIST')
+    assert idx_dist >= 0
+    dist_section = html_out[idx_dist:idx_dist + 400]
+    assert '$210' in dist_section
+    assert '2.7%' in dist_section, (
+      f'REVIEWS M-3: distance percent must be 210/7860=2.7%, not '
+      f'150/7800=1.9% (entry baseline). Output: {dist_section!r}'
+    )
 
   def test_pyramid_section_includes_new_stop_after_add(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: REVIEWS H-1 — render "new stop after add: $S" pending')
+    '''REVIEWS H-1: CALC-04 — render NEXT ADD price AND projected new stop.
+    Fixture: LONG SPI200, entry=7800, peak=7820, atr=50, level=0.
+    NEXT ADD = 7800 + 1*50 = 7850. Synth peak = max(7820, 7850) = 7850.
+    S = 7850 - 3*50 = 7700.
+    '''
+    from dashboard import _render_calc_row, _fmt_currency
+    from sizing_engine import get_trailing_stop
+    pos = {
+      'direction': 'LONG',
+      'entry_price': 7800.0,
+      'atr_entry': 50.0,
+      'peak_price': 7820.0,
+      'current_level': 0,
+      'manual_stop': None,
+    }
+    state = {
+      'positions': {'SPI200': pos},
+      'signals': {'SPI200': {'signal': 1, 'last_close': 7820.0,
+                              'last_scalars': {'atr': 50.0, 'rvol': 1.0}}},
+      'account': 100000.0,
+    }
+    html_out = _render_calc_row(state, 'SPI200', pos)
+    synth = dict(pos)
+    next_add_price = 7800.0 + 1 * 50.0
+    synth['peak_price'] = max(pos['peak_price'], next_add_price)
+    synth['manual_stop'] = None
+    expected_s = get_trailing_stop(synth, 0.0, 0.0)
+    expected_s_str = _fmt_currency(expected_s)
+    assert _fmt_currency(next_add_price) in html_out, (
+      f'NEXT ADD price {next_add_price} ({_fmt_currency(next_add_price)}) '
+      f'not rendered. Output: {html_out!r}'
+    )
+    assert 'NEW STOP' in html_out, (
+      f'REVIEWS H-1: NEW STOP cell absent. Output: {html_out!r}'
+    )
+    assert expected_s_str in html_out, (
+      f'REVIEWS H-1: projected new stop ({expected_s_str}) absent. '
+      f'Output: {html_out!r}'
+    )
 
 
 class TestRenderDriftBanner:
-  '''Phase 15 SENTINEL-01/02 + D-11/D-13: dashboard drift banner rendering.
-  Wave 0 skeleton — bodies populated in Plan 05.
-  '''
+  '''Phase 15 SENTINEL-01/02 + D-11/D-13: dashboard drift banner rendering.'''
 
   def test_amber_drift_banner(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_drift_banner pending')
+    from dashboard import _render_drift_banner
+    state = {
+      'warnings': [
+        {'source': 'drift',
+         'message': "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+         'date': '2026-04-26'}
+      ]
+    }
+    html_out = _render_drift_banner(state)
+    assert 'sentinel-drift' in html_out
+    assert 'sentinel-reversal' not in html_out
+    assert 'Drift detected' in html_out
+    assert 'consider closing' in html_out
 
   def test_red_reversal_banner(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_drift_banner pending')
+    from dashboard import _render_drift_banner
+    state = {
+      'warnings': [
+        {'source': 'drift',
+         'message': "You hold LONG SPI200, today's signal is SHORT — reversal recommended (close LONG, open SHORT).",
+         'date': '2026-04-26'}
+      ]
+    }
+    html_out = _render_drift_banner(state)
+    assert 'sentinel-reversal' in html_out
+    assert 'reversal recommended' in html_out
 
   def test_mixed_drift_reversal_uses_reversal_color(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_drift_banner mixed-severity pending')
+    from dashboard import _render_drift_banner
+    state = {
+      'warnings': [
+        {'source': 'drift',
+         'message': "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+         'date': '2026-04-26'},
+        {'source': 'drift',
+         'message': "You hold SHORT AUDUSD, today's signal is LONG — reversal recommended (close SHORT, open LONG).",
+         'date': '2026-04-26'},
+      ]
+    }
+    html_out = _render_drift_banner(state)
+    assert 'sentinel-reversal' in html_out, 'mixed: any reversal -> red banner'
 
   def test_no_banner_when_no_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_drift_banner empty branch pending')
+    from dashboard import _render_drift_banner
+    state = {'warnings': []}
+    assert _render_drift_banner(state) == ''
+    state2 = {'warnings': [{'source': 'sizing_engine', 'message': 'x',
+                             'date': '2026-04-26'}]}
+    assert _render_drift_banner(state2) == ''
 
   def test_banner_lists_all_drifted_instruments(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: _render_drift_banner aggregation pending')
+    from dashboard import _render_drift_banner
+    state = {
+      'warnings': [
+        {'source': 'drift',
+         'message': "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+         'date': '2026-04-26'},
+        {'source': 'drift',
+         'message': "You hold SHORT AUDUSD, today's signal is LONG — reversal recommended (close SHORT, open LONG).",
+         'date': '2026-04-26'},
+      ]
+    }
+    html_out = _render_drift_banner(state)
+    assert 'SPI200' in html_out
+    assert 'AUDUSD' in html_out
+    assert html_out.count('<li>') == 2
 
 
 class TestBannerStackOrder:
-  '''Phase 15 D-13 + REVIEWS H-2: dashboard banner stack hierarchy.
-  Mirrors tests/test_notifier.py::TestBannerStackOrder for the dashboard
-  surface — drift banner must appear AFTER any future corruption/stale
-  banners (D-13: corruption > stale > reversal > drift) and BEFORE the
-  Open Positions section heading. Wave 0 skeleton — bodies populated in
-  Plan 05 Task 3 (the dedicated banner-ordering task added per REVIEWS H-2).
-  '''
+  '''Phase 15 D-13 + REVIEWS H-2: dashboard banner stack hierarchy.'''
 
-  def test_dashboard_banner_hierarchy_corruption_beats_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: REVIEWS H-2 — dashboard banner stack hierarchy pending')
+  def test_dashboard_banner_hierarchy_corruption_beats_drift(self, tmp_path) -> None:
+    '''REVIEWS H-2 + D-13: drift banner sits at top-level slot below
+    equity-chart and above positions section. Future corruption banner
+    additions sit ABOVE this slot in the same composition.
+    '''
+    from datetime import datetime, timezone
+    from dashboard import render_dashboard
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
+    state = append_warning(state, 'state_manager',
+                            'recovered from corruption: state.json reset',
+                            now=fixed_now)
+    state = append_warning(state, 'drift',
+                            "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+                            now=fixed_now)
+    state['positions'] = {}
+    state['signals'] = {}
+    out_path = tmp_path / 'dashboard.html'
+    render_dashboard(state, out_path=out_path, now=fixed_now)
+    body = out_path.read_text(encoding='utf-8')
+    idx_drift = body.find('Drift detected')
+    assert idx_drift >= 0, 'drift banner heading absent — REVIEWS H-2 broken'
+    idx_equity = max(
+      body.find('aria-labelledby="heading-equity"'),
+      body.find('class="equity-chart-container"'),
+      body.find('id="equityChart"'),
+    )
+    idx_positions = body.find('aria-labelledby="heading-positions"')
+    if idx_equity >= 0:
+      assert idx_equity < idx_drift, (
+        f'REVIEWS H-2: drift banner must sit AFTER equity chart slot. '
+        f'idx_equity={idx_equity} idx_drift={idx_drift}'
+      )
+    assert idx_drift < idx_positions, (
+      f'REVIEWS H-2: drift banner must sit BEFORE positions section heading. '
+      f'idx_drift={idx_drift} idx_positions={idx_positions}'
+    )
 
-  def test_dashboard_banner_hierarchy_stale_beats_drift(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: REVIEWS H-2 — dashboard banner stack hierarchy pending')
+  def test_dashboard_banner_hierarchy_stale_beats_drift(self, tmp_path) -> None:
+    '''REVIEWS H-2 + D-13: same H-2 top-level slot placement holds when
+    stale info is present.
+    '''
+    from datetime import datetime, timezone
+    from dashboard import render_dashboard
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
+    state['_stale_info'] = {'days_stale': 3, 'last_run_date': '2026-04-23'}
+    state = append_warning(state, 'drift',
+                            "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+                            now=fixed_now)
+    state['positions'] = {}
+    state['signals'] = {}
+    out_path = tmp_path / 'dashboard.html'
+    render_dashboard(state, out_path=out_path, now=fixed_now)
+    body = out_path.read_text(encoding='utf-8')
+    idx_drift = body.find('Drift detected')
+    assert idx_drift >= 0, 'drift banner heading absent — REVIEWS H-2 broken'
+    idx_positions = body.find('aria-labelledby="heading-positions"')
+    assert idx_drift < idx_positions, (
+      f'REVIEWS H-2: drift banner must sit BEFORE positions section heading '
+      f'even when stale info is present. idx_drift={idx_drift} '
+      f'idx_positions={idx_positions}'
+    )
 
-  def test_drift_banner_renders_before_positions_heading(self) -> None:
-    import pytest
-    pytest.skip('Plan 05: REVIEWS H-2 — drift banner placement above positions table pending')
+  def test_drift_banner_renders_before_positions_heading(self, tmp_path) -> None:
+    '''REVIEWS H-2: drift banner is in top-level slot above the Open
+    Positions section heading. NOT injected into _render_positions_table.
+    '''
+    from datetime import datetime, timezone
+    from dashboard import render_dashboard
+    from state_manager import append_warning, reset_state
+    state = reset_state()
+    fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
+    state = append_warning(state, 'drift',
+                            "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+                            now=fixed_now)
+    state['positions'] = {}
+    state['signals'] = {}
+    out_path = tmp_path / 'dashboard.html'
+    render_dashboard(state, out_path=out_path, now=fixed_now)
+    body = out_path.read_text(encoding='utf-8')
+    idx_drift = body.find('Drift detected')
+    idx_positions_heading = body.find('aria-labelledby="heading-positions"')
+    assert idx_drift >= 0, 'drift banner absent'
+    assert idx_positions_heading >= 0, 'positions section heading absent'
+    assert idx_drift < idx_positions_heading, (
+      f'REVIEWS H-2: drift banner must render BEFORE Open Positions heading. '
+      f'idx_drift={idx_drift} idx_positions_heading={idx_positions_heading}'
+    )
