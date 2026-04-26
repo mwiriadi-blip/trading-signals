@@ -139,7 +139,16 @@ Phase 10 has **no** infrastructure dependencies — operator can start there imm
   4. Pyramid section shows "level N active; next add at price P (+Y×ATR_entry)" and "new stop after add: S" — values equal what `check_pyramid` + `get_trailing_stop` would return on the next bar
   5. When `positions[instrument]` has an open LONG but today's signal is FLAT (or position holds LONG while signal is SHORT, or any mismatch), an amber "drift" banner on the dashboard names the instrument and the direction of mismatch; a mismatch to the *opposite* direction (LONG↔SHORT) uses a red "reversal" banner instead of amber drift
   6. The same drift/reversal banner surfaces in the daily email as a top-tier critical banner (reusing Phase 8's `_has_critical_banner` classifier via a new source key `'drift'`); a regression test injects a drifted state and asserts the email body contains the banner text and the subject carries the `[!]` critical prefix
-**Plans**: TBD
+**Plans**: 8 plans
+  - [ ] `15-01-PLAN.md` — Wave 0 gate: update FORBIDDEN_MODULES_DASHBOARD to drop sizing_engine (Pitfall 2 prevention) + skeleton test classes across 6 test files (TestDetectDrift, TestClearWarningsBySource, TestRenderCalculatorRow, TestRenderDriftBanner, TestForwardStopFragment, TestSideBySideStopDisplay, TestDriftBanner, TestBannerStackOrder, TestDriftWarningLifecycle)
+  - [ ] `15-02-PLAN.md` — Wave 1 sizing_engine: DriftEvent frozen+slots dataclass + detect_drift(positions, signals) -> list[DriftEvent] pure-math (D-01, D-04, D-14); 12 TestDetectDrift method bodies populated and passing
+  - [ ] `15-03-PLAN.md` — Wave 1 state_manager: clear_warnings_by_source(state, source) helper (D-02); 5 TestClearWarningsBySource methods populated; sole-writer invariant preserved
+  - [ ] `15-04-PLAN.md` — Wave 2 main.py: drift recompute block (clear -> detect -> append_warning loop) inserted in run_daily_check between pending_warnings flush and last_run assignment; W3 invariant preserved (no new mutate_state call); [Sched] log line per event; TestDriftWarningLifecycle (W3 mandatory)
+  - [ ] `15-05-PLAN.md` — Wave 2 dashboard.py: _render_calc_row + _render_entry_target_row + _render_drift_banner helpers (CALC-01/02/04 + SENTINEL-01/02); side-by-side trail-stop cell when manual_stop set (D-10); _INLINE_CSS extended with Phase 15 rules block; sizing_engine LOCAL imports (C-2); 14 render tests
+  - [ ] `15-06-PLAN.md` — Wave 3 web: forward-stop fragment branch in web/routes/dashboard.py (CALC-03, D-05/D-06/D-07); drift recompute block in each web/routes/trades.py mutator (D-02); 12 web tests including bit-identical parity test
+  - [ ] `15-07-PLAN.md` — Wave 3 notifier: _has_critical_banner extension with source='drift' branch (D-03); drift banner inline-CSS block in _render_header_email between corrupt-reset and hero card (D-12, D-13); 10 email banner tests
+  - [ ] `15-08-PLAN.md` — Wave 4 phase gate: enrich tests/fixtures/dashboard/sample_state.json with calc-row + side-by-side + drift fixtures; regenerate dashboard + notifier goldens (idempotent); two operator checkpoints (forward-look UX in browser + drift banner in real Gmail)
+**Plans (wave structure)**: Wave 0 = [15-01] gate (FORBIDDEN_MODULES_DASHBOARD update + 9 skeleton classes); Wave 1 = [15-02, 15-03] parallel (disjoint v1.0 hex modules: sizing_engine.py vs state_manager.py); Wave 2 = [15-04, 15-05] parallel (disjoint: main.py vs dashboard.py); Wave 3 = [15-06, 15-07] parallel (disjoint: web/routes/* vs notifier.py); Wave 4 = [15-08] sequential (golden fixtures + operator checkpoints)
 **UI hint**: yes
 
 ### Phase 16: Hardening + UAT Completion
@@ -179,7 +188,7 @@ Phase 11 ─┴─► Phase 12 ─► Phase 13 ─► Phase 14 ─► Phase 15 �
 | 12. HTTPS + Domain Wiring | v1.1 | 0/4 | Not started | - |
 | 13. Auth + Read Endpoints | v1.1 | 5/5 | Complete    | 2026-04-25 |
 | 14. Trade Journal — Mutation Endpoints | v1.1 | 0/5 | Not started | - |
-| 15. Live Calculator + Sentinels | v1.1 | 0/? | Not started | - |
+| 15. Live Calculator + Sentinels | v1.1 | 0/8 | Not started | - |
 | 16. Hardening + UAT Completion | v1.1 | 0/? | Not started | - |
 
 Plan counts filled in by `/gsd-plan-phase <N>` as each phase is planned.
