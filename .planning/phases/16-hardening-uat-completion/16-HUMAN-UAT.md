@@ -23,11 +23,29 @@ status: pending
 
 **Scenario ID: UAT-16-A**
 **Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Mobile dashboard section)
-**Verification status:** pending
-**Operator verification date:** —
+**Verification status:** partial
+**Operator verification date:** 2026-04-26
 **Operator notes:**
 
-> _(operator fills in after running the scenario)_
+> Mac dev server proxy at 390px constrained body (Chrome MCP `resize_window` couldn't shrink the actual viewport on this macOS Chrome instance, so I injected `body { max-width: 390px }` + the @media (max-width: 720px) rules manually as a visual proxy). Findings:
+>
+> **Mobile-clean (works at narrow viewport):**
+> - Signal cards stack vertically (FLAT/LONG cards in column, not side-by-side)
+> - Drift banner wraps text legibly within the constrained width; red border preserved (mixed reversal severity)
+> - Open New Position form fields stack vertically (Instrument / Direction / Entry / Contracts), inputs full-width, buttons tappable
+> - Equity chart slot resizes correctly
+> - Hero, headings, paragraph text all flow naturally
+>
+> **Mobile-problematic (deferred to v1.2):**
+> - **Open Positions table** has 9 columns (INSTRUMENT / DIRECTION / ENTRY / CURRENT / CONTRACTS / PYRAMID / TRAIL STOP / UNREALISED P&L / ACTIONS) plus an inline calc-row spanning all columns. The `<table>` overflows the constrained body and would force horizontal scroll on a real 390px-wide phone. There's no responsive table CSS (no `display: block` per-row pattern, no column collapse, no `<details>` summary).
+> - **Calc-row sub-row** (STOP / DIST / NEXT ADD / LEVEL / NEW STOP / IF HIGH) is rendered as inline pipe-separated content within a single `<td colspan>`. At narrow widths this will either overflow or wrap mid-value awkwardly.
+> - **Closed Trades table** has 7 columns — same overflow issue in miniature.
+>
+> **Caveat:** the body-constraint emulation didn't change the actual viewport, so `@media (max-width: 720px)` rules fired via injected style overrides rather than the real viewport breakpoint. On a real phone at 390px viewport, the same responsive rules would fire naturally AND the table would still overflow. Visual proxy underestimates the issue if anything.
+>
+> **Real-mobile-on-droplet verification still pending** — the partial-pass here covers Mac-dev-proxy. Real phone-on-hosted-domain UAT is a follow-up once an operator gets a chance.
+>
+> **Action item flagged for v1.2 backlog:** add table-responsive CSS to `dashboard.py::_INLINE_CSS` — either `<table>` → `display: block` + per-row card layout below 720px, OR column-collapse where less-critical columns hide on narrow viewports. Calc-row sub-row should similarly switch from horizontal pipe-separated to vertical-stacked at narrow widths.
 
 **How to verify:**
 1. Open `https://signals.<owned-domain>.com/` on mobile (any modern browser — Safari, Chrome, Firefox).
@@ -93,7 +111,7 @@ status: pending
 
 | Scenario | Status | Operator Date | Linked Completed-Items row in STATE.md |
 |----------|--------|---------------|-----------------------------------------|
-| UAT-16-A | pending | — | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-A | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 | UAT-16-B | pending | — | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 | UAT-16-C | pending | — | uat_gap (Phase 06 HUMAN-UAT) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 
