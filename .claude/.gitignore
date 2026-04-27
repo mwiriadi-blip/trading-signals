@@ -1,0 +1,6 @@
+# Per-machine Claude Code state — never commit
+settings.local.json
+worktrees/
+
+# But DO commit project-local learnings
+!LEARNINGS.md
