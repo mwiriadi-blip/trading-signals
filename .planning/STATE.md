@@ -23,17 +23,33 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 16 — Hardening + UAT Completion
+- **Current focus:** Phase 16.1 — Phone-friendly auth UX for dashboard access (PLANNED, ready to execute)
 
 ## Current Position
 
-Phase: 16 (Hardening + UAT Completion) — EXECUTING
-Plan: 2 of 5
+Phase: 16.1 (Phone-friendly auth UX) — PLANNED, READY TO EXECUTE
+Plans: 2 of 2 written (16.1-01 Basic Auth wave + 16.1-02 cookie session wave; sequential per CONTEXT D-01)
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Ready to execute
-- **Last activity:** 2026-04-27
-- **Progress:** [██████████] 97%
+- **Status:** Ready to execute (run `/gsd-execute-phase 16.1` — Wave 1 is autonomous, Wave 2 has a UAT checkpoint at the end)
+- **Last activity:** 2026-04-27 - Phase 16.1 plans created (commit 1383a26); learnings + .gitignore added (commit a577fde); pushed to origin/main
+- **Progress:** [██████████] 97% (Phase 16 still awaiting UAT-16-C operational closure on a real weekday — independent of 16.1)
+- **Phase 16 status:** EXECUTING (Plan 2 of 5; weekday-blocked on UAT-16-B and UAT-16-C per `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md`). 16.1 can run in parallel with that wait per ROADMAP §16.1 "Depends on: Phase 13".
+
+### Resume instructions for cloud Claude / fresh clone
+
+```
+git clone https://github.com/mwiriadi-blip/trading-signals.git
+cd trading-signals
+# Cloud Claude SessionStart hook auto-loads:
+#   - global ~/.claude/LEARNINGS.md (cloud's own copy — separate sync mechanism)
+#   - project-local .claude/LEARNINGS.md (5 trading-signals patterns from 2026-04-27)
+#   - CLAUDE.md (project conventions)
+#   - .planning/STATE.md (this file — current position)
+/gsd-execute-phase 16.1
+```
+
+Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chrome operator UAT confirmed).
 
 ```
 [░░░░░░░░░░░░░░░░] 0% (v1.1 just started — Phase 10 ready to plan)
