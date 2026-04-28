@@ -514,3 +514,77 @@ DEPLOYMENT CHECKLIST:
  □ 10. Monitor: check Replit logs after first 3 runs
 """
 ```
+
+---
+
+## v1.2+ Long-Term Roadmap (Reference)
+
+> **Captured:** 2026-04-29 from operator brainstorm (handwritten notes + chat)
+> **Status:** Reference only — formal requirements deferred to `/gsd-new-milestone v1.2` (after v1.1 closes)
+> **v1.1 status when captured:** mid-flight (Phases 14, 15, 16, 16.1 open) — v1.2 work does NOT begin until v1.1 ships
+
+### Vision
+
+Transform v1.1's single-operator hosted dashboard into a **friends-and-family multi-user paper-trade platform** with per-signal calculation transparency, manual trade journaling, stop-loss alerting, news integration, and a formal 5-year backtest validation gate. Top-of-volume market expansion stays out of scope until v2.0.
+
+### Locked decisions (operator-confirmed 2026-04-29)
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Trade execution | Paper-ledger only, never broker API | Operator places real trades manually; app journals + alerts only |
+| Multi-user model | Friends-and-family (small N), super-admin = operator | Not SaaS; not for resale |
+| 2FA method | TOTP (Authenticator app) | Free, offline, no SMS cost |
+| Trade entry UX | Web form on dashboard | Structured fields, validates on submit |
+| Stop-loss alert timing | BOTH: approaching (within 0.5×ATR) AND hit | Daily strategy, no intraday — alerts fire on next daily run |
+| News source | `yfinance.Ticker(symbol).news` | Already in stack, free, instrument-specific |
+| Stale data policy | Label only, no fail-loud | Daily strategy tolerates day-old data; surface staleness, don't block |
+| Backtest validation | >100% cumulative return over 5y + report | Pass/fail gate; report viewable on dashboard |
+| Calc transparency | Per-signal breakdown reproducible from displayed inputs | User can plug numbers into Excel/Bloomberg/IG and verify by hand |
+| Instruments | SPI 200 + AUD/USD locked through v1.x | Top-10-volume expansion deferred to v2.0 |
+| Language | Python (locked) | Already 16 phases in |
+
+### Planned phase sequence (v1.2 — Multi-user paper-trade platform)
+
+Numbering continues from v1.1 last phase (16.1 → 17). Subject to refinement at `/gsd-new-milestone`.
+
+1. **Phase 17 — Per-signal calculation transparency.** Every signal exposes inputs (OHLC, prior values), intermediate indicators (TR, ATR, +DI, -DI, ADX, Mom1/3/12, RVol), formulas, and vote breakdown. Reproducible from displayed values alone. Hover-definitions for acronyms. Read-only dashboard feature; no schema change.
+2. **Phase 18 — Multi-user data model.** `users` table (or JSON-file equivalent), RBAC roles `super_admin` / `user`, per-user data scoping, replaces shared-secret header auth from v1.1 with session-based login.
+3. **Phase 19 — Paper-trade ledger.** Web form for manual trade entry (instrument, side, qty, entry price, stop). Per-user history view, P&L calculation, every row stamped with `STRATEGY_VERSION`.
+4. **Phase 20 — Stop-loss monitoring & alerts.** On daily run: detect approaching (within 0.5×ATR of stop) AND hit conditions for each open paper trade. Email alert per event, deduplicated (one alert per stop event, not repeated daily).
+5. **Phase 21 — News integration.** Top 5 articles per instrument from `yfinance.Ticker.news`, dedup by article URL, surfaced in daily email and on dashboard. Snapshot + business news fallback when no positions open or market closed.
+6. **Phase 22 — Strategy versioning & audit trail.** `STRATEGY_VERSION` constant in `system_params.py`, bumped on any signal-logic change. Every signal output and trade row tagged with version so historical signals stay interpretable.
+7. **Phase 23 — 5-year backtest validation gate.** Walk-forward backtest over 5y of yfinance data; pass criterion = >100% cumulative return. Report rendered on `/backtest` route on the dashboard. Sharpe, max drawdown, win rate, expectancy displayed but not gating.
+8. **Phase 23.5 — Hygiene cleanup.** state.json + ledger backups (DO Spaces or git-backed nightly dump), per-user timezone preference, SPF/DKIM/DMARC verification on `mwiriadi.me`, email deliverability hygiene.
+
+### Architecture additions (v1.2)
+
+- New modules: `auth/` (TOTP via `pyotp`, session management), `ledger/` (paper-trade ledger, P&L), `news/` (yfinance.news adapter), `backtest/` (5y walk-forward).
+- Hex-boundary rule extends: `auth/`, `ledger/`, `news/`, `backtest/` are own modules; cannot import `signal_engine` / `state_manager` directly — go through `main.py`.
+- `STRATEGY_VERSION` constant lives in `system_params.py`. Every signal row in state and every trade row in ledger persists this version.
+- Stack additions (pinned at phase implementation time): `pyotp` for TOTP, `qrcode` for TOTP setup QR, possibly `passlib` for password hashing.
+- Storage: state.json grows or splits — likely move users + ledger to SQLite (single-file, no infra) once multi-user lands. Decision deferred to Phase 18 discuss.
+
+### Hard constraints (preserved from v1.0/v1.1)
+
+- **Signal-only.** No broker API, ever. Paper-ledger journals real trades the operator placed manually; the app never sends an order.
+- **Daily cadence only.** No intraday data. Stop-loss alerts fire on the next daily run, not in real-time.
+- **Python.** Locked.
+- **DO droplet hosting.** No serverless, no container orchestration.
+
+### Out of scope through v1.x
+
+- Top-10-volume market expansion (deferred to v2.0)
+- Broker API integration (hard constraint, never)
+- Intraday / tick data
+- SaaS multi-tenant (friends-and-family scale only)
+- Real-time websocket dashboards
+- Mobile native apps (responsive web is enough)
+
+### Open questions to resolve at `/gsd-new-milestone v1.2`
+
+1. SQLite vs JSON for users + ledger — depends on read/write patterns at Phase 18.
+2. Per-user timezone display logic — affects email send time for non-Perth users.
+3. Backup target — DO Spaces ($) vs git deploy-key push ($0) vs both.
+4. Recovery codes for TOTP — generate-once-show-once vs printable PDF vs email.
+5. Backtest data window — pure 5y, or rolling 5y window with quarterly retraining?
+
