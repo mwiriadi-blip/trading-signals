@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-27T01:38:32.595Z"
-last_activity: 2026-04-27
+last_updated: "2026-04-29T00:00:00.000Z"
+last_activity: "2026-04-29 - Phase 16.1 context expanded: TOTP 2FA folded in (Areas E+F), AUTH-08..AUTH-12 added; existing 16.1-01/02 plans stale, replan required (commit daaeec0)"
 progress:
   total_phases: 7
   completed_phases: 6
@@ -23,16 +23,16 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 16.1 — Phone-friendly auth UX for dashboard access (PLANNED, ready to execute)
+- **Current focus:** Phase 16.1 — Phone-friendly auth UX + TOTP 2FA (CONTEXT updated 2026-04-29; PLANS STALE — replan required)
 
 ## Current Position
 
-Phase: 16.1 (Phone-friendly auth UX) — PLANNED, READY TO EXECUTE
-Plans: 2 of 2 written (16.1-01 Basic Auth wave + 16.1-02 cookie session wave; sequential per CONTEXT D-01)
+Phase: 16.1 (Phone-friendly auth UX + TOTP 2FA) — CONTEXT UPDATED 2026-04-29, REPLAN REQUIRED
+Plans: 2 stale plan files exist (16.1-01-PLAN.md "Basic Auth wave", 16.1-02-PLAN.md "cookie wave") — both PRE-DATE the TOTP fold-in and must be regenerated. Per F-09 the recommended new structure is 3 plans: cookie+TOTP / trusted-device+/devices / magic-link reset.
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Ready to execute (run `/gsd-execute-phase 16.1` — Wave 1 is autonomous, Wave 2 has a UAT checkpoint at the end)
-- **Last activity:** 2026-04-29 - Quick task 260429-b3e: appended v1.2+ long-term roadmap reference to SPEC.md (commit 1eb8159)
+- **Status:** Awaiting `/gsd-plan-phase 16.1` re-run to absorb Areas E + F decisions; Basic Auth path removed (E-01), TOTP enrollment + verify added (E-03, E-04), trusted-device cookie + revocation added (E-05, E-06), magic-link reset added (E-07).
+- **Last activity:** 2026-04-29 - Phase 16.1 context expanded with TOTP 2FA fold-in (commit daaeec0). Earlier today: SPEC.md v1.2+ roadmap append (commit 1eb8159).
 - **Progress:** [██████████] 97% (Phase 16 still awaiting UAT-16-C operational closure on a real weekday — independent of 16.1)
 - **Phase 16 status:** EXECUTING (Plan 2 of 5; weekday-blocked on UAT-16-B and UAT-16-C per `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md`). 16.1 can run in parallel with that wait per ROADMAP §16.1 "Depends on: Phase 13".
 
@@ -41,11 +41,17 @@ Plans: 2 of 2 written (16.1-01 Basic Auth wave + 16.1-02 cookie session wave; se
 ```
 git clone https://github.com/mwiriadi-blip/trading-signals.git
 cd trading-signals
+
 # Cloud Claude SessionStart hook auto-loads:
+
 #   - global ~/.claude/LEARNINGS.md (cloud's own copy — separate sync mechanism)
+
 #   - project-local .claude/LEARNINGS.md (5 trading-signals patterns from 2026-04-27)
+
 #   - CLAUDE.md (project conventions)
+
 #   - .planning/STATE.md (this file — current position)
+
 /gsd-execute-phase 16.1
 ```
 
