@@ -32,7 +32,7 @@ Plans: 2 of 2 written (16.1-01 Basic Auth wave + 16.1-02 cookie session wave; se
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Ready to execute (run `/gsd-execute-phase 16.1` — Wave 1 is autonomous, Wave 2 has a UAT checkpoint at the end)
-- **Last activity:** 2026-04-27 - Phase 16.1 plans created (commit 1383a26); learnings + .gitignore added (commit a577fde); pushed to origin/main
+- **Last activity:** 2026-04-29 - Quick task 260429-b3e: appended v1.2+ long-term roadmap reference to SPEC.md (commit 1eb8159)
 - **Progress:** [██████████] 97% (Phase 16 still awaiting UAT-16-C operational closure on a real weekday — independent of 16.1)
 - **Phase 16 status:** EXECUTING (Plan 2 of 5; weekday-blocked on UAT-16-B and UAT-16-C per `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md`). 16.1 can run in parallel with that wait per ROADMAP §16.1 "Depends on: Phase 13".
 
@@ -231,6 +231,7 @@ None at the GSD-session level. Three operator-owned prerequisites (domain / drop
 | 260421-723 | Phase 1 REVIEWS pass-2 follow-up: oracle-hash comment + test_compute_indicators_is_idempotent + tests/regenerate_scenarios.py | 2026-04-21 | 2ace992 | [260421-723-add-oracle-hash-comment-test-compute-ind](./quick/260421-723-add-oracle-hash-comment-test-compute-ind/) |
 | 260425-91t | Document SIGNALS_EMAIL_FROM env-var contract in .env.example and PROJECT.md (no source change — Phase 12 D-16 already removed the hardcoded constant) | 2026-04-24 | _pending_ | [260425-91t-make-email-from-in-notifier-py-env-overr](./quick/260425-91t-make-email-from-in-notifier-py-env-overr/) |
 | 260426-vcw | Phase 12 HTTPS reconcile — sync nginx/signals.conf comments with deployed state, add port-80 redirect, delete duplicate | 2026-04-26 | 70431c9 | [260426-vcw-phase-12-https-reconcile-sync-nginx-sign](./quick/260426-vcw-phase-12-https-reconcile-sync-nginx-sign/) |
+| 260429-b3e | Append v1.2+ long-term roadmap reference to SPEC.md (paper-ledger, multi-user 2FA, calc transparency, news, audit, backtest gate) | 2026-04-29 | 1eb8159 | [260429-b3e-update-spec-md-with-v1-2-long-term-roadm](./quick/260429-b3e-update-spec-md-with-v1-2-long-term-roadm/) |
 
 ### Warnings (roadmap-level)
 
