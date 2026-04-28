@@ -1,9 +1,9 @@
 # Requirements — Trading Signals v1.1
 
 **Milestone:** v1.1 Interactive Trading Workstation
-**Defined:** 2026-04-24 (Phase 16.1 AUTH-04..AUTH-07 inserted 2026-04-27)
-**Total:** 35 requirements across 8 categories
-**Mapped to phases:** 35/35
+**Defined:** 2026-04-24 (Phase 16.1 AUTH-04..AUTH-07 inserted 2026-04-27; AUTH-08..AUTH-12 added 2026-04-29 per `/gsd-discuss-phase 16.1` TOTP fold-in — see `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-CONTEXT.md` Areas E + F)
+**Total:** 40 requirements across 8 categories (was 35 before 2026-04-29)
+**Mapped to phases:** 40/40
 **Coverage:** 100% (0 orphans, 0 duplicates)
 
 ---
@@ -29,6 +29,11 @@
 - [ ] **AUTH-05**: New auth path is **additive**, not replacing — the existing `X-Trading-Signals-Auth` header still authenticates a request. Phase 14 HTMX forms in the dashboard (which carry `hx-headers='{"X-Trading-Signals-Auth": "..."}'`) keep working unchanged; `curl -H "X-Trading-Signals-Auth: <secret>" https://signals.<owned-domain>.com/` still returns 200.
 - [ ] **AUTH-06**: Auth strength does not weaken — single-operator scope preserved; `WEB_AUTH_SECRET` stays in droplet `.env` only (no database, no on-disk credential store); `hmac.compare_digest` stays for constant-time comparison; no new HTTP method, header, or path opens an unauthenticated route.
 - [ ] **AUTH-07**: `/healthz` stays exempt from the new auth path (per Phase 13 D-02 EXEMPT_PATHS); for any unauthenticated request that did NOT come through the new operator-UX path (e.g. raw `curl` without header), the failure response stays `401 unauthorized` plain text — the existing curl/script integration contract is preserved verbatim.
+- [ ] **AUTH-08**: First-login web flow enrolls TOTP — when operator visits `/login` with valid username + password and no `auth.json.totp_secret` exists, server generates a fresh TOTP secret (`pyotp.random_base32()`), redirects to `/enroll-totp` with a 10-minute `tsi_enroll` cookie, renders QR code (issuer `Trading Signals`, account `<username>@signals.mwiriadi.me`) plus manual-entry fallback string and a 6-digit verify field; valid code finalises enrollment (auth.json: `totp_enrolled=True`) and issues `tsi_session`. Phase 16.1 16.1-CONTEXT E-03.
+- [ ] **AUTH-09**: TOTP verified on every cookie-session start UNLESS a valid `tsi_trusted` cookie matches an unrevoked uuid in `auth.json.trusted_devices` — when valid creds + enrolled state, server sets a 10-minute `tsi_pending` cookie, redirects to `/verify-totp`; valid 6-digit code (via `pyotp.TOTP(secret).verify(code, valid_window=1)`) issues `tsi_session`; invalid code re-renders generic error. Phase 16.1 16.1-CONTEXT E-04.
+- [ ] **AUTH-10**: Trusted-device cookie + per-device revocation — operator can opt to "trust this device for 30 days" on `/verify-totp`; server issues `tsi_trusted=<itsdangerous-signed-uuid>` (30d, Secure, HttpOnly, SameSite=Strict) and records `{uuid, label, granted_at, last_seen, revoked, revoked_at}` in `auth.json.trusted_devices`. `/devices` route renders revocable list (cookie-session only — header path returns 403); `POST /devices/revoke` and `POST /devices/revoke-all` flip the revoked flag. Revoked uuids retained for audit. Phase 16.1 16.1-CONTEXT E-05, E-06.
+- [ ] **AUTH-11**: Magic-link email reset to `OPERATOR_RECOVERY_EMAIL` (default `mwiriadi@gmail.com`) — `/login` page exposes "Lost 2FA?" form requiring username + password; on match, server stores SHA256-hashed `URLSafeTimedSerializer(WEB_AUTH_SECRET, salt='magic-link')` token in `auth.json.pending_magic_links` with 1h `expires_at`, sends Resend email via existing `notifier.py` adapter. Click link → `GET /reset-totp?token=<...>` validates signature + expiry + not-consumed → marks consumed → issues one-time `tsi_session` → redirects to `/enroll-totp?reset=1` (operator chooses "keep current" or "set up new"). `/forgot-2fa` always returns the same generic "Check your email" page regardless of credential validity. Rate limited per 16.1-CONTEXT F-08. Phase 16.1 16.1-CONTEXT E-07, F-02, F-03, F-06.
+- [ ] **AUTH-12**: Basic Auth path REMOVED — `Authorization: Basic <b64>` no longer accepted by `AuthMiddleware`. Browser navigation without auth always returns `302 → /login`. Cookie+TOTP becomes the sole browser-friendly path. Header path (`X-Trading-Signals-Auth`) unchanged (AUTH-05 preserved verbatim — used by curl/scripts/HTMX forms). Phase 16.1 16.1-CONTEXT E-01 (supersedes D-01, D-06, parts of D-07).
 
 ## TRADE — Interactive trade journal
 

@@ -5,7 +5,7 @@
 **Start phase:** 10 (continuing from v1.0 which closed at Phase 9)
 **Granularity:** fine
 **Parallelization:** true
-**Coverage:** 35/35 v1.1 requirements mapped (WEB 7, AUTH 7, TRADE 6, CALC 4, SENTINEL 3, BUG 1, INFRA 4, CHORE 3) — AUTH-04..AUTH-07 added 2026-04-27 with Phase 16.1 insertion
+**Coverage:** 40/40 v1.1 requirements mapped (WEB 7, AUTH 12, TRADE 6, CALC 4, SENTINEL 3, BUG 1, INFRA 4, CHORE 3) — AUTH-04..AUTH-07 added 2026-04-27 with Phase 16.1 insertion; AUTH-08..AUTH-12 added 2026-04-29 via TOTP fold-in into Phase 16.1 (see `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-CONTEXT.md` Areas E + F)
 
 **Core Value (v1.1):** Transform the v1.0 email-only CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels. Architecture locked: DO droplet runtime (systemd) + GitHub (source + state history via deploy-key push-back) + FastAPI + uvicorn + nginx + Let's Encrypt + HTMX (no React) + shared-secret header auth.
 
@@ -277,7 +277,7 @@ Per-phase counts: Phase 10 = 4, Phase 11 = 4, Phase 12 = 3, Phase 13 = 5, Phase 
 
 **Depends on**: Phase 13 (loosened from "Phase 16" per insertion-commit note: 16.1 only needs the existing `AuthMiddleware` from Phase 13 to extend; it does not need Phase 16's UAT-completion to ship). Can run in parallel with the natural weekday-gated wait for UAT-16-C closure.
 
-**Requirements**: AUTH-04, AUTH-05, AUTH-06, AUTH-07
+**Requirements**: AUTH-04, AUTH-05, AUTH-06, AUTH-07, AUTH-08, AUTH-09, AUTH-10, AUTH-11, AUTH-12 (AUTH-08..AUTH-12 added 2026-04-29 via TOTP 2FA fold-in — see `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-CONTEXT.md` Areas E + F)
 
 **Success Criteria** (what must be TRUE):
   1. Visiting `https://signals.<owned-domain>.com/` from a real iPhone (Safari **and** Chrome, no extension installed) yields a usable rendered dashboard, not the plain-text `unauthorized` response. Verified by an operator-performed phone UAT scenario captured in `16.1-HUMAN-UAT.md` (mirrors the Phase 16 UAT pattern).
@@ -285,6 +285,6 @@ Per-phase counts: Phase 10 = 4, Phase 11 = 4, Phase 12 = 3, Phase 13 = 5, Phase 
   3. Auth strength is preserved — `WEB_AUTH_SECRET` stays in droplet `.env` only (no new database, no on-disk credential store); `hmac.compare_digest` stays on the comparison hot-path; a code-search test asserts no plaintext-comparison operator (`==`) is used against `WEB_AUTH_SECRET` anywhere in `web/`.
   4. `/healthz` stays exempt (per Phase 13 D-02 EXEMPT_PATHS) — `curl https://signals.<owned-domain>.com/healthz` returns 200 with no auth, regression test asserts. For any unauthenticated request that did NOT come through the new operator-UX path (raw `curl` without header, no cookie, no Basic Auth), the failure response is still `401 unauthorized` plain text — no body change, no header leak about the new path's existence.
 
-**Plans**: TBD (run /gsd-discuss-phase 16.1 first to capture mechanism decision + constraints, then /gsd-plan-phase 16.1 to break down)
+**Plans**: 2 plan files exist (16.1-01-PLAN.md, 16.1-02-PLAN.md) but PRE-DATE the 2026-04-29 TOTP fold-in. They MUST be regenerated via `/gsd-plan-phase 16.1` to reflect Areas E + F decisions (Basic Auth removed, TOTP enrollment + verify added, trusted-device + magic-link reset added). Recommended new structure (per F-09): 3 plans — 16.1-01 cookie-login + TOTP enrollment/verify + auth_store.py; 16.1-02 trusted-device + /devices page; 16.1-03 magic-link reset + email helper + rate limits.
 
-**UI hint**: yes (login form / Basic Auth dialog / cookie-session UX — depends on mechanism chosen in discuss-phase)
+**UI hint**: yes — login form, TOTP enrollment page (QR code), TOTP verify page (6-digit input + trust-device checkbox), `/devices` management page, magic-link reset confirmation pages. UI design contract in `16.1-UI-SPEC.md` PRE-DATES TOTP fold-in and may need a supplementary section per `/gsd-ui-phase 16.1` re-run.
