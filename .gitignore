@@ -1,4 +1,5 @@
 state.json
+auth.json
 dashboard.html
 last_email.html
 .env

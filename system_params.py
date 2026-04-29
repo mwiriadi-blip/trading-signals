@@ -170,3 +170,26 @@ class Position(TypedDict):
 LOOP_SLEEP_S: int = 60                   # tick-budget between schedule.run_pending calls (D-01)
 SCHEDULE_TIME_UTC: str = '00:00'         # 08:00 AWST = 00:00 UTC — passed to schedule.at() (D-07)
 WEEKDAY_SKIP_THRESHOLD: int = 5          # weekday() >= 5 means Sat/Sun (stdlib contract; D-03)
+
+# =========================================================================
+# Phase 16.1 auth/TOTP constants (added 2026-04-29)
+# =========================================================================
+# F-04 / F-05: pyotp parameters and issuer label.
+# D-11: tsi_session 12h TTL.
+# Salts share the 'tsi-*-cookie' root for grep-discoverability (LEARNING 2026-04-27).
+
+TOTP_ISSUER: str = 'Trading Signals'
+TOTP_DIGITS: int = 6
+TOTP_PERIOD: int = 30
+TOTP_VALID_WINDOW: int = 1
+
+TSI_SESSION_TTL_SECONDS: int = 43200  # 12 hours (D-11)
+TSI_PENDING_TTL_SECONDS: int = 600    # 10 minutes
+TSI_ENROLL_TTL_SECONDS: int = 600     # 10 minutes
+
+TSI_SESSION_SALT: str = 'tsi-session-cookie'
+TSI_PENDING_SALT: str = 'tsi-pending-cookie'
+TSI_ENROLL_SALT: str = 'tsi-enroll-cookie'
+
+TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
+AUTH_JSON_PATH: str = 'auth.json'

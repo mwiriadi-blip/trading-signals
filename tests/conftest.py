@@ -22,35 +22,100 @@ Single source of truth (REVIEWS LOW #6):
   VALID_SECRET is defined ONCE here. Test files import it from conftest
   rather than redefining the constant.
 '''
+import time
+
 import pytest
 
 # Phase 13 D-17: 32 chars meets the minimum-length check
 # (≈128 bits of entropy via openssl rand -hex 16).
 VALID_SECRET = 'a' * 32
 
+# Phase 16.1 D-08: sentinel username — non-empty, no ':' character.
+VALID_USERNAME = 'marc'
+
 # Phase 13 AUTH-01: header name (single source of truth across all web tests).
 AUTH_HEADER_NAME = 'X-Trading-Signals-Auth'
 
 
 @pytest.fixture(autouse=True)
-def _set_web_auth_secret_for_web_tests(monkeypatch, request):
-  '''Phase 13 D-16/D-17 REVIEWS HIGH fix.
+def _set_web_auth_credentials_for_web_tests(monkeypatch, request):
+  '''Phase 13 D-16/D-17 + Phase 16.1 D-08 REVIEWS HIGH fix.
 
-  create_app() raises RuntimeError if WEB_AUTH_SECRET is missing/short
-  (Plan 13-02). This autouse fixture runs before every test in ANY file
-  matching test_web_*.py and supplies a valid 32-char sentinel secret,
-  so existing Phase 11 healthz tests (which call create_app() directly
-  in test bodies) and new Phase 13 tests all see the env var set.
+  create_app() raises RuntimeError if WEB_AUTH_SECRET or WEB_AUTH_USERNAME is
+  missing/short (Plan 13-02 + Plan 16.1-01). This autouse fixture runs before
+  every test in any file matching test_web_*.py OR test_auth_store_*.py and
+  supplies the valid sentinel credentials. This covers:
+    - The Phase 11 `app_instance` fixture at tests/test_web_healthz.py:22
+    - The 11 direct create_app() invocations in tests/test_web_healthz.py
+    - All Phase 13/14/16.1 web test files (auth_middleware, dashboard, state,
+      app_factory, trades, routes_login, routes_totp)
+    - Phase 16.1 auth_store tests (rely on env vars only via fixture flow-through)
 
-  Tests that intentionally test the missing-secret path (e.g.
-  TestSecretValidation in tests/test_web_app_factory.py) call
-  monkeypatch.delenv('WEB_AUTH_SECRET', raising=False) themselves to
-  override the autouse default — pytest's monkeypatch teardown is
-  function-scoped and LIFO, so delenv after setenv within a single test
-  behaves as expected.
+  Tests that intentionally test the missing-credential path (e.g.
+  TestSecretValidation, TestUsernameValidation in tests/test_web_app_factory.py)
+  call `monkeypatch.delenv(...)` themselves — pytest's function-scoped
+  monkeypatch applies finalizers in LIFO order, so the test's delenv runs
+  AFTER the autouse setenv (same-scope teardown), effectively overriding
+  the autouse default.
+
+  Single source of truth (REVIEWS LOW #6):
+    VALID_SECRET and VALID_USERNAME are defined ONCE here. Test files import
+    them from conftest rather than redefining the constants.
   '''
-  if 'test_web_' in str(request.node.fspath):
+  fspath = str(request.node.fspath)
+  if 'test_web_' in fspath or 'test_auth_store' in fspath:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', VALID_USERNAME)
+
+
+# =============================================================================
+# Phase 16.1 — signed-cookie token fixtures (Plan 16.1-01)
+# =============================================================================
+#
+# Build tokens via the SAME serializer the production middleware uses
+# (URLSafeTimedSerializer with the matching salt and the VALID_SECRET).
+# Salts mirror system_params.TSI_*_SALT verbatim — alignment per LEARNING
+# 2026-04-27 (grep-discoverability of cookie name + cookie salt as a unit).
+
+
+@pytest.fixture
+def valid_cookie_token() -> str:
+  '''Phase 16.1: tsi_session-shaped signed token built with VALID_SECRET.
+
+  Mirrors the production cookie payload {'u': username, 'iat': now} per
+  Plan 16.1-01 D-10 / E-04. Use in tests that need a cookie that the
+  middleware's _try_cookie helper will accept as valid.
+  '''
+  from itsdangerous.url_safe import URLSafeTimedSerializer
+  serializer = URLSafeTimedSerializer(VALID_SECRET, salt='tsi-session-cookie')
+  return serializer.dumps({'u': VALID_USERNAME, 'iat': int(time.time())})
+
+
+@pytest.fixture
+def valid_pending_token() -> str:
+  '''Phase 16.1: tsi_pending-shaped signed token (post-/login pre-/verify-totp).
+
+  Payload includes {'pwd_ok': True} so /verify-totp can short-circuit on the
+  cookie alone. 10-min TTL via system_params.TSI_PENDING_TTL_SECONDS.
+  '''
+  from itsdangerous.url_safe import URLSafeTimedSerializer
+  serializer = URLSafeTimedSerializer(VALID_SECRET, salt='tsi-pending-cookie')
+  return serializer.dumps({
+    'u': VALID_USERNAME, 'iat': int(time.time()), 'next': '/', 'pwd_ok': True,
+  })
+
+
+@pytest.fixture
+def valid_enroll_token() -> str:
+  '''Phase 16.1: tsi_enroll-shaped signed token (post-/login pre-/enroll-totp).
+
+  10-min TTL via system_params.TSI_ENROLL_TTL_SECONDS. Plan 16.1-01 E-03.
+  '''
+  from itsdangerous.url_safe import URLSafeTimedSerializer
+  serializer = URLSafeTimedSerializer(VALID_SECRET, salt='tsi-enroll-cookie')
+  return serializer.dumps({
+    'u': VALID_USERNAME, 'iat': int(time.time()), 'next': '/',
+  })
 
 
 @pytest.fixture
