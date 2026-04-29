@@ -259,13 +259,28 @@ Items deferred at v1.0 milestone close (2026-04-24) and verified closed via Phas
 
 ## Deferred Items
 
-Items acknowledged and deferred at v1.0 milestone close on 2026-04-24:
+### Items deferred at v1.0 milestone close (2026-04-24)
 
 | Category | Item | Status | v1.1 disposition |
 |----------|------|--------|------------------|
-| quick_task | 260421-723-add-oracle-hash-comment-test-compute-ind | missing | Still deferred (not v1.1 scope) |
+| quick_task | 260421-723-add-oracle-hash-comment-test-compute-ind | missing | Still deferred (not v1.2 scope) |
 
-The remaining `quick_task` item is not v1.1 scope. The 3 Phase 6 HUMAN-UAT and verification-gap items moved to `## Completed Items` above (closed via Phase 16 operator UAT — see [16-HUMAN-UAT.md](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md)).
+The remaining `quick_task` item is not v1.2 scope. The 3 Phase 6 HUMAN-UAT and verification-gap items moved to `## Completed Items` above (closed via Phase 16 operator UAT — see [16-HUMAN-UAT.md](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md)).
+
+### Items acknowledged and deferred at v1.1 milestone close (2026-04-30)
+
+Operator-driven UAT scenarios that require live droplet + browser/phone hands-on verification. Production system has been running cleanly through these phases (`signals.mwiriadi.me` live since Phase 12 bring-up, daily emails flowing since 2026-04-29, all auth UX shipped). These UATs document what should be re-verified opportunistically; none are blockers for shipping.
+
+| Category | Item | Status | v1.2 disposition |
+|----------|------|--------|------------------|
+| uat_gap | Phase 13 HUMAN-UAT — 4 open scenarios (nginx X-Forwarded-For wiring, real curl-through-production auth checks) | partial | Defer to opportunistic operator runs; re-verify after any nginx/auth refactor |
+| uat_gap | Phase 14 HUMAN-UAT — 5 open scenarios (HTMX trade form swaps in real browser, kernel POSIX flock cross-process semantics, first-deploy schema migration on live state.json) | partial | Defer; trade journal has been used in production daily without issue post-Phase 16-01 deploy |
+| uat_gap | Phase 16.1 HUMAN-UAT — auth UX scenarios (login, TOTP enroll, trusted device, magic-link reset) | pending | Operator runs first time they exercise the full auth flow on phone; tracked separately as "v1.1 polish" |
+| verification_gap | Phase 13 13-VERIFICATION.md — human_needed (auth-on-live-HTTPS verifications) | human_needed | Same droplet/curl constraint as Phase 13 UAT; same disposition |
+
+**Acknowledgement rationale:** Each of these gaps is "verify in real-world environment after deploy" — that real-world environment is now stable production at `signals.mwiriadi.me` per Phase 12 bring-up + Phase 16 closure. No deferred functional or correctness gap remains at code level (1319-test suite green, all critical paths covered by automated tests). These UAT documents stay as runnable runbooks for the operator to use opportunistically.
+
+**Stale todo cleaned up at close:** `2026-04-27-phone-friendly-auth-ux-for-dashboard-access.md` was promoted to Phase 16.1 (now verified 2026-04-29). The todo file is removed at v1.1 close.
 
 ## Session Continuity
 

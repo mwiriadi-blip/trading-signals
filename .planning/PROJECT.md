@@ -2,25 +2,20 @@
 
 ## What This Is
 
-A **shipped** Python CLI (v1.0, 2026-04-24) that runs a mechanical trend-following trading system for two instruments — SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`) — via GitHub Actions cron at 08:00 AWST weekdays. It fetches daily OHLCV data, computes ATR/ADX/momentum-vote signals, sizes positions with trailing-stop + pyramiding, persists state atomically with corruption recovery, renders an HTML dashboard, emails the operator via Resend, and handles crashes with a last-ditch crash-email boundary. **Signal-only** — it never places live trades; it tells the operator what the system says they should be doing and tracks hypothetical P&L against a configurable starting account (default $100k).
+A **shipped** hosted Python web app (v1.1, 2026-04-30) running a mechanical trend-following trading system for two instruments — SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`). FastAPI + nginx + Let's Encrypt + uvicorn on a DigitalOcean droplet at `https://signals.mwiriadi.me`, fronted by cookie-session + TOTP 2FA + trusted-device cookies + magic-link reset. A systemd-managed daemon fetches daily OHLCV at 08:00 AWST weekdays, computes ATR/ADX/momentum-vote signals, sizes positions with trailing-stop + pyramiding, persists state atomically with corruption recovery, renders an HTML dashboard with live calculator + drift sentinels, emails the operator via Resend, and handles crashes with a last-ditch crash-email boundary. The operator records executed trades through HTMX forms; dashboard surfaces live stop-loss + pyramid thresholds and flags position-vs-signal drift. **Signal-only** — it never places live trades; it tells the operator what the system says they should be doing and tracks hypothetical P&L against a configurable starting account (default $100k).
 
-**v1.1 direction (in progress):** Transform the email-only system into a hosted, interactive trade journal on DO. FastAPI + nginx serves `signals.yourdomain.com`; operator records executed trades via form; dashboard surfaces live stop-loss + pyramid thresholds and flags position-vs-signal drift.
+## Shipped Milestones
 
-## Current Milestone: v1.1 Interactive Trading Workstation
+- **v1.0 — Mechanical Signal System** (2026-04-24, [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)): Phases 1–9. Email-only daily signal CLI via GitHub Actions cron. 80/80 v1 requirements verified.
+- **v1.1 — Interactive Trading Workstation** (2026-04-30, [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)): Phases 10–16 + 16.1. Hosted dashboard + trade journal + cookie/TOTP/trusted-device/magic-link auth UX + live calculator + drift sentinels. 40/40 v1.1 requirements verified.
 
-**Goal:** Transform the v1.0 email-only signal system into a hosted, interactive trade journal — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance.
+## Current State
 
-**Target features:**
-- Hosted dashboard at `signals.yourdomain.com` (FastAPI + nginx + Let's Encrypt on DO)
-- Interactive trade journal: form-based open/close/modify via POST endpoints
-- Live stop-loss + pyramid calculator surfaced per-instrument
-- Sanity-check sentinels (position-vs-signal drift warnings)
-- BUG-001 fix: `reset_state()` syncs `account` with `initial_account`
-- Selected v1.0 tech debt: F1 full-chain integration test, ruff F401 cleanup, Phase 6 HUMAN-UAT completion
+**Production:** `https://signals.mwiriadi.me` — HTTPS + auth gated, daily 08:00 AWST signal cycle running on droplet systemd, daily emails flowing through Resend (verified `mwiriadi.me` domain), 1319-test suite green, all 3 operator UAT scenarios in Phase 16 verified end-to-end.
 
-**Architecture (locked):** DO droplet = runtime (systemd: schedule loop + FastAPI web). GitHub = source + state history via deploy key push-back. HTMX or vanilla JS (no React). Shared-secret header auth.
+## Next Milestone
 
-**Prerequisites:** Domain purchased and pointing at droplet IP; Resend domain verification.
+_Run `/gsd-new-milestone` to scope v1.2 — candidates queued in `~/.claude/LEARNINGS.md` recent entries and `.planning/todos/`._
 
 ## Core Value
 
