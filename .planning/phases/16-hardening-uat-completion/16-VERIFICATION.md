@@ -1,8 +1,8 @@
 ---
 phase: 16-hardening-uat-completion
-verified: 2026-04-29T10:38:00Z
-status: partial
-score: 4/4 must-haves verified; 2/3 operator-UAT scenarios verified, 1/3 pending per D-17
+verified: 2026-04-30T00:00:00Z
+status: verified
+score: 4/4 must-haves verified; 3/3 operator-UAT scenarios verified
 overrides_applied: 0
 re_verifications:
   - date: 2026-04-26T12:30:00Z
@@ -11,11 +11,10 @@ re_verifications:
   - date: 2026-04-29T10:38:00Z
     status: partial
     note: "UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up). UAT-16-B verified 2026-04-29 (operator inspected production email in Gmail mobile, all 5 D-10 criteria pass; closure unblocked by quick task 260429-sdp commit 879730d which fixed silent scheduler-loop email dispatch regression). UAT-16-C still pending per D-17 escape hatch — gated on organic drift weekday."
-human_verification:
-  - test: "Wait for organic drift on a real weekday run; open the resulting email in Gmail mobile app and confirm drift banner renders with red/amber border, subject carries [!] prefix, and dashboard shows a matching banner"
-    expected: "Drift banner visible in Gmail mobile with correct color; [!] in subject; dashboard banner matches for same instrument"
-    why_human: "Requires a live weekday trading day where positions are open and signal disagrees — cannot be synthesised without operator injecting a drifted state; real phone + real Gmail client required to verify Gmail CSS stripping behavior on v1.1 markup"
-    blocking_milestone_archive: true
+  - date: 2026-04-30T00:00:00Z
+    status: verified
+    note: "UAT-16-C verified — drift banner observed in 2026-04-30 daily email; red/amber border + [!] subject prefix + dashboard parity all confirmed. Phase 16 fully closed. v1.0 milestone archive unblocked."
+human_verification: []
 ---
 
 # Phase 16: Hardening + UAT Completion Verification Report
@@ -153,9 +152,9 @@ Scanned `tests/test_integration_f1.py`: no TODO/FIXME/placeholder comments; no e
 |----------|--------|--------------|----------------------|
 | UAT-16-A: Mobile Dashboard | **verified** | 2026-04-27 | Yes — Phase 12 HTTPS bring-up verified curl-through-production proof on signals.mwiriadi.me |
 | UAT-16-B: Mobile Gmail | **verified** | 2026-04-29 | Yes — operator inspected 2026-04-29 production email in Gmail mobile, all 5 D-10 criteria pass; pre-requisite fix shipped via quick task 260429-sdp (commit 879730d) which restored email dispatch on the scheduler-loop path |
-| UAT-16-C: Drift Banner Weekday | **pending** | — | Yes — structural parity via Phase 15 test; awaiting organic drift on a real weekday per D-17 escape hatch |
+| UAT-16-C: Drift Banner Weekday | **verified** | 2026-04-30 | Yes — drift banner observed in 2026-04-30 daily email with red/amber border + `[!]` subject prefix + dashboard banner parity (lockstep with D-12 contract) |
 
-Per D-17, UAT-16-C may stay `pending` past Plan 05 completion — verify-work returns PARTIAL until it flips. The phase is "closed with caveat" for UAT-16-C; v1.0 milestone archive blocks on UAT-16-C closure.
+All three scenarios `verified`. Phase 16 closed. v1.0 milestone archive unblocked.
 
 ### SC-4: STATE.md deferred items correctly migrated
 
@@ -171,9 +170,9 @@ Verified by direct grep on STATE.md:
 
 ## Gaps Summary
 
-No blocking gaps for code-side or non-drift UAT. All 4 SCs are observable in the codebase and artifacts. UAT-16-A (mobile dashboard) and UAT-16-B (mobile Gmail email) are now `verified` as of 2026-04-29. The single open item (UAT-16-C real-weekday Gmail drift observation) is an explicit acceptable deferral per D-17 — documented with operator notes, a clear re-verification path, and no ambiguity about what "done" looks like when it triggers.
+**No gaps remaining.** All 4 SCs verified, all 3 UAT scenarios verified.
 
-**Phase status: PARTIAL.** Closes when UAT-16-C flips `pending → verified` after the operator observes a drift banner in a real weekday email. v1.0 milestone archive blocked until then.
+**Phase status: VERIFIED.** v1.0 milestone archive unblocked — proceed to `/gsd-complete-milestone v1.0`.
 
 ---
 
@@ -191,6 +190,19 @@ Plan 16-04 (Wave 3 per REVIEWS H-3) reads operator-marked verification dates fro
 
 ---
 
-_Initial verification: 2026-04-26T12:30:00Z_
-_Re-verified: 2026-04-29T10:38:00Z_
+## 2026-04-30 Final Verification — UAT-16-C Closed
+
+Operator confirmed drift banner observed in the 2026-04-30 daily 08:00 AWST email. All three UAT-16-C acceptance criteria pass:
+
+1. **Drift banner renders with red/amber border** — Phase 15 D-12 inline-CSS inheritance pattern (from Phase 8 corruption/stale banners) survives Gmail mobile's CSS stripping correctly
+2. **Subject carries `[!]` critical prefix** — `_has_critical_banner` extension to the `'drift'` source key (SENTINEL-03) emitting correctly
+3. **Dashboard at signals.mwiriadi.me shows matching banner** — D-12 lockstep parity confirmed in production
+
+Phase 16 verdict: **VERIFIED**. v1.0 milestone archive is now unblocked. Next action: `/gsd-complete-milestone v1.0`.
+
+---
+
+_Initial verification: 2026-04-26T12:30:00Z (human_needed)_
+_Re-verified: 2026-04-29T10:38:00Z (partial)_
+_Final verification: 2026-04-30T00:00:00Z (verified)_
 _Verifier: Claude (gsd-verifier)_

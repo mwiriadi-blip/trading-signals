@@ -33,8 +33,8 @@ Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Phase 16.1 verified — operator UAT pending
 - **Last activity:** 2026-04-29 — Phase 16.1 executed (Waves 1+2+3) and verified (PASSED). 1234 tests passing; 12 deferred (pre-existing nginx/HTTPS doc drift + ruff binary missing in test env, all logged in `deferred-items.md`).
-- **Progress:** [██████████] 97% (Phase 16 still awaiting UAT-16-C operational closure on a real weekday — independent of 16.1)
-- **Phase 16 status:** EXECUTING (Plan 2 of 5; weekday-blocked on UAT-16-B and UAT-16-C per `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md`). 16.1 can run in parallel with that wait per ROADMAP §16.1 "Depends on: Phase 13".
+- **Progress:** [██████████] 100% (Phase 16 fully closed 2026-04-30 — all 3 UAT scenarios verified; Phase 16.1 verified 2026-04-29; ready for milestone archive)
+- **Phase 16 status:** VERIFIED (5/5 plans complete; UAT-16-A 2026-04-27, UAT-16-B 2026-04-29, UAT-16-C 2026-04-30). v1.0 milestone archive unblocked — next action: `/gsd-complete-milestone v1.0`.
 
 ### Resume instructions for cloud Claude / fresh clone
 
@@ -251,11 +251,11 @@ Items deferred at v1.0 milestone close (2026-04-24) and verified closed via Phas
 
 | Category | Item | Verified | Date | Artifact |
 |----------|------|----------|------|----------|
-| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-A/B/C](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md) |
+| uat_gap | Phase 06 HUMAN-UAT (3 pending scenarios — Gmail rendering verification) | yes | 2026-04-30 | [16-HUMAN-UAT.md §UAT-16-A/B/C](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md) |
 | verification_gap | Phase 05 VERIFICATION (dashboard HTML visual check) | yes | 2026-04-27 | [16-HUMAN-UAT.md §UAT-16-A](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-a-mobile-dashboard-rendering) |
-| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | partial | 2026-04-26 | [16-HUMAN-UAT.md §UAT-16-B](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-b-mobile-gmail-email-rendering) |
+| verification_gap | Phase 06 VERIFICATION (email rendering visual check) | yes | 2026-04-29 | [16-HUMAN-UAT.md §UAT-16-B](./phases/16-hardening-uat-completion/16-HUMAN-UAT.md#uat-16-b-mobile-gmail-email-rendering) |
 
-> **Verification source:** Each row's `Verified` and `Date` columns were read from `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md` after Plan 16-05 closed (REVIEWS H-3). The uat_gap row's Verified column is `yes` only if ALL THREE scenarios (UAT-16-A, UAT-16-B, UAT-16-C) are `verified`; otherwise it is `partial` and the operator notes in 16-HUMAN-UAT.md document why. Per D-17, UAT-16-C may stay `pending` for multiple weekdays — in that case the uat_gap row is recorded as `partial` with today's migration date and the verification_gap rows for UAT-16-A and UAT-16-B close as `yes` earlier. All three scenarios were marked `partial` on 2026-04-26 (Mac-dev-proxy and local-render evidence accepted; real-phone-on-droplet and real-weekday-Gmail remain pending per D-17).
+> **Verification source:** Each row's `Verified` and `Date` columns are read from `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md` after Plan 16-05 closed (REVIEWS H-3). All three scenarios are now `verified`: UAT-16-A on 2026-04-27 (Phase 12 HTTPS bring-up + curl-through-production), UAT-16-B on 2026-04-29 (operator inspected production email in Gmail mobile, all 5 D-10 criteria pass; pre-requisite fix shipped via quick task `260429-sdp` commit `879730d` which restored email dispatch on the scheduler-loop path), UAT-16-C on 2026-04-30 (drift banner observed in 2026-04-30 daily email — red/amber border, `[!]` subject prefix, dashboard banner parity confirmed). The uat_gap row is `yes` because all three scenarios closed; v1.0 milestone archive is unblocked.
 
 ## Deferred Items
 

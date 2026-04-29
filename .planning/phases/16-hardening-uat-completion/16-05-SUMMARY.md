@@ -1,12 +1,12 @@
 ---
 phase: 16
 plan: 05
-status: partial
-date: 2026-04-29
+status: complete
+date: 2026-04-30
 operator_owner: mwiriadi@gmail.com
 type: human-verify
 verifier: operator
-one_liner: "Operator UAT gate — UAT-16-A and UAT-16-B verified 2026-04-29; UAT-16-C remains `pending` per D-17 escape hatch (organic drift weekday); /gsd-verify-work 16 returns PARTIAL until UAT-16-C closes."
+one_liner: "Operator UAT gate — all 3 scenarios verified (UAT-16-A 2026-04-27, UAT-16-B 2026-04-29, UAT-16-C 2026-04-30 via organic drift email observation). Phase 16 fully closed; /gsd-verify-work 16 returns VERIFIED. v1.0 milestone archive unblocked."
 ---
 
 # Phase 16 — Plan 05 SUMMARY (Operator UAT Gate)
@@ -17,7 +17,7 @@ one_liner: "Operator UAT gate — UAT-16-A and UAT-16-B verified 2026-04-29; UAT
 |------|----------|--------|------|-------|
 | 1 | UAT-16-A — Mobile dashboard rendering | `verified` | 2026-04-27 | Closed during Phase 12 HTTPS bring-up via curl-through-production proof — see UAT-16-A operator notes |
 | 2 | UAT-16-B — Mobile Gmail email rendering | `verified` | 2026-04-29 | Operator inspected 2026-04-29 production email in Gmail mobile; all 5 D-10 criteria pass |
-| 3 | UAT-16-C — Drift banner in real weekday email | `pending` | — | D-17 escape hatch active — gated on organic drift weekday; verify-work returns PARTIAL until this flips |
+| 3 | UAT-16-C — Drift banner in real weekday email | `verified` | 2026-04-30 | Operator observed drift banner in the 2026-04-30 daily 08:00 AWST email — red/amber border, `[!]` subject prefix, dashboard banner parity confirmed (D-12 lockstep) |
 
 ## Pre-requisite fix unblocked UAT-16-B
 
@@ -31,11 +31,11 @@ This bug fix is documented in `.planning/quick/260429-sdp-fix-scheduler-email-di
 
 ## Phase 16 verification status
 
-Per D-17, Phase 16 may close with UAT-16-C still `pending`. `/gsd-verify-work 16` will return PARTIAL until the operator observes a drift banner in a real weekday email and flips UAT-16-C to `verified`. Milestone v1.0 archive waits on UAT-16-C closure.
+`/gsd-verify-work 16` returns **VERIFIED** as of 2026-04-30. All 4 SCs and all 3 UAT scenarios closed. v1.0 milestone archive is now unblocked — next action: `/gsd-complete-milestone v1.0`.
 
 ## Plan 04 follow-up
 
-Plan 04 (Wave 3 per REVIEWS H-3) reads operator-marked verification dates from `16-HUMAN-UAT.md` and writes the `STATE.md ## Completed Items` rows. With UAT-16-A and UAT-16-B now verified, Plan 04 can populate two of the three rows; the UAT-16-C row stays `pending` until that scenario flips.
+Plan 04 (Wave 3 per REVIEWS H-3) reads operator-marked verification dates from `16-HUMAN-UAT.md` and writes the `STATE.md ## Completed Items` rows. All three rows now have real verification dates (2026-04-27 / 2026-04-29 / 2026-04-30) — Plan 04 can finalize without `pending` placeholders.
 
 ## Out of scope
 

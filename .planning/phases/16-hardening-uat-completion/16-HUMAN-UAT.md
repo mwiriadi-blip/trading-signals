@@ -4,12 +4,12 @@ source: [16-CONTEXT.md D-09, D-10, D-17]
 related: [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md]
 created: 2026-04-26
 updated: 2026-04-27
-status: partial
+status: verified
 rollup_status_breakdown:
   UAT-16-A: verified
   UAT-16-B: verified
-  UAT-16-C: pending
-rollup_rationale: "UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up + curl-through-production proof). UAT-16-B verified 2026-04-29 — operator inspected the 2026-04-29 production email in Gmail mobile, all 5 D-10 acceptance criteria pass; this verification was unblocked by quick task `260429-sdp` (commit `879730d`) which fixed a silent scheduler-loop dispatch regression that had been preventing the droplet daemon from sending emails since 2026-04-23. UAT-16-C remains `pending` per D-17 escape hatch — gated on organic drift on a real weekday (no synthetic injection per CONTEXT.md Deferred Ideas). File-level status remains `partial` (worst-of-three rollup) until UAT-16-C closes; verify-work returns PARTIAL per D-17."
+  UAT-16-C: verified
+rollup_rationale: "All 3 scenarios verified. UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up + curl-through-production proof). UAT-16-B verified 2026-04-29 — operator inspected production email in Gmail mobile, all 5 D-10 acceptance criteria pass; closure unblocked by quick task `260429-sdp` (commit `879730d`) which fixed silent scheduler-loop dispatch regression that had been preventing droplet daemon from sending emails since 2026-04-23. UAT-16-C verified 2026-04-30 — drift banner observed in 2026-04-30 daily email (red/amber border, `[!]` subject prefix, dashboard banner matched). File-level status `verified`. v1.0 milestone archive unblocked."
 ---
 
 # Phase 16 — HUMAN-UAT (Operator Verification)
@@ -139,10 +139,24 @@ rollup_rationale: "UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up + curl-
 
 **Scenario ID: UAT-16-C**
 **Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Drift banner / signal-change scenarios)
-**Verification status:** partial
-**Operator verification date:** 2026-04-26
+**Verification status:** verified
+**Operator verification date:** 2026-04-30
 **Operator notes:**
 
+> **2026-04-30 upgrade — `partial` → `verified`:**
+>
+> Drift banner observed in the 2026-04-30 daily 08:00 AWST email. Operator confirmed all D-10 / D-12 lockstep-parity criteria:
+>
+> - Email's drift banner rendered with the expected red/amber border (Phase 15 D-12 inline-CSS inheritance from Phase 8 corruption/stale banners works correctly in real Gmail mobile)
+> - Subject carried the `[!]` critical prefix per `_has_critical_banner` extension to the `'drift'` source key (SENTINEL-03)
+> - Dashboard at `https://signals.mwiriadi.me/` showed a matching banner row for the same instrument (lockstep parity confirmed — D-12)
+>
+> **Status flip rationale:** the gap this row tracked was "real Gmail mobile rendering of the v1.1 drift banner markup on a real weekday". With the 2026-04-30 organic drift event, that gap is closed. v1.0 milestone archive is now unblocked.
+>
+> ---
+>
+> **Original 2026-04-26 partial-pass notes (preserved for audit trail):**
+>
 > Lockstep parity proven structurally by Phase 15 `test_drift_banner_body_parity_with_dashboard` (D-12) and Phase 8 inline-CSS inheritance (corruption/stale banners verified in real Gmail v1.0). Real-day-Gmail observation deferred to natural occurrence post-launch per D-17. If a future drift email reveals Gmail-rendering issues, opens a v1.2 fix-phase.
 
 **How to verify:**
@@ -164,7 +178,7 @@ rollup_rationale: "UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up + curl-
 |----------|--------|---------------|-----------------------------------------|
 | UAT-16-A | verified | 2026-04-27 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
 | UAT-16-B | verified | 2026-04-29 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
-| UAT-16-C | pending | — | uat_gap (Phase 06 HUMAN-UAT) — gated on organic drift weekday per D-17 |
+| UAT-16-C | verified | 2026-04-30 | uat_gap (Phase 06 HUMAN-UAT) — drift banner observed in 2026-04-30 daily email, lockstep parity confirmed |
 
 **Notes:**
 - Operator updates `Status` and `Operator Date` columns above as each scenario closes.
