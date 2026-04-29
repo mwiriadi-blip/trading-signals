@@ -17,6 +17,16 @@ D-XX (Phase 3): INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE 
 from typing import Literal, TypedDict
 
 # =========================================================================
+# Strategy version (Phase 22 D-01..D-03)
+# =========================================================================
+# Bump on signal-logic change ONLY (Mom periods, ADX gate cutoff, RVol
+# period, sizing weights, vote rule). Do NOT bump on UI / infra / email /
+# auth / test / docs changes. Style: MAJOR.MINOR.PATCH semver, 'v' prefix
+# to match git tags. Operator can grep `STRATEGY_VERSION = 'v` to find
+# every bump in git history. See docs/STRATEGY-CHANGELOG.md for entries.
+STRATEGY_VERSION: str = 'v1.2.0'
+
+# =========================================================================
 # Phase 1 constants — migrated from signal_engine.py (D-01)
 # =========================================================================
 
@@ -108,7 +118,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
 MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
-STATE_SCHEMA_VERSION: int = 3       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09)
+STATE_SCHEMA_VERSION: int = 4       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04)
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================
