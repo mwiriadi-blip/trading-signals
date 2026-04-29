@@ -47,6 +47,58 @@ VERIFY_PATH = '/verify-totp'
 
 _COOKIE_ATTRS_CREATE_SESSION = '; Max-Age=43200; Path=/; Secure; HttpOnly; SameSite=Strict'
 _COOKIE_ATTRS_DELETE = '; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict'
+# Phase 16.1 Plan 02 — tsi_trusted attrs (E-05). 30-day TTL; same Path/Secure/
+# HttpOnly/SameSite=Strict shape as tsi_session for deletion-attrs-match.
+_COOKIE_ATTRS_CREATE_TRUSTED = '; Max-Age=2592000; Path=/; Secure; HttpOnly; SameSite=Strict'
+
+
+def _derive_device_label(
+  user_agent: str, client_ip: str, granted_at_iso: str,
+) -> str:
+  '''Best-effort UA→browser-name + IP first-3-octets + ISO date label.
+
+  Format: '<UA-derived-name> · <ip-first-3-octets>.x · <YYYY-MM-DD>'
+  Examples:
+    iPhone Safari · 203.0.113.x · 2026-04-29
+    Unknown device · testclient · 2026-04-29
+
+  NOT used for security decisions — operator-readable display only (E-05).
+  '''
+  ua = user_agent or ''
+  if 'iPhone' in ua:
+    if 'CriOS' in ua:
+      name = 'iPhone Chrome'
+    elif 'FxiOS' in ua:
+      name = 'iPhone Firefox'
+    else:
+      name = 'iPhone Safari'
+  elif 'iPad' in ua:
+    name = 'iPad'
+  elif 'Android' in ua:
+    name = 'Android'
+  elif 'Macintosh' in ua and 'Chrome' in ua:
+    name = 'macOS Chrome'
+  elif 'Macintosh' in ua and 'Firefox' in ua:
+    name = 'macOS Firefox'
+  elif 'Macintosh' in ua:
+    name = 'macOS Safari'
+  elif 'Windows' in ua and 'Chrome' in ua:
+    name = 'Windows Chrome'
+  elif 'Windows' in ua:
+    name = 'Windows'
+  elif 'Linux' in ua:
+    name = 'Linux'
+  else:
+    name = 'Unknown device'
+
+  parts = (client_ip or '').split('.')
+  if len(parts) == 4 and all(p for p in parts):
+    ip_label = '.'.join(parts[:3]) + '.x'
+  else:
+    ip_label = client_ip or '-'
+
+  date_str = granted_at_iso.split('T')[0] if 'T' in granted_at_iso else granted_at_iso
+  return f'{name} · {ip_label} · {date_str}'
 
 # Reuse the open-redirect validator from web.routes.login (same shape, single
 # source of truth — no separate copy here).
@@ -301,6 +353,8 @@ def register(app: FastAPI) -> None:
   session_serializer = URLSafeTimedSerializer(secret, salt='tsi-session-cookie')
   pending_serializer = URLSafeTimedSerializer(secret, salt='tsi-pending-cookie')
   enroll_serializer = URLSafeTimedSerializer(secret, salt='tsi-enroll-cookie')
+  # Phase 16.1 Plan 02 — tsi_trusted (30d) issued when trust_device=on.
+  trusted_serializer = URLSafeTimedSerializer(secret, salt='tsi-trusted-cookie')
 
   def _validate_enroll_cookie(request: Request) -> dict | None:
     token = request.cookies.get('tsi_enroll')
@@ -408,7 +462,7 @@ def register(app: FastAPI) -> None:
   def post_verify(
     request: Request,
     code: str = Form(...),
-    trust_device: str = Form(default=''),  # Plan 02 wires the value
+    trust_device: str = Form(default=''),  # Plan 02: 'on' iff checkbox checked
   ) -> Response:
     payload = _validate_pending_cookie(request)
     if payload is None:
@@ -427,11 +481,37 @@ def register(app: FastAPI) -> None:
     if not _is_safe_next(next_value):
       next_value = '/'
     logger.info('[Web] totp verify success user=%s', username)
-    resp = Response(status_code=302, headers={'Location': next_value})
-    for sc in (
+
+    # Build the cookie set: always tsi_session + delete tsi_pending; optionally
+    # tsi_trusted when trust_device=on (Plan 02 E-04).
+    cookies_to_set = [
       _make_session_cookie(username),
       f'tsi_pending={_COOKIE_ATTRS_DELETE}',
-    ):
+    ]
+    if trust_device == 'on':
+      from datetime import datetime, timezone
+      xff = request.headers.get('x-forwarded-for', '')
+      client_ip = (
+        xff.split(',')[0].strip()
+        if xff
+        else (request.client.host if request.client else '-')
+      )
+      ua = request.headers.get('user-agent', '')
+      granted_at_iso = datetime.now(timezone.utc).isoformat()
+      label = _derive_device_label(ua, client_ip, granted_at_iso)
+      new_uuid = auth_store.add_trusted_device(label=label)
+      trusted_token = trusted_serializer.dumps({
+        'uuid': new_uuid, 'iat': int(time.time()),
+      })
+      cookies_to_set.append(
+        f'tsi_trusted={trusted_token}{_COOKIE_ATTRS_CREATE_TRUSTED}'
+      )
+      logger.info(
+        '[Web] trusted_device issued: uuid=%s label=%s', new_uuid, label,
+      )
+
+    resp = Response(status_code=302, headers={'Location': next_value})
+    for sc in cookies_to_set:
       resp.raw_headers.append((b'set-cookie', sc.encode('latin-1')))
     return resp
 
