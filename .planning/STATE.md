@@ -238,6 +238,7 @@ None at the GSD-session level. Three operator-owned prerequisites (domain / drop
 | 260425-91t | Document SIGNALS_EMAIL_FROM env-var contract in .env.example and PROJECT.md (no source change — Phase 12 D-16 already removed the hardcoded constant) | 2026-04-24 | _pending_ | [260425-91t-make-email-from-in-notifier-py-env-overr](./quick/260425-91t-make-email-from-in-notifier-py-env-overr/) |
 | 260426-vcw | Phase 12 HTTPS reconcile — sync nginx/signals.conf comments with deployed state, add port-80 redirect, delete duplicate | 2026-04-26 | 70431c9 | [260426-vcw-phase-12-https-reconcile-sync-nginx-sign](./quick/260426-vcw-phase-12-https-reconcile-sync-nginx-sign/) |
 | 260429-b3e | Append v1.2+ long-term roadmap reference to SPEC.md (paper-ledger, multi-user 2FA, calc transparency, news, audit, backtest gate) | 2026-04-29 | 1eb8159 | [260429-b3e-update-spec-md-with-v1-2-long-term-roadm](./quick/260429-b3e-update-spec-md-with-v1-2-long-term-roadm/) |
+| 260429-sdp | HIGH-SEV bug fix — `_run_daily_check_caught` was discarding `run_daily_check`'s 4-tuple and silently never dispatching the daily 08:00 AWST email on the production droplet daemon. Restored dispatch + 4 regression tests + inverted Phase-4 fossil test that was enforcing the bug. Operator deploy: `git pull` + `sudo systemctl restart trading-signals` on droplet. | 2026-04-29 | 879730d | [260429-sdp-fix-scheduler-email-dispatch](./quick/260429-sdp-fix-scheduler-email-dispatch/) |
 
 ### Warnings (roadmap-level)
 
