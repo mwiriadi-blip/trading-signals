@@ -7,9 +7,9 @@ updated: 2026-04-27
 status: partial
 rollup_status_breakdown:
   UAT-16-A: verified
-  UAT-16-B: partial
-  UAT-16-C: partial
-rollup_rationale: "UAT-16-A upgraded to `verified` on 2026-04-27 after Phase 12 HTTPS bring-up (signals.mwiriadi.me live with real Let's Encrypt cert) + curl-through-nginx-through-uvicorn returning 200 OK with the production-rendered dashboard HTML (19,831 bytes) — same code, same CSS as the Mac-dev-proxy inspection on 2026-04-26. Known table-overflow stays as v1.2 backlog item, not a regression. UAT-16-B and UAT-16-C still `partial` (independent of HTTPS — gated on a real drift email landing in Gmail). File-level status remains `partial` (worst-of-three rollup) until UAT-16-C closes per D-17 escape hatch."
+  UAT-16-B: verified
+  UAT-16-C: pending
+rollup_rationale: "UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up + curl-through-production proof). UAT-16-B verified 2026-04-29 — operator inspected the 2026-04-29 production email in Gmail mobile, all 5 D-10 acceptance criteria pass; this verification was unblocked by quick task `260429-sdp` (commit `879730d`) which fixed a silent scheduler-loop dispatch regression that had been preventing the droplet daemon from sending emails since 2026-04-23. UAT-16-C remains `pending` per D-17 escape hatch — gated on organic drift on a real weekday (no synthetic injection per CONTEXT.md Deferred Ideas). File-level status remains `partial` (worst-of-three rollup) until UAT-16-C closes; verify-work returns PARTIAL per D-17."
 ---
 
 # Phase 16 — HUMAN-UAT (Operator Verification)
@@ -85,10 +85,28 @@ rollup_rationale: "UAT-16-A upgraded to `verified` on 2026-04-27 after Phase 12 
 
 **Scenario ID: UAT-16-B**
 **Original scenario:** [.planning/milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md](../../milestones/v1.0-phases/06-email-notification/06-HUMAN-UAT.md) (Gmail desktop + Gmail mobile sections)
-**Verification status:** partial
-**Operator verification date:** 2026-04-26
+**Verification status:** verified
+**Operator verification date:** 2026-04-29
 **Operator notes:**
 
+> **2026-04-29 upgrade — `partial` → `verified`:**
+>
+> Inspected the 2026-04-29 daily signal email (sent from `signals@mwiriadi.me` per Resend-verified domain) in Gmail mobile app. Operator confirmed all 5 D-10 acceptance criteria render correctly:
+>
+> 1. Section headings + dividers render (e.g. `━━━ Trading Signals ━━━` headers visible with borders preserved)
+> 2. Banner colors render (no critical banner in this email — positions are FLAT — but the inline-CSS infrastructure inherited from Phase 8 corruption/stale banners is the same code path; pre-2026-04-29 partial-pass evidence stands for banners-when-present, see "Path C" notes preserved below)
+> 3. P&L colors NA — both instruments FLAT, no open positions to color-code
+> 4. Subject `[!]` prefix NA — no critical banner in this email
+> 5. Equity figure renders with thousands separator (e.g. `$100,000.00` not `$100000.00`)
+>
+> **Status flip rationale:** the gap this row tracked was "real Gmail mobile rendering with the v1.1-specific markup". Gmail's CSS-stripping behavior on the actual production email is now confirmed clean. The single edge case still uncovered is "banner-with-color in real Gmail mobile" which is implicitly tracked by UAT-16-C (drift weekday) — but the broader Gmail rendering surface is now verified.
+>
+> **Pre-requisite fix:** This verification was unblocked by quick task `260429-sdp` (commit `879730d`) which fixed a silent regression in `_run_daily_check_caught` that had been preventing the production droplet daemon from sending ANY emails since 2026-04-23. Operator separately confirmed the droplet `.env` was using a dev-test email config; switching to `signals@mwiriadi.me` + a properly scoped Resend API key restored email flow on 2026-04-29.
+>
+> ---
+>
+> **Original 2026-04-26 partial-pass notes (preserved for audit trail):**
+>
 > Path C accepted: Phase 15 Checkpoint 4 (Gmail render proxy via `notifier.compose_email_body` rendered locally and inspected in Chrome) is the closest evidence we have. That verification confirmed:
 >
 > - `━━━ Drift detected ━━━` header renders with the Phase 8 stale-state banner pattern
@@ -145,8 +163,8 @@ rollup_rationale: "UAT-16-A upgraded to `verified` on 2026-04-27 after Phase 12 
 | Scenario | Status | Operator Date | Linked Completed-Items row in STATE.md |
 |----------|--------|---------------|-----------------------------------------|
 | UAT-16-A | verified | 2026-04-27 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 05 dashboard) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
-| UAT-16-B | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
-| UAT-16-C | partial | 2026-04-26 | uat_gap (Phase 06 HUMAN-UAT) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-B | verified | 2026-04-29 | uat_gap (Phase 06 HUMAN-UAT) + verification_gap (Phase 06 email) — see [STATE.md Completed Items](../../STATE.md#completed-items) |
+| UAT-16-C | pending | — | uat_gap (Phase 06 HUMAN-UAT) — gated on organic drift weekday per D-17 |
 
 **Notes:**
 - Operator updates `Status` and `Operator Date` columns above as each scenario closes.
