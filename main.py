@@ -622,17 +622,40 @@ def _run_daily_check_caught(job, args) -> None:
   fire retries. ONLY valid `except Exception:` site in the loop path. Phase 8
   (ERR-04) adds crash-email dispatch on top of this net.
 
+  After a successful daily check (rc==0 with non-None state), this wrapper
+  also dispatches the daily email via `_dispatch_email_and_maintain_warnings`.
+  Mirror of the dispatch step main() does for `--force-email` / `--test`
+  paths (lines 1633-1648). Without this dispatch the scheduler-loop daemon
+  would compute + persist + render but never email — silent regression of
+  the kind fixed 2026-04-29.
+
   Catches:
     - typed DataFetchError / ShortFrameError -> WARN [Sched] data-layer failure
     - catch-all Exception -> WARN [Sched] unexpected error (loop continues)
     - rc != 0 return (happy-path non-zero) -> WARN [Sched] rc=N (loop continues)
+    - rc == 0 with state=None (weekend skip) -> no dispatch (skip)
+    - rc == 0 with full tuple -> dispatch email + maintain warnings
   '''
   try:
-    rc, _, _, _ = job(args)
+    rc, state, old_signals, run_date = job(args)
     if rc != 0:
       logger.warning(
         '[Sched] daily check returned rc=%d (loop continues)', rc,
       )
+      return
+    # Weekend-skip path returns (0, None, None, run_date) — nothing to dispatch.
+    if state is None or old_signals is None or run_date is None:
+      return
+    # Scheduler path: never test mode, always persist (mirror of main()'s
+    # --force-email branch). _dispatch_email_and_maintain_warnings already
+    # wraps notifier.send via _send_email_never_crash, so an email failure
+    # here is logged + warned but cannot abort the loop. Only state/save
+    # exceptions could escape — they fall to the catch-all below.
+    _dispatch_email_and_maintain_warnings(
+      state, old_signals, run_date,
+      is_test=False,
+      persist=True,
+    )
   except (DataFetchError, ShortFrameError) as e:
     logger.warning('[Sched] data-layer failure caught in loop: %s', e)
   except Exception as e:

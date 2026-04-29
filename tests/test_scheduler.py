@@ -275,6 +275,99 @@ class TestLoopErrorHandling:
     assert any('rc=2' in r.message and '[Sched]' in r.message for r in caplog.records)
 
 
+class TestLoopHappyPathDispatch:
+  '''Regression coverage for the 2026-04-29 silent-skip bug.
+
+  `_run_daily_check_caught` is the scheduler-loop never-crash wrapper. Before
+  this regression test landed, the wrapper called `job(args)` and discarded
+  the returned `(state, old_signals, run_date)` tuple via `rc, _, _, _ = ...`,
+  so `_dispatch_email_and_maintain_warnings` was never invoked and the
+  production droplet daemon silently stopped sending the daily 08:00 AWST
+  email. CLI flag paths (`--force-email`, `--test`) were unaffected because
+  they dispatch directly in `main()`. The original D-02 tests in
+  TestLoopErrorHandling only exercised the exception/non-zero-rc branches —
+  the rc==0 happy path was uncovered.
+
+  Tests below pin the dispatch call shape so the regression cannot recur:
+    - rc==0 with full state → dispatch called once with persist=True, is_test=False
+    - rc==0 with state=None (weekend skip) → dispatch NOT called
+    - rc != 0 → dispatch NOT called (also asserted in TestLoopErrorHandling)
+  '''
+
+  def _patched_dispatch(self, monkeypatch):
+    '''Return a recording stand-in for _dispatch_email_and_maintain_warnings.'''
+    calls: list[dict] = []
+
+    def _record(state, old_signals, run_date, *, is_test=False, persist=True):
+      calls.append({
+        'state': state,
+        'old_signals': old_signals,
+        'run_date': run_date,
+        'is_test': is_test,
+        'persist': persist,
+      })
+
+    monkeypatch.setattr(
+      main_module, '_dispatch_email_and_maintain_warnings', _record,
+    )
+    return calls
+
+  def test_happy_path_dispatches_email(self, monkeypatch) -> None:
+    calls = self._patched_dispatch(monkeypatch)
+    state = {'account': 100000.0, 'positions': {}, 'signals': {}}
+    old_signals = {'^AXJO': 0, 'AUDUSD=X': 0}
+    run_date = 'fake-run-date-sentinel'
+
+    def _job(args):
+      return (0, state, old_signals, run_date)
+
+    main_module._run_daily_check_caught(_job, argparse.Namespace())
+
+    assert len(calls) == 1, (
+      f'expected exactly one dispatch call on rc==0 happy path, got {len(calls)}'
+    )
+    assert calls[0]['state'] is state
+    assert calls[0]['old_signals'] is old_signals
+    assert calls[0]['run_date'] is run_date
+    assert calls[0]['is_test'] is False, 'scheduler path is never test mode'
+    assert calls[0]['persist'] is True, 'scheduler path always persists'
+
+  def test_weekend_skip_does_not_dispatch(self, monkeypatch) -> None:
+    calls = self._patched_dispatch(monkeypatch)
+
+    # run_daily_check returns (0, None, None, run_date) on weekend skip.
+    def _weekend_job(args):
+      return (0, None, None, 'sat-run-date')
+
+    main_module._run_daily_check_caught(_weekend_job, argparse.Namespace())
+
+    assert calls == [], (
+      'weekend-skip path returns state=None — must NOT dispatch email'
+    )
+
+  def test_nonzero_rc_does_not_dispatch(self, monkeypatch) -> None:
+    calls = self._patched_dispatch(monkeypatch)
+
+    def _failing_job(args):
+      return (2, {'account': 1.0}, {}, 'fake-run-date')
+
+    main_module._run_daily_check_caught(_failing_job, argparse.Namespace())
+
+    assert calls == [], (
+      'rc != 0 → daily check failed; must NOT dispatch email'
+    )
+
+  def test_exception_path_does_not_dispatch(self, monkeypatch) -> None:
+    calls = self._patched_dispatch(monkeypatch)
+
+    def _raising_job(args):
+      raise RuntimeError('compute crashed')
+
+    main_module._run_daily_check_caught(_raising_job, argparse.Namespace())
+
+    assert calls == [], 'exception caught → must NOT dispatch email'
+
+
 class TestDefaultModeDispatch:
   '''D-05: default mode emits new log line; --once does not.'''
 

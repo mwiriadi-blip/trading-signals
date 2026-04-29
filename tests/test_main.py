@@ -419,36 +419,52 @@ class TestCLI:
       'CLI-01: --force-email --test must NOT mutate state.json'
     )
 
-  def test_default_mode_does_NOT_send_email(
+  def test_default_mode_DOES_send_email_via_immediate_first_run(
       self, tmp_path, monkeypatch) -> None:
-    '''CLI-05 default / CLI-04 --once: no email dispatch — only --force-email
-    or --test trigger the email per D-15.
+    '''CLI-05 default: scheduler-loop path DOES dispatch the daily email.
 
-    Phase 7 update: default mode now enters the schedule loop. Stub out
-    _run_schedule_loop so the test doesn't hang, and patch
-    main._get_process_tzname per 07-REVIEWS.md Codex MEDIUM-fix (defense
-    in-depth; fake loop is a no-op but wrapper patch keeps test portable).
+    Phase 4's contract was "default mode = one-shot, no email" (only
+    --force-email or --test triggered email per D-15). Phase 7 (D-04 +
+    D-05) replaced one-shot with the schedule loop: main() does an
+    immediate first run via `_run_daily_check_caught(run_daily_check,
+    args)`, then enters `_run_schedule_loop` for the daily 08:00 AWST
+    cron. The wrapper must dispatch the email after a successful run —
+    otherwise the production droplet daemon silently stops sending
+    emails, exactly the regression that hit on 2026-04-23 (commit
+    3279c312) and was fixed on 2026-04-29 alongside this test inversion.
+
+    This test pins the new contract: default mode triggers exactly one
+    `send_daily_email` invocation from the immediate first run; scheduled
+    fires that follow are exercised by tests/test_scheduler.py.
     '''
     monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)  # C-4
     _seed_fresh_state(tmp_path / 'state.json')
     _install_fixture_fetch(monkeypatch)
-    # Phase 7: stub the schedule loop so test doesn't hang.
+    # Phase 7: stub the schedule loop so test doesn't hang. The loop body
+    # is exercised separately in tests/test_scheduler.py.
     monkeypatch.setattr(main, '_run_schedule_loop', lambda job, args: 0)
 
-    sent: list[int] = []
+    sent: list[dict] = []
 
-    def _fail_if_called(*a, **kw):
-      sent.append(1)
-      raise AssertionError('default mode must NOT invoke send_daily_email')
+    def _record_send(state, old_signals, run_date, *, is_test=False):
+      sent.append({'is_test': is_test})
+      from notifier import SendStatus
+      return SendStatus(ok=True, reason=None, message_id='fake-msg-id')
 
     import notifier
-    monkeypatch.setattr(notifier, 'send_daily_email', _fail_if_called)
+    monkeypatch.setattr(notifier, 'send_daily_email', _record_send)
 
     rc = main.main([])
     assert rc == 0
-    assert sent == [], 'default mode must NOT invoke send_daily_email'
+    assert len(sent) == 1, (
+      f'default mode should dispatch exactly one email from the '
+      f'immediate first run, got {len(sent)}'
+    )
+    assert sent[0]['is_test'] is False, (
+      'scheduler path is not test mode — is_test must be False'
+    )
 
   def test_once_mode_does_NOT_send_email(
       self, tmp_path, monkeypatch) -> None:
