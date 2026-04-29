@@ -40,6 +40,7 @@ from web.routes import dashboard as dashboard_route
 from web.routes import healthz as healthz_route
 from web.routes import login as login_route
 from web.routes import state as state_route
+from web.routes import totp as totp_route
 from web.routes import trades as trades_route
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
   # per Phase 13 D-06; PUBLIC_PATHS in AuthMiddleware lets them through
   # without an active session.
   login_route.register(application)
+  totp_route.register(application)
 
   # Phase 14 D-04 / TRADE-02: 422 -> 400 remap with field-level error JSON.
   # Single global handler covers all routes (Plan 14-04).
