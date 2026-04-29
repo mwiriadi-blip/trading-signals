@@ -2917,3 +2917,76 @@ class TestDriftWarningLifecycle:
       f'expected 0 drift warnings for LONG position + LONG signal match; '
       f'got {len(drift_warnings)}: {drift_warnings}'
     )
+
+
+# =========================================================================
+# Phase 22 — VERSION-02: signal-row writes carry strategy_version tag
+# =========================================================================
+
+class TestRunDailyCheckTagsStrategyVersion:
+  '''Phase 22 D-04 / VERSION-02: every fresh signal-row write inside
+  run_daily_check carries strategy_version=system_params.STRATEGY_VERSION.
+
+  The value MUST come from the constant at WRITE time (fresh attribute
+  access on system_params), NOT from a kwarg default or a module-level
+  alias captured at import time. Global LEARNINGS 2026-04-29 documents
+  the kwarg-default capture trap that this test guards against.
+  '''
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_writes_strategy_version_on_fresh_signal_rows(
+      self, tmp_path, monkeypatch) -> None:
+    '''Both signal rows carry strategy_version == system_params.STRATEGY_VERSION
+    after a successful daily run.
+    '''
+    import system_params
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    rc = main.main(['--once'])
+    assert rc == 0
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+    assert (
+      state['signals']['SPI200']['strategy_version']
+      == system_params.STRATEGY_VERSION
+    ), (
+      f'VERSION-02: SPI200 row must carry STRATEGY_VERSION on every write; '
+      f'got {state["signals"]["SPI200"].get("strategy_version")!r}'
+    )
+    assert (
+      state['signals']['AUDUSD']['strategy_version']
+      == system_params.STRATEGY_VERSION
+    ), (
+      f'VERSION-02: AUDUSD row must carry STRATEGY_VERSION on every write; '
+      f'got {state["signals"]["AUDUSD"].get("strategy_version")!r}'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_strategy_version_matches_constant_after_constant_bump(
+      self, tmp_path, monkeypatch) -> None:
+    '''Monkeypatch system_params.STRATEGY_VERSION = 'v9.9.9' BEFORE the run.
+    After the run, signal rows must carry 'v9.9.9' — proves the writer reads
+    the constant at write time, not at import time. Guards against the
+    kwarg-default capture trap (global LEARNINGS 2026-04-29).
+    '''
+    import system_params
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr(system_params, 'STRATEGY_VERSION', 'v9.9.9')
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    rc = main.main(['--once'])
+    assert rc == 0
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+    assert state['signals']['SPI200']['strategy_version'] == 'v9.9.9', (
+      f'monkeypatched STRATEGY_VERSION must be visible to the writer; '
+      f'got {state["signals"]["SPI200"].get("strategy_version")!r}. '
+      f'If this fails, the writer is capturing the constant at import '
+      f'time (kwarg default or module-local alias) — see global LEARNINGS '
+      f'2026-04-29 "Python kwarg defaults capture module globals at import".'
+    )
+    assert state['signals']['AUDUSD']['strategy_version'] == 'v9.9.9', (
+      f'monkeypatched STRATEGY_VERSION must be visible to the writer; '
+      f'got {state["signals"]["AUDUSD"].get("strategy_version")!r}'
+    )

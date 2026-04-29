@@ -1265,12 +1265,18 @@ def run_daily_check(
     # AND always carries last_scalars for Phase 5/6 rendering.
     # B-1 revision 2026-04-22 (Phase 5 Wave 0): last_close added alongside
     # last_scalars for UI-SPEC §Positions table Current-price column.
+    # Phase 22 VERSION-02: tag every fresh write with the current
+    # STRATEGY_VERSION. Use a fresh attribute access on system_params here
+    # — do NOT bind to a kwarg default or a module-local alias. Global
+    # LEARNINGS 2026-04-29 documents the kwarg-default capture trap that
+    # would silently bypass monkeypatch + freeze the version at import.
     state['signals'][state_key] = {
       'signal': new_signal,
       'signal_as_of': signal_as_of,
       'as_of_run': run_date_iso,
       'last_scalars': scalars,
       'last_close': bar['close'],
+      'strategy_version': system_params.STRATEGY_VERSION,
     }
 
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
