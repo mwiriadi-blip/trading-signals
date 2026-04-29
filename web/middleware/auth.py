@@ -40,6 +40,7 @@ Log prefix: [Web] — Phase 11 convention.
 '''
 import hmac
 import logging
+import time
 from urllib.parse import quote
 
 from itsdangerous import BadSignature, SignatureExpired
@@ -60,8 +61,74 @@ EXEMPT_PATHS = frozenset({'/healthz'})
 # rather than being short-circuited to 401 by the middleware (deleting a
 # session cookie is a no-op for unauthenticated callers — no security
 # downside to making it public).
-# Plan 16.1-03 will EXTEND PUBLIC_PATHS with /forgot-2fa and /reset-totp.
-PUBLIC_PATHS = frozenset({'/login', '/logout', '/enroll-totp', '/verify-totp'})
+# Plan 16.1-03 EXTENDED with /forgot-2fa and /reset-totp — operator has no
+# session at recovery time so these MUST be reachable without auth.
+PUBLIC_PATHS = frozenset({
+  '/login', '/logout', '/enroll-totp', '/verify-totp',
+  '/forgot-2fa', '/reset-totp',
+})
+
+# Phase 16.1 Plan 03 F-08 — rate-limit constants (per-IP, in-memory).
+# These literals SHADOW system_params.RATE_LIMIT_* — we keep a private copy
+# here because the AST hex-boundary guard rejects ANY occurrence of
+# 'system_params' in this file. Drift risk: low (single operator, infrequent
+# config change). If you bump either copy, bump the other in the same PR.
+RATE_LIMIT_LOGIN_PER_15M = 5
+RATE_LIMIT_LOGIN_WINDOW_S = 900
+RATE_LIMIT_FORGOT_PER_HOUR = 3
+RATE_LIMIT_FORGOT_WINDOW_S = 3600
+RATE_LIMIT_RESET_PER_HOUR = 10
+RATE_LIMIT_RESET_WINDOW_S = 3600
+
+# In-memory token-bucket store: dict[(ip, path) -> list[float-timestamps]].
+# Module-level state — survives per-request middleware instances but resets
+# on process restart. F-08 acknowledges single-instance limitation; LEARNING
+# 'In-memory state doesn't survive deploys' applies and is accepted (single
+# operator + single droplet = acceptable). Stale entries pruned on every
+# check (no background sweeper) per T-16.1-27.
+_RATE_LIMIT_BUCKETS: dict[tuple[str, str], list[float]] = {}
+
+# Map (method, path) -> (max_count, window_seconds, key_path) for the
+# rate-limited credential-bearing routes. Only these are gated; GET pages
+# (form renders) are not counted.
+_RATE_LIMIT_RULES: dict[tuple[str, str], tuple[int, int]] = {
+  ('POST', '/login'): (RATE_LIMIT_LOGIN_PER_15M, RATE_LIMIT_LOGIN_WINDOW_S),
+  ('POST', '/verify-totp'): (RATE_LIMIT_LOGIN_PER_15M, RATE_LIMIT_LOGIN_WINDOW_S),
+  ('POST', '/forgot-2fa'): (RATE_LIMIT_FORGOT_PER_HOUR, RATE_LIMIT_FORGOT_WINDOW_S),
+  ('GET', '/reset-totp'): (RATE_LIMIT_RESET_PER_HOUR, RATE_LIMIT_RESET_WINDOW_S),
+}
+
+
+def _get_client_ip(request: Request) -> str:
+  '''Extract client IP from X-Forwarded-For first entry or request.client.
+
+  Mirrors AuthMiddleware._log_failure shape — single source of truth for
+  IP extraction so audit-log IP and rate-limit IP key always agree.
+  '''
+  xff = request.headers.get('x-forwarded-for', '')
+  if xff:
+    return xff.split(',')[0].strip() or '-'
+  return request.client.host if request.client else '-'
+
+
+def _check_rate_limit(
+  key: tuple[str, str], max_count: int, window_seconds: int,
+) -> bool:
+  '''Return True if the request is WITHIN budget, False if over.
+
+  Token-bucket semantics: append now, prune timestamps older than the
+  window, return True iff post-prune count <= max_count. Lazy cleanup
+  per T-16.1-27 (no background sweeper — list is bounded by max_count
+  worth of recent timestamps anyway).
+  '''
+  now = time.monotonic()
+  cutoff = now - window_seconds
+  bucket = _RATE_LIMIT_BUCKETS.setdefault(key, [])
+  # Prune stale entries first so the bucket doesn't grow unboundedly under
+  # sustained low-rate traffic that never trips the limit.
+  bucket[:] = [ts for ts in bucket if ts > cutoff]
+  bucket.append(now)
+  return len(bucket) <= max_count
 
 AUTH_HEADER = 'X-Trading-Signals-Auth'  # AUTH-01
 UA_TRUNCATE = 120  # D-05 / SC-5
@@ -102,6 +169,33 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # D-02: path-allowlist exemption FIRST.
     if request.url.path in EXEMPT_PATHS:
       return await call_next(request)
+
+    # Phase 16.1 Plan 03 F-08: rate-limit credential-bearing routes BEFORE
+    # the public-path passthrough. Over-budget → 429 (script) or 302
+    # /login?error=too_many_attempts (browser navigation). The rate-limit
+    # check happens before auth so even authenticated callers can't bypass
+    # — protects /login + /verify-totp + /forgot-2fa + /reset-totp.
+    rate_key = (request.method, request.url.path)
+    rule = _RATE_LIMIT_RULES.get(rate_key)
+    if rule is not None:
+      max_count, window_s = rule
+      ip = _get_client_ip(request)
+      if not _check_rate_limit((ip, request.url.path), max_count, window_s):
+        logger.warning(
+          '[Web] rate-limit exceeded: ip=%s method=%s path=%s '
+          'max=%d window=%ds',
+          ip, request.method, request.url.path, max_count, window_s,
+        )
+        if self._is_browser_navigation(request):
+          return Response(
+            status_code=302,
+            headers={'Location': '/login?error=too_many_attempts'},
+          )
+        return Response(
+          content='too many attempts',
+          status_code=429,
+          media_type='text/plain; charset=utf-8',
+        )
 
     # Phase 16.1: auth-bootstrap routes (public so the operator can reach
     # /login and the TOTP flow without auth). Sub-handlers still validate

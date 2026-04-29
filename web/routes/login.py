@@ -260,6 +260,84 @@ def _render_login_form(
 '''
 
 
+def _render_forgot_2fa_form(error: str | None = None) -> str:
+  '''Inline HTML for GET /forgot-2fa (UI-SPEC §F-07: mirrors login form).
+
+  Same _LOGIN_INLINE_CSS palette. Form posts to /forgot-2fa. Both username
+  and password fields required (constant-time validation; identical
+  response shape regardless of cred validity per E-07 + T-16.1-21).
+  '''
+  error_block = ''
+  if error:
+    error_block = (
+      f'<div class="error" role="alert" aria-live="polite">'
+      f'<p class="error-heading">{html_escape(error)}</p>'
+      f'</div>'
+    )
+  return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Signals — Reset 2FA</title>
+<style>{_LOGIN_INLINE_CSS}</style>
+</head>
+<body>
+<main class="login-card">
+<p class="eyebrow">TRADING SIGNALS</p>
+<h1>Reset 2FA</h1>
+{error_block}
+<p>Enter your username and password. If they match, we'll email a one-time
+reset link to your recovery address.</p>
+<form class="login-form" method="POST" action="/forgot-2fa" autocomplete="on">
+<div class="field">
+<label for="forgot-username">Username</label>
+<input id="forgot-username" name="username" type="text"
+       autocomplete="username" required autofocus>
+</div>
+<div class="field">
+<label for="forgot-password">Password</label>
+<input id="forgot-password" name="password" type="password"
+       autocomplete="current-password" required>
+</div>
+<button type="submit" class="btn-primary">Send reset link</button>
+</form>
+<a href="/login" class="link-secondary">Back to sign in</a>
+</main>
+</body>
+</html>
+'''
+
+
+def _render_check_email_page() -> str:
+  '''Inline HTML for POST /forgot-2fa response (UI-SPEC §Surface — generic
+  no-leak page).
+
+  Identical render regardless of credential validity, rate-limit hit, or
+  email-send outcome — per E-07 + T-16.1-21 (no leak of credential
+  validity via response body, status, or timing).
+  '''
+  return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Signals — Check your email</title>
+<style>{_LOGIN_INLINE_CSS}</style>
+</head>
+<body>
+<main class="login-card">
+<p class="eyebrow">TRADING SIGNALS</p>
+<h1>Check your email</h1>
+<p>If your username and password match an account, a reset link has been
+sent. The link is valid for one hour and can be used once.</p>
+<a href="/login" class="link-secondary">Back to sign in</a>
+</main>
+</body>
+</html>
+'''
+
+
 def _render_logout_confirmation() -> str:
   '''Inline HTML for POST /logout confirmation page (UI-SPEC §Surface 2).'''
   return f'''<!DOCTYPE html>
@@ -296,6 +374,11 @@ def register(app: FastAPI) -> None:
   session_serializer = URLSafeTimedSerializer(secret, salt='tsi-session-cookie')
   pending_serializer = URLSafeTimedSerializer(secret, salt='tsi-pending-cookie')
   enroll_serializer = URLSafeTimedSerializer(secret, salt='tsi-enroll-cookie')
+  # Phase 16.1 Plan 03 F-02: magic-link signing salt — separate from all
+  # tsi-*-cookie salts so a tsi_session token cannot be replayed against
+  # the magic-link verifier and vice versa (RESEARCH §itsdangerous
+  # salt-non-optional + T-16.1-20 mitigation).
+  magic_link_serializer = URLSafeTimedSerializer(secret, salt='magic-link')
 
   @app.get('/login')
   def get_login(request: Request) -> HTMLResponse:
@@ -391,6 +474,101 @@ def register(app: FastAPI) -> None:
         'Set-Cookie': f'tsi_enroll={enroll_token}; Max-Age=600{_COOKIE_ATTRS_CREATE}',
       },
     )
+
+  @app.get('/forgot-2fa')
+  def get_forgot_2fa() -> HTMLResponse:
+    '''Phase 16.1 Plan 03 F-07: form mirror of /login for the recovery flow.
+
+    Public route (in PUBLIC_PATHS — operator has no session at recovery
+    time). No CSRF token: this endpoint always returns the same generic
+    page regardless of cred validity (E-07), so a forged POST achieves
+    nothing more than the legitimate flow already permits.
+    '''
+    return HTMLResponse(content=_render_forgot_2fa_form())
+
+  @app.post('/forgot-2fa')
+  def post_forgot_2fa(
+    request: Request,
+    username_in: str = Form(..., alias='username'),
+    password_in: str = Form(..., alias='password'),
+  ) -> HTMLResponse:
+    '''Phase 16.1 Plan 03 F-02 + F-03 + F-08:
+      1. Validate creds with hmac.compare_digest (BOTH compares always
+         run — constant-time response shape per T-16.1-21).
+      2. Per-account rate check via auth_store.count_recent_magic_links.
+      3. If valid + under per-account limit + BASE_URL set: generate
+         signed token, persist sha256(token), send email via Resend.
+      4. ALWAYS render generic 'Check your email' page (no leak per E-07).
+    '''
+    # 1. Constant-time cred validation (BOTH compares always evaluated).
+    username_match = hmac.compare_digest(
+      username_in.encode('utf-8'), username.encode('utf-8'),
+    )
+    password_match = hmac.compare_digest(
+      password_in.encode('utf-8'), secret.encode('utf-8'),
+    )
+    creds_ok = username_match and password_match
+
+    # 2. Local imports preserve hex boundary (Plan 01 pattern).
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+    import auth_store
+    import notifier as notifier_mod
+
+    if not creds_ok:
+      _log_login_failure(request, reason='forgot_2fa_wrong_creds')
+      # Generic page (no leak per E-07 + T-16.1-21).
+      return HTMLResponse(content=_render_check_email_page())
+
+    # 3. Per-account rate check (F-08: max 3 magic links / 24h / account).
+    recent_count = auth_store.count_recent_magic_links(within_seconds=86400)
+    if recent_count >= 3:
+      logger.warning(
+        '[Web] forgot-2fa rate limited (per-account): count=%d',
+        recent_count,
+      )
+      return HTMLResponse(content=_render_check_email_page())
+
+    # 4. Opportunistic purge to keep auth.json bounded (housekeeping).
+    auth_store.purge_expired_magic_links()
+
+    # 5. BASE_URL guard — no localhost fallback per global LEARNING
+    # 'Localhost fallbacks in URL construction break silently in production'.
+    base_url = os.environ.get('BASE_URL', '').strip()
+    if not base_url:
+      logger.error(
+        '[Web] BASE_URL env var not set — magic-link email skipped',
+      )
+      # Generic page anyway (no leak about misconfigured server).
+      return HTMLResponse(content=_render_check_email_page())
+
+    # 6. Generate token, persist sha256(token), email link.
+    iat = int(time.time())
+    token = magic_link_serializer.dumps({
+      'purpose': 'totp-reset', 'iat': iat,
+    })
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    expires_at = (
+      datetime.now(timezone.utc) + timedelta(seconds=3600)
+    ).isoformat()
+    recovery_email = request.app.state.operator_recovery_email
+    auth_store.add_magic_link(
+      token_hash=token_hash,
+      action='totp-reset',
+      expires_at=expires_at,
+      email=recovery_email,
+    )
+    link = f'{base_url}/reset-totp?token={token}'
+    # Email failure NEVER crashes (CLAUDE.md "Email sends NEVER crash the
+    # workflow"); send_magic_link_email returns SendStatus, we discard.
+    notifier_mod.send_magic_link_email(
+      to_email=recovery_email,
+      link=link,
+      action='totp-reset',
+      expires_at=expires_at,
+    )
+    logger.info('[Web] forgot-2fa: magic-link generated for action=totp-reset')
+    return HTMLResponse(content=_render_check_email_page())
 
   @app.post('/logout')
   def post_logout() -> Response:

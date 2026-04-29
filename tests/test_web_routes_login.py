@@ -338,3 +338,227 @@ def test_logout_does_NOT_invalidate_existing_cookie_value(
     f'returns {r.status_code}. If Plan 02 added a revocation list, invert '
     f'this assertion to assert 401/302.'
   )
+
+
+# =============================================================================
+# Phase 16.1 Plan 03 — POST /forgot-2fa magic-link generation (F-02 + F-03 + E-07)
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_buckets():
+  '''Clear the in-memory rate-limit dict between tests to avoid bleed.
+
+  AuthMiddleware._RATE_LIMIT_BUCKETS is module-level so each test in this
+  file would otherwise share counts. Phase 16.1 Plan 03 F-08 acknowledges
+  in-memory state — tests must reset.
+  '''
+  import web.middleware.auth as auth_mw
+  auth_mw._RATE_LIMIT_BUCKETS.clear()
+  yield
+  auth_mw._RATE_LIMIT_BUCKETS.clear()
+
+
+@pytest.fixture
+def base_url_env(monkeypatch):
+  '''Phase 16.1 Plan 03: BASE_URL is required for magic-link URL construction
+  per LEARNING 'Localhost fallbacks in URL construction break silently'.
+  Tests that need BASE_URL set use this fixture.
+  '''
+  monkeypatch.setenv('BASE_URL', 'https://signals.example.com')
+
+
+@pytest.fixture
+def patched_send_magic_link_email(monkeypatch):
+  '''Patch notifier.send_magic_link_email so tests don't hit Resend.'''
+  import notifier
+  calls: list[dict] = []
+
+  def _fake(**kwargs):
+    calls.append(kwargs)
+
+    class _Status:
+      ok = True
+      reason = None
+
+    return _Status()
+
+  monkeypatch.setattr(notifier, 'send_magic_link_email', _fake)
+  return calls
+
+
+class TestForgot2faGetForm:
+
+  def test_get_forgot_2fa_renders_form_with_username_and_password(self, client):
+    r = client.get('/forgot-2fa')
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="forgot-username"' in body
+    assert 'id="forgot-password"' in body
+    assert 'Send reset link' in body
+    assert 'Reset 2FA' in body
+
+
+class TestForgot2faPostValid:
+
+  def test_valid_creds_sends_email_renders_check_email_page(
+    self, client, base_url_env, patched_send_magic_link_email, fresh_auth_path,
+  ):
+    r = client.post(
+      '/forgot-2fa',
+      data={'username': 'marc', 'password': 'a' * 32},
+      follow_redirects=False,
+    )
+    assert r.status_code == 200
+    assert 'Check your email' in r.text
+    # Email helper called once with the right recovery email + valid link.
+    assert len(patched_send_magic_link_email) == 1
+    call = patched_send_magic_link_email[0]
+    assert call['to_email'] == 'mwiriadi@gmail.com'
+    assert call['action'] == 'totp-reset'
+    assert call['link'].startswith('https://signals.example.com/reset-totp?token=')
+    # auth.json now has a magic_link row with sha256(token).
+    import auth_store
+    import hashlib
+    data = auth_store.load_auth(path=fresh_auth_path)
+    assert len(data['pending_magic_links']) == 1
+    row = data['pending_magic_links'][0]
+    # Extract token from the captured link and verify its hash matches.
+    token = call['link'].split('token=', 1)[1]
+    expected_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    assert row['token_hash'] == expected_hash
+    assert row['action'] == 'totp-reset'
+    assert row['consumed'] is False
+    assert row['email'] == 'mwiriadi@gmail.com'
+
+
+class TestForgot2faPostInvalid:
+
+  def test_wrong_username_renders_same_check_email_page_no_email_sent(
+    self, client, base_url_env, patched_send_magic_link_email, fresh_auth_path,
+  ):
+    r = client.post(
+      '/forgot-2fa',
+      data={'username': 'wrong', 'password': 'a' * 32},
+      follow_redirects=False,
+    )
+    assert r.status_code == 200
+    # Same generic page (no leak of credential validity per E-07 + T-16.1-21).
+    assert 'Check your email' in r.text
+    # Email NEVER sent for invalid creds.
+    assert patched_send_magic_link_email == []
+    # auth.json unchanged (no magic-link row added).
+    import auth_store
+    data = auth_store.load_auth(path=fresh_auth_path)
+    assert data['pending_magic_links'] == []
+
+  def test_wrong_password_renders_same_check_email_page_no_email_sent(
+    self, client, base_url_env, patched_send_magic_link_email, fresh_auth_path,
+  ):
+    r = client.post(
+      '/forgot-2fa',
+      data={'username': 'marc', 'password': 'WRONG'},
+      follow_redirects=False,
+    )
+    assert r.status_code == 200
+    assert 'Check your email' in r.text
+    assert patched_send_magic_link_email == []
+    import auth_store
+    data = auth_store.load_auth(path=fresh_auth_path)
+    assert data['pending_magic_links'] == []
+
+
+class TestForgot2faMissingBaseUrl:
+
+  def test_missing_base_url_renders_check_email_page_no_email_sent(
+    self, client, monkeypatch, patched_send_magic_link_email, fresh_auth_path,
+    caplog,
+  ):
+    '''LEARNING: 'Localhost fallbacks in URL construction break silently'.
+    No BASE_URL env → email skipped + generic page rendered.
+    '''
+    monkeypatch.delenv('BASE_URL', raising=False)
+    with caplog.at_level('ERROR', logger='web.routes.login'):
+      r = client.post(
+        '/forgot-2fa',
+        data={'username': 'marc', 'password': 'a' * 32},
+        follow_redirects=False,
+      )
+    assert r.status_code == 200
+    assert 'Check your email' in r.text
+    # Email NEVER sent without BASE_URL.
+    assert patched_send_magic_link_email == []
+    # ERROR log line for visibility.
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any('BASE_URL env var not set' in m for m in msgs), msgs
+
+
+class TestForgot2faPerAccountRateLimit:
+
+  def test_4th_magic_link_per_24h_returns_throttled(
+    self, client, base_url_env, patched_send_magic_link_email, fresh_auth_path,
+  ):
+    '''F-08: 3 magic-links per 24h per account. 4th valid request returns
+    generic page (operator-facing) BUT no new row added + no email sent.
+    '''
+    import auth_store
+    from datetime import datetime, timezone
+    # Pre-seed 3 unconsumed magic_links rows within last 24h.
+    data = auth_store.load_auth(path=fresh_auth_path)
+    now = datetime.now(timezone.utc).isoformat()
+    for i in range(3):
+      data['pending_magic_links'].append({
+        'token_hash': f'pre-{i}',
+        'email': 'mwiriadi@gmail.com',
+        'action': 'totp-reset',
+        'created_at': now,
+        'expires_at': now,
+        'consumed': False,
+        'consumed_at': None,
+      })
+    auth_store.save_auth(data, path=fresh_auth_path)
+
+    r = client.post(
+      '/forgot-2fa',
+      data={'username': 'marc', 'password': 'a' * 32},
+      follow_redirects=False,
+    )
+    assert r.status_code == 200
+    assert 'Check your email' in r.text
+    # No 4th row added, no email sent (over-budget).
+    post = auth_store.load_auth(path=fresh_auth_path)
+    assert len(post['pending_magic_links']) == 3
+    assert patched_send_magic_link_email == []
+
+
+class TestForgot2faRateLimit:
+
+  def test_4th_attempt_per_ip_per_hour_returns_429_or_redirect(
+    self, client, base_url_env, patched_send_magic_link_email, fresh_auth_path,
+  ):
+    '''F-08: 3 POST /forgot-2fa attempts per IP per hour; 4th rejected.
+
+    Default TestClient has no Sec-Fetch headers and no Accept text/html
+    in test, so the 4th request gets the script-shape 429 (not 302).
+    '''
+    # First 3 attempts go through (each 200 generic page).
+    for _ in range(3):
+      r = client.post(
+        '/forgot-2fa',
+        data={'username': 'wrong', 'password': 'WRONG'},
+        follow_redirects=False,
+      )
+      assert r.status_code == 200
+    # 4th attempt — over budget.
+    r = client.post(
+      '/forgot-2fa',
+      data={'username': 'wrong', 'password': 'WRONG'},
+      follow_redirects=False,
+    )
+    # Either 429 (script) or 302 (browser). Default TestClient = script-shape.
+    assert r.status_code in (429, 302), f'Unexpected status: {r.status_code}'
+    if r.status_code == 429:
+      assert 'too many attempts' in r.text.lower()
+    else:
+      assert '/login?error=too_many_attempts' in r.headers.get('location', '')
+

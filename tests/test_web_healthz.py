@@ -196,9 +196,18 @@ class TestWebHexBoundary:
   # a forbidden module cannot be locally-imported anywhere in web/. Inlining
   # MAX_PYRAMID_LEVEL=2 as a duplicate constant (Option B) was rejected
   # to preserve single-source-of-truth.
+  # Phase 16.1 Plan 03 deviation: `notifier` PROMOTED to allowed for
+  # web/routes/login.py — POST /forgot-2fa calls
+  # notifier.send_magic_link_email (F-03) inline rather than going through
+  # an indirection layer. The plan's must_haves require this boundary
+  # cross; same precedent as Phase 13 D-07 (dashboard) and Phase 14 D-02
+  # (sizing_engine, system_params). Hex-boundary preserved for the deeper
+  # layers — only the route-handler adapter calls notifier, and the call
+  # is wrapped in a non-crash contract per CLAUDE.md "Email sends NEVER
+  # crash the workflow". Test below regresses on the promotion.
   FORBIDDEN_FOR_WEB = frozenset({
     'signal_engine',
-    'data_fetcher', 'notifier', 'main',
+    'data_fetcher', 'main',
   })
 
   def test_web_modules_do_not_import_hex_core(self):
@@ -236,6 +245,17 @@ class TestWebHexBoundary:
     sees this local import as a violation; promoting system_params resolves
     it. Single-source-of-truth preserved (no duplicate constant).'''
     assert 'system_params' not in self.FORBIDDEN_FOR_WEB
+
+  def test_notifier_is_not_forbidden_for_web_phase_16_1_plan_03(self):
+    '''Regression: Phase 16.1 Plan 03 promotes notifier to allowed for
+    web/routes/login.py — POST /forgot-2fa calls
+    notifier.send_magic_link_email inline (F-03). Same precedent as Phase
+    13 D-07 (dashboard) and Phase 14 D-02 (sizing_engine, system_params).
+    The boundary cross is required by the plan must_haves; preserving it
+    behind an indirection layer (e.g. a notifier-adapter shim) was
+    considered and rejected as cosmetic — the existing CLAUDE.md "email
+    sends NEVER crash" contract suffices to keep route handlers robust.'''
+    assert 'notifier' not in self.FORBIDDEN_FOR_WEB
 
   def test_web_adapter_imports_are_local_not_module_top(self):
     '''C-2 + Phase 13 hex extension: state_manager AND dashboard imports must be LOCAL.'''

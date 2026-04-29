@@ -300,6 +300,41 @@ def _render_enroll_page(
 '''
 
 
+def _render_enroll_reset_choice_page() -> str:
+  '''Phase 16.1 Plan 03 E-07: ?reset=1 entry — operator picks Keep or New.
+
+  Shown ONLY when GET /enroll-totp?reset=1 with a valid tsi_session
+  cookie (just consumed magic-link). Two action buttons:
+    - 'Keep current authenticator' (POST action='keep') → /
+    - 'Set up new authenticator'    (POST action='new')  → fresh QR
+  Per E-07 the operator may have only forgotten which device had the
+  authenticator — keeping the current secret is a valid recovery path.
+  '''
+  return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Signals — Reset 2FA</title>
+<style>{_TOTP_INLINE_CSS}</style>
+</head>
+<body>
+<main class="totp-card">
+<p class="eyebrow">TRADING SIGNALS</p>
+<h1>Reset 2FA</h1>
+<p>Choose how you'd like to recover access:</p>
+<form class="totp-form" method="POST" action="/enroll-totp?reset=1" autocomplete="off">
+<button type="submit" name="action" value="keep" class="btn-primary"
+        style="margin-bottom:12px;">Keep current authenticator</button>
+<button type="submit" name="action" value="new" class="btn-primary">
+Set up new authenticator</button>
+</form>
+</main>
+</body>
+</html>
+'''
+
+
 def _render_verify_page(error: str | None = None) -> str:
   error_block = ''
   if error:
@@ -368,6 +403,22 @@ def register(app: FastAPI) -> None:
     except BadSignature:
       return None
 
+  def _validate_session_cookie(request: Request) -> dict | None:
+    '''Phase 16.1 Plan 03: ?reset=1 entry uses tsi_session (issued by
+    /reset-totp) instead of tsi_enroll. Same session_serializer +
+    max_age=43200s as the rest of the auth path.
+    '''
+    token = request.cookies.get('tsi_session')
+    if not token:
+      return None
+    try:
+      payload = session_serializer.loads(token, max_age=43200)
+      return payload if isinstance(payload, dict) else {'_': payload}
+    except SignatureExpired:
+      return None
+    except BadSignature:
+      return None
+
   def _validate_pending_cookie(request: Request) -> dict | None:
     token = request.cookies.get('tsi_pending')
     if not token:
@@ -402,6 +453,14 @@ def register(app: FastAPI) -> None:
 
   @app.get('/enroll-totp')
   def get_enroll(request: Request) -> Response:
+    # Phase 16.1 Plan 03: ?reset=1 mode — gated by tsi_session (just
+    # consumed magic-link) instead of tsi_enroll (post-/login).
+    if request.query_params.get('reset') == '1':
+      if _validate_session_cookie(request) is None:
+        return _redirect_to_login()
+      return HTMLResponse(content=_render_enroll_reset_choice_page())
+
+    # Plan 01 baseline: tsi_enroll-gated first-time enrollment.
     payload = _validate_enroll_cookie(request)
     if payload is None:
       return _redirect_to_login()
@@ -416,8 +475,48 @@ def register(app: FastAPI) -> None:
 
   @app.post('/enroll-totp')
   def post_enroll(
-    request: Request, code: str = Form(...),
+    request: Request,
+    code: str = Form(default=''),
+    action: str = Form(default='verify'),
   ) -> Response:
+    # Phase 16.1 Plan 03 E-07: ?reset=1 mode branches.
+    if request.query_params.get('reset') == '1':
+      session_payload = _validate_session_cookie(request)
+      if session_payload is None:
+        return _redirect_to_login()
+      import auth_store
+      if action == 'keep':
+        # Operator keeps current authenticator — no auth.json change.
+        # tsi_session already set by /reset-totp; just send them home.
+        logger.info('[Web] totp reset: operator chose KEEP')
+        return Response(status_code=302, headers={'Location': '/'})
+      if action == 'new':
+        # Regenerate secret + render fresh QR; operator must re-verify.
+        import pyotp
+        new_secret = pyotp.random_base32()
+        auth_store.set_totp_secret(new_secret)  # also flips totp_enrolled=False
+        logger.info('[Web] totp reset: operator chose NEW (secret regenerated)')
+        uri = _provisioning_uri(new_secret, username)
+        qr = _render_qr_data_uri(uri)
+        # Re-render the standard enroll page (Plan 01 form posts to
+        # /enroll-totp WITHOUT ?reset=1 — but this caller has tsi_session
+        # already, not tsi_enroll. Issue a fresh tsi_enroll cookie here so
+        # the subsequent verify-code POST hits the standard path.
+        iat = int(time.time())
+        enroll_token = enroll_serializer.dumps({
+          'u': username, 'iat': iat, 'next': '/',
+        })
+        resp = HTMLResponse(content=_render_enroll_page(qr, new_secret))
+        resp.raw_headers.append((
+          b'set-cookie',
+          f'tsi_enroll={enroll_token}; Max-Age=600; Path=/; Secure; '
+          f'HttpOnly; SameSite=Strict'.encode('latin-1'),
+        ))
+        return resp
+      # Unknown action in reset mode — bounce back to choice page.
+      return HTMLResponse(content=_render_enroll_reset_choice_page())
+
+    # Plan 01 baseline: code-verify path.
     payload = _validate_enroll_cookie(request)
     if payload is None:
       return _redirect_to_login()

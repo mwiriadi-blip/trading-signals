@@ -41,6 +41,7 @@ from web.routes import dashboard as dashboard_route
 from web.routes import devices as devices_route
 from web.routes import healthz as healthz_route
 from web.routes import login as login_route
+from web.routes import reset as reset_route
 from web.routes import state as state_route
 from web.routes import totp as totp_route
 from web.routes import trades as trades_route
@@ -164,6 +165,9 @@ def create_app() -> FastAPI:
   # PUBLIC_PATHS — requires cookie session; route enforces 403 on header-only
   # callers (E-06).
   devices_route.register(application)
+  # Phase 16.1 Plan 03 — /reset-totp magic-link consumption (F-02 + E-07).
+  # IS in PUBLIC_PATHS — operator has no session at recovery time.
+  reset_route.register(application)
 
   # Phase 14 D-04 / TRADE-02: 422 -> 400 remap with field-level error JSON.
   # Single global handler covers all routes (Plan 14-04).
@@ -179,7 +183,8 @@ def create_app() -> FastAPI:
 
   logger.info(
     '[Web] FastAPI app created '
-    '(Phase 16.1 — cookie+TOTP+trusted-device+header auth; /devices wired; auth=on)'
+    '(Phase 16.1 — cookie+TOTP+trusted-device+header auth; '
+    '/devices + /forgot-2fa + /reset-totp wired; auth=on)'
   )
   return application
 
