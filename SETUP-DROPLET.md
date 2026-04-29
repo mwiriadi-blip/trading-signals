@@ -121,7 +121,67 @@ Run this ONCE per droplet, the first time the operator visits the dashboard from
 
 Subsequent logins: enter creds + 6-digit code (no QR rescan). iOS Safari Keychain auto-fills creds on next-day re-login (one tap).
 
-> **Lost phone / new device:** click "Lost 2FA? Reset via email" on `/login` (Phase 16.1 Plan 03 wires the route — until that lands, restore from a backup of `auth.json` OR delete `auth.json` on the droplet to re-enroll on next visit).
+> **Lost phone / new device:** click "Lost 2FA? Reset via email" on `/login` (Phase 16.1 Plan 03 wires the route — see "Recovery walkthrough (lost phone)" below).
+
+---
+
+## Configure recovery email (Phase 16.1 AUTH-11)
+
+The Phase 16.1 magic-link reset (Plan 03) emails a one-time signed link to a recovery address when the operator clicks "Lost 2FA?". The recipient is the `OPERATOR_RECOVERY_EMAIL` env var; default `mwiriadi@gmail.com`.
+
+```bash
+echo "OPERATOR_RECOVERY_EMAIL=mwiriadi@gmail.com" >> /home/trader/trading-signals/.env
+sudo systemctl restart trading-signals-web
+```
+
+> **Boot validation:** the unit refuses to start if `OPERATOR_RECOVERY_EMAIL` is malformed (must match `name@domain.tld`). systemd `Restart=on-failure` surfaces the `RuntimeError` in journald — `journalctl -u trading-signals-web -n 50 -f` shows the exact line.
+
+> **Why this is required:** the recovery email is the operator's ONLY out-of-band channel for re-enrolling a new authenticator. Choose an inbox you can actually reach from the new device. Resend (the email transport) bills against the project's existing API key — no new vendor.
+
+---
+
+## Configure base URL for magic-link emails (Phase 16.1 AUTH-11)
+
+Magic-link emails contain an absolute URL pointing back to `/reset-totp?token=<...>`. The server constructs this URL from the `BASE_URL` env var. There is **NO localhost fallback** — if `BASE_URL` is unset, the server logs `[Web] BASE_URL env var not set — magic-link email skipped` and the operator gets the generic "Check your email" page without an email actually being sent (LEARNING `Localhost fallbacks in URL construction break silently in production`).
+
+```bash
+echo "BASE_URL=https://signals.<owned-domain>.com" >> /home/trader/trading-signals/.env
+sudo systemctl restart trading-signals-web
+```
+
+Replace `<owned-domain>.com` with the actual domain pointing at the droplet (matches what nginx serves; `https://` required).
+
+---
+
+## Recovery walkthrough (lost phone)
+
+When the operator loses access to their authenticator app, follow these steps. The flow assumes Phase 16.1 Plan 03 (`/forgot-2fa` + `/reset-totp`) is deployed.
+
+1. From any device with browser access, visit `https://signals.<owned-domain>.com/login`.
+2. Click "Lost 2FA? Reset via email" beneath the submit button.
+3. On the `/forgot-2fa` form, enter `WEB_AUTH_USERNAME` and `WEB_AUTH_SECRET`. Submit.
+4. The page reads "Check your email." (Same generic page renders regardless of cred validity — no leak per E-07 spec.)
+5. Open Gmail (or whatever inbox `OPERATOR_RECOVERY_EMAIL` points at). Within ~30 seconds, an email arrives:
+   - Subject: `Trading Signals — 2FA reset link (valid 1 hour)`
+   - Body: prominent "Reset 2FA" button + plain-text fallback link
+6. Click the "Reset 2FA" button. The link is **single-use and expires in 1 hour**. Clicking redirects to `/enroll-totp?reset=1` with two action buttons:
+   - **Keep current authenticator** — operator still has the device but lost the cookie session; clicking returns straight to `/`.
+   - **Set up new authenticator** — operator picks up a new device; clicking regenerates the TOTP secret and renders a fresh QR code. Scan the new QR with the new authenticator app, type the displayed 6-digit code, and submit. The dashboard loads.
+7. **Token is now consumed.** Visiting the same email link again returns the generic "Reset link is no longer valid" page. To recover from another lost-phone event, restart the flow at step 1.
+
+> **Rate limits:** maximum 3 reset emails per 24-hour window per account, plus 3 POST `/forgot-2fa` per hour per IP. If you somehow burn through these, wait the window out OR ssh to the droplet and clear `pending_magic_links` in `auth.json` manually (then `sudo systemctl restart trading-signals-web`).
+
+---
+
+## Trusted-device management (/devices)
+
+Phase 16.1 Plan 02 introduced the per-device 30-day "Trust this device" cookie (`tsi_trusted`). Operators manage these via `https://signals.<owned-domain>.com/devices`.
+
+The page lists every trusted device with its derived label (e.g. `iPhone Safari · 203.0.113.x · 2026-04-29`), last-seen timestamp, granted-at date, and a "Revoke" button. There's also a "Revoke all other devices" bulk action that clears every device EXCEPT the one currently signed in.
+
+> **Cookie-session-only gate:** `/devices` is reachable ONLY via cookie session (E-06). The legacy `X-Trading-Signals-Auth` header path returns 403 here — by design, since revocation needs to know "which device am I revoking from", and headerless callers have no device identity.
+
+> **Why revoke?** if a phone is lost or sold, revoke its trust cookie so the legacy 30-day skip can no longer be used. The trust cookie is a *signed* JWT-like token, but it carries a UUID; the server checks the UUID against `auth.json.trusted_devices[].revoked` on every request and refuses revoked entries.
 
 ---
 

@@ -270,3 +270,39 @@ class TestPhase16_1RunbookSections:
       r'^## First-login TOTP enrollment walkthrough',
       doc_text, re.MULTILINE,
     ), 'SETUP-DROPLET.md missing "## First-login TOTP enrollment walkthrough" H2'
+
+
+class TestPhase16_1Plan03Sections:
+  '''Phase 16.1 Plan 03 (Task 4): the runbook documents recovery email
+  + BASE_URL config + lost-phone walkthrough + /devices management.
+  Operator-facing — these grep tests guard against regressions in the
+  setup doc as the codebase evolves.
+  '''
+
+  def test_documents_recovery_email_configuration(self, doc_text):
+    '''F-06: OPERATOR_RECOVERY_EMAIL env var is the recovery destination.'''
+    assert 'OPERATOR_RECOVERY_EMAIL=' in doc_text, (
+      'SETUP-DROPLET.md must document OPERATOR_RECOVERY_EMAIL env var'
+    )
+
+  def test_documents_base_url_configuration(self, doc_text):
+    '''Plan 03: BASE_URL is required for magic-link URL construction
+    (no localhost fallback per LEARNING).
+    '''
+    assert 'BASE_URL=' in doc_text, (
+      'SETUP-DROPLET.md must document BASE_URL env var'
+    )
+
+  def test_documents_lost_phone_walkthrough(self, doc_text):
+    '''Plan 03 E-07: operator-facing recovery flow.'''
+    lower = doc_text.lower()
+    assert 'lost 2fa' in lower or 'lost phone' in lower, (
+      'SETUP-DROPLET.md must mention the lost-phone / Lost 2FA recovery flow'
+    )
+
+  def test_documents_devices_management(self, doc_text):
+    '''Plan 02: /devices route for trusted-device revocation.'''
+    assert '/devices' in doc_text, (
+      'SETUP-DROPLET.md must document /devices route for trusted-device '
+      'management'
+    )
