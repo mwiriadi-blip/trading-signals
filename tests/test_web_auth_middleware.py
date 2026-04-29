@@ -588,3 +588,175 @@ class TestAuditLogExactlyOnce:
       f'Sampling pyramid 1: {case} should emit exactly ONE auth-failure log '
       f'line, got {len(auth_warns)}: {[r.getMessage() for r in auth_warns]}'
     )
+
+
+# =============================================================================
+# Phase 16.1 Plan 02 — TrustedDeviceCookie
+# =============================================================================
+#
+# _try_cookie now accepts EITHER tsi_session (12h) OR tsi_trusted (30d).
+# tsi_trusted carries an itsdangerous-signed uuid that must ALSO be
+# unrevoked in auth.json.trusted_devices (revocation honored even when
+# the signature is valid).
+
+
+def _make_trusted_token(uuid_value: str, secret: str = 'a' * 32) -> str:
+  '''Build a tsi_trusted-shaped signed token for tests.
+
+  Mirrors the production payload {'uuid': ..., 'iat': now} per Plan 16.1-02.
+  '''
+  import time as _time
+  from itsdangerous.url_safe import URLSafeTimedSerializer
+  serializer = URLSafeTimedSerializer(secret, salt='tsi-trusted-cookie')
+  return serializer.dumps({'uuid': uuid_value, 'iat': int(_time.time())})
+
+
+class TestTrustedDeviceCookie:
+  '''Plan 16.1-02: tsi_trusted cookie acceptance + revocation honored.'''
+
+  def test_valid_tsi_trusted_grants_access_when_uuid_active(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='trusted-device-A')
+    token = _make_trusted_token(uid)
+    r = client_with_auth.get(
+      '/', cookies={'tsi_trusted': token},
+    )
+    # 200 (Plan 13-05 dashboard) or 503 (Plan 13-02 stub) — anything that's
+    # not 401/302 proves middleware accepted the cookie.
+    assert r.status_code in (200, 503), (
+      f'Expected middleware to accept valid tsi_trusted, got {r.status_code}: {r.text[:120]}'
+    )
+
+  def test_revoked_tsi_trusted_does_NOT_grant(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='B')
+    auth_store.revoke_device(uid)
+    token = _make_trusted_token(uid)
+    r = client_with_auth.get(
+      '/', cookies={'tsi_trusted': token}, follow_redirects=False,
+    )
+    assert r.status_code != 200, (
+      'Revoked tsi_trusted MUST NOT grant — even with valid signature'
+    )
+    # Curl-shape (no Sec-Fetch / Accept text/html) → 401
+    assert r.status_code in (401, 302), (
+      f'Expected 401 or 302, got {r.status_code}'
+    )
+
+  def test_tsi_trusted_with_unknown_uuid_does_NOT_grant(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    token = _make_trusted_token('uuid-not-in-auth-json')
+    r = client_with_auth.get(
+      '/', cookies={'tsi_trusted': token}, follow_redirects=False,
+    )
+    assert r.status_code != 200, (
+      'Unknown uuid in tsi_trusted MUST NOT grant'
+    )
+
+  def test_expired_tsi_trusted_does_NOT_grant(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    '''Token issued 31 days ago should fall through to header/unauth-branch.
+
+    URLSafeTimedSerializer encodes the issuance timestamp inside the signed
+    payload, so freezing time at the moment of issuance and then unfreezing
+    is the cleanest expiry simulation.
+    '''
+    import auth_store
+    from freezegun import freeze_time
+    uid = auth_store.add_trusted_device(label='C')
+    with freeze_time('2026-03-29T00:00:00+00:00'):  # 31 days before today
+      old_token = _make_trusted_token(uid)
+    # Real-time request — token is now 31d old → SignatureExpired
+    r = client_with_auth.get(
+      '/', cookies={'tsi_trusted': old_token}, follow_redirects=False,
+    )
+    assert r.status_code != 200, 'Expired tsi_trusted MUST NOT grant'
+
+  def test_tampered_tsi_trusted_does_NOT_grant(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='D')
+    token = _make_trusted_token(uid)
+    # Flip the last char to break the signature
+    tampered = token[:-1] + ('A' if token[-1] != 'A' else 'B')
+    r = client_with_auth.get(
+      '/', cookies={'tsi_trusted': tampered}, follow_redirects=False,
+    )
+    assert r.status_code != 200, 'Tampered tsi_trusted MUST NOT grant'
+
+  def test_tsi_trusted_AND_tsi_session_both_present_grants(
+    self, client_with_auth, isolated_auth_json, valid_cookie_token,
+  ):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='E')
+    trusted_token = _make_trusted_token(uid)
+    r = client_with_auth.get('/', cookies={
+      'tsi_session': valid_cookie_token,
+      'tsi_trusted': trusted_token,
+    })
+    assert r.status_code in (200, 503), (
+      f'Both cookies valid → middleware should accept, got {r.status_code}'
+    )
+
+  def test_tsi_trusted_only_no_tsi_session_grants(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    '''E-04 short-circuit: trusted device alone (no tsi_session) grants.'''
+    import auth_store
+    uid = auth_store.add_trusted_device(label='F')
+    token = _make_trusted_token(uid)
+    r = client_with_auth.get('/', cookies={'tsi_trusted': token})
+    assert r.status_code in (200, 503), (
+      f'tsi_trusted alone should grant (E-04), got {r.status_code}'
+    )
+
+  def test_tsi_trusted_hit_calls_update_last_seen(
+    self, client_with_auth, isolated_auth_json,
+  ):
+    '''Successful tsi_trusted grant bumps the row's last_seen timestamp.'''
+    import auth_store
+    from freezegun import freeze_time
+    with freeze_time('2026-01-01T00:00:00+00:00'):
+      uid = auth_store.add_trusted_device(label='G')
+    pre_last_seen = auth_store.get_trusted_device(uid)['last_seen']
+    assert pre_last_seen.startswith('2026-01-01T00:00:00')
+
+    with freeze_time('2026-04-29T12:34:56+00:00'):
+      token = _make_trusted_token(uid)
+      client_with_auth.get('/', cookies={'tsi_trusted': token})
+
+    post_last_seen = auth_store.get_trusted_device(uid)['last_seen']
+    assert post_last_seen != pre_last_seen, (
+      f'last_seen should advance after tsi_trusted grant: {post_last_seen!r}'
+    )
+    assert post_last_seen.startswith('2026-04-29T12:34:56'), (
+      f'last_seen should reflect request time: {post_last_seen!r}'
+    )
+
+  def test_tsi_session_hit_does_NOT_call_update_last_seen(
+    self, client_with_auth, isolated_auth_json, valid_cookie_token,
+  ):
+    '''Trusted-device row's last_seen must NOT advance when only tsi_session is used.
+
+    update_last_seen fires on the tsi_trusted code path only; a request
+    that authenticates via tsi_session leaves trusted_devices rows untouched.
+    '''
+    import auth_store
+    uid = auth_store.add_trusted_device(label='H')
+    pre_last_seen = auth_store.get_trusted_device(uid)['last_seen']
+
+    # Request with tsi_session only (no tsi_trusted cookie)
+    client_with_auth.get('/', cookies={'tsi_session': valid_cookie_token})
+
+    post_last_seen = auth_store.get_trusted_device(uid)['last_seen']
+    assert post_last_seen == pre_last_seen, (
+      f'last_seen should NOT change on tsi_session-only request: '
+      f'pre={pre_last_seen!r} post={post_last_seen!r}'
+    )

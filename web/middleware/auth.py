@@ -77,6 +77,13 @@ _SESSION_COOKIE_NAME = 'tsi_session'
 _SESSION_SALT = 'tsi-session-cookie'
 _SESSION_MAX_AGE_SECONDS = 43200  # 12 hours (D-11)
 
+# Phase 16.1 Plan 02 — trusted-device cookie config (E-05). Salt mirrors
+# system_params.TSI_TRUSTED_SALT verbatim; literal here to keep hex boundary
+# (middleware does NOT import system_params).
+_TRUSTED_COOKIE_NAME = 'tsi_trusted'
+_TRUSTED_SALT = 'tsi-trusted-cookie'
+_TRUSTED_MAX_AGE_SECONDS = 2592000  # 30 days (E-05)
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
   '''Phase 13 + Phase 16.1: cookie → header → unauth-branch (E-02).'''
@@ -85,9 +92,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     super().__init__(app)
     self._secret_bytes = secret.encode('utf-8')  # D-03: bytes-typed
     self._username_bytes = username.encode('utf-8')  # D-08
-    # Pre-build the serializer ONCE so per-request validation is just a
+    # Pre-build the serializers ONCE so per-request validation is just a
     # signature check (URLSafeTimedSerializer constructor is non-trivial).
     self._session_serializer = URLSafeTimedSerializer(secret, salt=_SESSION_SALT)
+    # Phase 16.1 Plan 02 — tsi_trusted (30d) sits alongside tsi_session (12h).
+    self._trusted_serializer = URLSafeTimedSerializer(secret, salt=_TRUSTED_SALT)
 
   async def dispatch(self, request: Request, call_next):
     # D-02: path-allowlist exemption FIRST.
@@ -123,25 +132,66 @@ class AuthMiddleware(BaseHTTPMiddleware):
     )  # D-04
 
   def _try_cookie(self, request: Request) -> bool:
-    '''Validate tsi_session cookie via itsdangerous (Phase 16.1 D-10).
+    '''Validate tsi_session OR tsi_trusted cookie (Phase 16.1 D-10 + Plan 02 E-04).
 
-    Returns True iff the cookie is present, signed correctly with the secret
-    we know, AND not expired (max_age=43200s). Does NOT log on failure —
-    step 3 of dispatch is the single audit-log site (sampling pyramid 1).
+    Returns True if EITHER cookie is present and valid. Does NOT log on
+    failure — step 3 of dispatch is the single audit-log site (sampling
+    pyramid 1). Sampling pyramid 3: at most ONE auth.json write per request
+    — only the tsi_trusted path triggers update_last_seen, and we early-
+    return immediately after the write so subsequent paths cannot stack.
+
+    tsi_session (Plan 01): signature + max_age=43200s. No store check —
+    the signed payload is sufficient.
+    tsi_trusted (Plan 02): signature + max_age=2592000s + uuid not revoked
+    in auth.json.trusted_devices. Even with valid signature, a revoked uuid
+    must be refused (E-06 revocation honored).
 
     LEGB rule: SignatureExpired is a subclass of BadSignature, so the
-    expired branch MUST come first.
+    expired branch MUST come first within each try block.
     '''
+    # Path 1 — tsi_session (Plan 01)
     token = request.cookies.get(_SESSION_COOKIE_NAME)
-    if not token:
-      return False
-    try:
-      self._session_serializer.loads(token, max_age=_SESSION_MAX_AGE_SECONDS)
-      return True
-    except SignatureExpired:
-      return False
-    except BadSignature:
-      return False
+    if token:
+      try:
+        self._session_serializer.loads(token, max_age=_SESSION_MAX_AGE_SECONDS)
+        return True
+      except SignatureExpired:
+        pass  # fall through to tsi_trusted
+      except BadSignature:
+        pass  # fall through to tsi_trusted
+
+    # Path 2 — tsi_trusted (Plan 02)
+    trusted = request.cookies.get(_TRUSTED_COOKIE_NAME)
+    if trusted:
+      try:
+        payload = self._trusted_serializer.loads(trusted, max_age=_TRUSTED_MAX_AGE_SECONDS)
+        uuid_value = ''
+        if isinstance(payload, dict):
+          uuid_value = str(payload.get('uuid', ''))
+        if uuid_value and not self._refuse_revoked_uuid(uuid_value):
+          # signature good, uuid unrevoked — grant + bump last_seen.
+          # Local import preserves hex boundary (Plan 01 pattern).
+          from auth_store import update_last_seen
+          update_last_seen(uuid_value)
+          return True
+        # signature ok but uuid revoked / missing / unknown → no grant.
+      except SignatureExpired:
+        pass
+      except BadSignature:
+        pass
+    return False
+
+  def _refuse_revoked_uuid(self, uuid_value: str) -> bool:
+    '''Return True iff the cookie's uuid should be refused — either because
+    it's not registered in auth.json or because it has been revoked.
+
+    Equivalent to `not auth_store.is_uuid_active(uuid_value)` — we wrap it
+    here so the middleware has a named extension point per the Plan 02
+    must_haves (`_refuse_revoked_uuid` helper) and so the hex-boundary
+    auth_store import stays local to this function.
+    '''
+    from auth_store import is_uuid_active
+    return not is_uuid_active(uuid_value)
 
   def _try_header(self, request: Request) -> bool:
     '''Phase 13 D-03 path preserved — AUTH-05 regression-locked.
