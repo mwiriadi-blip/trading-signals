@@ -37,6 +37,7 @@ from fastapi import FastAPI
 
 from web.middleware.auth import AuthMiddleware
 from web.routes import dashboard as dashboard_route
+from web.routes import devices as devices_route
 from web.routes import healthz as healthz_route
 from web.routes import login as login_route
 from web.routes import state as state_route
@@ -122,6 +123,10 @@ def create_app() -> FastAPI:
   # without an active session.
   login_route.register(application)
   totp_route.register(application)
+  # Phase 16.1 Plan 02 — /devices (trusted-device management). NOT in
+  # PUBLIC_PATHS — requires cookie session; route enforces 403 on header-only
+  # callers (E-06).
+  devices_route.register(application)
 
   # Phase 14 D-04 / TRADE-02: 422 -> 400 remap with field-level error JSON.
   # Single global handler covers all routes (Plan 14-04).
@@ -135,7 +140,10 @@ def create_app() -> FastAPI:
   # Future middleware (request-id, compression) goes ABOVE this line.
   application.add_middleware(AuthMiddleware, secret=secret, username=username)
 
-  logger.info('[Web] FastAPI app created (Phase 16.1 — cookie+TOTP+header auth; auth=on)')
+  logger.info(
+    '[Web] FastAPI app created '
+    '(Phase 16.1 — cookie+TOTP+trusted-device+header auth; /devices wired; auth=on)'
+  )
   return application
 
 
