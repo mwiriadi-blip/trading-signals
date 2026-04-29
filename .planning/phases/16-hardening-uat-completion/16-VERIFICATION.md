@@ -1,13 +1,21 @@
 ---
 phase: 16-hardening-uat-completion
-verified: 2026-04-26T12:30:00Z
-status: human_needed
-score: 4/4 must-haves verified (all partial per D-17 — see notes)
+verified: 2026-04-29T10:38:00Z
+status: partial
+score: 4/4 must-haves verified; 2/3 operator-UAT scenarios verified, 1/3 pending per D-17
 overrides_applied: 0
+re_verifications:
+  - date: 2026-04-26T12:30:00Z
+    status: human_needed
+    note: "Initial pass — all 3 UAT scenarios at `partial`; full verification pending operator walk-through"
+  - date: 2026-04-29T10:38:00Z
+    status: partial
+    note: "UAT-16-A verified 2026-04-27 (Phase 12 HTTPS bring-up). UAT-16-B verified 2026-04-29 (operator inspected production email in Gmail mobile, all 5 D-10 criteria pass; closure unblocked by quick task 260429-sdp commit 879730d which fixed silent scheduler-loop email dispatch regression). UAT-16-C still pending per D-17 escape hatch — gated on organic drift weekday."
 human_verification:
   - test: "Wait for organic drift on a real weekday run; open the resulting email in Gmail mobile app and confirm drift banner renders with red/amber border, subject carries [!] prefix, and dashboard shows a matching banner"
     expected: "Drift banner visible in Gmail mobile with correct color; [!] in subject; dashboard banner matches for same instrument"
     why_human: "Requires a live weekday trading day where positions are open and signal disagrees — cannot be synthesised without operator injecting a drifted state; real phone + real Gmail client required to verify Gmail CSS stripping behavior on v1.1 markup"
+    blocking_milestone_archive: true
 ---
 
 # Phase 16: Hardening + UAT Completion Verification Report
@@ -139,15 +147,15 @@ Scanned `tests/test_integration_f1.py`: no TODO/FIXME/placeholder comments; no e
 
 ### SC-3: 16-HUMAN-UAT.md has all 3 scenarios with documented closure
 
-All three scenarios confirmed in `16-HUMAN-UAT.md`:
+**2026-04-29 update — UAT-16-A and UAT-16-B both flipped to `verified`:**
 
 | Scenario | Status | Operator Date | Operator Notes Present |
 |----------|--------|--------------|----------------------|
-| UAT-16-A: Mobile Dashboard | partial | 2026-04-26 | Yes — Mac-dev-proxy findings, mobile-clean list, mobile-problematic list, v1.2 backlog item |
-| UAT-16-B: Mobile Gmail | partial | 2026-04-26 | Yes — Path C accepted; local-render proof; real-Gmail deferred to UAT-16-C side-effect |
-| UAT-16-C: Drift Banner Weekday | partial | 2026-04-26 | Yes — structural parity via Phase 15 test; real-day-Gmail deferred per D-17 |
+| UAT-16-A: Mobile Dashboard | **verified** | 2026-04-27 | Yes — Phase 12 HTTPS bring-up verified curl-through-production proof on signals.mwiriadi.me |
+| UAT-16-B: Mobile Gmail | **verified** | 2026-04-29 | Yes — operator inspected 2026-04-29 production email in Gmail mobile, all 5 D-10 criteria pass; pre-requisite fix shipped via quick task 260429-sdp (commit 879730d) which restored email dispatch on the scheduler-loop path |
+| UAT-16-C: Drift Banner Weekday | **pending** | — | Yes — structural parity via Phase 15 test; awaiting organic drift on a real weekday per D-17 escape hatch |
 
-Per D-17 and verification context: `partial` is explicit acceptable closure. The phase is "closed with caveat" for UAT-16-C.
+Per D-17, UAT-16-C may stay `pending` past Plan 05 completion — verify-work returns PARTIAL until it flips. The phase is "closed with caveat" for UAT-16-C; v1.0 milestone archive blocks on UAT-16-C closure.
 
 ### SC-4: STATE.md deferred items correctly migrated
 
@@ -163,11 +171,26 @@ Verified by direct grep on STATE.md:
 
 ## Gaps Summary
 
-No blocking gaps. All 4 SCs are observable in the codebase and artifacts. The single open item (UAT-16-C real-weekday-Gmail observation) is an explicit acceptable deferral per D-17 — documented with operator notes, a clear re-verification path, and no ambiguity about what "done" looks like when it triggers.
+No blocking gaps for code-side or non-drift UAT. All 4 SCs are observable in the codebase and artifacts. UAT-16-A (mobile dashboard) and UAT-16-B (mobile Gmail email) are now `verified` as of 2026-04-29. The single open item (UAT-16-C real-weekday Gmail drift observation) is an explicit acceptable deferral per D-17 — documented with operator notes, a clear re-verification path, and no ambiguity about what "done" looks like when it triggers.
 
-The phase status is `human_needed` because SC-3c (real weekday Gmail drift observation) cannot be verified programmatically and has not yet been completed by the operator.
+**Phase status: PARTIAL.** Closes when UAT-16-C flips `pending → verified` after the operator observes a drift banner in a real weekday email. v1.0 milestone archive blocked until then.
 
 ---
 
-_Verified: 2026-04-26T12:30:00Z_
+## 2026-04-29 Re-Verification Notes
+
+The 2026-04-26 initial verification ran at a point where all 3 UAT scenarios were `partial`. Re-verification today (2026-04-29) confirms:
+
+1. **UAT-16-A → verified** (closed 2026-04-27 via Phase 12 HTTPS bring-up; production curl-through-nginx-through-uvicorn proves the hosted dashboard renders the same byte-identical HTML inspected via Mac-dev-proxy on 2026-04-26)
+2. **UAT-16-B → verified** (closed 2026-04-29 via real Gmail mobile inspection of the 2026-04-29 production email; all 5 D-10 acceptance criteria confirmed)
+3. **UAT-16-C → pending** (unchanged; D-17 escape hatch active)
+
+**Pre-requisite fix that unblocked UAT-16-B:** `_run_daily_check_caught` in main.py was discarding the 4-tuple from `run_daily_check(args)` and silently never invoking `_dispatch_email_and_maintain_warnings` since 2026-04-23 (commit 3279c312). Production droplet daemon ran clean compute pipelines but emitted zero `[Email] ...` log lines for ~7 days. Fixed in quick task `260429-sdp` (commit `879730d`) with regression-test coverage in `TestLoopHappyPathDispatch` (4 tests) + inverted Phase-4 fossil test (`test_default_mode_DOES_send_email_via_immediate_first_run`). Operator separately fixed droplet `.env` (replaced dev-test email config with `signals@mwiriadi.me` + properly scoped Resend API key for the verified `mwiriadi.me` domain).
+
+Plan 16-04 (Wave 3 per REVIEWS H-3) reads operator-marked verification dates from `16-HUMAN-UAT.md` and writes the `STATE.md ## Completed Items` rows. With UAT-16-A and UAT-16-B now verified with real dates, Plan 04 can populate two of the three rows; the UAT-16-C row stays `pending` until that scenario flips.
+
+---
+
+_Initial verification: 2026-04-26T12:30:00Z_
+_Re-verified: 2026-04-29T10:38:00Z_
 _Verifier: Claude (gsd-verifier)_
