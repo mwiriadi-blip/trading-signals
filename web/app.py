@@ -46,15 +46,30 @@ logger = logging.getLogger(__name__)
 _MIN_SECRET_LEN = 32  # D-17: ≈128 bits entropy via openssl rand -hex 16
 
 
-def _read_auth_secret() -> str:
-  '''D-16/D-17: fail-closed if WEB_AUTH_SECRET is missing or too short.
+def _read_auth_credentials() -> tuple[str, str]:
+  '''Phase 16.1 D-08 + Phase 13 D-16/D-17: fail-closed username + secret read.
 
-  Called once at create_app() time. systemd's Restart=on-failure surfaces
+  Validates username FIRST (D-08): non-empty, no ':' character (legacy Basic
+  Auth field separator — even with E-01 killing the Basic Auth path, ':' in
+  username is rejected to defend against operators typing literal user:pw).
+  Then validates secret (Phase 13 D-16/D-17 message strings preserved
+  byte-exact — Phase 13 grep tests depend on them).
+
+  Returns (username, secret) tuple. systemd's Restart=on-failure surfaces
   the RuntimeError in journald so the operator sees the cause immediately.
-  Per CONTEXT D-16 this categorically diverges from Phase 12 D-14's
-  "log + degrade + continue" pattern for SIGNALS_EMAIL_FROM — auth is
-  categorically different from email; "continue without auth" = "no auth".
   '''
+  username = os.environ.get('WEB_AUTH_USERNAME', '').strip()
+  if not username:
+    raise RuntimeError(
+      'WEB_AUTH_USERNAME env var is missing or empty — refusing to start. '
+      'Add WEB_AUTH_USERNAME=<your-name> to /home/trader/trading-signals/.env'
+    )
+  if ':' in username:
+    raise RuntimeError(
+      "WEB_AUTH_USERNAME must not contain ':' (legacy Basic Auth field "
+      'separator). Pick a colon-free username and restart the service.'
+    )
+
   secret = os.environ.get('WEB_AUTH_SECRET', '').strip()
   if not secret:
     raise RuntimeError(
@@ -66,7 +81,7 @@ def _read_auth_secret() -> str:
       f'WEB_AUTH_SECRET must be at least {_MIN_SECRET_LEN} characters. '
       'Generate with: openssl rand -hex 16'
     )
-  return secret
+  return username, secret
 
 
 def create_app() -> FastAPI:
@@ -83,7 +98,7 @@ def create_app() -> FastAPI:
   the AuthMiddleware line below — otherwise they will run AFTER auth, which
   defeats the security gate.
   '''
-  secret = _read_auth_secret()  # D-16/D-17 — raises on missing/short
+  username, secret = _read_auth_credentials()  # Phase 16.1 D-08 + Phase 13 D-16/D-17
 
   application = FastAPI(
     title='Trading Signals',
@@ -111,9 +126,9 @@ def create_app() -> FastAPI:
   # D-06: AuthMiddleware MUST be registered LAST — Starlette runs middleware
   # in REVERSE of registration, so 'last registered' = 'first to dispatch'.
   # Future middleware (request-id, compression) goes ABOVE this line.
-  application.add_middleware(AuthMiddleware, secret=secret)
+  application.add_middleware(AuthMiddleware, secret=secret, username=username)
 
-  logger.info('[Web] FastAPI app created (Phase 14 — /, /api/state, /healthz, /trades/{open,close,modify}; auth=on)')
+  logger.info('[Web] FastAPI app created (Phase 16.1 — cookie+TOTP+header auth; auth=on)')
   return application
 
 

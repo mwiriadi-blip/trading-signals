@@ -368,3 +368,223 @@ class TestConstantTimeCompare:
       f'web/middleware/auth.py must NOT use == for secret compare (D-03): '
       f'{violations}'
     )
+
+
+# =============================================================================
+# Phase 16.1 Plan 01 Task 2 — E-02 3-step sniff (cookie → header → unauth)
+# =============================================================================
+#
+# Browser navigation (Sec-Fetch headers OR Accept: text/html fallback) without
+# valid auth → 302 Location: /login?next=<path>.
+# Curl/script/HTMX-XHR without valid auth → 401 plain-text "unauthorized",
+# preserving Phase 13 D-04 verbatim (AUTH-07).
+# Basic Auth header is NOT decoded (E-01 / AUTH-12 supersedes Phase 16.1 D-01).
+
+
+class TestSecFetchSniff:
+  '''E-02 / D-04: Sec-Fetch header sniff branches the unauthenticated path.'''
+
+  def test_navigate_document_returns_302(self, client_no_auth):
+    '''Sec-Fetch-Mode=navigate + Sec-Fetch-Dest=document (browser nav) → 302.'''
+    r = client_no_auth.get(
+      '/',
+      headers={'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document'},
+      follow_redirects=False,
+    )
+    assert r.status_code == 302, (
+      f'Browser navigation (Sec-Fetch=navigate/document) should 302 → /login, '
+      f'got {r.status_code}'
+    )
+    assert r.headers.get('location') == '/login?next=/', (
+      f'Expected Location: /login?next=/, got {r.headers.get("location")!r}'
+    )
+
+  def test_cors_returns_401(self, client_no_auth):
+    '''Sec-Fetch-Mode=cors (HTMX XHR shape) → 401 plain-text, no redirect.'''
+    r = client_no_auth.get(
+      '/',
+      headers={'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'},
+      follow_redirects=False,
+    )
+    assert r.status_code == 401
+    assert 'location' not in {k.lower() for k in r.headers}
+    assert 'set-cookie' not in {k.lower() for k in r.headers}
+
+  def test_no_secfetch_with_text_html_accept_returns_302(self, client_no_auth):
+    '''Older browsers without Sec-Fetch but Accept: text/html → 302 fallback.'''
+    r = client_no_auth.get(
+      '/',
+      headers={'Accept': 'text/html,application/xhtml+xml,*/*'},
+      follow_redirects=False,
+    )
+    assert r.status_code == 302, (
+      f'Accept: text/html (no Sec-Fetch) should 302 fallback per D-04, '
+      f'got {r.status_code}'
+    )
+
+  def test_no_secfetch_with_star_accept_returns_401(self, client_no_auth):
+    '''curl-style request (Accept: */*, no Sec-Fetch) → 401 plain-text.'''
+    r = client_no_auth.get(
+      '/',
+      headers={'Accept': '*/*'},
+      follow_redirects=False,
+    )
+    assert r.status_code == 401, (
+      f'Curl-shaped request should 401 plain-text per AUTH-07, '
+      f'got {r.status_code}'
+    )
+
+
+class TestHeaderPathPreserved:
+  '''AUTH-05: Phase 13 X-Trading-Signals-Auth header path is unchanged.'''
+
+  def test_valid_header_returns_200(self, client_with_auth):
+    '''Phase 13 regression: valid header → reaches downstream route.'''
+    r = client_with_auth.get('/', headers={'X-Trading-Signals-Auth': 'a' * 32})
+    assert r.status_code in (200, 503), (
+      f'Header path must keep working (AUTH-05); got {r.status_code}'
+    )
+
+
+class TestCurlContract:
+  '''AUTH-07 / D-04..D-05: 401 contract preserved verbatim for non-browsers.'''
+
+  def test_curl_no_auth_returns_401_plain_text_with_no_extras(
+    self, client_no_auth,
+  ):
+    '''curl /  (Accept: */*, no Sec-Fetch) → 401 + body="unauthorized" + no
+    WWW-Authenticate / Set-Cookie / Location headers.
+    '''
+    r = client_no_auth.get(
+      '/', headers={'Accept': '*/*'}, follow_redirects=False,
+    )
+    assert r.status_code == 401
+    assert r.text == 'unauthorized'
+    ct = r.headers.get('content-type', '')
+    assert 'text/plain' in ct.lower(), (
+      f'Expected text/plain content-type, got {ct!r}'
+    )
+    lower_keys = {k.lower() for k in r.headers}
+    assert 'www-authenticate' not in lower_keys
+    assert 'location' not in lower_keys
+    assert 'set-cookie' not in lower_keys
+
+
+class TestRedirect302Shape:
+  '''D-04: Location header uses request.url.path (path only, no query string)
+  with quote-encoded path. Single test, multiple assertions.
+  '''
+
+  def test_location_header_uses_quote_encoded_next(self, client_no_auth):
+    '''Browser navigation to /api/state?q=1 → Location: /login?next=/api/state.'''
+    r = client_no_auth.get(
+      '/api/state?q=1',
+      headers={'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document'},
+      follow_redirects=False,
+    )
+    assert r.status_code == 302
+    loc = r.headers.get('location', '')
+    # Path-only — query string is NOT echoed back into next= per security
+    # consideration (echoing query is fine for the simple path case but the
+    # contract here uses request.url.path verbatim).
+    assert loc == '/login?next=/api/state', (
+      f'Expected Location /login?next=/api/state, got {loc!r}'
+    )
+
+
+class TestNoBasicAuthDecode:
+  '''E-01 / AUTH-12: Basic Auth header is NOT decoded by middleware.
+
+  After Phase 16.1, sending only Authorization: Basic <b64> grants no access.
+  The request is treated identically to a no-auth request (browser → 302,
+  script → 401).
+  '''
+
+  def test_basic_auth_only_does_NOT_authenticate(self, client_no_auth):
+    '''Authorization: Basic marc:secret encoded → 302/401, NEVER 200.'''
+    import base64
+    creds = base64.b64encode(b'marc:' + (b'a' * 32)).decode('ascii')
+    # Send with browser-shaped headers (would 302) — proves the basic auth
+    # itself doesn't grant access.
+    r = client_no_auth.get(
+      '/',
+      headers={
+        'Authorization': f'Basic {creds}',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Dest': 'document',
+      },
+      follow_redirects=False,
+    )
+    assert r.status_code != 200, (
+      f'E-01: Basic Auth must NOT authenticate; got {r.status_code} (200 means '
+      f'the kill-Basic-Auth invariant is broken).'
+    )
+    assert r.status_code == 302, (
+      f'Browser-shaped Basic-only request → 302 to /login; got {r.status_code}'
+    )
+
+  def test_no_basic_auth_decoding_logic_in_middleware(self):
+    '''AST/grep guard: web/middleware/auth.py does NOT contain b64decode,
+    binascii, or partition(":") — markers of a Basic Auth decode path.
+    '''
+    src = WEB_AUTH_PATH.read_text()
+    assert 'b64decode' not in src, (
+      'E-01: web/middleware/auth.py must NOT decode Basic Auth (b64decode found)'
+    )
+    assert 'binascii' not in src, (
+      'E-01: web/middleware/auth.py must NOT import binascii (Basic Auth decode marker)'
+    )
+    assert "partition(':')" not in src and 'partition(":")' not in src, (
+      "E-01: web/middleware/auth.py must NOT split Basic Auth fields via partition(':')"
+    )
+
+
+class TestNoWwwAuthenticate:
+  '''LEARNING 2026-04-27: WWW-Authenticate header must NEVER be sent.
+
+  D-04..D-05 + Area D follow-up reconciles Phase 13 D-04 — even with cookie/
+  header auth in play, the dialog-trigger header is never emitted server-side.
+  '''
+
+  def test_grep_returns_zero_occurrences(self):
+    src = WEB_AUTH_PATH.read_text()
+    import re
+    matches = re.findall(r'WWW-Authenticate', src, flags=re.IGNORECASE)
+    assert matches == [], (
+      f'web/middleware/auth.py must NOT contain "WWW-Authenticate" '
+      f'(LEARNING 2026-04-27 + D-04..D-05); found: {matches}'
+    )
+
+
+class TestAuditLogExactlyOnce:
+  '''Sampling pyramid 1: a single failed-auth request emits exactly ONE WARN
+  log line, regardless of which sniff helpers ran. Helpers return bool only;
+  step 3 of dispatch is the single log site.
+  '''
+
+  @pytest.mark.parametrize('case', [
+    'no_auth_at_all',
+    'bad_cookie_only',
+    'bad_header_only',
+    'bad_cookie_and_bad_header',
+  ])
+  def test_audit_log_fires_exactly_once_per_failed_request(
+    self, client_no_auth, caplog, case,
+  ):
+    import logging
+    headers = {'Accept': '*/*'}
+    cookies = {}
+    if 'bad_cookie' in case:
+      cookies = {'tsi_session': 'this-is-not-a-valid-itsdangerous-token'}
+    if 'bad_header' in case:
+      headers['X-Trading-Signals-Auth'] = 'wrong-secret'
+    with caplog.at_level(logging.WARNING, logger='web.middleware.auth'):
+      client_no_auth.get('/', headers=headers, cookies=cookies)
+    auth_warns = [
+      r for r in caplog.records
+      if r.name == 'web.middleware.auth' and '[Web] auth failure' in r.getMessage()
+    ]
+    assert len(auth_warns) == 1, (
+      f'Sampling pyramid 1: {case} should emit exactly ONE auth-failure log '
+      f'line, got {len(auth_warns)}: {[r.getMessage() for r in auth_warns]}'
+    )

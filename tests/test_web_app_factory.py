@@ -127,3 +127,56 @@ class TestDocsDisabled:
       f'got {r.status_code}. If 404, the middleware is not reaching this path '
       f'(D-06 registration order issue).'
     )
+
+
+class TestUsernameValidation:
+  '''Phase 16.1 D-08: missing/empty/colon-containing WEB_AUTH_USERNAME →
+  RuntimeError at boot. Mirrors TestSecretValidation shape verbatim.
+  '''
+
+  def test_missing_username_raises(self, monkeypatch):
+    '''D-08: env var absent → RuntimeError mentioning WEB_AUTH_USERNAME.'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.delenv('WEB_AUTH_USERNAME', raising=False)
+    import sys
+    sys.modules.pop('web.app', None)
+    with pytest.raises(RuntimeError, match='WEB_AUTH_USERNAME'):
+      from web.app import create_app
+      create_app()
+
+  def test_empty_username_raises(self, monkeypatch):
+    '''D-08: env var present but empty → RuntimeError "missing or empty".'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', '')
+    import sys
+    sys.modules.pop('web.app', None)
+    with pytest.raises(RuntimeError, match='missing or empty'):
+      from web.app import create_app
+      create_app()
+
+  def test_username_with_colon_raises(self, monkeypatch):
+    '''D-08: ':' in username → RuntimeError (legacy Basic Auth field separator).'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'bad:user')
+    import sys
+    sys.modules.pop('web.app', None)
+    with pytest.raises(RuntimeError, match=r"must not contain ':'"):
+      from web.app import create_app
+      create_app()
+
+  def test_valid_username_accepted(self, monkeypatch):
+    '''D-08: 'marc' boots the app cleanly. /login route registration is
+    asserted in TestLoginRouteRegistered below (Task 3a sets that up).
+    '''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    import sys
+    sys.modules.pop('web.app', None)
+    from web.app import create_app
+    app = create_app()
+    assert app is not None
+    # Phase 13 baseline routes still present
+    paths = {r.path for r in app.routes if hasattr(r, 'path')}
+    assert '/healthz' in paths
+    assert '/' in paths
+    assert '/api/state' in paths
