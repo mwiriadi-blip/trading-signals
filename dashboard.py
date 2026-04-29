@@ -922,6 +922,48 @@ def _compute_unrealised_pnl_display(
 # Render-helper lookups — signal label/colour maps + exit-reason display map
 # =========================================================================
 
+# Phase 22 D-06: dashboard fallback when no signal row carries strategy_version.
+_DEFAULT_STRATEGY_VERSION = 'v1.0.0'
+
+
+def _resolve_strategy_version(state: dict) -> str:
+  '''Phase 22: extract the active strategy version from state.signals.
+
+  Reads strategy_version off each dict-shaped signal row, picks the
+  lexicographic max (str) when instruments disagree (transient migration
+  window), defaults to 'v1.0.0' if no row carries the field. Emits a
+  [State] WARN log for each dict-shaped row that lacks the field —
+  surfaces silent migration drift in journalctl rather than rendering a
+  spurious default.
+
+  Hex-boundary (LEARNINGS 2026-04-27): dashboard.py does NOT import
+  system_params.STRATEGY_VERSION. The version arrives via the state dict
+  (which the orchestrator at main.py:1280 has already tagged on the most
+  recent run). This preserves the rule "pass primitives, not module
+  references, into render layer".
+
+  Tie-break for cross-version states (e.g. SPI200=v1.1.0, AUDUSD=v1.2.0):
+  lexicographic max of the strings starting with 'v'. For semver-formatted
+  strings of the same MAJOR.MINOR.PATCH digit-width this matches numerical
+  max. Cross-MAJOR comparisons are approximate; in practice instruments
+  converge within one daily run after a bump.
+  '''
+  signals = state.get('signals', {})
+  found: list[str] = []
+  for sig in signals.values():
+    if isinstance(sig, dict):
+      if 'strategy_version' in sig:
+        found.append(sig['strategy_version'])
+      else:
+        logger.warning(
+          '[State] WARN signal row missing strategy_version field — '
+          'defaulting to v1.0.0',
+        )
+  if not found:
+    return _DEFAULT_STRATEGY_VERSION
+  return max(found, key=str)
+
+
 _SIGNAL_LABEL = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
 _SIGNAL_COLOUR = {1: _COLOR_LONG, -1: _COLOR_SHORT, 0: _COLOR_FLAT}
 
@@ -1797,11 +1839,21 @@ def _render_key_stats(state: dict) -> str:
   )
 
 
-def _render_footer() -> str:
-  '''UI-SPEC §Footer disclaimer — "Signal-only system. Not financial advice."'''
+def _render_footer(strategy_version: str) -> str:
+  '''UI-SPEC §Footer disclaimer — "Signal-only system. Not financial advice."
+
+  Phase 22 D-06: appends a small <div class="strategy-version"> line
+  showing the active strategy version. The version arrives as a
+  primitive str argument from render_dashboard (which calls
+  _resolve_strategy_version on the state dict) — preserves the
+  hex-boundary rule that dashboard.py never imports
+  system_params.STRATEGY_VERSION (LEARNINGS 2026-04-27).
+  '''
+  version_esc = html.escape(strategy_version, quote=True)
   return (
     '<footer>\n'
     '  Signal-only system. Not financial advice.\n'
+    f'  <div class="strategy-version">Strategy version: <code>{version_esc}</code></div>\n'
     '</footer>\n'
   )
 
@@ -2014,6 +2066,10 @@ def render_dashboard(
     perth = pytz.timezone('Australia/Perth')
     now = datetime.now(perth)
   logger.info('[Dashboard] rendering to %s', out_path)
+  # Phase 22: extract strategy_version off the state dict (hex-boundary
+  # safe — no system_params import). Emits WARN log per dict-shaped
+  # signal row that lacks the field (D-06 surfacing).
+  strategy_version = _resolve_strategy_version(state)
   body = (
     _render_header(state, now, is_cookie_session=is_cookie_session)
     + _render_signal_cards(state)
@@ -2027,7 +2083,7 @@ def render_dashboard(
     + _render_positions_table(state)
     + _render_trades_table(state)
     + _render_key_stats(state)
-    + _render_footer()
+    + _render_footer(strategy_version)
   )
   html_str = _render_html_shell(body)
   _atomic_write_html(html_str, out_path)

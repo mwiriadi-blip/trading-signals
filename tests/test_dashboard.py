@@ -890,9 +890,17 @@ class TestRenderBlocks:
   # --- Footer ---
 
   def test_footer_disclaimer(self) -> None:
-    '''Exact copy per UI-SPEC §Footer disclaimer.'''
-    output = dashboard._render_footer()
+    '''Exact copy per UI-SPEC §Footer disclaimer.
+
+    Phase 22: _render_footer now takes a `strategy_version: str` arg
+    (D-06). The disclaimer text is unchanged; the version line is a
+    tail addition.
+    '''
+    output = dashboard._render_footer('v1.2.0')
     assert 'Signal-only system. Not financial advice.' in output
+    # Phase 22: version line is appended; disclaimer copy unchanged.
+    assert 'Strategy version:' in output
+    assert '<code>v1.2.0</code>' in output
 
   # --- Wave 2: Chart.js + HTML shell + inline CSS tests (VALIDATION 05-03-T1) ---
 
@@ -2176,4 +2184,118 @@ class TestRenderSignoutButton:
     assert rendered.count('hx-headers') == 2, (
       f'D-13 belt-and-suspenders: expected exactly 2 hx-headers occurrences '
       f'(open-form + position-table-section), got {rendered.count("hx-headers")}'
+    )
+
+
+# =========================================================================
+# Phase 22 — VERSION-02 dashboard renders strategy_version (footer)
+# =========================================================================
+
+class TestRenderDashboardStrategyVersion:
+  '''Phase 22 D-04 / D-06 + LEARNINGS 2026-04-27 hex-boundary rule.
+
+  Dashboard renders the active strategy_version off the state dict (NEVER
+  imports system_params.STRATEGY_VERSION). Tie-break rule: lexicographic
+  max of the per-instrument strings. Default 'v1.0.0' when no row carries
+  the field, with a [State] WARN log per row that lacks it.
+  '''
+
+  def test_render_dashboard_includes_strategy_version_in_html_when_signals_carry_it(
+      self, tmp_path) -> None:
+    '''Both signals carry v1.2.0 → rendered HTML contains 'v1.2.0'.'''
+    state = _make_state()
+    state['signals']['SPI200']['strategy_version'] = 'v1.2.0'
+    state['signals']['AUDUSD']['strategy_version'] = 'v1.2.0'
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'v1.2.0' in rendered, (
+      f'Phase 22: dashboard HTML must contain the active strategy_version '
+      f'somewhere; "v1.2.0" not found in {len(rendered)} bytes'
+    )
+
+  def test_render_dashboard_falls_back_to_v1_0_0_when_no_signal_row_has_strategy_version(
+      self, tmp_path) -> None:
+    '''No row carries strategy_version → render uses the D-06 default 'v1.0.0'.'''
+    # Build a state with signal rows that lack strategy_version entirely.
+    state = _make_state(with_signals=False)
+    state['signals'] = {
+      'SPI200': {'signal': 0, 'signal_as_of': '2026-04-21',
+                 'as_of_run': '2026-04-21T09:00:00+08:00',
+                 'last_close': 8000.0,
+                 'last_scalars': {
+                   'adx': 18.0, 'atr': 50.0,
+                   'mom1': 0.0, 'mom3': 0.0, 'mom12': 0.0,
+                   'pdi': 18.0, 'ndi': 17.0, 'rvol': 1.0,
+                 }},
+    }
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert 'v1.0.0' in rendered, (
+      f'D-06: missing strategy_version on every row must default to v1.0.0; '
+      f'"v1.0.0" not found in rendered HTML'
+    )
+
+  def test_render_dashboard_renders_max_semver_when_instruments_disagree(
+      self, tmp_path) -> None:
+    '''Transient migration window: SPI200=v1.1.0, AUDUSD=v1.2.0 →
+    rendered HTML shows 'v1.2.0' (lexicographic max).
+    '''
+    state = _make_state()
+    state['signals']['SPI200']['strategy_version'] = 'v1.1.0'
+    state['signals']['AUDUSD']['strategy_version'] = 'v1.2.0'
+    out = tmp_path / 'd.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    # Find the footer's strategy-version line (CSS class anchor).
+    footer_match = re.search(
+      r'class="strategy-version"[^>]*>\s*Strategy version:\s*<code>([^<]+)</code>',
+      rendered,
+    )
+    assert footer_match is not None, (
+      'Phase 22: footer must contain a <div class="strategy-version"> with '
+      f'the rendered version inside <code>...</code>; not found in HTML'
+    )
+    rendered_version = footer_match.group(1)
+    assert rendered_version == 'v1.2.0', (
+      f'Phase 22 tie-break: max(versions, key=str) of v1.1.0 + v1.2.0 must '
+      f'be v1.2.0; got {rendered_version!r}'
+    )
+
+  def test_dashboard_does_not_import_strategy_version_symbol(self) -> None:
+    '''Hex-boundary preservation per LEARNINGS 2026-04-27: dashboard.py
+    does NOT import system_params.STRATEGY_VERSION. The active version
+    arrives via the state dict (a primitive str), NOT via a module import.
+
+    DEVIATION (Rule-1, plan bug): the plan task 4 acceptance criterion
+    asked for `grep "^import system_params\\b|^from system_params\\b"` to
+    return ZERO matches in dashboard.py. That is impossible — dashboard.py
+    has imported `from system_params import (palette + contract specs)`
+    since Phase 5 (legitimate, not on FORBIDDEN_MODULES_DASHBOARD). The
+    actual hex-boundary rule from LEARNINGS 2026-04-27 is "STRATEGY_VERSION
+    flows via state, not via module import" — that is what this test pins.
+    '''
+    import ast
+    src = Path('dashboard.py').read_text()
+    tree = ast.parse(src)
+    imported_from_system_params: set[str] = set()
+    for node in ast.walk(tree):
+      if isinstance(node, ast.ImportFrom) and node.module == 'system_params':
+        for alias in node.names:
+          imported_from_system_params.add(alias.name)
+      elif isinstance(node, ast.Import):
+        for alias in node.names:
+          if alias.name == 'system_params':
+            imported_from_system_params.add('*system_params-bare-import*')
+    assert 'STRATEGY_VERSION' not in imported_from_system_params, (
+      f'Phase 22 hex-boundary: dashboard.py must NOT import STRATEGY_VERSION '
+      f'from system_params; the version flows via state dict. '
+      f'imports from system_params = {sorted(imported_from_system_params)!r}'
+    )
+    assert '*system_params-bare-import*' not in imported_from_system_params, (
+      f'Phase 22 hex-boundary: dashboard.py must NOT use bare '
+      f'`import system_params` (would expose STRATEGY_VERSION via attribute '
+      f'access — bypasses the primitive-arg contract). '
+      f'imports = {sorted(imported_from_system_params)!r}'
     )

@@ -248,12 +248,12 @@
       "atr_entry": 0.0042,
       "direction": "SHORT",
       "entry_date": "2026-04-10",
-      "entry_price": 0.6650,
-      "manual_stop": 0.6600,
+      "entry_price": 0.665,
+      "manual_stop": 0.66,
       "n_contracts": 2,
       "peak_price": null,
       "pyramid_level": 0,
-      "trough_price": 0.6580
+      "trough_price": 0.658
     },
     "SPI200": {
       "atr_entry": 50.0,
@@ -271,7 +271,7 @@
   "signals": {
     "AUDUSD": {
       "as_of_run": "2026-04-21T09:00:00+08:00",
-      "last_close": 0.6580,
+      "last_close": 0.658,
       "last_scalars": {
         "adx": 27.3,
         "atr": 0.0042,
@@ -283,7 +283,8 @@
         "rvol": 0.95
       },
       "signal": 1,
-      "signal_as_of": "2026-04-21"
+      "signal_as_of": "2026-04-21",
+      "strategy_version": "v1.2.0"
     },
     "SPI200": {
       "as_of_run": "2026-04-21T09:00:00+08:00",
@@ -299,7 +300,8 @@
         "rvol": 0.95
       },
       "signal": 0,
-      "signal_as_of": "2026-04-21"
+      "signal_as_of": "2026-04-21",
+      "strategy_version": "v1.2.0"
     }
   },
   "trade_log": [
@@ -377,12 +379,12 @@
   "warnings": [
     {
       "date": "2026-04-26",
-      "message": "You hold LONG SPI200, today's signal is FLAT — consider closing.",
+      "message": "You hold LONG SPI200, today's signal is FLAT \u2014 consider closing.",
       "source": "drift"
     },
     {
       "date": "2026-04-26",
-      "message": "You hold SHORT AUDUSD, today's signal is LONG — reversal recommended (close SHORT, open LONG).",
+      "message": "You hold SHORT AUDUSD, today's signal is LONG \u2014 reversal recommended (close SHORT, open LONG).",
       "source": "drift"
     }
   ],
