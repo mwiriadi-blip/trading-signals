@@ -55,6 +55,7 @@ handlers never call it.
 '''
 import fcntl  # Phase 14 D-13: cross-process advisory lock around _atomic_write + mutate_state
 import json  # noqa: F401 — used in save_state/load_state (Waves 1/2)
+import logging  # Phase 22 D-06: WARN log for missing strategy_version on signal rows
 import math  # used in _validate_trade (D-19) + update_equity_history (B-4) finiteness checks
 import os  # noqa: F401 — used in _atomic_write/_backup_corrupt (Waves 1/2)
 import sys  # noqa: F401 — used in load_state stderr logging (Wave 2)
@@ -83,6 +84,8 @@ from system_params import (
 # =========================================================================
 # Module-level constants (private)
 # =========================================================================
+
+logger = logging.getLogger(__name__)  # Phase 22 D-06: WARN on defensive-read fallback
 
 _AWST = zoneinfo.ZoneInfo('Australia/Perth')
 
@@ -151,11 +154,58 @@ def _migrate_v2_to_v3(s: dict) -> dict:
   return {**s, 'positions': new_positions}
 
 
+def _migrate_v3_to_v4(s: dict) -> dict:
+  '''Phase 22 D-04 / D-05 (v1.2): backfill strategy_version on existing
+  dict-shaped signal rows.
+
+  Existing rows on first v1.2 deploy were produced under v1.1 logic
+  (same signal logic as v1.0; hosting change only). Stamp 'v1.1.0' so
+  historical rows are honest about the deployment lineage.
+
+  Idempotent: rows that already carry a strategy_version field are NOT
+  overwritten (defensive — supports replayed migrations and manual
+  state.json edits — see TestMigrateV3ToV4 in tests/test_state_manager.py).
+
+  Legacy int-shape signal rows (Phase 3 reset_state, e.g. signals.SPI200=0)
+  are skipped: only dict-shaped rows are migrated. main.py per the D-08
+  upgrade branch (Pitfall 7) tolerates both shapes on read and always
+  writes the dict shape on the next run, so any int-shape row will
+  acquire strategy_version on its next signal write.
+
+  D-15 silent migration: no append_warning, no log line. Mirror of
+  _migrate_v2_to_v3's contract.
+  '''
+  signals = s.get('signals', {})
+  for sig in signals.values():
+    if isinstance(sig, dict) and 'strategy_version' not in sig:
+      sig['strategy_version'] = 'v1.1.0'
+  return s
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
   3: _migrate_v2_to_v3,  # Phase 14 D-09: backfill manual_stop on existing Positions
+  4: _migrate_v3_to_v4,  # Phase 22 D-04/D-05/D-09: strategy_version on signal rows
 }
+
+
+def _read_signal_strategy_version(signal: dict) -> str:
+  '''Phase 22 D-06: defensive read with WARN log.
+
+  Belt-and-suspenders: _migrate_v3_to_v4 backfills all dict-shaped rows on
+  first v1.2 load, but if a row somehow lands without the field
+  (concurrent-write race, manual state.json edit, partial migration),
+  default to 'v1.0.0' and emit a WARN so the issue surfaces in
+  journalctl rather than silently rendering the wrong version.
+  '''
+  if 'strategy_version' in signal:
+    return signal['strategy_version']
+  logger.warning(
+    '[State] WARN signal row missing strategy_version field — '
+    'defaulting to v1.0.0',
+  )
+  return 'v1.0.0'
 
 # =========================================================================
 # Private helpers

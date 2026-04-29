@@ -1157,8 +1157,8 @@ class TestMigrateV2Backfill:
     )
 
   def test_migrate_walks_schema_version_to_current(self) -> None:
-    '''STATE-04 (Phase 14 extension): after _migrate, schema_version equals
-    STATE_SCHEMA_VERSION (now 3 per Phase 14 D-09).'''
+    '''STATE-04 (Phase 22 extension): after _migrate, schema_version equals
+    STATE_SCHEMA_VERSION (now 4 per Phase 22 D-04 — was 3 under Phase 14 D-09).'''
     state = {
       # no schema_version → defaults to 0
       'account': INITIAL_ACCOUNT, 'last_run': None,
@@ -1168,7 +1168,7 @@ class TestMigrateV2Backfill:
     }
     migrated = _migrate(state)
     assert migrated['schema_version'] == STATE_SCHEMA_VERSION
-    assert STATE_SCHEMA_VERSION == 3, 'Phase 14 bumps STATE_SCHEMA_VERSION to 3'
+    assert STATE_SCHEMA_VERSION == 4, 'Phase 22 bumps STATE_SCHEMA_VERSION to 4'
 
 
 class TestSaveStateExcludesUnderscoreKeys:
@@ -1754,8 +1754,10 @@ class TestSchemaMigrationV2ToV3:
     target = tmp_path / 'state.json'
     shutil.copyfile(_V2_FIXTURE, target)
     state = load_state(path=target)
-    assert state['schema_version'] == 3, (
-      f'Phase 14 D-09: load_state must walk v2 -> v3; got {state["schema_version"]}'
+    assert state['schema_version'] == STATE_SCHEMA_VERSION, (
+      f'Phase 14 D-09 + Phase 22 D-04: load_state must walk v2 forward to '
+      f'STATE_SCHEMA_VERSION (now {STATE_SCHEMA_VERSION}); '
+      f'got {state["schema_version"]}'
     )
     spi = state['positions']['SPI200']
     audusd = state['positions']['AUDUSD']
@@ -1771,14 +1773,16 @@ class TestSchemaMigrationV2ToV3:
     )
 
   def test_save_then_load_v3_round_trips(self, tmp_path) -> None:
-    '''Load v2 -> save -> re-load yields schema_version=3 with manual_stop=None.'''
+    '''Load v2 -> save -> re-load yields schema_version=STATE_SCHEMA_VERSION
+    with manual_stop=None preserved (Phase 14 D-09 invariant survives the
+    Phase 22 v3 -> v4 bump).'''
     import shutil
     target = tmp_path / 'state.json'
     shutil.copyfile(_V2_FIXTURE, target)
     state = load_state(path=target)
     save_state(state, path=target)
     reloaded = load_state(path=target)
-    assert reloaded['schema_version'] == 3
+    assert reloaded['schema_version'] == STATE_SCHEMA_VERSION
     assert reloaded['positions']['SPI200']['manual_stop'] is None
     assert reloaded['positions']['AUDUSD']['manual_stop'] is None
 
@@ -1843,4 +1847,240 @@ class TestSchemaMigrationV2ToV3:
     assert reloaded['positions']['SPI200']['manual_stop'] == 7700.0, (
       'v3 round-trip: manual_stop=7700.0 must persist + reload'
     )
-    assert reloaded['schema_version'] == 3
+    assert reloaded['schema_version'] == STATE_SCHEMA_VERSION
+
+
+# =========================================================================
+# Phase 22 — _migrate_v3_to_v4 (strategy_version backfill on signal rows)
+# =========================================================================
+
+class TestMigrateV3ToV4:
+  '''Phase 22 D-04 / D-05: _migrate_v3_to_v4 backfills strategy_version on
+  every dict-shaped signal row. Stamps 'v1.1.0' on existing rows (rows on
+  the droplet at first v1.2 deploy were produced under v1.1 logic).
+
+  Invariants:
+    - additive: every pre-existing field on each signal row preserved
+    - idempotent: rows that already carry strategy_version are NOT overwritten
+    - skip int-shape: Phase 3 reset_state legacy `signals: {SPI200: 0}` shape
+      is left untouched (only dict-shaped rows are migrated)
+  '''
+
+  def test_migrate_v3_to_v4_backfills_existing_signal_rows(self) -> None:
+    '''D-05: every dict-shaped signal row gets strategy_version='v1.1.0'.'''
+    from state_manager import _migrate_v3_to_v4
+    s = {
+      'schema_version': 3,
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+        },
+        'AUDUSD': {
+          'signal': -1,
+          'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+        },
+      },
+    }
+    out = _migrate_v3_to_v4(s)
+    assert out['signals']['SPI200']['strategy_version'] == 'v1.1.0', (
+      f'D-05: SPI200 must be stamped v1.1.0 on first v1.2 load; '
+      f'got {out["signals"]["SPI200"].get("strategy_version")!r}'
+    )
+    assert out['signals']['AUDUSD']['strategy_version'] == 'v1.1.0', (
+      f'D-05: AUDUSD must be stamped v1.1.0 on first v1.2 load; '
+      f'got {out["signals"]["AUDUSD"].get("strategy_version")!r}'
+    )
+
+  def test_migrate_v3_to_v4_via_full_migrate_sets_schema_4(self, tmp_path) -> None:
+    '''Going through _migrate (the dispatch walker) on a v3 state ends at
+    schema_version=4 AND backfills strategy_version='v1.1.0' on existing rows.
+    '''
+    from state_manager import _migrate
+    s = {
+      'schema_version': 3,
+      'account': INITIAL_ACCOUNT,
+      'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {
+        'SPI200': {'signal': 1, 'signal_as_of': '2026-04-29', 'as_of_run': '2026-04-29'},
+        'AUDUSD': {'signal': 0, 'signal_as_of': '2026-04-29', 'as_of_run': '2026-04-29'},
+      },
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
+    }
+    out = _migrate(s)
+    assert out['schema_version'] == 4, (
+      f'Phase 22 D-04: _migrate must walk v3 -> v4; got {out["schema_version"]}'
+    )
+    assert out['signals']['SPI200']['strategy_version'] == 'v1.1.0'
+    assert out['signals']['AUDUSD']['strategy_version'] == 'v1.1.0'
+
+  def test_migrate_v3_to_v4_preserves_other_signal_fields(self) -> None:
+    '''Round-trip equality: every original key on each signal row preserved
+    with its exact value; only strategy_version is added.
+    '''
+    from state_manager import _migrate_v3_to_v4
+    original_spi = {
+      'signal': 1,
+      'signal_as_of': '2026-04-29',
+      'as_of_run': '2026-04-29',
+      'last_close': 1234.5,
+      'last_scalars': {'adx': 25.0, 'mom_1': 0.01, 'mom_3': 0.02, 'rvol': 1.1},
+    }
+    s = {'schema_version': 3, 'signals': {'SPI200': dict(original_spi)}}
+    out = _migrate_v3_to_v4(s)
+    sig = out['signals']['SPI200']
+    # Original keys preserved with exact values.
+    for k, v in original_spi.items():
+      assert sig[k] == v, (
+        f'D-05 additive guarantee violated: signals.SPI200.{k} changed '
+        f'from {v!r} to {sig.get(k)!r}'
+      )
+    # New field present.
+    assert sig['strategy_version'] == 'v1.1.0'
+    # No extra keys beyond original + strategy_version.
+    assert set(sig.keys()) == set(original_spi.keys()) | {'strategy_version'}
+
+  def test_migrate_v3_to_v4_idempotent(self) -> None:
+    '''Re-running _migrate_v3_to_v4 on already-migrated data does NOT
+    overwrite an existing strategy_version field (preserves the existing
+    value — supports replayed migrations and manual state.json edits).
+    '''
+    from state_manager import _migrate_v3_to_v4
+    s = {
+      'schema_version': 4,
+      'signals': {
+        'SPI200': {'signal': 1, 'strategy_version': 'v1.2.0'},
+      },
+    }
+    out_once = _migrate_v3_to_v4(s)
+    out_twice = _migrate_v3_to_v4(out_once)
+    assert out_once['signals']['SPI200']['strategy_version'] == 'v1.2.0', (
+      'idempotency: existing v1.2.0 must be preserved (not overwritten to v1.1.0)'
+    )
+    assert out_once == out_twice, (
+      f'idempotency: once={out_once!r} twice={out_twice!r}'
+    )
+
+  def test_migrate_v3_to_v4_handles_int_signal_legacy_shape(self) -> None:
+    '''Phase 3 reset_state legacy int shape (signals.SPI200 = 0) MUST NOT be
+    rewritten by the migration — only dict-shaped rows carry strategy_version.
+    main.py per D-08 upgrade branch (Pitfall 7) tolerates both shapes on read
+    and always writes the dict shape on the next run.
+    '''
+    from state_manager import _migrate_v3_to_v4
+    s = {
+      'schema_version': 3,
+      'signals': {'SPI200': 1, 'AUDUSD': 0},
+    }
+    out = _migrate_v3_to_v4(s)
+    assert out['signals']['SPI200'] == 1, (
+      f'int-shape SPI200 must stay int; got {out["signals"]["SPI200"]!r}'
+    )
+    assert out['signals']['AUDUSD'] == 0, (
+      f'int-shape AUDUSD must stay int; got {out["signals"]["AUDUSD"]!r}'
+    )
+
+  def test_migrate_v3_to_v4_skips_signal_rows_with_existing_field(self) -> None:
+    '''A row that already carries strategy_version='v1.0.0' is preserved —
+    the migration MUST NOT overwrite to 'v1.1.0'.
+    '''
+    from state_manager import _migrate_v3_to_v4
+    s = {
+      'schema_version': 3,
+      'signals': {
+        'SPI200': {'signal': 1, 'strategy_version': 'v1.0.0'},
+      },
+    }
+    out = _migrate_v3_to_v4(s)
+    assert out['signals']['SPI200']['strategy_version'] == 'v1.0.0', (
+      f'D-05 idempotent rule: existing v1.0.0 must not be overwritten; '
+      f'got {out["signals"]["SPI200"]["strategy_version"]!r}'
+    )
+
+  def test_full_walk_v0_to_v4_then_load_state(self, tmp_path) -> None:
+    '''End-to-end walk: write a state with no schema_version (-> v0) to disk,
+    call load_state, assert returned state at STATE_SCHEMA_VERSION (=4) and
+    the signal rows (if dict-shaped) carry strategy_version='v1.1.0'.
+
+    Uses a v0 state with dict-shaped signals so the v3->v4 migration has
+    something to operate on (Phase 3 reset_state would emit int-shape; we
+    construct a richer test fixture here).
+    '''
+    path = tmp_path / 'state.json'
+    bare_state = {
+      # no schema_version → defaults to 0
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {
+        'SPI200': {
+          'signal': 1, 'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+        },
+        'AUDUSD': {
+          'signal': 0, 'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+        },
+      },
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+    }
+    path.write_text(json.dumps(bare_state, indent=2))
+    loaded = load_state(path=path)
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 4, (
+      f'walk-forward chain v0->v1->v2->v3->v4 must end at 4; '
+      f'got {loaded["schema_version"]}'
+    )
+    assert loaded['signals']['SPI200']['strategy_version'] == 'v1.1.0'
+    assert loaded['signals']['AUDUSD']['strategy_version'] == 'v1.1.0'
+
+  def test_defensive_read_logs_WARN_on_missing_strategy_version(self, caplog) -> None:
+    '''D-06 belt-and-suspenders: _read_signal_strategy_version returns 'v1.0.0'
+    AND emits a [State] WARN log when the strategy_version field is absent.
+    '''
+    import logging as _logging
+    from state_manager import _read_signal_strategy_version
+    caplog.set_level(_logging.WARNING, logger='state_manager')
+    sig_without = {'signal': 1, 'signal_as_of': '2026-04-29'}
+    out = _read_signal_strategy_version(sig_without)
+    assert out == 'v1.0.0', (
+      f'D-06 default: missing field must default to v1.0.0; got {out!r}'
+    )
+    warn_records = [
+      r for r in caplog.records
+      if r.levelname == 'WARNING'
+      and 'strategy_version' in r.getMessage()
+    ]
+    assert len(warn_records) == 1, (
+      f'D-06: exactly one WARN must be emitted on missing strategy_version; '
+      f'got {len(warn_records)} (records={[r.getMessage() for r in warn_records]!r})'
+    )
+    assert '[State] WARN signal row missing strategy_version field' in (
+      warn_records[0].getMessage()
+    ), (
+      f'D-06: WARN message text must follow the [State] log-prefix convention; '
+      f'got {warn_records[0].getMessage()!r}'
+    )
+
+  def test_defensive_read_returns_existing_value_without_warn(self, caplog) -> None:
+    '''D-06 happy path: when strategy_version is present, return it and
+    DO NOT emit a WARN (avoids journalctl noise on every read).
+    '''
+    import logging as _logging
+    from state_manager import _read_signal_strategy_version
+    caplog.set_level(_logging.WARNING, logger='state_manager')
+    sig_with = {'signal': 1, 'strategy_version': 'v1.2.0'}
+    out = _read_signal_strategy_version(sig_with)
+    assert out == 'v1.2.0'
+    strategy_warns = [
+      r for r in caplog.records
+      if r.levelname == 'WARNING'
+      and 'strategy_version' in r.getMessage()
+    ]
+    assert strategy_warns == [], (
+      f'D-06: present field must NOT emit WARN; '
+      f'got {[r.getMessage() for r in strategy_warns]!r}'
+    )
