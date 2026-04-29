@@ -91,6 +91,53 @@ curl -sI -H "X-Trading-Signals-Auth: <your-secret>" http://127.0.0.1:8000/
 
 ---
 
+## Configure auth username (Phase 16.1 AUTH-04 + AUTH-08)
+
+Phase 16.1 introduces cookie-based login + TOTP 2FA. The form has two fields — a username and a password. The password is `WEB_AUTH_SECRET` from the section above; the username is a new env var:
+
+```bash
+echo "WEB_AUTH_USERNAME=marc" >> /home/trader/trading-signals/.env
+sudo systemctl restart trading-signals-web
+```
+
+> **Constraint:** Username must be non-empty and must NOT contain the `:` character (legacy Basic Auth field separator — fail-closed at boot if violated; the unit will refuse to start with a clear `RuntimeError` in journald).
+
+> **Why a username is needed:** with TOTP enrolled, the operator types creds into the form and then a 6-digit code from their authenticator app. The username carries no security entropy (`hmac.compare_digest` constant-time compare; auth strength is in `WEB_AUTH_SECRET`) — pick whatever's memorable.
+
+Verify by visiting `https://signals.<owned-domain>.com/` from a browser (curl path is unchanged — header still works without a username).
+
+---
+
+## First-login TOTP enrollment walkthrough (Phase 16.1 AUTH-08)
+
+Run this ONCE per droplet, the first time the operator visits the dashboard from a browser after Phase 16.1 ships:
+
+1. Visit `https://signals.<owned-domain>.com/` from your phone or laptop.
+2. The browser is redirected to `/login` (302). Enter `WEB_AUTH_USERNAME` and `WEB_AUTH_SECRET` from `.env`.
+3. The server detects no TOTP secret on file and redirects to `/enroll-totp`. A QR code renders.
+4. Open your authenticator app (Google Authenticator, 1Password, Authy, Microsoft Authenticator) and scan the QR code. The app shows a 6-digit code that rotates every 30 seconds. (If the camera doesn't work, type the displayed secret string manually.)
+5. Type the current 6-digit code into the form and press "Verify and finish".
+6. The server marks enrollment complete, sets a 12-hour `tsi_session` cookie, and redirects to `/`. The dashboard renders with a "Sign out" button in the top-right of the header.
+
+Subsequent logins: enter creds + 6-digit code (no QR rescan). iOS Safari Keychain auto-fills creds on next-day re-login (one tap).
+
+> **Lost phone / new device:** click "Lost 2FA? Reset via email" on `/login` (Phase 16.1 Plan 03 wires the route — until that lands, restore from a backup of `auth.json` OR delete `auth.json` on the droplet to re-enroll on next visit).
+
+---
+
+## Troubleshooting — 302 redirects to /login
+
+Browser navigation to `/` without an active cookie session now returns `302 Location: /login?next=<path>` (Phase 16.1 D-04). This is expected.
+
+- **curl / scripts** (no browser headers): `curl -H "X-Trading-Signals-Auth: $secret" /` → 200 (header path unchanged per AUTH-05).
+- **curl WITHOUT header**: `curl /` → 401 plain-text `unauthorized` (Phase 13 AUTH-07 contract preserved verbatim — no redirect, no `WWW-Authenticate`).
+- **Browser without auth**: 302 to `/login?next=/`. Sign in to land back on `/`.
+- **Browser WITH expired/tampered cookie**: same 302 → `/login`. Sign in to issue a fresh cookie.
+
+If a browser visit returns 401 instead of 302: the request likely lacks `Sec-Fetch-Mode: navigate` AND lacks `Accept: text/html`. Modern Safari/Chrome/Firefox always send these on top-level navigations; if the operator is testing via curl with a custom Accept, that's expected curl-shaped behaviour.
+
+---
+
 ## Install sudoers entry for trader
 
 `deploy.sh` calls `sudo -n systemctl restart trading-signals` AND `sudo -n systemctl restart trading-signals-web` as two separate invocations (split form per Phase 11 REVIEWS HIGH #4 — sudo matches the full argv, so a combined invocation may NOT match either sudoers rule).

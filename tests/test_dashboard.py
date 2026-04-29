@@ -2079,3 +2079,101 @@ class TestBannerStackOrder:
       f'REVIEWS H-2: drift banner must render BEFORE Open Positions heading. '
       f'idx_drift={idx_drift} idx_positions_heading={idx_positions_heading}'
     )
+
+
+# =========================================================================
+# Phase 16.1 Plan 01 Task 5 — Sign Out button + session note placeholders
+# =========================================================================
+
+
+class TestRenderSignoutButton:
+  '''Phase 16.1: render_dashboard accepts is_cookie_session: bool | None = None.
+    None  → emit literal {{SIGNOUT_BUTTON}}{{SESSION_NOTE}} placeholders for
+            web-layer per-request substitution (mirrors {{WEB_AUTH_SECRET}}
+            pattern).
+    True  → render Sign Out button inline (cookie session active).
+    False → render session note inline (header-auth flow — UI-SPEC §Surface 4
+            generalised post-E-01).
+  '''
+
+  def test_signout_button_present_when_cookie_session_True(self, tmp_path) -> None:
+    out = tmp_path / 'd.html'
+    state = _make_render_state_with_position()
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
+    rendered = out.read_text()
+    assert 'class="signout-form"' in rendered
+    assert 'action="/logout"' in rendered
+    assert '>Sign out<' in rendered
+    assert 'aria-label="Sign out of Trading Signals"' in rendered
+    assert 'class="session-note"' not in rendered
+    # Placeholders fully resolved
+    assert '{{SIGNOUT_BUTTON}}' not in rendered
+    assert '{{SESSION_NOTE}}' not in rendered
+
+  def test_session_note_present_when_cookie_session_False(self, tmp_path) -> None:
+    out = tmp_path / 'd.html'
+    state = _make_render_state_with_position()
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=False)
+    rendered = out.read_text()
+    assert 'class="session-note"' in rendered
+    assert 'Signed in via header — close browser tabs to sign out.' in rendered
+    assert 'class="signout-form"' not in rendered
+    assert '{{SIGNOUT_BUTTON}}' not in rendered
+    assert '{{SESSION_NOTE}}' not in rendered
+
+  def test_default_kwarg_emits_placeholders_for_web_layer_substitution(
+    self, tmp_path,
+  ) -> None:
+    '''Default None → main.py daily-loop callers emit placeholders that the
+    web layer substitutes per request (Phase 14 {{WEB_AUTH_SECRET}} pattern).
+    '''
+    out = tmp_path / 'd.html'
+    state = _make_render_state_with_position()
+    render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    rendered = out.read_text()
+    assert '{{SIGNOUT_BUTTON}}' in rendered
+    assert '{{SESSION_NOTE}}' in rendered
+    # Neither final widget rendered yet — that's the web layer's job.
+    assert 'class="signout-form"' not in rendered
+    assert 'class="session-note"' not in rendered
+
+  def test_btn_signout_css_rules_present(self, tmp_path) -> None:
+    '''Plan 01 Task 5: .btn-signout and .session-note rules in <style>.'''
+    out = tmp_path / 'd.html'
+    state = _make_render_state_with_position()
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
+    rendered = out.read_text()
+    assert '.btn-signout' in rendered
+    assert '.session-note' in rendered
+
+  def test_no_hx_headers_on_signout_form(self, tmp_path) -> None:
+    '''Sign Out form is plain HTML POST — uses the cookie session, NO
+    hx-headers (D-13 unchanged for HTMX trade forms; signout authenticates
+    via cookie not header).
+    '''
+    out = tmp_path / 'd.html'
+    state = _make_render_state_with_position()
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
+    rendered = out.read_text()
+    # Locate the signout form block and assert no hx-headers within
+    import re as _re
+    match = _re.search(
+      r'<form[^>]*class="signout-form"[^>]*>.*?</form>',
+      rendered, _re.DOTALL,
+    )
+    assert match is not None
+    assert 'hx-headers' not in match.group(0)
+
+  def test_hx_headers_count_unchanged_from_phase_14_baseline(self, tmp_path) -> None:
+    '''D-13 belt-and-suspenders preserved: HTMX trade-form hx-headers count
+    must equal the Phase 14 baseline (2 occurrences — open-form +
+    position-table-section).
+    '''
+    out = tmp_path / 'd.html'
+    state = _make_render_state_with_position()
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
+    rendered = out.read_text()
+    assert rendered.count('hx-headers') == 2, (
+      f'D-13 belt-and-suspenders: expected exactly 2 hx-headers occurrences '
+      f'(open-form + position-table-section), got {rendered.count("hx-headers")}'
+    )

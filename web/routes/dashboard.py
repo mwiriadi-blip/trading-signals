@@ -64,6 +64,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, Response
+from itsdangerous import BadSignature, SignatureExpired
+from itsdangerous.url_safe import URLSafeTimedSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,11 @@ _STATE_PATH = 'state.json'
 # env secret at request time so on-disk dashboard.html never carries the
 # real value. Plan 14-05 emits the literal placeholder in hx-headers.
 _PLACEHOLDER = b'{{WEB_AUTH_SECRET}}'
+
+# Phase 16.1 — placeholders for the per-request auth-widget swap (Sign Out
+# button vs session note). Mirrors the Phase 14 {{WEB_AUTH_SECRET}} pattern.
+_SIGNOUT_PLACEHOLDER = b'{{SIGNOUT_BUTTON}}'
+_SESSION_NOTE_PLACEHOLDER = b'{{SESSION_NOTE}}'
 
 
 def _is_stale() -> bool:
@@ -97,6 +104,28 @@ def _is_stale() -> bool:
 
 def register(app: FastAPI) -> None:
   '''Register GET / on the given FastAPI instance.'''
+
+  # Phase 16.1: build a session serializer at register-time so the per-request
+  # cookie validator is just a signature check (the constructor is non-trivial).
+  _session_secret = os.environ.get('WEB_AUTH_SECRET', '')
+  _session_serializer = URLSafeTimedSerializer(
+    _session_secret, salt='tsi-session-cookie',
+  )
+
+  def _is_cookie_session(request: Request) -> bool:
+    '''Validate tsi_session cookie via itsdangerous. Returns True iff the
+    cookie is present and valid (not expired, signed correctly).
+    '''
+    token = request.cookies.get('tsi_session')
+    if not token:
+      return False
+    try:
+      _session_serializer.loads(token, max_age=43200)
+      return True
+    except SignatureExpired:
+      return False
+    except BadSignature:
+      return False
 
   @app.get('/')
   def get_dashboard(request: Request, fragment: str | None = None):
@@ -198,6 +227,25 @@ def register(app: FastAPI) -> None:
     content = Path(_DASHBOARD_PATH).read_bytes()
     secret = os.environ.get('WEB_AUTH_SECRET', '').encode('utf-8')
     content = content.replace(_PLACEHOLDER, secret)
+
+    # Phase 16.1: per-request auth widget — Sign Out button (cookie session)
+    # vs session note (header auth). LOCAL import preserves hex boundary
+    # (Phase 11 C-2; web/routes/dashboard.py is allowed to import dashboard
+    # per Phase 13 D-07).
+    from dashboard import _render_session_note, _render_signout_button
+
+    if _is_cookie_session(request):
+      content = content.replace(
+        _SIGNOUT_PLACEHOLDER,
+        _render_signout_button().encode('utf-8'),
+      )
+      content = content.replace(_SESSION_NOTE_PLACEHOLDER, b'')
+    else:
+      content = content.replace(_SIGNOUT_PLACEHOLDER, b'')
+      content = content.replace(
+        _SESSION_NOTE_PLACEHOLDER,
+        _render_session_note().encode('utf-8'),
+      )
 
     if fragment is not None:
       # Extract the tbody whose id matches `fragment`. Returns inner HTML only.

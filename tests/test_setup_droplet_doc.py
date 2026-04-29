@@ -220,3 +220,53 @@ class TestCrossArtifactDriftGuard:
       '/usr/bin/systemctl restart trading-signals, '
       '/usr/bin/systemctl restart trading-signals-web'
     ) in doc_text
+
+
+# =========================================================================
+# Phase 16.1 Plan 01 Task 5 — runbook extension guards
+# =========================================================================
+
+
+class TestPhase16_1RunbookSections:
+  '''Phase 16.1 D-08 + AUTH-08 + D-04: SETUP-DROPLET.md gets three new H2
+  sections covering WEB_AUTH_USERNAME setup, first-login TOTP walkthrough,
+  and the 302→/login troubleshooting note.
+  '''
+
+  def test_documents_web_auth_username(self, doc_text):
+    assert re.search(r'WEB_AUTH_USERNAME=', doc_text), (
+      'SETUP-DROPLET.md must document WEB_AUTH_USERNAME assignment'
+    )
+
+  def test_documents_username_no_colon_constraint(self, doc_text):
+    '''D-08: the colon-forbidden constraint must be visible to the operator.'''
+    has_constraint = (
+      "must NOT contain the `:`" in doc_text
+      or "must not contain ':'" in doc_text
+      or 'must NOT contain' in doc_text
+    )
+    assert has_constraint, (
+      'SETUP-DROPLET.md must document the no-`:` username constraint (D-08)'
+    )
+
+  def test_documents_first_login_totp_walkthrough(self, doc_text):
+    lower = doc_text.lower()
+    assert 'enroll' in lower
+    assert 'qr' in lower
+    assert 'authenticator' in lower
+
+  def test_documents_302_redirect_to_login_troubleshooting(self, doc_text):
+    assert '/login' in doc_text and '302' in doc_text, (
+      'SETUP-DROPLET.md must explain the new 302→/login behavior for browsers'
+    )
+
+  def test_section_configure_auth_username_h2(self, doc_text):
+    assert re.search(r'^## Configure auth username', doc_text, re.MULTILINE), (
+      'SETUP-DROPLET.md missing "## Configure auth username" H2 section'
+    )
+
+  def test_section_first_login_totp_walkthrough_h2(self, doc_text):
+    assert re.search(
+      r'^## First-login TOTP enrollment walkthrough',
+      doc_text, re.MULTILINE,
+    ), 'SETUP-DROPLET.md missing "## First-login TOTP enrollment walkthrough" H2'

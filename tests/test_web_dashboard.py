@@ -925,3 +925,71 @@ class TestTradesDriftLifecycle:
       f'REVIEWS H-4: modify-trade must NOT nuke non-drift warnings. '
       f'Expected 1 corruption warning; got {len(corruption_warnings)}: {corruption_warnings}'
     )
+
+
+# =========================================================================
+# Phase 16.1 Plan 01 Task 5 — Session-aware placeholder substitution
+# =========================================================================
+
+
+class TestSessionPlaceholderSubstitution:
+  '''Phase 16.1: web/routes/dashboard.py validates tsi_session cookie at
+  request time and substitutes {{SIGNOUT_BUTTON}} / {{SESSION_NOTE}}
+  placeholders accordingly. Mirrors Phase 14 {{WEB_AUTH_SECRET}} pattern.
+  '''
+
+  def test_get_dashboard_substitutes_signout_button_when_cookie_valid(
+    self, client_with_dashboard, valid_cookie_token,
+  ):
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body>'
+      '<header><p class="meta">'
+      '{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}'
+      '</p></header>'
+      '</body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/', cookies={'tsi_session': valid_cookie_token})
+    assert r.status_code == 200
+    body = r.text
+    assert 'class="signout-form"' in body
+    assert 'class="session-note"' not in body
+    assert '{{SIGNOUT_BUTTON}}' not in body
+    assert '{{SESSION_NOTE}}' not in body
+
+  def test_get_dashboard_substitutes_session_note_when_header_auth_only(
+    self, client_with_dashboard, auth_headers,
+  ):
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body>'
+      '<header><p class="meta">'
+      '{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}'
+      '</p></header>'
+      '</body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/', headers=auth_headers)
+    assert r.status_code == 200
+    body = r.text
+    assert 'class="session-note"' in body
+    assert 'class="signout-form"' not in body
+    assert '{{SIGNOUT_BUTTON}}' not in body
+    assert '{{SESSION_NOTE}}' not in body
+
+  def test_existing_websecret_placeholder_substitution_still_works(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''Phase 14 regression — ensure Phase 16.1 didn't break placeholder ordering.'''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body data-auth="{{WEB_AUTH_SECRET}}">'
+      '<header><p class="meta">{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}</p></header>'
+      '</body></html>',
+      encoding='utf-8',
+    )
+    r = client.get('/', headers=auth_headers)
+    assert r.status_code == 200
+    assert 'a' * 32 in r.text
+    assert '{{WEB_AUTH_SECRET}}' not in r.text

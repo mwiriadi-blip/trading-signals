@@ -659,6 +659,29 @@ td.calc-cell.entry-target {{
 }}
 .sentinel-body li {{ margin: 0 0 var(--space-1); list-style: disc; }}
 .sentinel-body li:last-child {{ margin-bottom: 0; }}
+
+/* Phase 16.1 — Sign Out + session-note widgets in header .meta row */
+.signout-form {{ margin-left: auto; }}
+.btn-signout {{
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px var(--space-3);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}}
+.btn-signout:hover {{
+  background: rgba(229, 231, 235, 0.06);
+  color: var(--color-text);
+}}
+.session-note {{
+  margin-left: auto;
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+}}
 '''
 
 
@@ -922,15 +945,64 @@ _EXIT_REASON_DISPLAY = {
 # (PATTERNS.md §XSS escape pattern, RESEARCH §Pattern 4).
 # =========================================================================
 
-def _render_header(state: dict, now: datetime) -> str:  # noqa: ARG001 — state reserved for future
+def _render_signout_button() -> str:
+  '''Phase 16.1 UI-SPEC §Surface 3: Sign Out button for cookie-session users.
+
+  Form POSTs to /logout (the auth.py middleware lets /logout through via
+  PUBLIC_PATHS, then web/routes/login.py::post_logout clears the cookie
+  with attrs matching creation per global LEARNING).
+  '''
+  return (
+    '<form method="POST" action="/logout" class="signout-form">'
+    '<button type="submit" class="btn-signout" '
+    'aria-label="Sign out of Trading Signals">Sign out</button>'
+    '</form>'
+  )
+
+
+def _render_session_note() -> str:
+  '''Phase 16.1 UI-SPEC §Surface 4 (E-01 generalised — Basic Auth removed).
+
+  Shown in the header when the request did NOT carry a valid tsi_session
+  cookie (i.e. the operator is authenticated via X-Trading-Signals-Auth
+  header — usually a curl/script). Renders the no-op "close tabs" hint
+  since there's no cookie to clear server-side.
+  '''
+  return (
+    '<p class="session-note">'
+    'Signed in via header — close browser tabs to sign out.'
+    '</p>'
+  )
+
+
+def _render_header(
+  state: dict, now: datetime, is_cookie_session: bool | None = None,
+) -> str:  # noqa: ARG001 — state reserved for future
   '''UI-SPEC §Header — H1 "Trading Signals" + subtitle + Last-updated AWST.
 
   state is reserved for future use (e.g. surfacing schema_version); the live
   clock render uses the injected `now`. _fmt_last_updated raises ValueError on
   naive datetimes (Pitfall 9 golden-snapshot drift guard).
+
+  Phase 16.1 — `is_cookie_session` 3-way semantics (LEARNING 2026-04-27 hex
+  boundary: dashboard.py must NOT decode cookies; the auth signal arrives as
+  a primitive bool computed by the caller):
+    None  — emit the literal {{SIGNOUT_BUTTON}}{{SESSION_NOTE}} placeholders
+            so web/routes/dashboard.py can substitute per request (matches
+            the Phase 14 {{WEB_AUTH_SECRET}} pattern). This is what
+            main.run_daily_check writes to disk.
+    True  — render the Sign Out button inline (test path: direct
+            render_dashboard(..., is_cookie_session=True)).
+    False — render the session note inline (test path: header-auth flow).
   '''
   subtitle = html.escape('SPI 200 & AUD/USD mechanical system', quote=True)
   last_updated = html.escape(_fmt_last_updated(now), quote=True)
+  if is_cookie_session is None:
+    auth_widget = '{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}'
+  elif is_cookie_session:
+    auth_widget = _render_signout_button()
+  else:
+    auth_widget = _render_session_note()
   return (
     '<header>\n'
     '  <h1>Trading Signals</h1>\n'
@@ -938,6 +1010,7 @@ def _render_header(state: dict, now: datetime) -> str:  # noqa: ARG001 — state
     '  <p class="meta">\n'
     '    <span class="label">Last updated</span>\n'
     f'    <span class="value">{last_updated}</span>\n'
+    f'    {auth_widget}\n'
     '  </p>\n'
     '</header>\n'
   )
@@ -1920,6 +1993,7 @@ def render_dashboard(
   state: dict,
   out_path: Path = Path('dashboard.html'),
   now: datetime | None = None,
+  is_cookie_session: bool | None = None,
 ) -> None:
   '''Public API per CONTEXT D-01. Writes dashboard.html atomically; never mutates state.
 
@@ -1931,13 +2005,17 @@ def render_dashboard(
   PERTH.localize(datetime.now()) — NEVER via `datetime(..., tzinfo=PERTH)`
   which silently adopts the historical LMT offset (+07:43:24 for Perth
   pre-1895).
+
+  Phase 16.1 — `is_cookie_session` 3-way semantics (forwarded to
+  _render_header). Default None makes main.py daily-loop callers emit
+  placeholders; the web layer substitutes at request time.
   '''
   if now is None:
     perth = pytz.timezone('Australia/Perth')
     now = datetime.now(perth)
   logger.info('[Dashboard] rendering to %s', out_path)
   body = (
-    _render_header(state, now)
+    _render_header(state, now, is_cookie_session=is_cookie_session)
     + _render_signal_cards(state)
     + _render_equity_chart_container(state)
     # Phase 15 REVIEWS H-2: drift sentinel banner sits BEFORE positions
