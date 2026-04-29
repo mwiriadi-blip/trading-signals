@@ -33,6 +33,11 @@ VALID_SECRET = 'a' * 32
 # Phase 16.1 D-08: sentinel username — non-empty, no ':' character.
 VALID_USERNAME = 'marc'
 
+# Phase 16.1 Plan 03 F-06: sentinel recovery email — matches the regex
+# ^[^@]+@[^@]+\.[^@]+$ and equals the default literal in web/app.py so any
+# test that doesn't override it sees the documented default value.
+VALID_RECOVERY_EMAIL = 'mwiriadi@gmail.com'
+
 # Phase 13 AUTH-01: header name (single source of truth across all web tests).
 AUTH_HEADER_NAME = 'X-Trading-Signals-Auth'
 
@@ -66,6 +71,11 @@ def _set_web_auth_credentials_for_web_tests(monkeypatch, request):
   if 'test_web_' in fspath or 'test_auth_store' in fspath:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', VALID_USERNAME)
+    # Phase 16.1 Plan 03 F-06: OPERATOR_RECOVERY_EMAIL is boot-validated in
+    # web/app.py::_read_auth_credentials. Tests that intentionally exercise
+    # the missing/malformed-email path call setenv/delenv themselves; LIFO
+    # finalizer ordering means their override beats this autouse setenv.
+    monkeypatch.setenv('OPERATOR_RECOVERY_EMAIL', VALID_RECOVERY_EMAIL)
 
 
 # =============================================================================

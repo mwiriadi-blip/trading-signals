@@ -349,6 +349,222 @@ class TestTrustedDevices:
     assert data['trusted_devices'][0]['revoked'] is True
 
 
+class TestMagicLinks:
+  '''Phase 16.1 Plan 03 Task 1 — magic-link helpers (F-01 + F-02 + F-08).
+
+  Helpers under test:
+    add_magic_link(token_hash, action, expires_at, email=None) -> None
+    consume_magic_link(unhashed_token) -> tuple[bool, str | None]
+    count_recent_magic_links(within_seconds=86400) -> int
+    purge_expired_magic_links(retention_seconds=604800) -> int
+
+  Token hashing: caller passes the unhashed token; auth_store sha256-hashes
+  on receive and compares against stored token_hash. Leaked auth.json
+  reveals only hashes, not live tokens (T-16.1-19).
+  '''
+
+  def test_add_magic_link_appends_row_with_correct_shape(
+    self, isolated_auth_json,
+  ):
+    '''F-01 PendingMagicLink schema: 7 keys, sensible defaults.'''
+    import auth_store
+    auth_store.add_magic_link(
+      token_hash='abc' * 16,
+      action='totp-reset',
+      expires_at='2026-04-29T09:00:00+00:00',
+    )
+    data = auth_store.load_auth()
+    assert len(data['pending_magic_links']) == 1
+    row = data['pending_magic_links'][0]
+    assert set(row.keys()) == {
+      'token_hash', 'email', 'action', 'created_at',
+      'expires_at', 'consumed', 'consumed_at',
+    }
+    assert row['token_hash'] == 'abc' * 16
+    assert row['action'] == 'totp-reset'
+    assert row['expires_at'] == '2026-04-29T09:00:00+00:00'
+    assert row['consumed'] is False
+    assert row['consumed_at'] is None
+    assert ISO_8601_RE.match(row['created_at']), (
+      f'created_at not ISO 8601: {row["created_at"]!r}'
+    )
+    # email defaulted from OPERATOR_RECOVERY_EMAIL env var (autouse fixture).
+    assert row['email'] == 'mwiriadi@gmail.com'
+
+  def test_add_magic_link_explicit_email_overrides_default(
+    self, isolated_auth_json,
+  ):
+    import auth_store
+    auth_store.add_magic_link(
+      token_hash='deadbeef' * 8,
+      action='totp-reset',
+      expires_at='2026-04-29T09:00:00+00:00',
+      email='ops@example.com',
+    )
+    data = auth_store.load_auth()
+    assert data['pending_magic_links'][0]['email'] == 'ops@example.com'
+
+  def test_consume_magic_link_with_valid_unhashed_token_marks_consumed_returns_action(
+    self, isolated_auth_json,
+  ):
+    '''Server hashes-on-receive; matches by hash; flips consumed; returns action.'''
+    import hashlib
+    import auth_store
+    from datetime import datetime, timedelta, timezone
+    token = 'foo'
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    auth_store.add_magic_link(
+      token_hash=token_hash, action='totp-reset', expires_at=expires_at,
+    )
+    consumed, action = auth_store.consume_magic_link(token)
+    assert consumed is True
+    assert action == 'totp-reset'
+    data = auth_store.load_auth()
+    row = data['pending_magic_links'][0]
+    assert row['consumed'] is True
+    assert ISO_8601_RE.match(row['consumed_at']), (
+      f'consumed_at not ISO 8601: {row["consumed_at"]!r}'
+    )
+
+  def test_consume_magic_link_double_consume_returns_false(
+    self, isolated_auth_json,
+  ):
+    import hashlib
+    import auth_store
+    from datetime import datetime, timedelta, timezone
+    token = 'bar'
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    auth_store.add_magic_link(
+      token_hash=token_hash, action='totp-reset', expires_at=expires_at,
+    )
+    first = auth_store.consume_magic_link(token)
+    assert first == (True, 'totp-reset')
+    second = auth_store.consume_magic_link(token)
+    assert second == (False, None)
+
+  def test_consume_magic_link_unknown_token_returns_false(
+    self, isolated_auth_json,
+  ):
+    import auth_store
+    pre = auth_store.load_auth()
+    consumed, action = auth_store.consume_magic_link('does-not-exist')
+    assert consumed is False
+    assert action is None
+    post = auth_store.load_auth()
+    assert pre == post
+
+  def test_consume_magic_link_expired_token_returns_false(
+    self, isolated_auth_json,
+  ):
+    import hashlib
+    import auth_store
+    from datetime import datetime, timedelta, timezone
+    token = 'staletoken'
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    expires_at = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    auth_store.add_magic_link(
+      token_hash=token_hash, action='totp-reset', expires_at=expires_at,
+    )
+    consumed, action = auth_store.consume_magic_link(token)
+    assert consumed is False
+    assert action is None
+    # Expired path does NOT flip consumed.
+    row = auth_store.load_auth()['pending_magic_links'][0]
+    assert row['consumed'] is False
+
+  def test_consume_magic_link_tampered_token_does_not_match_hash(
+    self, isolated_auth_json,
+  ):
+    import hashlib
+    import auth_store
+    from datetime import datetime, timedelta, timezone
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    auth_store.add_magic_link(
+      token_hash=hashlib.sha256(b'foo').hexdigest(),
+      action='totp-reset', expires_at=expires_at,
+    )
+    consumed, action = auth_store.consume_magic_link('bar')
+    assert consumed is False
+    assert action is None
+
+  def test_count_recent_magic_links_within_window(self, isolated_auth_json):
+    '''3 rows created within 24h, 2 created 48h ago → count_recent returns 3.'''
+    import auth_store
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    data = auth_store.load_auth()
+    # Build 5 rows directly into auth.json — we want full control over created_at.
+    for i, hours_ago in enumerate([1, 2, 5, 48, 72]):
+      data['pending_magic_links'].append({
+        'token_hash': f'hash-{i}',
+        'email': 'mwiriadi@gmail.com',
+        'action': 'totp-reset',
+        'created_at': (now - timedelta(hours=hours_ago)).isoformat(),
+        'expires_at': (now + timedelta(hours=1)).isoformat(),
+        'consumed': False,
+        'consumed_at': None,
+      })
+    auth_store.save_auth(data)
+    assert auth_store.count_recent_magic_links(within_seconds=86400) == 3
+
+  def test_count_recent_magic_links_zero_when_empty(self, isolated_auth_json):
+    import auth_store
+    assert auth_store.count_recent_magic_links() == 0
+
+  def test_purge_expired_magic_links_removes_old_consumed_rows(
+    self, isolated_auth_json,
+  ):
+    '''Drops rows whose expires_at is older than retention_seconds (default 7d).
+    Keeps unexpired rows AND rows still inside the audit window.
+    '''
+    import auth_store
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    data = auth_store.load_auth()
+    # Row A: unconsumed, not yet expired — KEEP.
+    data['pending_magic_links'].append({
+      'token_hash': 'A', 'email': 'mwiriadi@gmail.com', 'action': 'totp-reset',
+      'created_at': now.isoformat(),
+      'expires_at': (now + timedelta(hours=1)).isoformat(),
+      'consumed': False, 'consumed_at': None,
+    })
+    # Row B: expired 8 days ago — REMOVE (outside retention).
+    data['pending_magic_links'].append({
+      'token_hash': 'B', 'email': 'mwiriadi@gmail.com', 'action': 'totp-reset',
+      'created_at': (now - timedelta(days=8)).isoformat(),
+      'expires_at': (now - timedelta(days=8)).isoformat(),
+      'consumed': False, 'consumed_at': None,
+    })
+    # Row C: consumed + expired 8 days ago — REMOVE.
+    data['pending_magic_links'].append({
+      'token_hash': 'C', 'email': 'mwiriadi@gmail.com', 'action': 'totp-reset',
+      'created_at': (now - timedelta(days=8)).isoformat(),
+      'expires_at': (now - timedelta(days=8)).isoformat(),
+      'consumed': True,
+      'consumed_at': (now - timedelta(days=8)).isoformat(),
+    })
+    # Row D: expired 1 day ago — KEEP (still inside 7-day audit window).
+    data['pending_magic_links'].append({
+      'token_hash': 'D', 'email': 'mwiriadi@gmail.com', 'action': 'totp-reset',
+      'created_at': (now - timedelta(days=1)).isoformat(),
+      'expires_at': (now - timedelta(days=1)).isoformat(),
+      'consumed': True,
+      'consumed_at': (now - timedelta(days=1)).isoformat(),
+    })
+    auth_store.save_auth(data)
+    dropped = auth_store.purge_expired_magic_links()
+    assert dropped == 2
+    post = auth_store.load_auth()
+    remaining_hashes = {r['token_hash'] for r in post['pending_magic_links']}
+    assert remaining_hashes == {'A', 'D'}
+
+  def test_purge_expired_magic_links_safe_when_empty(self, isolated_auth_json):
+    import auth_store
+    assert auth_store.purge_expired_magic_links() == 0
+
+
 class TestForbiddenImports:
   '''Hex-boundary AST guard: auth_store.py is a peer of state_manager.py
   (NOT inside web/), so it MUST NOT import from web/, signal/sizing engines,

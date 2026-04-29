@@ -195,5 +195,16 @@ TSI_ENROLL_SALT: str = 'tsi-enroll-cookie'
 TSI_TRUSTED_TTL_SECONDS = 2592000
 TSI_TRUSTED_SALT = 'tsi-trusted-cookie'
 
+# Phase 16.1 Plan 03 — magic-link reset (F-02 + F-08).
+# Salts share the 'magic-link' root for grep-discoverability; the literal
+# 'magic-link' string is also locked into web/routes/login.py and
+# web/routes/reset.py — keep these aligned.
+MAGIC_LINK_TTL_SECONDS = 3600          # 1 hour (F-02)
+MAGIC_LINK_SALT = 'magic-link'         # F-02; unique vs tsi-*-cookie salts
+RATE_LIMIT_LOGIN_PER_15M = 5           # F-08
+RATE_LIMIT_FORGOT_PER_HOUR = 3         # F-08
+RATE_LIMIT_RESET_PER_HOUR = 10         # F-08
+RATE_LIMIT_MAGIC_LINKS_PER_24H = 3     # F-08 per-account
+
 TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
 AUTH_JSON_PATH: str = 'auth.json'

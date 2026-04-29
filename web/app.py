@@ -32,6 +32,7 @@ Log prefix: [Web] for all web-process log lines.
 '''
 import logging
 import os
+import re
 
 from fastapi import FastAPI
 
@@ -48,18 +49,35 @@ logger = logging.getLogger(__name__)
 
 _MIN_SECRET_LEN = 32  # D-17: ≈128 bits entropy via openssl rand -hex 16
 
+# Phase 16.1 Plan 03 F-06: OPERATOR_RECOVERY_EMAIL validation regex.
+# Permissive 'looks like an email' check — name@domain.tld. Boot-validated
+# (fail-closed RuntimeError) so a typo in /home/trader/trading-signals/.env
+# surfaces in journald via systemd Restart=on-failure rather than being
+# discovered later when the operator hits the recovery flow.
+_EMAIL_RE = re.compile(r'^[^@]+@[^@]+\.[^@]+$')
 
-def _read_auth_credentials() -> tuple[str, str]:
-  '''Phase 16.1 D-08 + Phase 13 D-16/D-17: fail-closed username + secret read.
+# Phase 16.1 Plan 03 F-06: default recovery email (operator's owned inbox).
+# Locked here AND documented in .env.example AND asserted in tests
+# (test_web_app_factory.py::TestRecoveryEmailValidation). Three places in
+# sync — change all three together.
+_DEFAULT_RECOVERY_EMAIL = 'mwiriadi@gmail.com'
+
+
+def _read_auth_credentials() -> tuple[str, str, str]:
+  '''Phase 16.1 D-08 + Phase 13 D-16/D-17 + Plan 03 F-06: fail-closed
+  username + secret + recovery_email read.
 
   Validates username FIRST (D-08): non-empty, no ':' character (legacy Basic
   Auth field separator — even with E-01 killing the Basic Auth path, ':' in
   username is rejected to defend against operators typing literal user:pw).
   Then validates secret (Phase 13 D-16/D-17 message strings preserved
-  byte-exact — Phase 13 grep tests depend on them).
+  byte-exact — Phase 13 grep tests depend on them). Last, validates
+  OPERATOR_RECOVERY_EMAIL (Plan 03 F-06): defaults to 'mwiriadi@gmail.com';
+  must match name@domain.tld.
 
-  Returns (username, secret) tuple. systemd's Restart=on-failure surfaces
-  the RuntimeError in journald so the operator sees the cause immediately.
+  Returns (username, secret, recovery_email) tuple. systemd's
+  Restart=on-failure surfaces the RuntimeError in journald so the operator
+  sees the cause immediately.
   '''
   username = os.environ.get('WEB_AUTH_USERNAME', '').strip()
   if not username:
@@ -84,7 +102,19 @@ def _read_auth_credentials() -> tuple[str, str]:
       f'WEB_AUTH_SECRET must be at least {_MIN_SECRET_LEN} characters. '
       'Generate with: openssl rand -hex 16'
     )
-  return username, secret
+
+  # Phase 16.1 Plan 03 F-06: OPERATOR_RECOVERY_EMAIL boot validation.
+  recovery_email = os.environ.get(
+    'OPERATOR_RECOVERY_EMAIL', _DEFAULT_RECOVERY_EMAIL,
+  ).strip()
+  if not _EMAIL_RE.match(recovery_email):
+    raise RuntimeError(
+      'OPERATOR_RECOVERY_EMAIL is malformed — refusing to start. '
+      'Must match name@domain.tld (e.g. mwiriadi@gmail.com). '
+      'Add OPERATOR_RECOVERY_EMAIL=<your-email> to '
+      '/home/trader/trading-signals/.env'
+    )
+  return username, secret, recovery_email
 
 
 def create_app() -> FastAPI:
@@ -101,7 +131,8 @@ def create_app() -> FastAPI:
   the AuthMiddleware line below — otherwise they will run AFTER auth, which
   defeats the security gate.
   '''
-  username, secret = _read_auth_credentials()  # Phase 16.1 D-08 + Phase 13 D-16/D-17
+  # Phase 16.1 D-08 + Phase 13 D-16/D-17 + Plan 03 F-06.
+  username, secret, recovery_email = _read_auth_credentials()
 
   application = FastAPI(
     title='Trading Signals',
@@ -112,6 +143,12 @@ def create_app() -> FastAPI:
     openapi_url=None,   # D-22 (research extension to D-21): without this,
                         # /openapi.json keeps serving the full schema.
   )
+
+  # Phase 16.1 Plan 03 F-06: thread the validated recovery email onto
+  # app.state so route handlers (POST /forgot-2fa) can read it via
+  # request.app.state.operator_recovery_email without re-reading env vars
+  # at request time.
+  application.state.operator_recovery_email = recovery_email
 
   # Register routes first (they become the inner-most layer of the dispatch).
   healthz_route.register(application)

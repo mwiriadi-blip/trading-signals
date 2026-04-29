@@ -180,3 +180,66 @@ class TestUsernameValidation:
     assert '/healthz' in paths
     assert '/' in paths
     assert '/api/state' in paths
+
+
+class TestRecoveryEmailValidation:
+  '''Phase 16.1 Plan 03 F-06: OPERATOR_RECOVERY_EMAIL boot validation.
+
+  Mirrors TestUsernameValidation shape verbatim. Default is mwiriadi@gmail.com.
+  Malformed → RuntimeError; valid → app.state.operator_recovery_email set.
+  '''
+
+  def test_recovery_email_default_is_mwiriadi_at_gmail(self, monkeypatch):
+    '''F-06: env var absent → default 'mwiriadi@gmail.com' (literal).'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    monkeypatch.delenv('OPERATOR_RECOVERY_EMAIL', raising=False)
+    import sys
+    sys.modules.pop('web.app', None)
+    from web.app import create_app
+    app = create_app()
+    assert app.state.operator_recovery_email == 'mwiriadi@gmail.com'
+
+  def test_malformed_email_raises_runtime_error(self, monkeypatch):
+    '''F-06: 'not-an-email' → RuntimeError with malformed-email message.'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    monkeypatch.setenv('OPERATOR_RECOVERY_EMAIL', 'not-an-email')
+    import sys
+    sys.modules.pop('web.app', None)
+    with pytest.raises(RuntimeError, match='OPERATOR_RECOVERY_EMAIL is malformed'):
+      from web.app import create_app
+      create_app()
+
+  def test_email_with_no_tld_raises(self, monkeypatch):
+    '''F-06: 'foo@bar' (no .tld) → RuntimeError.'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    monkeypatch.setenv('OPERATOR_RECOVERY_EMAIL', 'foo@bar')
+    import sys
+    sys.modules.pop('web.app', None)
+    with pytest.raises(RuntimeError, match='OPERATOR_RECOVERY_EMAIL is malformed'):
+      from web.app import create_app
+      create_app()
+
+  def test_email_with_at_at_raises(self, monkeypatch):
+    '''F-06: 'a@b@c.com' rejected by ^[^@]+@[^@]+\\.[^@]+$ regex.'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    monkeypatch.setenv('OPERATOR_RECOVERY_EMAIL', 'a@b@c.com')
+    import sys
+    sys.modules.pop('web.app', None)
+    with pytest.raises(RuntimeError, match='OPERATOR_RECOVERY_EMAIL is malformed'):
+      from web.app import create_app
+      create_app()
+
+  def test_valid_recovery_email_overrides_default(self, monkeypatch):
+    '''F-06: 'ops@example.com' boots; app.state surfaces the override.'''
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    monkeypatch.setenv('OPERATOR_RECOVERY_EMAIL', 'ops@example.com')
+    import sys
+    sys.modules.pop('web.app', None)
+    from web.app import create_app
+    app = create_app()
+    assert app.state.operator_recovery_email == 'ops@example.com'
