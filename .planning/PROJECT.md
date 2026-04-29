@@ -13,9 +13,22 @@ A **shipped** hosted Python web app (v1.1, 2026-04-30) running a mechanical tren
 
 **Production:** `https://signals.mwiriadi.me` — HTTPS + auth gated, daily 08:00 AWST signal cycle running on droplet systemd, daily emails flowing through Resend (verified `mwiriadi.me` domain), 1319-test suite green, all 3 operator UAT scenarios in Phase 16 verified end-to-end.
 
-## Next Milestone
+## Current Milestone: v1.2 — Trader-Grade Transparency & Validation
 
-_Run `/gsd-new-milestone` to scope v1.2 — candidates queued in `~/.claude/LEARNINGS.md` recent entries and `.planning/todos/`._
+**Started:** 2026-04-30 via `/gsd-new-milestone` (operator selected 5 phases from SPEC.md §v1.2+ sketch)
+
+**Goal:** Make every signal *reproducible by hand* and every paper trade *measurable*. Lift the v1.1 dashboard from "tells you what to do" → "shows you exactly why and tracks how it played out". Validate the strategy ships with a 5-year backtest gate before any future logic change.
+
+**Target features:**
+- Per-signal calculation transparency (Phase 17) — Inputs / Indicators / Vote panels on dashboard
+- Paper-trade ledger (Phase 19) — manual trade entry, open/closed history, mark-to-market P&L
+- Stop-loss monitoring & alerts (Phase 20) — daily approaching/hit detection with dedup'd email alerts
+- Strategy versioning & audit trail (Phase 22) — `STRATEGY_VERSION` constant, signal/trade row tagging
+- 5-year backtest validation gate (Phase 23) — walk-forward backtest, `>100% cumulative return` pass criterion, `/backtest` route
+
+**Out of scope (deferred to v1.3+):** multi-user RBAC (Phase 18), news integration (Phase 21), hygiene cleanup (Phase 23.5).
+
+**Architecture additions:** new `backtest/` module (pure compute, hex-boundary respected); state.json schema gains `paper_trades` array + `strategy_version` tag on signals; new `/backtest` route on dashboard.
 
 ## Core Value
 

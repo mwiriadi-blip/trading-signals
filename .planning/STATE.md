@@ -1,8 +1,8 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Cleanup & Deploy Key
-status: executing
+milestone: v1.2
+milestone_name: Trader-Grade Transparency & Validation
+status: planning
 last_updated: "2026-04-29T01:34:05.215Z"
 last_activity: 2026-04-29
 progress:
@@ -23,7 +23,7 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 16.1 — VERIFICATION PASSED 2026-04-29; awaiting operator UAT (UAT-16.1-A..G on real iPhone) before phase closure
+- **Current focus:** v1.2 milestone planning — 5 phases queued (17 TRACE / 19 LEDGER / 20 ALERT / 22 VERSION / 23 BACKTEST). Wave 1 (Phase 17 + Phase 22) parallel-ready; next action: `/gsd-plan-phase 22` (or 17 — both Wave 1).
 
 ## Current Position
 
@@ -33,8 +33,8 @@ Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Phase 16.1 verified — operator UAT pending
 - **Last activity:** 2026-04-29 — Phase 16.1 executed (Waves 1+2+3) and verified (PASSED). 1234 tests passing; 12 deferred (pre-existing nginx/HTTPS doc drift + ruff binary missing in test env, all logged in `deferred-items.md`).
-- **Progress:** [██████████] 100% (Phase 16 fully closed 2026-04-30 — all 3 UAT scenarios verified; Phase 16.1 verified 2026-04-29; ready for milestone archive)
-- **Phase 16 status:** VERIFIED (5/5 plans complete; UAT-16-A 2026-04-27, UAT-16-B 2026-04-29, UAT-16-C 2026-04-30). v1.0 milestone archive unblocked — next action: `/gsd-complete-milestone v1.0`.
+- **Progress:** [░░░░░░░░░░] 0% (v1.2 just started — 0/5 phases planned)
+- **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
 
 ### Resume instructions for cloud Claude / fresh clone
 
