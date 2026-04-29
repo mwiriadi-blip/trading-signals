@@ -56,8 +56,12 @@ EXEMPT_PATHS = frozenset({'/healthz'})
 
 # Phase 16.1 — auth-bootstrap routes (publicly reachable; sub-routes still
 # validated by their handlers via tsi_enroll/tsi_pending cookies).
+# /logout is public so the FastAPI 405 for GET /logout surfaces as a 405
+# rather than being short-circuited to 401 by the middleware (deleting a
+# session cookie is a no-op for unauthenticated callers — no security
+# downside to making it public).
 # Plan 16.1-03 will EXTEND PUBLIC_PATHS with /forgot-2fa and /reset-totp.
-PUBLIC_PATHS = frozenset({'/login', '/enroll-totp', '/verify-totp'})
+PUBLIC_PATHS = frozenset({'/login', '/logout', '/enroll-totp', '/verify-totp'})
 
 AUTH_HEADER = 'X-Trading-Signals-Auth'  # AUTH-01
 UA_TRUNCATE = 120  # D-05 / SC-5

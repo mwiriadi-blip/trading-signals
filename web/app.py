@@ -38,6 +38,7 @@ from fastapi import FastAPI
 from web.middleware.auth import AuthMiddleware
 from web.routes import dashboard as dashboard_route
 from web.routes import healthz as healthz_route
+from web.routes import login as login_route
 from web.routes import state as state_route
 from web.routes import trades as trades_route
 
@@ -115,6 +116,10 @@ def create_app() -> FastAPI:
   dashboard_route.register(application)
   state_route.register(application)
   trades_route.register(application)
+  # Phase 16.1 — auth-bootstrap routes. Registered BEFORE add_middleware
+  # per Phase 13 D-06; PUBLIC_PATHS in AuthMiddleware lets them through
+  # without an active session.
+  login_route.register(application)
 
   # Phase 14 D-04 / TRADE-02: 422 -> 400 remap with field-level error JSON.
   # Single global handler covers all routes (Plan 14-04).

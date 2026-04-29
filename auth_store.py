@@ -154,30 +154,43 @@ def _atomic_write(data: str, path: Path) -> None:
 # =========================================================================
 
 
-def load_auth(path: Path = DEFAULT_AUTH_PATH) -> AuthData:
+def _resolve_path(path: Path | None) -> Path:
+  '''Pick the runtime auth.json path.
+
+  Helpers accept `path: Path | None = None` rather than baking
+  `DEFAULT_AUTH_PATH` into the kwarg default at function-definition time.
+  Tests monkeypatch the module-level `DEFAULT_AUTH_PATH`; resolving inside
+  the function body picks up the monkeypatched value (the kwarg-default
+  pattern would freeze at import time and ignore the patch).
+  '''
+  return path if path is not None else DEFAULT_AUTH_PATH
+
+
+def load_auth(path: Path | None = None) -> AuthData:
   '''Read auth.json. Returns a fresh default dict if the file is missing.
 
   No corruption recovery (mirrors state_manager simplicity for low-mutation
   state). If the file is truncated/corrupt, json.loads will raise — the
   operator must restore from backup OR delete the file to re-init.
   '''
-  if not path.exists():
+  resolved = _resolve_path(path)
+  if not resolved.exists():
     return _default_auth_data()
-  return json.loads(path.read_text(encoding='utf-8'))
+  return json.loads(resolved.read_text(encoding='utf-8'))
 
 
-def save_auth(data: AuthData, path: Path = DEFAULT_AUTH_PATH) -> None:
+def save_auth(data: AuthData, path: Path | None = None) -> None:
   '''Atomic write of auth.json. Re-raises OSError on disk failure.'''
   payload = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
-  _atomic_write(payload, path)
+  _atomic_write(payload, _resolve_path(path))
 
 
-def get_totp_secret(path: Path = DEFAULT_AUTH_PATH) -> str | None:
+def get_totp_secret(path: Path | None = None) -> str | None:
   '''F-01: read totp_secret. None if not yet enrolled.'''
   return load_auth(path=path)['totp_secret']
 
 
-def set_totp_secret(secret: str, path: Path = DEFAULT_AUTH_PATH) -> None:
+def set_totp_secret(secret: str, path: Path | None = None) -> None:
   '''F-01: write totp_secret AND reset enrolled=False.
 
   Used in two flows:
@@ -194,7 +207,7 @@ def set_totp_secret(secret: str, path: Path = DEFAULT_AUTH_PATH) -> None:
   logger.info('[Auth] totp secret persisted (enrolled=False)')
 
 
-def mark_enrolled(path: Path = DEFAULT_AUTH_PATH) -> None:
+def mark_enrolled(path: Path | None = None) -> None:
   '''F-01 E-03: flip totp_enrolled=True after successful TOTP code verification.
 
   Stamps totp_enrolled_at with the current UTC ISO 8601 timestamp.
