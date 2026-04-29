@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Trader-Grade Transparency & Validation
-status: planning
-last_updated: "2026-04-29T01:34:05.215Z"
+status: verifying
+last_updated: "2026-04-29T20:49:41.651Z"
 last_activity: 2026-04-29
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 35
-  completed_plans: 34
-  percent: 97
+  total_phases: 5
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -23,17 +23,18 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** v1.2 milestone planning — 5 phases queued (17 TRACE / 19 LEDGER / 20 ALERT / 22 VERSION / 23 BACKTEST). Wave 1 (Phase 17 + Phase 22) parallel-ready; next action: `/gsd-plan-phase 22` (or 17 — both Wave 1).
+- **Current focus:** Phase 22 — strategy-versioning-audit-trail
 
 ## Current Position
 
-Phase: 16.1 (phone-friendly-auth-ux-for-dashboard-access) — VERIFIED, OPERATOR-UAT-PENDING
+Phase: 22 (strategy-versioning-audit-trail) — EXECUTING
+Plan: 1 of 1
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Phase 16.1 verified — operator UAT pending
-- **Last activity:** 2026-04-29 — Phase 16.1 executed (Waves 1+2+3) and verified (PASSED). 1234 tests passing; 12 deferred (pre-existing nginx/HTTPS doc drift + ruff binary missing in test env, all logged in `deferred-items.md`).
-- **Progress:** [░░░░░░░░░░] 0% (v1.2 just started — 0/5 phases planned)
+- **Status:** Phase complete — ready for verification
+- **Last activity:** 2026-04-29
+- **Progress:** [██████████] 100%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
 
 ### Resume instructions for cloud Claude / fresh clone
@@ -114,6 +115,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 14 P02 | 67min | 3 tasks | 5 files |
 | Phase 14 P03 | 4m31s | 1 tasks | 2 files |
 | Phase 16 P04 | 5min | 1 tasks | 1 files |
+| Phase 22 P01 | 22min | 6 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -208,6 +210,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 - Phase 14 D-09: sizing_engine.get_trailing_stop honors position.manual_stop override (precedence: NaN guard > manual_stop > computed peak/trough); defensive .get() handles pre-migration position dicts
 - Phase 14 D-15: check_stop_hit (daily-loop exit detection) intentionally does NOT honor manual_stop — display-only scope; Phase 15 candidate to align
 - [Phase ?]: All 3 UAT scenarios partial on 2026-04-26: STATE.md ## Completed Items records partial/2026-04-26 per REVIEWS H-3; D-17 fallback applied
+- [Phase ?]: Phase 22: STRATEGY_VERSION='v1.2.0' shipped on system_params; schema 3->4 with v3->v4 backfill of 'v1.1.0' on existing dict-shaped signal rows; dashboard footer renders the version via primitive str arg (no system_params.STRATEGY_VERSION import; LEARNINGS 2026-04-27 hex-boundary)
 
 ### Todos Carried Forward
 

@@ -46,8 +46,8 @@
 
 ### VERSION — Strategy versioning & audit trail (Phase 22)
 
-- [ ] **VERSION-01** — `STRATEGY_VERSION` constant added to `system_params.py` with semver pattern (`v1.2.0` at v1.2 launch). Bumped on any signal-logic change (Mom thresholds, ADX gate, sizing weights, etc.). Version bumps documented in `docs/STRATEGY-CHANGELOG.md`.
-- [ ] **VERSION-02** — Every signal row written to `state.signals[<instrument>]` includes `strategy_version` matching the constant at write-time. Migration: existing rows on first v1.2 deploy stamped with `v1.1.0`.
+- [x] **VERSION-01** — `STRATEGY_VERSION` constant added to `system_params.py` with semver pattern (`v1.2.0` at v1.2 launch). Bumped on any signal-logic change (Mom thresholds, ADX gate, sizing weights, etc.). Version bumps documented in `docs/STRATEGY-CHANGELOG.md`.
+- [x] **VERSION-02** — Every signal row written to `state.signals[<instrument>]` includes `strategy_version` matching the constant at write-time. Migration: existing rows on first v1.2 deploy stamped with `v1.1.0`.
 - [ ] **VERSION-03** — Every paper trade row in `state.paper_trades` (LEDGER-02) includes `strategy_version` matching the constant at the trade's entry datetime. Closed trades retain the version they were entered under, even if `STRATEGY_VERSION` later bumps.
 
 ### BACKTEST — 5-year backtest validation gate (Phase 23)
@@ -78,8 +78,8 @@
 | ALERT-02 | 20 | Pending |
 | ALERT-03 | 20 | Pending |
 | ALERT-04 | 20 | Pending |
-| VERSION-01 | 22 | Pending |
-| VERSION-02 | 22 | Pending |
+| VERSION-01 | 22 | Complete |
+| VERSION-02 | 22 | Complete |
 | VERSION-03 | 22 | Pending |
 | BACKTEST-01 | 23 | Pending |
 | BACKTEST-02 | 23 | Pending |
