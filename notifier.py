@@ -1603,6 +1603,177 @@ def send_crash_email(
 
 
 # =========================================================================
+# Phase 16.1 Plan 03 F-03 — magic-link reset email
+# =========================================================================
+#
+# Reuses the Phase 12 _post_to_resend transport (no new HTTP code path).
+# SIGNALS_EMAIL_FROM env var (per-send) — fail-loud missing (parity with
+# send_crash_email at line ~1562). RESEND_API_KEY env var (per-send) —
+# missing → write last_email.html fallback + return ok=False, reason=
+# 'no_api_key' (mirrors send_daily_email at line ~1484).
+#
+# Subject (verbatim per F-03): "Trading Signals — 2FA reset link (valid 1 hour)"
+# Log line on success: [Email] magic link sent to=<to> action=<action> expires=<expires_at>
+# Failures: log [Email] error + return SendStatus(ok=False, reason=...) — never raises
+# (CLAUDE.md "Email sends NEVER crash the workflow").
+
+def _format_expires_awst(expires_at: str) -> str:
+  '''Convert ISO 8601 UTC string to Australia/Perth AWST display.
+
+  Display format: "29 Apr 2026 at 5:00 PM AWST" (operator-readable; uses
+  pytz to match the rest of notifier.py — no zoneinfo import to keep
+  compat with the existing Phase 7 deployment posture).
+
+  Returns the input string verbatim if parsing fails (defensive — caller
+  gets best-effort output rather than a crash).
+  '''
+  try:
+    dt = datetime.fromisoformat(expires_at)
+  except (TypeError, ValueError):
+    return expires_at
+  awst = pytz.timezone('Australia/Perth')
+  awst_dt = dt.astimezone(awst)
+  # %-d / %-I are GNU/BSD-specific; both are available on macOS and Linux
+  # which are the only deploy targets per CLAUDE.md.
+  try:
+    return awst_dt.strftime('%-d %b %Y at %-I:%M %p AWST')
+  except ValueError:
+    return awst_dt.strftime('%d %b %Y at %I:%M %p AWST')
+
+
+def _render_magic_link_html(link: str, action: str, expires_at: str) -> str:
+  '''F-03: HTML body for the magic-link email.
+
+  Mirrors notifier.py inline-CSS dark-theme palette (Phase 6 D-15 leaf-discipline).
+  All operator-influenced strings are html.escape'd defensively even though
+  the link is server-generated — global LEARNING "innerHTML with dynamic
+  data requires escaping". The link contains '?token=...&...' query params
+  that MUST become &amp; in the rendered href to keep the URL parsable.
+  '''
+  from html import escape as html_escape
+  esc_link = html_escape(link, quote=True)
+  expires_display = _format_expires_awst(expires_at)
+  esc_expires = html_escape(expires_display, quote=True)
+  return (
+    '<!DOCTYPE html>\n'
+    '<html lang="en">\n'
+    '<head><meta charset="utf-8"></head>\n'
+    f'<body style="background:{_COLOR_BG}; color:{_COLOR_TEXT}; '
+    'font-family:-apple-system,BlinkMacSystemFont,sans-serif; padding:32px;">\n'
+    f'  <div style="max-width:480px; margin:0 auto; background:{_COLOR_SURFACE}; '
+    f'border:1px solid {_COLOR_BORDER}; border-radius:8px; padding:24px;">\n'
+    '    <h1 style="font-size:20px; font-weight:600; margin:0 0 16px;">'
+    'Trading Signals — 2FA reset</h1>\n'
+    '    <p style="font-size:14px; line-height:1.5; margin:0 0 16px;">'
+    f'Click the button below to reset your two-factor authenticator. '
+    f'This link is valid until {esc_expires} and can be used once.</p>\n'
+    '    <p style="margin:24px 0;">\n'
+    f'      <a href="{esc_link}" style="display:inline-block; padding:12px 24px; '
+    f'background:transparent; color:{_COLOR_LONG}; border:1px solid {_COLOR_LONG}; '
+    'border-radius:4px; text-decoration:none; font-weight:600;">Reset 2FA</a>\n'
+    '    </p>\n'
+    f'    <p style="font-size:12px; color:{_COLOR_TEXT_MUTED}; margin:0;">'
+    "If you didn't request this, ignore this email — your authenticator "
+    'is unchanged.</p>\n'
+    f'    <p style="font-size:12px; color:{_COLOR_TEXT_MUTED}; '
+    f'margin:16px 0 0; word-break:break-all;">Or copy this link: {esc_link}</p>\n'
+    '  </div>\n'
+    '</body>\n'
+    '</html>\n'
+  )
+
+
+def _render_magic_link_text(link: str, action: str, expires_at: str) -> str:
+  '''F-03: plain-text fallback for clients that strip HTML.'''
+  expires_display = _format_expires_awst(expires_at)
+  return (
+    'Trading Signals — 2FA reset\n\n'
+    'Click this link to reset your authenticator (valid 1 hour, single-use):\n'
+    f'{link}\n\n'
+    f'Link expires: {expires_display}\n\n'
+    "If you didn't request this, ignore this email — your authenticator "
+    'is unchanged.\n'
+  )
+
+
+def send_magic_link_email(
+  to_email: str,
+  link: str,
+  action: str,
+  expires_at: str,
+) -> SendStatus:
+  '''F-03: send a 2FA reset magic-link email via Resend.
+
+  NEVER raises (CLAUDE.md "Email sends NEVER crash the workflow"). All
+  failure modes return SendStatus(ok=False, reason=<short>) and log at
+  ERROR/WARNING.
+
+  Args:
+    to_email: operator's recovery email (typically OPERATOR_RECOVERY_EMAIL).
+    link: absolute URL with the unhashed token query param.
+    action: 'totp-reset' (room for future actions; surfaced in log line).
+    expires_at: ISO 8601 UTC timestamp; formatted to AWST in body.
+  '''
+  # Phase 12 D-15 parity: per-send env read; missing → log ERROR + skip.
+  from_addr = os.environ.get('SIGNALS_EMAIL_FROM', '').strip()
+  if not from_addr:
+    logger.error(
+      '[Email] SIGNALS_EMAIL_FROM not set — magic-link email skipped',
+    )
+    return SendStatus(ok=False, reason='missing_sender')
+
+  subject = 'Trading Signals — 2FA reset link (valid 1 hour)'
+  html_body = _render_magic_link_html(link, action, expires_at)
+  text_body = _render_magic_link_text(link, action, expires_at)
+
+  api_key = os.environ.get('RESEND_API_KEY')
+  if not api_key:
+    # Mirror send_daily_email's last_email.html fallback so an operator
+    # running locally without RESEND_API_KEY still has the rendered email
+    # for grep-recovery.
+    last_email_path = Path('last_email.html')
+    try:
+      last_email_path.write_text(html_body)
+    except OSError as e:
+      logger.warning(
+        '[Email] WARN magic-link: last_email.html write failed: %s', e,
+      )
+    logger.warning(
+      '[Email] WARN magic-link: RESEND_API_KEY missing — wrote %s (fallback)',
+      last_email_path,
+    )
+    return SendStatus(ok=False, reason='no_api_key')
+
+  try:
+    _post_to_resend(
+      api_key=api_key,
+      from_addr=from_addr,
+      to_addr=to_email,
+      subject=subject,
+      html_body=html_body,
+      text_body=text_body,
+    )
+  except ResendError as e:
+    logger.error('[Email] magic-link Resend failed: %s', e)
+    return SendStatus(ok=False, reason=str(e)[:200])
+  except Exception as e:
+    # CLAUDE.md never-crash: belt-and-braces against unexpected exception
+    # types from the transport (e.g. raw requests.ConnectionError if the
+    # _post_to_resend retry loop is bypassed via monkeypatch in tests).
+    logger.error(
+      '[Email] magic-link unexpected failure: %s: %s',
+      type(e).__name__, e,
+    )
+    return SendStatus(ok=False, reason=f'{type(e).__name__}: {e}'[:200])
+
+  logger.info(
+    '[Email] magic link sent to=%s action=%s expires=%s',
+    to_email, action, expires_at,
+  )
+  return SendStatus(ok=True, reason=None)
+
+
+# =========================================================================
 # CLI entrypoint — operator preview (python -m notifier)
 # =========================================================================
 
