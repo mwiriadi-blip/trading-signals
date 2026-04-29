@@ -125,6 +125,31 @@ def valid_secret() -> str:
 
 
 @pytest.fixture
+def isolated_auth_json(tmp_path, monkeypatch):
+  '''Phase 16.1 Plan 02: per-test isolation for auth.json mutations.
+
+  Plan 16.1-01's autouse fixture sets WEB_AUTH_USERNAME / WEB_AUTH_SECRET env
+  vars but does NOT redirect auth_store.DEFAULT_AUTH_PATH. Tests that mutate
+  auth.json (trusted_devices, pending_magic_links, totp_secret) MUST opt into
+  this fixture to avoid clobbering the real repo-root auth.json.
+
+  Reused by:
+    - tests/test_auth_store.py::TestTrustedDevices (Plan 02 Task 1)
+    - tests/test_web_auth_middleware.py::TestTrustedDeviceCookie (Plan 02 Task 2)
+    - tests/test_web_routes_totp.py::TestVerifyTotpTrustDeviceFlow (Plan 02 Task 3)
+    - tests/test_web_routes_devices.py (Plan 02 Task 4)
+    - tests/test_auth_store.py::TestMagicLinks (Plan 03 — future)
+
+  Returns the per-test tmp auth.json Path so the test can read/write it directly
+  for assertions without going through the auth_store module.
+  '''
+  tmp_auth = tmp_path / 'auth.json'
+  import auth_store
+  monkeypatch.setattr(auth_store, 'DEFAULT_AUTH_PATH', tmp_auth)
+  return tmp_auth
+
+
+@pytest.fixture
 def auth_headers(valid_secret) -> dict:
   '''Phase 13 AUTH-01: header dict for authorized TestClient requests.'''
   return {AUTH_HEADER_NAME: valid_secret}

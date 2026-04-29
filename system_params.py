@@ -191,5 +191,9 @@ TSI_SESSION_SALT: str = 'tsi-session-cookie'
 TSI_PENDING_SALT: str = 'tsi-pending-cookie'
 TSI_ENROLL_SALT: str = 'tsi-enroll-cookie'
 
+# Phase 16.1 Plan 02 — trusted-device cookie config (E-05; 30 days).
+TSI_TRUSTED_TTL_SECONDS = 2592000
+TSI_TRUSTED_SALT = 'tsi-trusted-cookie'
+
 TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
 AUTH_JSON_PATH: str = 'auth.json'

@@ -159,6 +159,196 @@ class TestMarkEnrolled:
     )
 
 
+class TestTrustedDevices:
+  '''Phase 16.1 Plan 02 Task 1 — trusted-device CRUD helpers.
+
+  All tests opt into the shared `isolated_auth_json` fixture (tests/conftest.py)
+  which redirects `auth_store.DEFAULT_AUTH_PATH` to a per-test tmp file via
+  monkeypatch.setattr. This avoids clobbering the real repo-root auth.json
+  AND lets tests use the no-kwarg call shape (mirrors production callers
+  which omit the `path` kwarg).
+  '''
+
+  def test_add_trusted_device_appends_row_with_correct_shape(
+    self, isolated_auth_json,
+  ):
+    '''F-01: add_trusted_device appends a row with all 6 keys, returns uuid,
+    granted_at == last_seen, both ISO 8601 UTC.'''
+    import auth_store
+    new_uuid = auth_store.add_trusted_device(
+      label='iPhone Safari · 203.0.113.x · 2026-04-29',
+    )
+    assert isinstance(new_uuid, str) and len(new_uuid) == 32  # uuid4().hex
+
+    data = auth_store.load_auth()
+    assert len(data['trusted_devices']) == 1
+    row = data['trusted_devices'][0]
+    assert set(row.keys()) == {
+      'uuid', 'label', 'granted_at', 'last_seen', 'revoked', 'revoked_at',
+    }
+    assert row['uuid'] == new_uuid
+    assert row['label'] == 'iPhone Safari · 203.0.113.x · 2026-04-29'
+    assert row['revoked'] is False
+    assert row['revoked_at'] is None
+    assert row['granted_at'] == row['last_seen']
+    assert ISO_8601_RE.match(row['granted_at']), (
+      f'granted_at not ISO 8601: {row["granted_at"]!r}'
+    )
+
+  def test_add_trusted_device_returns_unique_uuid_per_call(
+    self, isolated_auth_json,
+  ):
+    '''Three back-to-back calls produce three distinct uuids; auth.json holds 3 rows.'''
+    import auth_store
+    u1 = auth_store.add_trusted_device(label='A')
+    u2 = auth_store.add_trusted_device(label='B')
+    u3 = auth_store.add_trusted_device(label='C')
+    assert len({u1, u2, u3}) == 3
+    data = auth_store.load_auth()
+    assert len(data['trusted_devices']) == 3
+    assert {r['uuid'] for r in data['trusted_devices']} == {u1, u2, u3}
+
+  def test_revoke_device_flips_flag_and_stamps_revoked_at(
+    self, isolated_auth_json,
+  ):
+    '''Revoke flips revoked=True, stamps revoked_at ISO 8601, retains the row.'''
+    import auth_store
+    uid = auth_store.add_trusted_device(label='D')
+    auth_store.revoke_device(uid)
+
+    data = auth_store.load_auth()
+    assert len(data['trusted_devices']) == 1  # row retained for audit
+    row = data['trusted_devices'][0]
+    assert row['uuid'] == uid
+    assert row['revoked'] is True
+    assert row['revoked_at'] is not None
+    assert ISO_8601_RE.match(row['revoked_at']), (
+      f'revoked_at not ISO 8601: {row["revoked_at"]!r}'
+    )
+
+  def test_revoke_device_unknown_uuid_is_no_op(self, isolated_auth_json):
+    '''Calling revoke_device with a uuid not in auth.json is a silent no-op.'''
+    import auth_store
+    uid = auth_store.add_trusted_device(label='E')
+    pre = auth_store.load_auth()
+    auth_store.revoke_device('does-not-exist')  # no-op
+    post = auth_store.load_auth()
+    assert pre == post
+    # The actual row is untouched
+    row = post['trusted_devices'][0]
+    assert row['uuid'] == uid and row['revoked'] is False
+
+  def test_revoke_device_already_revoked_is_no_op(self, isolated_auth_json):
+    '''Calling revoke_device twice on the same uuid is idempotent.'''
+    import auth_store
+    uid = auth_store.add_trusted_device(label='F')
+    auth_store.revoke_device(uid)
+    pre = auth_store.load_auth()
+    auth_store.revoke_device(uid)  # second call — no-op
+    post = auth_store.load_auth()
+    # revoked_at must NOT be re-stamped (preserve original revocation time)
+    assert pre == post
+
+  def test_revoke_all_other_devices_flips_all_except_named(
+    self, isolated_auth_json,
+  ):
+    '''Add 3 devices; revoke_all_other_devices(except_uuid=B) flips A and C only.'''
+    import auth_store
+    uid_a = auth_store.add_trusted_device(label='A')
+    uid_b = auth_store.add_trusted_device(label='B')
+    uid_c = auth_store.add_trusted_device(label='C')
+    n = auth_store.revoke_all_other_devices(except_uuid=uid_b)
+    assert n == 2
+
+    data = auth_store.load_auth()
+    rows = {r['uuid']: r for r in data['trusted_devices']}
+    assert rows[uid_a]['revoked'] is True
+    assert rows[uid_b]['revoked'] is False
+    assert rows[uid_c]['revoked'] is True
+    # All 3 rows still present (audit trail)
+    assert len(data['trusted_devices']) == 3
+
+  def test_get_trusted_device_returns_row_or_none(self, isolated_auth_json):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='G')
+    row = auth_store.get_trusted_device(uid)
+    assert row is not None
+    assert row['uuid'] == uid
+    assert row['label'] == 'G'
+    assert auth_store.get_trusted_device('not-in-store') is None
+
+  def test_update_last_seen_only_updates_last_seen_field(
+    self, isolated_auth_json,
+  ):
+    '''freeze at T0 to add; freeze at T0+1h to update; assert only last_seen advances.'''
+    import auth_store
+    from freezegun import freeze_time
+    with freeze_time('2026-04-29T00:00:00+00:00'):
+      uid = auth_store.add_trusted_device(label='H')
+    pre = auth_store.get_trusted_device(uid)
+    granted_at_before = pre['granted_at']
+    last_seen_before = pre['last_seen']
+
+    with freeze_time('2026-04-29T01:00:00+00:00'):
+      auth_store.update_last_seen(uid)
+
+    post = auth_store.get_trusted_device(uid)
+    assert post['granted_at'] == granted_at_before  # unchanged
+    assert post['last_seen'] != last_seen_before    # advanced
+    assert post['last_seen'].startswith('2026-04-29T01:00:00')
+    assert post['revoked'] is False
+
+  def test_update_last_seen_unknown_uuid_is_no_op(self, isolated_auth_json):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='I')
+    pre = auth_store.load_auth()
+    auth_store.update_last_seen('not-in-store')
+    post = auth_store.load_auth()
+    assert pre == post
+    # The real row is unchanged
+    assert auth_store.get_trusted_device(uid)['last_seen'] == pre['trusted_devices'][0]['last_seen']
+
+  def test_is_uuid_active_returns_True_for_unrevoked(self, isolated_auth_json):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='J')
+    assert auth_store.is_uuid_active(uid) is True
+
+  def test_is_uuid_active_returns_False_for_revoked(self, isolated_auth_json):
+    import auth_store
+    uid = auth_store.add_trusted_device(label='K')
+    auth_store.revoke_device(uid)
+    assert auth_store.is_uuid_active(uid) is False
+
+  def test_is_uuid_active_returns_False_for_unknown_uuid(
+    self, isolated_auth_json,
+  ):
+    import auth_store
+    auth_store.add_trusted_device(label='L')  # noise row
+    assert auth_store.is_uuid_active('not-in-store') is False
+
+  def test_concurrent_add_does_not_lose_rows(self, isolated_auth_json):
+    '''Sanity: tight-loop add_trusted_device doesn't drop rows via load->save races.
+
+    Single-operator tool — there is no real concurrency. This test guards
+    the load->mutate->save pattern against accidental list-replacement bugs.
+    '''
+    import auth_store
+    uids = [auth_store.add_trusted_device(label=f'D{i}') for i in range(5)]
+    data = auth_store.load_auth()
+    assert {r['uuid'] for r in data['trusted_devices']} == set(uids)
+
+  def test_revoked_devices_are_kept_in_auth_json(self, isolated_auth_json):
+    '''E-06: revoked rows must be retained for audit, not deleted.'''
+    import auth_store
+    uid = auth_store.add_trusted_device(label='M')
+    auth_store.revoke_device(uid)
+    data = auth_store.load_auth()
+    # Row remains, just with revoked=True
+    assert len(data['trusted_devices']) == 1
+    assert data['trusted_devices'][0]['uuid'] == uid
+    assert data['trusted_devices'][0]['revoked'] is True
+
+
 class TestForbiddenImports:
   '''Hex-boundary AST guard: auth_store.py is a peer of state_manager.py
   (NOT inside web/), so it MUST NOT import from web/, signal/sizing engines,
