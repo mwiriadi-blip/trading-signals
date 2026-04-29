@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup & Deploy Key
 status: executing
-last_updated: "2026-04-29T00:00:00.000Z"
-last_activity: "2026-04-29 - Phase 16.1 context expanded: TOTP 2FA folded in (Areas E+F), AUTH-08..AUTH-12 added; existing 16.1-01/02 plans stale, replan required (commit daaeec0)"
+last_updated: "2026-04-29T00:58:24.152Z"
+last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 6
@@ -31,8 +31,8 @@ Phase: 16.1 (Phone-friendly auth UX + TOTP 2FA) — CONTEXT UPDATED 2026-04-29, 
 Plans: 2 stale plan files exist (16.1-01-PLAN.md "Basic Auth wave", 16.1-02-PLAN.md "cookie wave") — both PRE-DATE the TOTP fold-in and must be regenerated. Per F-09 the recommended new structure is 3 plans: cookie+TOTP / trusted-device+/devices / magic-link reset.
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Awaiting `/gsd-plan-phase 16.1` re-run to absorb Areas E + F decisions; Basic Auth path removed (E-01), TOTP enrollment + verify added (E-03, E-04), trusted-device cookie + revocation added (E-05, E-06), magic-link reset added (E-07).
-- **Last activity:** 2026-04-29 - Phase 16.1 context expanded with TOTP 2FA fold-in (commit daaeec0). Earlier today: SPEC.md v1.2+ roadmap append (commit 1eb8159).
+- **Status:** Ready to execute
+- **Last activity:** 2026-04-29
 - **Progress:** [██████████] 97% (Phase 16 still awaiting UAT-16-C operational closure on a real weekday — independent of 16.1)
 - **Phase 16 status:** EXECUTING (Plan 2 of 5; weekday-blocked on UAT-16-B and UAT-16-C per `.planning/phases/16-hardening-uat-completion/16-HUMAN-UAT.md`). 16.1 can run in parallel with that wait per ROADMAP §16.1 "Depends on: Phase 13".
 
