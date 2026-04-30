@@ -1,0 +1,95 @@
+{
+  "schema_version": 6,
+  "account": 100000.0,
+  "last_run": "2026-04-30",
+  "positions": {"SPI200": null, "AUDUSD": null},
+  "signals": {
+    "SPI200": {
+      "signal": 1,
+      "signal_as_of": "2026-04-29",
+      "as_of_run": "2026-04-30",
+      "last_close": 7900.0,
+      "last_scalars": {"atr": 50.0},
+      "strategy_version": "v1.2.0"
+    },
+    "AUDUSD": {
+      "signal": -1,
+      "signal_as_of": "2026-04-29",
+      "as_of_run": "2026-04-30",
+      "last_close": 0.6400,
+      "last_scalars": {"atr": 0.005},
+      "strategy_version": "v1.2.0"
+    }
+  },
+  "trade_log": [],
+  "equity_history": [],
+  "warnings": [],
+  "initial_account": 100000.0,
+  "contracts": {"SPI200": "spi-mini", "AUDUSD": "audusd-mini"},
+  "_resolved_contracts": {
+    "SPI200": {"multiplier": 5.0, "cost_aud": 6.0},
+    "AUDUSD": {"multiplier": 10000.0, "cost_aud": 5.0}
+  },
+  "paper_trades": [
+    {
+      "id": "SPI200-20260428-001",
+      "instrument": "SPI200",
+      "side": "LONG",
+      "entry_dt": "2026-04-28T10:00:00+08:00",
+      "entry_price": 7800.0,
+      "contracts": 2,
+      "stop_price": 7700.0,
+      "entry_cost_aud": 3.0,
+      "status": "open",
+      "exit_dt": null,
+      "exit_price": null,
+      "realised_pnl": null,
+      "strategy_version": "v1.2.0"
+    },
+    {
+      "id": "AUDUSD-20260428-001",
+      "instrument": "AUDUSD",
+      "side": "SHORT",
+      "entry_dt": "2026-04-28T10:00:00+08:00",
+      "entry_price": 0.6500,
+      "contracts": 1.0,
+      "stop_price": 0.6600,
+      "entry_cost_aud": 2.5,
+      "status": "open",
+      "exit_dt": null,
+      "exit_price": null,
+      "realised_pnl": null,
+      "strategy_version": "v1.2.0"
+    },
+    {
+      "id": "SPI200-20260427-001",
+      "instrument": "SPI200",
+      "side": "LONG",
+      "entry_dt": "2026-04-27T10:00:00+08:00",
+      "entry_price": 7700.0,
+      "contracts": 2,
+      "stop_price": 7650.0,
+      "entry_cost_aud": 3.0,
+      "status": "closed",
+      "exit_dt": "2026-04-28T15:00:00+08:00",
+      "exit_price": 7800.0,
+      "realised_pnl": 994.0,
+      "strategy_version": "v1.2.0"
+    },
+    {
+      "id": "AUDUSD-20260427-001",
+      "instrument": "AUDUSD",
+      "side": "SHORT",
+      "entry_dt": "2026-04-27T10:00:00+08:00",
+      "entry_price": 0.6500,
+      "contracts": 1.0,
+      "stop_price": 0.6600,
+      "entry_cost_aud": 2.5,
+      "status": "closed",
+      "exit_dt": "2026-04-28T15:00:00+08:00",
+      "exit_price": 0.6400,
+      "realised_pnl": 95.0,
+      "strategy_version": "v1.2.0"
+    }
+  ]
+}

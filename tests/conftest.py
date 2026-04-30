@@ -278,3 +278,56 @@ def client_with_state_v3(monkeypatch):
     state_box['value'] = payload
 
   return client, set_state, captured_saves
+
+
+@pytest.fixture
+def client_with_state_v6(monkeypatch):
+  '''Phase 19 mirror of client_with_state_v3 — yields (client, set_state, captured_saves).
+  Default seed: v6-schema state with paper_trades=[]. Tests adjust via set_state.
+  Reuses Phase 14 mutate_state kernel-stub semantic.
+  '''
+  from fastapi.testclient import TestClient
+  import sys
+  sys.modules.pop('web.app', None)
+  from web.app import create_app
+
+  default_state = {
+    'schema_version': 6,
+    'account': 100_000.0,
+    'last_run': '2026-04-30',
+    'positions': {'SPI200': None, 'AUDUSD': None},
+    'signals': {
+      'SPI200': {'last_close': 7820.0, 'last_scalars': {'atr': 50.0}},
+      'AUDUSD': {'last_close': 0.6520, 'last_scalars': {'atr': 0.005}},
+    },
+    'trade_log': [], 'equity_history': [], 'warnings': [],
+    'initial_account': 100_000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    },
+    'paper_trades': [],   # Phase 19 D-08
+  }
+  state_box = {'value': default_state}
+  captured_saves = []
+
+  import state_manager
+  monkeypatch.setattr(state_manager, 'load_state',
+                      lambda *_a, **_kw: state_box['value'])
+  monkeypatch.setattr(state_manager, 'save_state',
+                      lambda state, *_a, **_kw: captured_saves.append(dict(state)))
+
+  def _mutate_state_stub(mutator, *_a, **_kw):
+    state = state_box['value']
+    mutator(state)
+    captured_saves.append(dict(state))
+    return state
+
+  monkeypatch.setattr(state_manager, 'mutate_state', _mutate_state_stub)
+  client = TestClient(create_app())
+
+  def set_state(payload):
+    state_box['value'] = payload
+
+  return client, set_state, captured_saves

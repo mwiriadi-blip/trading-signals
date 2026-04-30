@@ -44,6 +44,7 @@ from web.routes import login as login_route
 from web.routes import reset as reset_route
 from web.routes import state as state_route
 from web.routes import totp as totp_route
+from web.routes import paper_trades as paper_trades_route
 from web.routes import trades as trades_route
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,7 @@ def create_app() -> FastAPI:
   dashboard_route.register(application)
   state_route.register(application)
   trades_route.register(application)
+  paper_trades_route.register(application)  # Phase 19 D-12: paper-trade ledger routes
   # Phase 16.1 — auth-bootstrap routes. Registered BEFORE add_middleware
   # per Phase 13 D-06; PUBLIC_PATHS in AuthMiddleware lets them through
   # without an active session.
