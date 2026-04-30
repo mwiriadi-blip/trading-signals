@@ -1774,6 +1774,175 @@ def send_magic_link_email(
 
 
 # =========================================================================
+# Phase 20 D-02/D-13 — stop-loss alert email
+# =========================================================================
+
+def _build_alert_subject(transitions: list[dict]) -> str:
+  '''D-02: [!stop] subject with N==1 per-trade or N>1 batched format.'''
+  n = len(transitions)
+  if n == 1:
+    t = transitions[0]
+    trade_id = html.escape(str(t.get('id', '')), quote=True)
+    instrument = html.escape(str(t.get('instrument', '')), quote=True)
+    side = html.escape(str(t.get('side', '')), quote=True)
+    state = html.escape(str(t.get('new_state', '')), quote=True)
+    return f'[!stop] {instrument} {side} {state} — {trade_id}'
+  return f"[!stop] {n} transition(s) in today's paper trades"
+
+
+def _render_alert_email_html(transitions: list[dict], dashboard_url: str) -> str:
+  '''D-02/D-13: self-contained inline-styled HTML for the stop-alert email.
+
+  Every interpolated string field wrapped in html.escape(str(v), quote=True).
+  State badges use INLINE style attributes (Gmail mobile strips <style> blocks;
+  RESEARCH §Pitfall 3 / UAT-16-B 2026-04-29).
+  '''
+  n = len(transitions)
+  # Per-state badge inline styles (D-14 hex pairs from CONTEXT D-14 verbatim).
+  _BADGE_STYLES = {
+    'CLEAR':      'background:#d4edda;color:#155724;padding:2px 6px;border-radius:4px;font-weight:bold;',
+    'APPROACHING':'background:#fff3cd;color:#856404;padding:2px 6px;border-radius:4px;font-weight:bold;',
+    'HIT':        'background:#f8d7da;color:#721c24;padding:2px 6px;border-radius:4px;font-weight:bold;',
+  }
+  default_badge = 'background:#e9ecef;color:#6c757d;padding:2px 6px;border-radius:4px;font-weight:bold;'
+
+  rows_html = []
+  for t in transitions:
+    esc_id      = html.escape(str(t.get('id', '')), quote=True)
+    esc_inst    = html.escape(str(t.get('instrument', '')), quote=True)
+    esc_side    = html.escape(str(t.get('side', '')), quote=True)
+    esc_state   = html.escape(str(t.get('new_state', '')), quote=True)
+    entry_fmt   = html.escape(f"{t.get('entry_price', 0.0):.2f}", quote=True)
+    stop_fmt    = html.escape(f"{t.get('stop_price', 0.0):.2f}", quote=True)
+    close_fmt   = html.escape(f"{t.get('today_close', 0.0):.2f}", quote=True)
+    atr_dist    = t.get('atr_distance', 0.0)
+    # NaN check via self-inequality (no math import needed; avoids import count change).
+    if atr_dist != atr_dist:  # noqa: PLR0124 -- float NaN self-inequality check
+      dist_text = 'distance unknown'
+    else:
+      label = 'within trigger' if t.get('new_state') == 'APPROACHING' else 'beyond stop'
+      dist_text = f'{atr_dist:.2f} ATR ({label})'
+    esc_dist = html.escape(dist_text, quote=True)
+    badge_style = _BADGE_STYLES.get(str(t.get('new_state', '')), default_badge)
+    rows_html.append(
+      f'      <tr>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">{esc_id}</td>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">{esc_side}</td>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">${esc_inst} {entry_fmt}</td>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">${stop_fmt}</td>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">${close_fmt}</td>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">{esc_dist}</td>'
+      f'<td style="padding:6px 8px;border:1px solid #ddd;">'
+      f'<span style="{badge_style}">{esc_state}</span>'
+      f'</td>'
+      f'</tr>\n'
+    )
+
+  rows_str = ''.join(rows_html)
+  esc_url = html.escape(dashboard_url, quote=True)
+  return (
+    '<!DOCTYPE html>\n'
+    '<html lang="en">\n'
+    '<head><meta charset="utf-8"></head>\n'
+    '<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:24px;">\n'
+    f'  <h2 style="margin:0 0 16px;">Stop-loss alert ({n} transition(s))</h2>\n'
+    '  <table style="border-collapse:collapse;width:100%;">\n'
+    '    <thead>\n'
+    '      <tr style="background:#f5f5f5;">'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">Trade</th>'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">Side</th>'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">Entry</th>'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">Stop</th>'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">Today\'s close</th>'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">Distance</th>'
+    '<th style="padding:8px;border:1px solid #ddd;text-align:left;">State</th>'
+    '</tr>\n'
+    '    </thead>\n'
+    '    <tbody>\n'
+    f'{rows_str}'
+    '    </tbody>\n'
+    '  </table>\n'
+    f'  <p style="margin:16px 0 0;">Dashboard: '
+    f'<a href="{esc_url}">{esc_url}</a></p>\n'
+    '</body>\n'
+    '</html>\n'
+  )
+
+
+def _render_alert_email_text(transitions: list[dict], dashboard_url: str) -> str:
+  '''D-02: plain-text fallback for the stop-alert email.
+
+  Same transitions argument as _render_alert_email_html (RESEARCH §Pitfall 2 parity).
+  No HTML escaping (text/plain). Every id + new_state appears in the output.
+  '''
+  n = len(transitions)
+  lines = [f'Stop-loss alert ({n} transition(s))', '']
+  for t in transitions:
+    trade_id  = str(t.get('id', ''))
+    side      = str(t.get('side', ''))
+    state     = str(t.get('new_state', ''))
+    atr_dist  = t.get('atr_distance', 0.0)
+    if atr_dist != atr_dist:  # noqa: PLR0124 -- float NaN self-inequality
+      dist_label = 'distance unknown'
+    else:
+      label = 'within trigger' if t.get('new_state') == 'APPROACHING' else 'beyond stop'
+      dist_label = f'{atr_dist:.2f} ATR ({label})'
+    lines.append(f'{trade_id:<28}  {side:<6}  {state:<12}  {dist_label}')
+  lines.append('')
+  lines.append(f'Dashboard: {dashboard_url}')
+  lines.append('')
+  return '\n'.join(lines)
+
+
+def send_stop_alert_email(transitions: list[dict], dashboard_url: str) -> bool:
+  '''Phase 20 D-02/D-13: send batched stop-alert email via Resend.
+
+  transitions: list of dicts with keys id, instrument, side, entry_price,
+    stop_price, today_close, atr_distance, new_state, old_state.
+
+  Returns True on Resend 200, False on any failure (network, API error,
+  quota). NEVER crashes (Phase 6 invariant + CLAUDE.md "Email sends NEVER
+  crash the workflow").
+
+  Subject: N==1 -> per-trade bracketed format; N>1 -> batched format (D-02).
+  Body: HTML table per D-02 + identical plain-text fallback (D-02 parity).
+  '''
+  if not transitions:
+    return False  # D-01: no zero-row email
+  from_addr = os.environ.get('SIGNALS_EMAIL_FROM', '').strip()
+  if not from_addr:
+    logger.warning('[Email] WARN send_stop_alert_email: missing SIGNALS_EMAIL_FROM')
+    return False
+  to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
+  api_key = os.environ.get('RESEND_API_KEY', '').strip()
+  if not api_key:
+    logger.warning('[Email] WARN send_stop_alert_email: missing RESEND_API_KEY')
+    return False
+  subject = _build_alert_subject(transitions)
+  html_body = _render_alert_email_html(transitions, dashboard_url)
+  text_body = _render_alert_email_text(transitions, dashboard_url)
+  try:
+    _post_to_resend(
+      api_key=api_key,
+      from_addr=from_addr,
+      to_addr=to_addr,
+      subject=subject,
+      html_body=html_body,
+      text_body=text_body,
+    )
+    return True
+  except ResendError as e:
+    logger.warning('[Email] WARN send_stop_alert_email failed: %s', e)
+    return False
+  except Exception as e:  # noqa: BLE001 -- CLAUDE.md never-crash
+    logger.warning(
+      '[Email] WARN send_stop_alert_email unexpected: %s: %s',
+      type(e).__name__, e,
+    )
+    return False
+
+
+# =========================================================================
 # CLI entrypoint — operator preview (python -m notifier)
 # =========================================================================
 
