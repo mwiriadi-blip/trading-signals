@@ -30,12 +30,12 @@
 
 ### LEDGER — Paper-trade ledger (Phase 19)
 
-- [ ] **LEDGER-01** — Web form on dashboard for manual paper trade entry: instrument, side (LONG/SHORT), entry datetime, entry price, contracts, stop price (optional). Validated server-side; rejects future dates, negative prices, contracts ≤ 0.
-- [ ] **LEDGER-02** — Per-trade entry persisted to a new `paper_trades` array in `state.json` (not a separate file — leverages existing atomic-write infrastructure). Each row: `id`, `instrument`, `side`, `entry_dt`, `entry_price`, `contracts`, `stop_price`, `status` (open/closed), `exit_dt` (nullable), `exit_price` (nullable), `pnl` (nullable), `strategy_version` (from VERSION-01).
-- [ ] **LEDGER-03** — "Open Paper Trades" table on dashboard renders all `status=open` rows with current price + unrealised P&L. Mark-to-market uses the same close price the signal engine used for today.
-- [ ] **LEDGER-04** — "Closed Paper Trades" table on dashboard renders all `status=closed` rows with realised P&L, days held, side, instrument, entry/exit. Sortable by exit date desc.
-- [ ] **LEDGER-05** — Web form to close an open paper trade: select trade, enter exit price + exit datetime, server computes realised P&L and flips `status=closed`. Closed rows are immutable (no edit form).
-- [ ] **LEDGER-06** — Aggregate P&L stat displayed: total realised P&L, total unrealised P&L, win count, loss count, win rate. Updates on every trade close.
+- [x] **LEDGER-01** — Web form on dashboard for manual paper trade entry: instrument, side (LONG/SHORT), entry datetime, entry price, contracts, stop price (optional). Validated server-side; rejects future dates, negative prices, contracts ≤ 0.
+- [x] **LEDGER-02** — Per-trade entry persisted to a new `paper_trades` array in `state.json` (not a separate file — leverages existing atomic-write infrastructure). Each row: `id`, `instrument`, `side`, `entry_dt`, `entry_price`, `contracts`, `stop_price`, `status` (open/closed), `exit_dt` (nullable), `exit_price` (nullable), `pnl` (nullable), `strategy_version` (from VERSION-01).
+- [x] **LEDGER-03** — "Open Paper Trades" table on dashboard renders all `status=open` rows with current price + unrealised P&L. Mark-to-market uses the same close price the signal engine used for today.
+- [x] **LEDGER-04** — "Closed Paper Trades" table on dashboard renders all `status=closed` rows with realised P&L, days held, side, instrument, entry/exit. Sortable by exit date desc.
+- [x] **LEDGER-05** — Web form to close an open paper trade: select trade, enter exit price + exit datetime, server computes realised P&L and flips `status=closed`. Closed rows are immutable (no edit form).
+- [x] **LEDGER-06** — Aggregate P&L stat displayed: total realised P&L, total unrealised P&L, win count, loss count, win rate. Updates on every trade close.
 
 ### ALERT — Stop-loss monitoring & alerts (Phase 20)
 
@@ -48,7 +48,7 @@
 
 - [x] **VERSION-01** — `STRATEGY_VERSION` constant added to `system_params.py` with semver pattern (`v1.2.0` at v1.2 launch). Bumped on any signal-logic change (Mom thresholds, ADX gate, sizing weights, etc.). Version bumps documented in `docs/STRATEGY-CHANGELOG.md`.
 - [x] **VERSION-02** — Every signal row written to `state.signals[<instrument>]` includes `strategy_version` matching the constant at write-time. Migration: existing rows on first v1.2 deploy stamped with `v1.1.0`.
-- [ ] **VERSION-03** — Every paper trade row in `state.paper_trades` (LEDGER-02) includes `strategy_version` matching the constant at the trade's entry datetime. Closed trades retain the version they were entered under, even if `STRATEGY_VERSION` later bumps.
+- [x] **VERSION-03** — Every paper trade row in `state.paper_trades` (LEDGER-02) includes `strategy_version` matching the constant at the trade's entry datetime. Closed trades retain the version they were entered under, even if `STRATEGY_VERSION` later bumps.
 
 ### BACKTEST — 5-year backtest validation gate (Phase 23)
 
@@ -68,19 +68,19 @@
 | TRACE-03 | 17 | Complete |
 | TRACE-04 | 17 | Complete |
 | TRACE-05 | 17 | Complete |
-| LEDGER-01 | 19 | Pending |
-| LEDGER-02 | 19 | Pending |
-| LEDGER-03 | 19 | Pending |
-| LEDGER-04 | 19 | Pending |
-| LEDGER-05 | 19 | Pending |
-| LEDGER-06 | 19 | Pending |
+| LEDGER-01 | 19 | Complete |
+| LEDGER-02 | 19 | Complete |
+| LEDGER-03 | 19 | Complete |
+| LEDGER-04 | 19 | Complete |
+| LEDGER-05 | 19 | Complete |
+| LEDGER-06 | 19 | Complete |
 | ALERT-01 | 20 | Pending |
 | ALERT-02 | 20 | Pending |
 | ALERT-03 | 20 | Pending |
 | ALERT-04 | 20 | Pending |
 | VERSION-01 | 22 | Complete |
 | VERSION-02 | 22 | Complete |
-| VERSION-03 | 22 | Pending |
+| VERSION-03 | 22 | Complete |
 | BACKTEST-01 | 23 | Pending |
 | BACKTEST-02 | 23 | Pending |
 | BACKTEST-03 | 23 | Pending |
