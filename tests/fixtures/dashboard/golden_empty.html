@@ -569,6 +569,14 @@ td.calc-cell.entry-target {
 .trace-badge.zero  { background: #713f12; color: #fef9c3; }
 .trace-badge.pass  { background: #166534; color: #dcfce7; }
 .trace-badge.fail  { background: #7f1d1d; color: #fee2e2; }
+.alert-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: var(--fs-label); font-weight: 700; white-space: nowrap; }
+.alert-clear     { background: #d4edda; color: #155724; }
+.alert-approaching { background: #fff3cd; color: #856404; }
+.alert-hit       { background: #f8d7da; color: #721c24; }
+.alert-none      { background: #e9ecef; color: #6c757d; }
+@media (max-width: 640px) {
+  .alert-badge { font-size: 10px; padding: 1px 4px; }
+}
 .trace-outcome { margin-top: var(--space-2); font-weight: 700; }
 .stats-bar {
   position: sticky;
@@ -739,7 +747,7 @@ td.calc-cell.entry-target {
   <h2>Open Paper Trades</h2>
   <table class="paper-trades-table">
     <tbody>
-      <tr><td colspan="9" class="empty-state">No open paper trades. Use the form above to record a new entry.</td></tr>
+      <tr><td colspan="10" class="empty-state">No open paper trades. Use the form above to record a new entry.</td></tr>
     </tbody>
   </table>
 </section>

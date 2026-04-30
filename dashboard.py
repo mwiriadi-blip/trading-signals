@@ -702,6 +702,14 @@ td.calc-cell.entry-target {{
 .trace-badge.zero  {{ background: #713f12; color: #fef9c3; }}
 .trace-badge.pass  {{ background: #166534; color: #dcfce7; }}
 .trace-badge.fail  {{ background: #7f1d1d; color: #fee2e2; }}
+.alert-badge {{ display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: var(--fs-label); font-weight: 700; white-space: nowrap; }}
+.alert-clear     {{ background: #d4edda; color: #155724; }}
+.alert-approaching {{ background: #fff3cd; color: #856404; }}
+.alert-hit       {{ background: #f8d7da; color: #721c24; }}
+.alert-none      {{ background: #e9ecef; color: #6c757d; }}
+@media (max-width: 640px) {{
+  .alert-badge {{ font-size: 10px; padding: 1px 4px; }}
+}}
 .trace-outcome {{ margin-top: var(--space-2); font-weight: 700; }}
 .stats-bar {{
   position: sticky;
@@ -2297,6 +2305,30 @@ def _render_paper_trades_open_form() -> str:
   )
 
 
+def _render_alert_badge(state: str | None, has_stop: bool) -> str:
+  '''Phase 20 D-19: render an alert state badge <span>.
+
+  Returns a <span class="alert-badge alert-{lower}">...</span>.
+  Dashboard uses CSS classes (never inline styles — per RESEARCH §Pitfall 3).
+  All state text passed through html.escape before render.
+
+  state=None or unrecognised state -> alert-none with "--" placeholder.
+  has_stop=False -> alert-none (no stop to monitor, title="no stop set").
+  '''
+  _KNOWN = {'CLEAR', 'APPROACHING', 'HIT'}
+  if not has_stop or state is None:
+    title = 'no stop set' if not has_stop else 'awaiting next daily run'
+    return (
+      f'<span class="alert-badge alert-none" title="{title}">--</span>'
+    )
+  esc_state = html.escape(str(state), quote=True)
+  if state in _KNOWN:
+    css_class = f'alert-{state.lower()}'
+  else:
+    css_class = 'alert-none'
+  return f'<span class="alert-badge {css_class}">{esc_state}</span>'
+
+
 def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
   '''Phase 19 D-11/D-13 — renders open paper-trades table with MTM unrealised P&L.
 
@@ -2323,7 +2355,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
       '  <h2>Open Paper Trades</h2>\n'
       '  <table class="paper-trades-table">\n'
       '    <tbody>\n'
-      '      <tr><td colspan="9" class="empty-state">'
+      '      <tr><td colspan="10" class="empty-state">'
       'No open paper trades. Use the form above to record a new entry.'
       '</td></tr>\n'
       '    </tbody>\n'
@@ -2361,6 +2393,10 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
           'pnl-positive' if upnl > 0 else ('pnl-negative' if upnl < 0 else 'pnl-zero')
         )
 
+    alert_badge_html = _render_alert_badge(
+      row.get('last_alert_state'),
+      has_stop=row.get('stop_price') is not None,
+    )
     rows_html += (
       f'  <tr class="row-clickable" data-trade-id="{esc_id}">\n'
       f'    <td>{esc_id}</td>\n'
@@ -2370,6 +2406,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
       f'    <td>{html.escape(str(row.get("contracts", "")))}</td>\n'
       f'    <td>{html.escape(str(row.get("stop_price") or "—"))}</td>\n'
       f'    <td class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'    <td>{alert_badge_html}</td>\n'
       f'    <td>\n'
       f'      <button hx-get="/paper-trade/{esc_id}/close-form"\n'
       f'              hx-target="#close-form-section"\n'
@@ -2391,7 +2428,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
     '    <thead>\n'
     '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
     '<th>Contracts</th><th>Stop</th><th>Unrealised P&amp;L</th>'
-    '<th>Close</th><th>Delete</th></tr>\n'
+    '<th>Alert</th><th>Close</th><th>Delete</th></tr>\n'
     '    </thead>\n'
     '    <tbody>\n'
     f'{rows_html}'

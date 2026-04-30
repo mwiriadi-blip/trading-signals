@@ -2996,3 +2996,103 @@ class TestDashboardHexBoundary:
         assert node.module != 'signal_engine', (
           f'signal_engine must not be imported from in dashboard.py (line {node.lineno})'
         )
+
+
+# =============================================================================
+# Phase 20 D-19/D-20: _render_alert_badge + Alert column in open trades table
+# =============================================================================
+
+class TestRenderAlertBadge:
+  '''Phase 20 D-19/D-20: alert badge helper + CSS + open-trades table column.'''
+
+  def test_badge_clear_has_alert_clear_class(self) -> None:
+    '''last_alert_state="CLEAR" with stop set -> span.alert-badge.alert-clear.'''
+    html_out = dashboard._render_alert_badge('CLEAR', has_stop=True)
+    assert 'alert-badge' in html_out
+    assert 'alert-clear' in html_out
+    assert 'CLEAR' in html_out
+
+  def test_badge_approaching_has_alert_approaching_class(self) -> None:
+    '''last_alert_state="APPROACHING" -> span.alert-badge.alert-approaching.'''
+    html_out = dashboard._render_alert_badge('APPROACHING', has_stop=True)
+    assert 'alert-badge' in html_out
+    assert 'alert-approaching' in html_out
+    assert 'APPROACHING' in html_out
+
+  def test_badge_hit_has_alert_hit_class(self) -> None:
+    '''last_alert_state="HIT" -> span.alert-badge.alert-hit.'''
+    html_out = dashboard._render_alert_badge('HIT', has_stop=True)
+    assert 'alert-badge' in html_out
+    assert 'alert-hit' in html_out
+    assert 'HIT' in html_out
+
+  def test_badge_none_state_no_stop_returns_alert_none_class(self) -> None:
+    '''last_alert_state=None with has_stop=False -> span.alert-badge.alert-none, "--".'''
+    html_out = dashboard._render_alert_badge(None, has_stop=False)
+    assert 'alert-badge' in html_out
+    assert 'alert-none' in html_out
+    assert '--' in html_out
+
+  def test_badge_none_state_with_stop_returns_alert_none_class(self) -> None:
+    '''last_alert_state=None with has_stop=True -> alert-none badge (awaiting run).'''
+    html_out = dashboard._render_alert_badge(None, has_stop=True)
+    assert 'alert-badge' in html_out
+    assert 'alert-none' in html_out
+
+  def test_badge_xss_escape_not_applicable_known_states(self) -> None:
+    '''Known state values (CLEAR/APPROACHING/HIT) contain no HTML chars; sanity check.'''
+    for state in ('CLEAR', 'APPROACHING', 'HIT'):
+      html_out = dashboard._render_alert_badge(state, has_stop=True)
+      assert '<script>' not in html_out
+
+  def test_badge_unknown_state_xss_safe(self) -> None:
+    '''An unknown/malformed state value is escaped before render.'''
+    html_out = dashboard._render_alert_badge('<script>alert(1)</script>', has_stop=True)
+    assert '<script>alert(1)</script>' not in html_out
+
+  def test_alert_css_in_inline_css(self) -> None:
+    '''.alert-badge and state classes present in _INLINE_CSS.'''
+    css = dashboard._INLINE_CSS
+    assert '.alert-badge' in css
+    assert '.alert-clear' in css
+    assert '.alert-approaching' in css
+    assert '.alert-hit' in css
+    assert '.alert-none' in css
+
+  def test_open_trades_table_has_alert_column_header(self) -> None:
+    '''Open trades table <thead> includes "Alert" <th> (10 columns total).'''
+    from tests.conftest import _open_row_v7
+    paper_trades = [_open_row_v7(last_alert_state='APPROACHING')]
+    signals = {
+      'SPI200': {
+        'last_close': 8120.0,
+        'last_scalars': {'atr': 50.0},
+        'ohlc_window': [{'date': '2026-04-30', 'open': 8100.0, 'high': 8200.0,
+                         'low': 8110.0, 'close': 8150.0}],
+        'indicator_scalars': {'atr': 50.0},
+      },
+    }
+    html_out = dashboard._render_paper_trades_open(paper_trades, signals)
+    assert '<th>Alert</th>' in html_out
+
+  def test_open_trades_row_renders_badge(self) -> None:
+    '''Open trade row renders an alert-badge span within the Alert <td>.'''
+    from tests.conftest import _open_row_v7
+    paper_trades = [_open_row_v7(last_alert_state='HIT')]
+    signals = {
+      'SPI200': {
+        'last_close': 8050.0,
+        'last_scalars': {'atr': 50.0},
+        'ohlc_window': [{'date': '2026-04-30', 'open': 8000.0, 'high': 8200.0,
+                         'low': 8050.0, 'close': 8060.0}],
+        'indicator_scalars': {'atr': 50.0},
+      },
+    }
+    html_out = dashboard._render_paper_trades_open(paper_trades, signals)
+    assert 'alert-badge' in html_out
+    assert 'alert-hit' in html_out
+
+  def test_empty_state_colspan_10(self) -> None:
+    '''Empty open trades uses colspan="10" after adding Alert column.'''
+    html_out = dashboard._render_paper_trades_open([], {})
+    assert 'colspan="10"' in html_out

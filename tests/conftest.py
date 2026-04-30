@@ -280,10 +280,39 @@ def client_with_state_v3(monkeypatch):
   return client, set_state, captured_saves
 
 
+def _open_row_v7(
+  trade_id: str = 'SPI200-20260430-001',
+  instrument: str = 'SPI200',
+  side: str = 'LONG',
+  stop_price: float | None = 8100.0,
+  last_alert_state: str | None = None,
+) -> dict:
+  '''Phase 20 D-08: v7-schema open paper-trade row with last_alert_state field.
+  Used by test_dashboard.py::TestRenderAlertBadge and other Phase 20 tests.
+  '''
+  return {
+    'id': trade_id,
+    'instrument': instrument,
+    'side': side,
+    'entry_dt': '2026-04-30T08:00:00+08:00',
+    'entry_price': 8200.0,
+    'contracts': 1,
+    'stop_price': stop_price,
+    'entry_cost_aud': 3.0,
+    'status': 'open',
+    'exit_dt': None,
+    'exit_price': None,
+    'realised_pnl': None,
+    'strategy_version': 'v1.2.0',
+    'last_alert_state': last_alert_state,
+  }
+
+
 @pytest.fixture
 def client_with_state_v6(monkeypatch):
-  '''Phase 19 mirror of client_with_state_v3 — yields (client, set_state, captured_saves).
-  Default seed: v6-schema state with paper_trades=[]. Tests adjust via set_state.
+  '''Phase 19/20 web test fixture — yields (client, set_state, captured_saves).
+  Default seed: v7-schema state with paper_trades=[]. Tests adjust via set_state.
+  Named v6 for backward compat with existing tests; default schema is now v7.
   Reuses Phase 14 mutate_state kernel-stub semantic.
   '''
   from fastapi.testclient import TestClient
@@ -292,7 +321,7 @@ def client_with_state_v6(monkeypatch):
   from web.app import create_app
 
   default_state = {
-    'schema_version': 6,
+    'schema_version': 7,
     'account': 100_000.0,
     'last_run': '2026-04-30',
     'positions': {'SPI200': None, 'AUDUSD': None},

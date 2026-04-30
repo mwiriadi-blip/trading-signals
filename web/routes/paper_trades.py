@@ -340,6 +340,9 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
 
       # D-05: refresh strategy_version on edit (operator hasn't resolved the trade yet)
       row['strategy_version'] = STRATEGY_VERSION
+      # Phase 20 D-09: reset last_alert_state on edit so next daily run recomputes.
+      # Operator has changed the stop; prior alert state is stale.
+      row['last_alert_state'] = None
 
     try:
       from state_manager import mutate_state

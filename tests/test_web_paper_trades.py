@@ -79,7 +79,10 @@ def _valid_audusd_short() -> dict:
   }
 
 
-def _open_row(trade_id: str = 'SPI200-20260430-001', instrument: str = 'SPI200') -> dict:
+def _open_row(
+  trade_id: str = 'SPI200-20260430-001',
+  instrument: str = 'SPI200',
+) -> dict:
   '''Build a minimal open paper-trade row for seed state.'''
   return {
     'id': trade_id,
@@ -95,6 +98,7 @@ def _open_row(trade_id: str = 'SPI200-20260430-001', instrument: str = 'SPI200')
     'exit_price': None,
     'realised_pnl': None,
     'strategy_version': 'v1.2.0',
+    'last_alert_state': None,   # Phase 20 D-08
   }
 
 
@@ -345,6 +349,38 @@ class TestEditPaperTrade:
                      headers=htmx_headers)
     assert r.status_code == 200
     assert '<div id="trades-region"' in r.text
+
+  @pytest.mark.parametrize('prior_state', [None, 'CLEAR', 'APPROACHING', 'HIT'])
+  def test_edit_resets_last_alert_state(
+    self, client_with_state_v6, htmx_headers, prior_state,
+  ) -> None:
+    '''Phase 20 D-09: PATCH resets last_alert_state to None on any prior value.
+    Operator has acknowledged the stop edit; next daily run recomputes.
+    '''
+    client, set_state, captured_saves = client_with_state_v6
+    trade_id = 'SPI200-20260430-001'
+    row = _open_row(trade_id)
+    row['last_alert_state'] = prior_state
+    set_state({
+      'schema_version': 7, 'account': 100000.0, 'last_run': '2026-04-30',
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': {'last_close': 7820.0}, 'AUDUSD': {'last_close': 0.652}},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      'initial_account': 100000.0,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+      '_resolved_contracts': {'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+                               'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0}},
+      'paper_trades': [row],
+    })
+    r = client.patch(f'/paper-trade/{trade_id}',
+                     data={'stop_price': 7650.0},
+                     headers=htmx_headers)
+    assert r.status_code == 200, f'Expected 200; got {r.status_code}: {r.text[:300]}'
+    saved_row = captured_saves[-1]['paper_trades'][0]
+    assert saved_row['last_alert_state'] is None, (
+      f'D-09: last_alert_state must reset to None on PATCH; '
+      f'prior={prior_state!r}, got {saved_row["last_alert_state"]!r}'
+    )
 
 
 # =========================================================================
