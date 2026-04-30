@@ -114,7 +114,8 @@ class TestStateSchemaVersionV6:
   top-level array.
 
   Five guards:
-    - test_state_schema_version_is_6: constant equals 6 (Phase 19 D-08).
+    - test_state_schema_version_is_6: constant equals >= 6 (Phase 19 D-08; bumped
+      to 7 at Phase 20).
     - test_state_schema_version_is_int: isinstance int (regression guard).
     - test_strategy_version_unchanged_at_v1_2_0: Phase 19 schema bump must NOT
       change STRATEGY_VERSION (no signal logic change).
@@ -125,10 +126,11 @@ class TestStateSchemaVersionV6:
 
   def test_state_schema_version_is_6(self) -> None:
     '''D-08: STATE_SCHEMA_VERSION bumped 5->6 at Phase 19 (paper_trades[]
-    top-level array).
+    top-level array); bumped to 7 at Phase 20 (last_alert_state on paper_trades[] rows).
+    Guard: value must be >= 6.
     '''
-    assert system_params.STATE_SCHEMA_VERSION == 6, (
-      f'D-08: STATE_SCHEMA_VERSION must be 6 at Phase 19; '
+    assert system_params.STATE_SCHEMA_VERSION >= 6, (
+      f'D-08: STATE_SCHEMA_VERSION must be >= 6 (was 6 at Phase 19, 7 at Phase 20); '
       f'got {system_params.STATE_SCHEMA_VERSION!r}'
     )
 
@@ -171,4 +173,44 @@ class TestStateSchemaVersionV6:
     )
     assert system_params.AUDUSD_COST_AUD == 5.0, (
       f'Phase 19: AUDUSD_COST_AUD must remain 5.0; got {system_params.AUDUSD_COST_AUD!r}'
+    )
+
+
+class TestStateSchemaVersionV7:
+  '''Phase 20 D-08: STATE_SCHEMA_VERSION bumped 6->7 for last_alert_state field
+  on paper_trades[] rows.
+
+  Three guards:
+    - test_state_schema_version_is_7: constant equals 7 (Phase 20 D-08).
+    - test_state_schema_version_is_int: isinstance int (regression guard).
+    - test_strategy_version_unchanged_at_v1_2_0: Phase 20 schema bump must NOT
+      change STRATEGY_VERSION (no signal logic change).
+  '''
+
+  def test_state_schema_version_is_7(self) -> None:
+    '''D-08: STATE_SCHEMA_VERSION bumped 6->7 at Phase 20 (last_alert_state on
+    paper_trades[] rows; D-08).
+    '''
+    assert system_params.STATE_SCHEMA_VERSION == 7, (
+      f'D-08: STATE_SCHEMA_VERSION must be 7 at Phase 20; '
+      f'got {system_params.STATE_SCHEMA_VERSION!r}'
+    )
+
+  def test_state_schema_version_is_int(self) -> None:
+    '''D-08: STATE_SCHEMA_VERSION must remain a plain int after Phase 20 bump.'''
+    assert isinstance(system_params.STATE_SCHEMA_VERSION, int), (
+      f'D-08: STATE_SCHEMA_VERSION must be int; '
+      f'got {type(system_params.STATE_SCHEMA_VERSION)!r}'
+    )
+    assert not isinstance(system_params.STATE_SCHEMA_VERSION, bool), (
+      'D-08: bool is an int subtype — guard against the bool trap'
+    )
+
+  def test_strategy_version_unchanged_at_v1_2_0(self) -> None:
+    '''Phase 20 has no signal logic change — STRATEGY_VERSION must still be v1.2.0
+    after the schema bump. Guards against accidental clobber.
+    '''
+    assert system_params.STRATEGY_VERSION == 'v1.2.0', (
+      f'Phase 20 D-08: schema bump must NOT change STRATEGY_VERSION; '
+      f'got {system_params.STRATEGY_VERSION!r}'
     )
