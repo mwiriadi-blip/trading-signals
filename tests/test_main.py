@@ -2990,3 +2990,192 @@ class TestRunDailyCheckTagsStrategyVersion:
       f'monkeypatched STRATEGY_VERSION must be visible to the writer; '
       f'got {state["signals"]["AUDUSD"].get("strategy_version")!r}'
     )
+
+
+class TestRunDailyCheckPersistsTracePayload:
+  '''Phase 17 D-09: every fresh signal-row write inside run_daily_check
+  carries a 40-entry ohlc_window + 9-key indicator_scalars.
+
+  The values MUST come from df.tail(40) (OHLC) and
+  signal_engine.get_latest_indicators(df_with_indicators) (scalars) at WRITE
+  time — no import-time capture. Mirrors TestRunDailyCheckTagsStrategyVersion
+  (Phase 22) test structure and scaffolding helpers.
+  '''
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_writes_40_entry_ohlc_window(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-09: both signal rows carry an ohlc_window of length exactly 40
+    after a successful daily run.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    rc = main.main(['--once'])
+    assert rc == 0
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+    for inst in ('SPI200', 'AUDUSD'):
+      window = state['signals'][inst]['ohlc_window']
+      assert isinstance(window, list), (
+        f'D-09: {inst}.ohlc_window must be a list; got {type(window)!r}'
+      )
+      assert len(window) == 40, (
+        f'D-09: {inst} must persist 40-entry ohlc_window; got {len(window)}'
+      )
+      # Each entry must have exactly the expected 5 keys.
+      for i, entry in enumerate(window):
+        assert set(entry.keys()) == {'date', 'open', 'high', 'low', 'close'}, (
+          f'D-09: {inst}.ohlc_window[{i}] must have keys '
+          f'{{date,open,high,low,close}}; got {set(entry.keys())!r}'
+        )
+        assert isinstance(entry['date'], str), (
+          f'D-09: {inst}.ohlc_window[{i}].date must be str; got {type(entry["date"])!r}'
+        )
+        for field in ('open', 'high', 'low', 'close'):
+          assert isinstance(entry[field], float), (
+            f'D-09: {inst}.ohlc_window[{i}].{field} must be float; '
+            f'got {type(entry[field])!r}'
+          )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_writes_9_key_indicator_scalars(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-09: both signal rows carry an indicator_scalars dict with exactly the
+    9 canonical keys after a successful daily run.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    rc = main.main(['--once'])
+    assert rc == 0
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+    expected_keys = {'tr', 'atr', 'plus_di', 'minus_di', 'adx',
+                     'mom1', 'mom3', 'mom12', 'rvol'}
+    for inst in ('SPI200', 'AUDUSD'):
+      scalars = state['signals'][inst]['indicator_scalars']
+      assert isinstance(scalars, dict), (
+        f'D-09: {inst}.indicator_scalars must be a dict; got {type(scalars)!r}'
+      )
+      assert set(scalars.keys()) == expected_keys, (
+        f'D-09: {inst}.indicator_scalars must have exactly keys {expected_keys}; '
+        f'got {set(scalars.keys())!r}'
+      )
+      for k, v in scalars.items():
+        assert isinstance(v, float) or (isinstance(v, float) and math.isnan(v)), (
+          f'D-09: {inst}.indicator_scalars.{k} must be float; got {type(v)!r}'
+        )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_ohlc_window_last_close_matches(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-09: ohlc_window[-1]["close"] must equal state.signals[inst].last_close
+    — proves the window is built from the same df.tail(40) the engine consumed.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    rc = main.main(['--once'])
+    assert rc == 0
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+    for inst in ('SPI200', 'AUDUSD'):
+      sig = state['signals'][inst]
+      last_window_close = sig['ohlc_window'][-1]['close']
+      last_close = sig['last_close']
+      assert math.isclose(last_window_close, last_close, rel_tol=1e-9), (
+        f'D-09: {inst}.ohlc_window[-1].close ({last_window_close}) must equal '
+        f'last_close ({last_close}) — proves tail-40 alignment'
+      )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_indicator_scalars_values_match_engine_output(
+      self, tmp_path, monkeypatch) -> None:
+    '''D-09: indicator_scalars values must match recomputed signal_engine output
+    for the equivalent canonical key names. Verifies that indicator_scalars is
+    derived from the same df_with_indicators that the engine consumed.
+
+    Note: indicator_scalars uses Phase 17 canonical key names (plus_di, minus_di,
+    tr) while get_latest_indicators uses legacy names (pdi, ndi, no tr).
+    We verify by recomputing on the same fixture df and comparing the underlying
+    engine column values (ATR, ADX, PDI/plus_di, NDI/minus_di, Mom1-3-12, RVol).
+    '''
+    import signal_engine
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+
+    # Recompute on the known fixture dfs to verify values.
+    fixture_map = {
+      'SPI200': _load_recorded_fixture('axjo_400d.json'),
+      'AUDUSD': _load_recorded_fixture('audusd_400d.json'),
+    }
+    for inst, df in fixture_map.items():
+      df_with_ind = signal_engine.compute_indicators(df)
+      last = df_with_ind.iloc[-1]
+      actual = state['signals'][inst]['indicator_scalars']
+      # Verify each canonical key maps to the right engine column.
+      pairs = [
+        ('atr', float(last['ATR'])),
+        ('plus_di', float(last['PDI'])),
+        ('minus_di', float(last['NDI'])),
+        ('adx', float(last['ADX'])),
+        ('mom1', float(last['Mom1'])),
+        ('mom3', float(last['Mom3'])),
+        ('mom12', float(last['Mom12'])),
+        ('rvol', float(last['RVol'])),
+      ]
+      for key, exp_v in pairs:
+        act_v = actual.get(key)
+        assert act_v is not None, (
+          f'D-09: {inst}.indicator_scalars missing key {key!r}'
+        )
+        if math.isnan(exp_v) and math.isnan(act_v):
+          continue
+        assert math.isclose(exp_v, act_v, rel_tol=1e-9), (
+          f'D-09: {inst}.indicator_scalars.{key}: expected {exp_v}, got {act_v}'
+        )
+      # tr key must be present and be a float (NaN or finite).
+      assert 'tr' in actual, f'D-09: {inst}.indicator_scalars must include tr'
+      assert isinstance(actual['tr'], float), (
+        f'D-09: {inst}.indicator_scalars.tr must be float; got {type(actual["tr"])!r}'
+      )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')
+  def test_apply_daily_run_strategy_version_captured_at_write_time(
+      self, tmp_path, monkeypatch) -> None:
+    '''Monkeypatch system_params.STRATEGY_VERSION = 'v99.0.0' BEFORE the run.
+    After the run, strategy_version on both signal rows must equal 'v99.0.0',
+    proving the writer reads STRATEGY_VERSION via fresh attribute access on
+    system_params at write time (not an import-time captured alias).
+
+    This guard covers the Phase 17 trace payload writer (same write site as
+    Phase 22 VERSION-02). Mirror of Phase 22
+    test_apply_daily_run_strategy_version_matches_constant_after_constant_bump
+    (global LEARNINGS 2026-04-29 kwarg-default capture trap).
+    '''
+    import system_params
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    monkeypatch.setattr(system_params, 'STRATEGY_VERSION', 'v99.0.0')
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+    rc = main.main(['--once'])
+    assert rc == 0
+    state = state_manager.load_state(path=tmp_path / 'state.json')
+    for inst in ('SPI200', 'AUDUSD'):
+      sv = state['signals'][inst].get('strategy_version')
+      assert sv == 'v99.0.0', (
+        f'monkeypatched STRATEGY_VERSION must be visible to the Phase 17 '
+        f'trace payload writer; got {sv!r} for {inst}. '
+        f'If this fails, the writer captures STRATEGY_VERSION at import '
+        f'time (kwarg-default capture trap — see global LEARNINGS 2026-04-29).'
+      )

@@ -1270,6 +1270,51 @@ def run_daily_check(
     # — do NOT bind to a kwarg default or a module-local alias. Global
     # LEARNINGS 2026-04-29 documents the kwarg-default capture trap that
     # would silently bypass monkeypatch + freeze the version at import.
+    #
+    # Phase 17 D-09: persist last 40 OHLC bars for the dashboard trace
+    # panels. Build from `df` (NOT df_with_indicators) so the bar dicts
+    # carry only OHLC + date — same shape sizing_engine consumes. Keys are
+    # lowercased to match state.json convention. Same fresh-attribute-access
+    # discipline as Phase 22 strategy_version per LEARNINGS 2026-04-29.
+    ohlc_window: list[dict] = []
+    for _, row in df.tail(40).iterrows():
+      ohlc_window.append({
+        'date': row.name.strftime('%Y-%m-%d')
+          if hasattr(row.name, 'strftime') else str(row.name),
+        'open': float(row['Open']),
+        'high': float(row['High']),
+        'low': float(row['Low']),
+        'close': float(row['Close']),
+      })
+    # Phase 17 D-09: build the 9-key indicator_scalars with canonical Phase 17
+    # key names (tr, atr, plus_di, minus_di, adx, mom1, mom3, mom12, rvol).
+    # Note: get_latest_indicators (scalars) uses legacy key names pdi/ndi and
+    # omits tr — indicator_scalars is built fresh from df_with_indicators so
+    # key names match the _TRACE_FORMULAS catalogue in dashboard.py (D-13).
+    # TR for the last bar: max(H-L, |H-Cprev|, |L-Cprev|).
+    # Same formula as signal_engine._true_range (D-10 forbids importing it;
+    # two-line arithmetic keeps hex-boundary intact).
+    _last = df_with_indicators.iloc[-1]
+    if len(df_with_indicators) >= 2:
+      _prev_close = float(df_with_indicators['Close'].iloc[-2])
+      _tr_last = max(
+        float(_last['High']) - float(_last['Low']),
+        abs(float(_last['High']) - _prev_close),
+        abs(float(_last['Low']) - _prev_close),
+      )
+    else:
+      _tr_last = float('nan')
+    indicator_scalars: dict = {
+      'tr': _tr_last,
+      'atr': float(_last['ATR']),
+      'plus_di': float(_last['PDI']),
+      'minus_di': float(_last['NDI']),
+      'adx': float(_last['ADX']),
+      'mom1': float(_last['Mom1']),
+      'mom3': float(_last['Mom3']),
+      'mom12': float(_last['Mom12']),
+      'rvol': float(_last['RVol']),
+    }
     state['signals'][state_key] = {
       'signal': new_signal,
       'signal_as_of': signal_as_of,
@@ -1277,6 +1322,11 @@ def run_daily_check(
       'last_scalars': scalars,
       'last_close': bar['close'],
       'strategy_version': system_params.STRATEGY_VERSION,
+      # Phase 17 D-09: trace payload — ohlc_window built from df.tail(40);
+      # indicator_scalars uses canonical Phase 17 key names (plus_di/minus_di/tr).
+      # last_scalars kept verbatim for backwards-compat notifier readers (D-09).
+      'ohlc_window': ohlc_window,
+      'indicator_scalars': indicator_scalars,
     }
 
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
