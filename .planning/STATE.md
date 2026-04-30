@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Trader-Grade Transparency & Validation
 status: verifying
-last_updated: "2026-04-29T20:49:41.651Z"
-last_activity: 2026-04-29
+last_updated: "2026-04-30T02:15:10.571Z"
+last_activity: 2026-04-30
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
   percent: 100
 ---
 
@@ -23,17 +23,17 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 22 — strategy-versioning-audit-trail
+- **Current focus:** Phase 17 — per-signal-calculation-transparency
 
 ## Current Position
 
-Phase: 22 (strategy-versioning-audit-trail) — EXECUTING
+Phase: 17 (per-signal-calculation-transparency) — EXECUTING
 Plan: 1 of 1
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Phase complete — ready for verification
-- **Last activity:** 2026-04-29
+- **Last activity:** 2026-04-30
 - **Progress:** [██████████] 100%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
 
@@ -116,6 +116,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 14 P03 | 4m31s | 1 tasks | 2 files |
 | Phase 16 P04 | 5min | 1 tasks | 1 files |
 | Phase 22 P01 | 22min | 6 tasks | 10 files |
+| Phase 17 P01 | 90 | 5 tasks | 12 files |
 
 ## Accumulated Context
 

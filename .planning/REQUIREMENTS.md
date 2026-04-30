@@ -22,11 +22,11 @@
 
 ### TRACE — Per-signal calculation transparency (Phase 17)
 
-- [ ] **TRACE-01** — Dashboard renders an "Inputs" panel per instrument showing the OHLC values used for today's signal (today's bar + the prior-N bars needed by ATR(14), ADX(20), Mom-12). Reproducible: operator can plug values into Excel/Bloomberg/IG and re-derive identical indicator values.
-- [ ] **TRACE-02** — Dashboard renders an "Indicators" panel per instrument showing TR, ATR(14), +DI(20), -DI(20), ADX(20), Mom1, Mom3, Mom12, RVol(20) — each with the formula and the displayed numeric result. Hover-tooltip reveals the formula.
-- [ ] **TRACE-03** — Dashboard renders a "Vote" panel showing the 2-of-3 momentum vote breakdown (Mom1 sign, Mom3 sign, Mom12 sign) and the ADX gate (≥25 PASS / <25 FLAT) with the gate's actual ADX value.
-- [ ] **TRACE-04** — All three panels (Inputs / Indicators / Vote) render without server-side state mutation — pure read from `state.json` + indicator recompute on render. Survives `--test` mode.
-- [ ] **TRACE-05** — Forbidden-imports AST guard for `dashboard.py` extended: trace panels must not import `state_manager`, `os.environ`, or any I/O — operator-confidence test stays as a hex-boundary check.
+- [x] **TRACE-01** — Dashboard renders an "Inputs" panel per instrument showing the OHLC values used for today's signal (today's bar + the prior-N bars needed by ATR(14), ADX(20), Mom-12). Reproducible: operator can plug values into Excel/Bloomberg/IG and re-derive identical indicator values.
+- [x] **TRACE-02** — Dashboard renders an "Indicators" panel per instrument showing TR, ATR(14), +DI(20), -DI(20), ADX(20), Mom1, Mom3, Mom12, RVol(20) — each with the formula and the displayed numeric result. Hover-tooltip reveals the formula.
+- [x] **TRACE-03** — Dashboard renders a "Vote" panel showing the 2-of-3 momentum vote breakdown (Mom1 sign, Mom3 sign, Mom12 sign) and the ADX gate (≥25 PASS / <25 FLAT) with the gate's actual ADX value.
+- [x] **TRACE-04** — All three panels (Inputs / Indicators / Vote) render without server-side state mutation — pure read from `state.json` + indicator recompute on render. Survives `--test` mode.
+- [x] **TRACE-05** — Forbidden-imports AST guard for `dashboard.py` extended: trace panels must not import `state_manager`, `os.environ`, or any I/O — operator-confidence test stays as a hex-boundary check.
 
 ### LEDGER — Paper-trade ledger (Phase 19)
 
@@ -63,11 +63,11 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| TRACE-01 | 17 | Pending |
-| TRACE-02 | 17 | Pending |
-| TRACE-03 | 17 | Pending |
-| TRACE-04 | 17 | Pending |
-| TRACE-05 | 17 | Pending |
+| TRACE-01 | 17 | Complete |
+| TRACE-02 | 17 | Complete |
+| TRACE-03 | 17 | Complete |
+| TRACE-04 | 17 | Complete |
+| TRACE-05 | 17 | Complete |
 | LEDGER-01 | 19 | Pending |
 | LEDGER-02 | 19 | Pending |
 | LEDGER-03 | 19 | Pending |
