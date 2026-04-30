@@ -703,6 +703,32 @@ td.calc-cell.entry-target {{
 .trace-badge.pass  {{ background: #166534; color: #dcfce7; }}
 .trace-badge.fail  {{ background: #7f1d1d; color: #fee2e2; }}
 .trace-outcome {{ margin-top: var(--space-2); font-weight: 700; }}
+.stats-bar {{
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-6);
+}}
+.stats-bar-item {{
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}}
+.paper-trades-table {{ width: 100%; border-collapse: collapse; }}
+.paper-trades-table th, .paper-trades-table td {{ padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); text-align: left; }}
+.row-clickable {{ cursor: pointer; }}
+.row-clickable:hover {{ background: var(--color-bg); }}
+.pnl-positive {{ color: var(--color-long); }}
+.pnl-negative {{ color: var(--color-short); }}
+.pnl-zero {{ color: var(--color-text-dim); }}
+@media (max-width: 600px) {{
+  .stats-bar-item {{ min-width: calc(33% - var(--space-4)); }}
+}}
 '''
 
 
@@ -876,6 +902,74 @@ def _compute_total_return(state: dict) -> str:
     current = state.get('account', initial)
   total_return = (current - initial) / initial
   return f'{total_return * 100:+.1f}%'  # signed format: '+5.3%', '-2.1%', '+0.0%'
+
+
+def _compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
+  '''Phase 19 D-06 — compute 5-key aggregate stats for the sticky stats bar.
+
+  Returns dict with keys: realised, unrealised, wins, losses, win_rate.
+  Mutable-default avoided (planner trap): use None sentinels.
+
+  pnl_engine is LOCAL-imported (mirrors sizing_engine convention — Phase 11 C-2
+  + dashboard hex symmetry). dashboard.py does NOT import pnl_engine at module
+  top per hex-boundary preservation.
+
+  win_rate: wins / (wins + losses) * 100; '—' when denominator is 0.
+  Zero realised_pnl rows are excluded from wins AND losses (CONTEXT D-06).
+  Open rows with last_close=None or NaN skip unrealised contribution.
+  '''
+  if paper_trades is None:
+    paper_trades = []
+  if signals is None:
+    signals = {}
+
+  from pnl_engine import compute_unrealised_pnl  # LOCAL — Phase 11 C-2
+
+  _MULT = {'SPI200': 5.0, 'AUDUSD': 10000.0}
+
+  realised = 0.0
+  unrealised = 0.0
+  wins = 0
+  losses = 0
+
+  for row in paper_trades:
+    status = row.get('status')
+    if status == 'closed':
+      pnl = row.get('realised_pnl') or 0.0
+      realised += pnl
+      if pnl > 0:
+        wins += 1
+      elif pnl < 0:
+        losses += 1
+    elif status == 'open':
+      instrument = row.get('instrument', '')
+      sig = signals.get(instrument, {})
+      lc = sig.get('last_close')
+      if lc is None:
+        continue
+      try:
+        lc_float = float(lc)
+      except (TypeError, ValueError):
+        continue
+      if math.isnan(lc_float):
+        continue
+      mult = _MULT.get(instrument, 1.0)
+      upnl = compute_unrealised_pnl(
+        row['side'], row['entry_price'], lc_float,
+        row['contracts'], mult, row['entry_cost_aud'],
+      )
+      unrealised += upnl
+
+  denom = wins + losses
+  win_rate = f'{wins * 100 // denom}%' if denom > 0 else '—'
+
+  return {
+    'realised': realised,
+    'unrealised': unrealised,
+    'wins': wins,
+    'losses': losses,
+    'win_rate': win_rate,
+  }
 
 
 # =========================================================================
@@ -2128,6 +2222,282 @@ def _render_trades_table(state: dict) -> str:
   )
 
 
+def _render_paper_trades_stats(stats: dict | None = None) -> str:
+  '''Phase 19 D-06 — renders the sticky aggregate stats <aside>.
+
+  Formats 5 badges from the _compute_aggregate_stats output dict:
+  realised, unrealised, wins, losses, win_rate.
+  win_rate is pre-computed (string) by _compute_aggregate_stats; escape it.
+  '''
+  if stats is None:
+    stats = {
+      'realised': 0.0, 'unrealised': 0.0,
+      'wins': 0, 'losses': 0, 'win_rate': '—',
+    }
+  return (
+    '<aside class="stats-bar" aria-labelledby="stats-bar-heading">\n'
+    '  <h2 id="stats-bar-heading" class="visually-hidden">Aggregate paper-trade stats</h2>\n'
+    f'  <div class="stats-bar-item"><span class="label">Realised</span><span>{stats["realised"]:+.2f}</span></div>\n'
+    f'  <div class="stats-bar-item"><span class="label">Unrealised</span><span>{stats["unrealised"]:+.2f}</span></div>\n'
+    f'  <div class="stats-bar-item"><span class="label">Wins</span><span>{stats["wins"]}</span></div>\n'
+    f'  <div class="stats-bar-item"><span class="label">Losses</span><span>{stats["losses"]}</span></div>\n'
+    f'  <div class="stats-bar-item"><span class="label">Win rate</span><span>{html.escape(str(stats["win_rate"]))}</span></div>\n'
+    '</aside>\n'
+  )
+
+
+def _render_paper_trades_open_form() -> str:
+  '''Phase 19 D-13 — render the open-paper-trade form.
+
+  hx-post="/paper-trade/open" + hx-target="#trades-region" + hx-swap="outerHTML".
+  Content-type: standard form encoding (no hx-ext="json-enc" per planner D-17).
+  FastAPI receives this as a JSON body via TestClient json= in tests; in the
+  browser the HTMX client sends JSON because the form fields are labeled as JSON
+  keys (instrument/side/entry_dt/entry_price/contracts/stop_price) which FastAPI
+  parses via Pydantic from the request body.
+
+  NOTE: planner D-17 clarifies the web layer uses standard POST with JSON body
+  (client.post(..., json={...}) in tests). The form uses standard action POST; no
+  hx-ext="json-enc" attribute required.
+  '''
+  return (
+    '<section id="open-trade-form-section">\n'
+    '  <h2>Record New Paper Trade</h2>\n'
+    '  <form hx-post="/paper-trade/open"\n'
+    '        hx-target="#trades-region"\n'
+    '        hx-swap="outerHTML"\n'
+    '        enctype="application/json">\n'
+    '    <label>Instrument\n'
+    '      <select name="instrument" required>\n'
+    '        <option value="SPI200">SPI200</option>\n'
+    '        <option value="AUDUSD">AUDUSD</option>\n'
+    '      </select>\n'
+    '    </label>\n'
+    '    <label>Side\n'
+    '      <select name="side" required>\n'
+    '        <option value="LONG">LONG</option>\n'
+    '        <option value="SHORT">SHORT</option>\n'
+    '      </select>\n'
+    '    </label>\n'
+    '    <label>Entry date/time (AWST)\n'
+    '      <input type="datetime-local" name="entry_dt" required>\n'
+    '    </label>\n'
+    '    <label>Entry price\n'
+    '      <input type="number" name="entry_price" step="0.0001" min="0.0001" required>\n'
+    '    </label>\n'
+    '    <label>Contracts\n'
+    '      <input type="number" name="contracts" step="0.01" min="0.01" required>\n'
+    '    </label>\n'
+    '    <label>Stop price (optional)\n'
+    '      <input type="number" name="stop_price" step="0.0001" min="0">\n'
+    '    </label>\n'
+    '    <button type="submit">Open position</button>\n'
+    '  </form>\n'
+    '</section>\n'
+  )
+
+
+def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
+  '''Phase 19 D-11/D-13 — renders open paper-trades table with MTM unrealised P&L.
+
+  Mirrors _render_positions_table shape (Phase 5 analog).
+  LOCAL imports for pnl_engine (hex symmetry with sizing_engine convention).
+  Mutable-default avoided (planner trap): use None sentinels.
+  NaN guard before compute per RESEARCH §Pitfall 5.
+  Trade IDs flowed through html.escape(..., quote=True) per PATTERNS.
+  '''
+  if paper_trades is None:
+    paper_trades = []
+  if signals is None:
+    signals = {}
+
+  from pnl_engine import compute_unrealised_pnl  # LOCAL — Phase 11 C-2
+
+  _MULT = {'SPI200': 5.0, 'AUDUSD': 10000.0}
+
+  open_rows = [r for r in paper_trades if r.get('status') == 'open']
+
+  if not open_rows:
+    return (
+      '<section id="open-trades-section">\n'
+      '  <h2>Open Paper Trades</h2>\n'
+      '  <table class="paper-trades-table">\n'
+      '    <tbody>\n'
+      '      <tr><td colspan="9" class="empty-state">'
+      'No open paper trades. Use the form above to record a new entry.'
+      '</td></tr>\n'
+      '    </tbody>\n'
+      '  </table>\n'
+      '</section>\n'
+    )
+
+  rows_html = ''
+  for row in open_rows:
+    trade_id = row.get('id', '')
+    esc_id = html.escape(trade_id, quote=True)
+    instrument = row.get('instrument', '')
+    sig = signals.get(instrument, {})
+    lc = sig.get('last_close')
+
+    if lc is None:
+      pnl_str = 'n/a (no close price yet)'
+      pnl_class = 'pnl-zero'
+    else:
+      try:
+        lc_float = float(lc)
+      except (TypeError, ValueError):
+        lc_float = float('nan')
+      if math.isnan(lc_float):
+        pnl_str = 'n/a (no close price yet)'
+        pnl_class = 'pnl-zero'
+      else:
+        upnl = compute_unrealised_pnl(
+          row['side'], row['entry_price'], lc_float,
+          row['contracts'], _MULT.get(instrument, 1.0),
+          row['entry_cost_aud'],
+        )
+        pnl_str = f'{upnl:+.2f}'
+        pnl_class = (
+          'pnl-positive' if upnl > 0 else ('pnl-negative' if upnl < 0 else 'pnl-zero')
+        )
+
+    rows_html += (
+      f'  <tr class="row-clickable" data-trade-id="{esc_id}">\n'
+      f'    <td>{esc_id}</td>\n'
+      f'    <td>{html.escape(instrument)}</td>\n'
+      f'    <td>{html.escape(row.get("side", ""))}</td>\n'
+      f'    <td>{html.escape(str(row.get("entry_price", "")))}</td>\n'
+      f'    <td>{html.escape(str(row.get("contracts", "")))}</td>\n'
+      f'    <td>{html.escape(str(row.get("stop_price") or "—"))}</td>\n'
+      f'    <td class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'    <td>\n'
+      f'      <button hx-get="/paper-trade/{esc_id}/close-form"\n'
+      f'              hx-target="#close-form-section"\n'
+      f'              hx-swap="outerHTML">Close</button>\n'
+      f'    </td>\n'
+      f'    <td>\n'
+      f'      <button hx-delete="/paper-trade/{esc_id}"\n'
+      f'              hx-target="#trades-region"\n'
+      f'              hx-swap="outerHTML"\n'
+      f'              hx-confirm="Delete this open paper trade?">Delete</button>\n'
+      f'    </td>\n'
+      f'  </tr>\n'
+    )
+
+  return (
+    '<section id="open-trades-section">\n'
+    '  <h2>Open Paper Trades</h2>\n'
+    '  <table class="paper-trades-table">\n'
+    '    <thead>\n'
+    '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
+    '<th>Contracts</th><th>Stop</th><th>Unrealised P&amp;L</th>'
+    '<th>Close</th><th>Delete</th></tr>\n'
+    '    </thead>\n'
+    '    <tbody>\n'
+    f'{rows_html}'
+    '    </tbody>\n'
+    '  </table>\n'
+    '</section>\n'
+  )
+
+
+def _render_paper_trades_closed(paper_trades=None) -> str:
+  '''Phase 19 D-11/D-13 — renders closed paper-trades table sorted by exit_dt desc.
+
+  Mirrors _render_trades_table shape.
+  Mutable-default avoided: use None sentinel.
+  '''
+  if paper_trades is None:
+    paper_trades = []
+
+  closed_rows = sorted(
+    [r for r in paper_trades if r.get('status') == 'closed'],
+    key=lambda r: r.get('exit_dt') or '',
+    reverse=True,
+  )
+
+  if not closed_rows:
+    return (
+      '<section id="closed-trades-section">\n'
+      '  <h2>Closed Paper Trades</h2>\n'
+      '  <table class="paper-trades-table">\n'
+      '    <tbody>\n'
+      '      <tr><td colspan="7" class="empty-state">'
+      'No closed trades yet. Trades will appear here after you close an open position.'
+      '</td></tr>\n'
+      '    </tbody>\n'
+      '  </table>\n'
+      '</section>\n'
+    )
+
+  rows_html = ''
+  for row in closed_rows:
+    trade_id = row.get('id', '')
+    esc_id = html.escape(trade_id, quote=True)
+    realised = row.get('realised_pnl') or 0.0
+    pnl_str = f'{realised:+.2f}'
+    pnl_class = (
+      'pnl-positive' if realised > 0 else ('pnl-negative' if realised < 0 else 'pnl-zero')
+    )
+    rows_html += (
+      f'  <tr>\n'
+      f'    <td>{esc_id}</td>\n'
+      f'    <td>{html.escape(row.get("instrument", ""))}</td>\n'
+      f'    <td>{html.escape(row.get("side", ""))}</td>\n'
+      f'    <td>{html.escape(str(row.get("entry_price", "")))}</td>\n'
+      f'    <td>{html.escape(str(row.get("exit_price", "")))}</td>\n'
+      f'    <td>{html.escape(str(row.get("exit_dt", "—")))}</td>\n'
+      f'    <td class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'  </tr>\n'
+    )
+
+  return (
+    '<section id="closed-trades-section">\n'
+    '  <h2>Closed Paper Trades</h2>\n'
+    '  <table class="paper-trades-table">\n'
+    '    <thead>\n'
+    '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
+    '<th>Exit</th><th>Exit Date</th><th>Realised P&amp;L</th></tr>\n'
+    '    </thead>\n'
+    '    <tbody>\n'
+    f'{rows_html}'
+    '    </tbody>\n'
+    '  </table>\n'
+    '</section>\n'
+  )
+
+
+def _render_close_form_section() -> str:
+  '''Phase 19 D-03 — placeholder section for the close-form fragment.
+
+  Default: empty section shell. The GET /paper-trade/<id>/close-form route
+  returns a populated <section id="close-form-section"> that replaces this
+  placeholder via HTMX hx-swap="outerHTML".
+  '''
+  return '<section id="close-form-section"></section>\n'
+
+
+def _render_paper_trades_region(state: dict) -> str:
+  '''Phase 19 D-13 — wraps all paper-trade subsections in #trades-region.
+
+  Order: stats bar → open-trade form → open table → close-form section → closed table.
+  This entire <div> is the HTMX hx-target="#trades-region" swap target for every
+  paper-trade mutation (POST /paper-trade/open, PATCH, DELETE, POST close).
+  '''
+  paper_trades = state.get('paper_trades', [])
+  signals = state.get('signals', {})
+  stats = _compute_aggregate_stats(paper_trades, signals)
+  return (
+    '<div id="trades-region">\n'
+    + _render_paper_trades_stats(stats)
+    + _render_paper_trades_open_form()
+    + _render_paper_trades_open(paper_trades, signals)
+    + _render_close_form_section()
+    + _render_paper_trades_closed(paper_trades)
+    + '</div>\n'
+  )
+
+
 def _render_key_stats(state: dict) -> str:
   '''UI-SPEC §Key stats block — 4 tiles Total Return/Sharpe/MaxDD/WinRate (DASH-07).
 
@@ -2430,6 +2800,10 @@ def render_dashboard(
   body = (
     _render_header(state, now, is_cookie_session=is_cookie_session)
     + _render_signal_cards(state)
+    # Phase 19 D-06: paper-trades region (sticky stats bar + open/closed tables)
+    # sits AFTER signal cards and BEFORE equity chart, so operator sees
+    # paper-trade stats immediately below the signal cards.
+    + _render_paper_trades_region(state)
     + _render_equity_chart_container(state)
     # Phase 15 REVIEWS H-2: drift sentinel banner sits BEFORE positions
     # table per D-13 hierarchy. When future Phase-N corruption + stale

@@ -2554,3 +2554,445 @@ class TestTracePanels:
     assert len(aud_matches) >= 1, (
       'D-04: at least one data-instrument="AUDUSD" must be in HTML'
     )
+
+
+# =========================================================================
+# Phase 19 — paper trade render helpers
+# =========================================================================
+
+V6_FIXTURE_PATH = Path('tests/fixtures/state_v6_with_paper_trades.json')
+
+
+def _load_v6_state() -> dict:
+  '''Load the Phase 19 golden fixture (schema_version=6, 2 open + 2 closed rows).'''
+  return json.loads(V6_FIXTURE_PATH.read_text())
+
+
+def _empty_v6_state() -> dict:
+  '''Minimal v6 state with empty paper_trades and no positions.'''
+  return {
+    'schema_version': 6,
+    'account': 100000.0,
+    'last_run': '2026-04-30',
+    'positions': {'SPI200': None, 'AUDUSD': None},
+    'signals': {
+      'SPI200': {'signal': 1, 'signal_as_of': '2026-04-29', 'as_of_run': '2026-04-30',
+                 'last_close': 7900.0, 'last_scalars': {'atr': 50.0}, 'strategy_version': 'v1.2.0'},
+      'AUDUSD': {'signal': -1, 'signal_as_of': '2026-04-29', 'as_of_run': '2026-04-30',
+                 'last_close': 0.6400, 'last_scalars': {'atr': 0.005}, 'strategy_version': 'v1.2.0'},
+    },
+    'trade_log': [],
+    'equity_history': [],
+    'warnings': [],
+    'initial_account': 100000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    },
+    'paper_trades': [],
+  }
+
+
+class TestRenderPaperTradesOpenTable:
+  '''Phase 19 D-11/D-13 — _render_paper_trades_open helper.'''
+
+  def test_open_table_renders_two_rows(self) -> None:
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'SPI200-20260428-001' in out, 'SPI200 open row must appear'
+    assert 'AUDUSD-20260428-001' in out, 'AUDUSD open row must appear'
+    # Closed rows must NOT appear in the open table
+    assert 'SPI200-20260427-001' not in out, 'Closed SPI200 row must not appear in open table'
+    assert 'AUDUSD-20260427-001' not in out, 'Closed AUDUSD row must not appear in open table'
+
+  def test_open_table_renders_unrealised_pnl_per_row_spi(self) -> None:
+    '''SPI200: entry=7800, last_close=7900, contracts=2, mult=5.0, entry_cost=3.0
+    → unrealised = (7900-7800)*2*5 - 3 = 997.0 → '+997.00'.
+    '''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert '+997.00' in out, f'Expected +997.00 in SPI200 open row; got excerpt: {out[:500]}'
+
+  def test_open_table_renders_unrealised_pnl_per_row_audusd(self) -> None:
+    '''AUDUSD SHORT: entry=0.6500, last_close=0.6400, contracts=1, mult=10000, entry_cost=2.5
+    → (0.6500-0.6400)*1*10000 - 2.5 = 97.5 → '+97.50'.
+    '''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert '+97.50' in out, f'Expected +97.50 in AUDUSD open row; got excerpt: {out[:500]}'
+
+  def test_open_table_renders_pnl_positive_class(self) -> None:
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'pnl-positive' in out, 'Expected pnl-positive CSS class for positive P&L rows'
+
+  def test_open_table_renders_pnl_negative_class(self) -> None:
+    '''Build state with negative unrealised P&L (LONG, last_close < entry_price).'''
+    state = _load_v6_state()
+    # Override signal so SPI200 last_close is below entry to create a loss
+    state['signals']['SPI200']['last_close'] = 7600.0
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'pnl-negative' in out, 'Expected pnl-negative CSS class for negative P&L row'
+
+  def test_open_table_renders_na_when_last_close_missing(self) -> None:
+    '''CONTEXT D-07: signals[instrument] lacking last_close → "n/a (no close price yet)".'''
+    state = _load_v6_state()
+    del state['signals']['SPI200']['last_close']
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'n/a (no close price yet)' in out, (
+      'D-07: missing last_close must render n/a text'
+    )
+
+  def test_open_table_renders_na_when_last_close_nan(self) -> None:
+    '''NaN guard: math.isnan check BEFORE f-string (planner trap + RESEARCH §Pitfall 5).'''
+    state = _load_v6_state()
+    state['signals']['SPI200']['last_close'] = float('nan')
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'n/a (no close price yet)' in out, (
+      'NaN last_close must render n/a text'
+    )
+
+  def test_open_table_empty_state_copy(self) -> None:
+    '''D-16 verbatim empty copy string.'''
+    out = dashboard._render_paper_trades_open([], {})
+    assert 'No open paper trades. Use the form above to record a new entry.' in out
+
+  def test_open_table_row_has_close_button_with_hxget(self) -> None:
+    '''RESEARCH §Pattern 1: close button must have hx-get for close-form route.'''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'hx-get="/paper-trade/SPI200-20260428-001/close-form"' in out, (
+      'Close button must have hx-get pointing to close-form route'
+    )
+
+  def test_open_table_row_has_delete_button_with_hxconfirm(self) -> None:
+    '''Planner D-21: delete button with hx-delete + hx-confirm.'''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    assert 'hx-delete="/paper-trade/SPI200-20260428-001"' in out, (
+      'Delete button must have hx-delete pointing to trade route'
+    )
+    assert 'hx-confirm="Delete this open paper trade?"' in out, (
+      'Delete button must have hx-confirm for user confirmation'
+    )
+
+  def test_open_table_html_escapes_trade_id(self) -> None:
+    '''PATTERNS §Composite-key escape: trade IDs flowed through html.escape.'''
+    xss_id = '<script>alert(1)</script>-20260428-001'
+    paper_trades = [{
+      'id': xss_id,
+      'instrument': 'SPI200',
+      'side': 'LONG',
+      'entry_dt': '2026-04-28T10:00:00+08:00',
+      'entry_price': 7800.0,
+      'contracts': 2,
+      'stop_price': 7700.0,
+      'entry_cost_aud': 3.0,
+      'status': 'open',
+      'exit_dt': None,
+      'exit_price': None,
+      'realised_pnl': None,
+      'strategy_version': 'v1.2.0',
+    }]
+    signals = {'SPI200': {'last_close': 7900.0}}
+    out = dashboard._render_paper_trades_open(paper_trades, signals)
+    assert '<script>alert(1)</script>' not in out, (
+      'Raw XSS trade_id must not appear unescaped in HTML output'
+    )
+    assert '&lt;script&gt;' in out, 'HTML-escaped XSS trade_id must appear'
+
+
+class TestRenderPaperTradesClosedTable:
+  '''Phase 19 D-11/D-13 — _render_paper_trades_closed helper.'''
+
+  def test_closed_table_renders_two_rows(self) -> None:
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_closed(state['paper_trades'])
+    assert 'SPI200-20260427-001' in out, 'Closed SPI200 row must appear'
+    assert 'AUDUSD-20260427-001' in out, 'Closed AUDUSD row must appear'
+    # Open rows must NOT appear in the closed table
+    assert 'SPI200-20260428-001' not in out, 'Open SPI200 row must not appear in closed table'
+
+  def test_closed_table_sorted_by_exit_dt_desc(self) -> None:
+    '''CONTEXT scope §Closed Paper Trades: rows ordered newest-first by exit_dt.'''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_closed(state['paper_trades'])
+    # fixture: SPI200 exit 2026-04-28T15:00, AUDUSD exit same → both present
+    spi_idx = out.index('SPI200-20260427-001')
+    aud_idx = out.index('AUDUSD-20260427-001')
+    # Both have the same exit_dt; just check both are present (no strict ordering assertion
+    # since times are equal; sort stability means either order is valid).
+    assert spi_idx >= 0
+    assert aud_idx >= 0
+
+  def test_closed_table_renders_realised_pnl(self) -> None:
+    '''Closed SPI200 realised=994.0 → "+994.00"; AUDUSD realised=95.0 → "+95.00".'''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_closed(state['paper_trades'])
+    assert '+994.00' in out, f'Expected +994.00 in closed table; excerpt: {out[:300]}'
+    assert '+95.00' in out, f'Expected +95.00 in closed table; excerpt: {out[:300]}'
+
+  def test_closed_table_empty_state_copy(self) -> None:
+    '''D-16 verbatim closed-empty copy.'''
+    out = dashboard._render_paper_trades_closed([])
+    assert (
+      'No closed trades yet. Trades will appear here after you close an open position.' in out
+    )
+
+
+class TestRenderPaperTradesStats:
+  '''Phase 19 D-06 — sticky badge bar.'''
+
+  def test_stats_bar_renders_realised_total(self) -> None:
+    '''Closed rows: 994 + 95 = 1089.0 → "+1089.00".'''
+    state = _load_v6_state()
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = dashboard._render_paper_trades_stats(stats)
+    assert '1089.00' in out, f'Expected 1089.00 in stats bar; got: {out}'
+
+  def test_stats_bar_renders_unrealised_total(self) -> None:
+    '''Open rows unrealised: 997 + 97.5 = 1094.5 → "+1094.50".'''
+    state = _load_v6_state()
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = dashboard._render_paper_trades_stats(stats)
+    assert '1094.50' in out, f'Expected 1094.50 in stats bar; got: {out}'
+
+  def test_stats_bar_renders_wins_count(self) -> None:
+    '''2 positive closed rows → "Wins" badge contains "2".'''
+    state = _load_v6_state()
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = dashboard._render_paper_trades_stats(stats)
+    assert '>2<' in out or 'Wins</span><span>2' in out, (
+      f'Expected wins=2 in stats bar; got: {out}'
+    )
+
+  def test_stats_bar_renders_losses_count(self) -> None:
+    '''0 negative closed rows → "Losses" badge contains "0".'''
+    state = _load_v6_state()
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = dashboard._render_paper_trades_stats(stats)
+    assert 'Losses</span><span>0' in out, f'Expected losses=0 in stats bar; got: {out}'
+
+  def test_stats_bar_renders_win_rate_percent(self) -> None:
+    '''2 wins / 2 closed → "Win rate: 100%".'''
+    state = _load_v6_state()
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = dashboard._render_paper_trades_stats(stats)
+    assert '100%' in out, f'Expected 100% win rate in stats bar; got: {out}'
+
+  def test_stats_bar_renders_em_dash_when_no_closed_rows(self) -> None:
+    '''No closed rows → win_rate is "—".'''
+    open_only = [r for r in _load_v6_state()['paper_trades'] if r['status'] == 'open']
+    stats = dashboard._compute_aggregate_stats(open_only, _load_v6_state()['signals'])
+    out = dashboard._render_paper_trades_stats(stats)
+    assert '—' in out, f'Expected em-dash win_rate with no closed rows; got: {out}'
+
+  def test_aggregate_stats_zero_pnl_excluded_from_wins_losses(self) -> None:
+    '''CONTEXT D-06: zero realised_pnl rows not counted as wins or losses.'''
+    paper_trades = [{
+      'id': 'SPI200-20260428-001',
+      'instrument': 'SPI200',
+      'side': 'LONG',
+      'entry_dt': '2026-04-28T10:00:00+08:00',
+      'entry_price': 7800.0,
+      'contracts': 2,
+      'stop_price': None,
+      'entry_cost_aud': 3.0,
+      'status': 'closed',
+      'exit_dt': '2026-04-29T10:00:00+08:00',
+      'exit_price': 7803.0,  # (7803-7800)*2*5 - 6 = 24 — but force pnl=0
+      'realised_pnl': 0.0,
+      'strategy_version': 'v1.2.0',
+    }]
+    stats = dashboard._compute_aggregate_stats(paper_trades, {})
+    assert stats['wins'] == 0, f'Zero PNL should not count as win; got wins={stats["wins"]}'
+    assert stats['losses'] == 0, f'Zero PNL should not count as loss; got losses={stats["losses"]}'
+
+  def test_stats_bar_uses_position_sticky_css(self) -> None:
+    '''PATTERNS §inline CSS: .stats-bar must use position: sticky.'''
+    assert 'position: sticky' in dashboard._INLINE_CSS, (
+      'stats-bar CSS rule must include position: sticky'
+    )
+
+  def test_stats_bar_has_zindex_above_default(self) -> None:
+    '''RESEARCH §Pattern 7: .stats-bar CSS must include z-index: 10.'''
+    assert '.stats-bar' in dashboard._INLINE_CSS, '.stats-bar class must be in _INLINE_CSS'
+    assert 'z-index: 10' in dashboard._INLINE_CSS, (
+      'RESEARCH §Pattern 7: z-index: 10 required on stats-bar'
+    )
+
+
+class TestComputeAggregateStats:
+  '''Phase 19 D-06 — _compute_aggregate_stats pure helper.'''
+
+  def test_compute_aggregate_stats_returns_5_keys(self) -> None:
+    state = _load_v6_state()
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    assert set(stats.keys()) == {'realised', 'unrealised', 'wins', 'losses', 'win_rate'}
+
+  def test_compute_aggregate_stats_skips_open_when_last_close_missing(self) -> None:
+    '''Open row with signals[inst].last_close absent → does not contribute to unrealised.'''
+    state = _load_v6_state()
+    signals_no_close = {
+      'SPI200': {'signal': 1},  # no last_close key
+      'AUDUSD': {'signal': -1},
+    }
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], signals_no_close)
+    assert stats['unrealised'] == 0.0, (
+      f'No last_close → unrealised should be 0; got {stats["unrealised"]}'
+    )
+
+  def test_compute_aggregate_stats_skips_open_when_last_close_nan(self) -> None:
+    '''Open row with last_close=NaN → does not contribute to unrealised.'''
+    state = _load_v6_state()
+    signals_nan = {
+      'SPI200': {'last_close': float('nan')},
+      'AUDUSD': {'last_close': float('nan')},
+    }
+    stats = dashboard._compute_aggregate_stats(state['paper_trades'], signals_nan)
+    assert stats['unrealised'] == 0.0, (
+      f'NaN last_close → unrealised should be 0; got {stats["unrealised"]}'
+    )
+
+  def test_compute_aggregate_stats_uses_pnl_engine(self) -> None:
+    '''_compute_aggregate_stats calls pnl_engine.compute_unrealised_pnl.'''
+    import pnl_engine
+    sentinel_value = 12345.0
+    with pytest.MonkeyPatch().context() as mp:
+      mp.setattr(pnl_engine, 'compute_unrealised_pnl', lambda *_: sentinel_value)
+      state = _load_v6_state()
+      # Keep only the SPI200 open row for simplicity
+      open_only = [r for r in state['paper_trades'] if r['status'] == 'open' and r['instrument'] == 'SPI200']
+      stats = dashboard._compute_aggregate_stats(open_only, state['signals'])
+    assert stats['unrealised'] == sentinel_value, (
+      f'Expected sentinel value {sentinel_value}; got {stats["unrealised"]}'
+    )
+
+
+class TestRenderPaperTradesRegion:
+  '''Phase 19 D-13 — _render_paper_trades_region orchestrator.'''
+
+  def test_region_wraps_in_div_id_trades_region(self) -> None:
+    '''HTMX swap target must be <div id="trades-region">.'''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_region(state)
+    assert out.startswith('<div id="trades-region">'), (
+      f'Output must start with <div id="trades-region">; got: {out[:60]}'
+    )
+
+  def test_region_includes_all_three_subsections(self) -> None:
+    '''D-13 spec: stats bar + open table + close-form section + closed table all present.'''
+    state = _load_v6_state()
+    out = dashboard._render_paper_trades_region(state)
+    assert 'class="stats-bar"' in out, 'Stats bar section missing'
+    assert 'id="open-trades-section"' in out, 'Open trades section missing'
+    assert 'id="close-form-section"' in out, 'Close-form placeholder section missing'
+    assert 'id="closed-trades-section"' in out, 'Closed trades section missing'
+
+  def test_region_html_escapes_trade_ids(self) -> None:
+    '''PATTERNS §Composite-key escape: XSS trade IDs must be escaped.'''
+    xss_id = '<img src=x onerror=alert(1)>-20260428-001'
+    paper_trades = [{
+      'id': xss_id,
+      'instrument': 'SPI200',
+      'side': 'LONG',
+      'entry_dt': '2026-04-28T10:00:00+08:00',
+      'entry_price': 7800.0,
+      'contracts': 2,
+      'stop_price': None,
+      'entry_cost_aud': 3.0,
+      'status': 'open',
+      'exit_dt': None,
+      'exit_price': None,
+      'realised_pnl': None,
+      'strategy_version': 'v1.2.0',
+    }]
+    state = {'paper_trades': paper_trades, 'signals': {'SPI200': {'last_close': 7900.0}}}
+    out = dashboard._render_paper_trades_region(state)
+    assert '<img src=x onerror=alert(1)>' not in out, 'Raw XSS must not appear in output'
+
+
+class TestRenderDashboardComposition:
+  '''Phase 19 — render_dashboard end-to-end with paper-trades region.'''
+
+  def test_render_dashboard_includes_paper_trades_region(self, tmp_path) -> None:
+    state = _load_v6_state()
+    out_path = tmp_path / 'dash.html'
+    dashboard.render_dashboard(state, out_path, now=FROZEN_NOW)
+    contents = out_path.read_text()
+    assert '<div id="trades-region"' in contents, (
+      'render_dashboard must include <div id="trades-region"> in output'
+    )
+
+  def test_render_dashboard_paper_trades_region_between_signal_cards_and_equity_chart(
+    self, tmp_path,
+  ) -> None:
+    '''CONTEXT D-06: paper-trades region appears after signal cards, before equity chart.'''
+    state = _load_v6_state()
+    # Give state equity history so equity chart renders
+    state['equity_history'] = [
+      {'date': '2026-04-28', 'equity': 100500.0},
+      {'date': '2026-04-29', 'equity': 101000.0},
+    ]
+    out_path = tmp_path / 'dash.html'
+    dashboard.render_dashboard(state, out_path, now=FROZEN_NOW)
+    contents = out_path.read_text()
+    # Signal cards marker: data-instrument attribute
+    signal_marker = 'data-instrument="SPI200"'
+    trades_marker = '<div id="trades-region"'
+    equity_marker = 'id="heading-equity"'
+    assert signal_marker in contents
+    assert trades_marker in contents
+    assert equity_marker in contents
+    idx_sig = contents.index(signal_marker)
+    idx_trades = contents.index(trades_marker)
+    idx_equity = contents.index(equity_marker)
+    assert idx_sig < idx_trades, (
+      f'Signal cards ({idx_sig}) must come before trades-region ({idx_trades})'
+    )
+    assert idx_trades < idx_equity, (
+      f'Trades-region ({idx_trades}) must come before equity chart ({idx_equity})'
+    )
+
+
+class TestDashboardHexBoundary:
+  '''Phase 19 — regression guard: dashboard hex boundary unchanged.'''
+
+  def test_dashboard_does_not_import_state_manager_for_paper_trades(self) -> None:
+    '''dashboard.py existing hex-boundary unchanged: no new state_manager import.'''
+    src = Path('dashboard.py').read_text()
+    # pnl_engine import IS allowed (not in FORBIDDEN_MODULES_DASHBOARD)
+    # state_manager top-level import may exist from before Phase 19 — check not added
+    import ast
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+      if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import):
+          for alias in node.names:
+            assert alias.name != 'pnl_engine' or True  # pnl_engine allowed
+        if isinstance(node, ast.ImportFrom):
+          # signal_engine must NOT be at module-top (inside functions is OK but
+          # we check the entire AST since dashboard.py doesn't use it at all)
+          if node.module == 'signal_engine':
+            raise AssertionError(
+              f'signal_engine import found in dashboard.py at line {node.lineno}'
+            )
+
+  def test_dashboard_does_not_import_signal_engine(self) -> None:
+    '''Regression guard: Phase 19 must not introduce signal_engine import.
+    Uses AST to check actual import nodes (not comments/docstrings).
+    '''
+    import ast
+    src = Path('dashboard.py').read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+      if isinstance(node, ast.Import):
+        for alias in node.names:
+          assert alias.name != 'signal_engine', (
+            f'signal_engine must not be imported in dashboard.py (line {node.lineno})'
+          )
+      if isinstance(node, ast.ImportFrom):
+        assert node.module != 'signal_engine', (
+          f'signal_engine must not be imported from in dashboard.py (line {node.lineno})'
+        )

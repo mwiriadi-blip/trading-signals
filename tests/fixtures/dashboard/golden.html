@@ -570,6 +570,32 @@ td.calc-cell.entry-target {
 .trace-badge.pass  { background: #166534; color: #dcfce7; }
 .trace-badge.fail  { background: #7f1d1d; color: #fee2e2; }
 .trace-outcome { margin-top: var(--space-2); font-weight: 700; }
+.stats-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-6);
+}
+.stats-bar-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+.paper-trades-table { width: 100%; border-collapse: collapse; }
+.paper-trades-table th, .paper-trades-table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); text-align: left; }
+.row-clickable { cursor: pointer; }
+.row-clickable:hover { background: var(--color-bg); }
+.pnl-positive { color: var(--color-long); }
+.pnl-negative { color: var(--color-short); }
+.pnl-zero { color: var(--color-text-dim); }
+@media (max-width: 600px) {
+  .stats-bar-item { min-width: calc(33% - var(--space-4)); }
+}
 </style>
 </head>
 <body>
@@ -667,6 +693,66 @@ td.calc-cell.entry-target {
 </details>
   </div>
 </section>
+<div id="trades-region">
+<aside class="stats-bar" aria-labelledby="stats-bar-heading">
+  <h2 id="stats-bar-heading" class="visually-hidden">Aggregate paper-trade stats</h2>
+  <div class="stats-bar-item"><span class="label">Realised</span><span>+0.00</span></div>
+  <div class="stats-bar-item"><span class="label">Unrealised</span><span>+0.00</span></div>
+  <div class="stats-bar-item"><span class="label">Wins</span><span>0</span></div>
+  <div class="stats-bar-item"><span class="label">Losses</span><span>0</span></div>
+  <div class="stats-bar-item"><span class="label">Win rate</span><span>—</span></div>
+</aside>
+<section id="open-trade-form-section">
+  <h2>Record New Paper Trade</h2>
+  <form hx-post="/paper-trade/open"
+        hx-target="#trades-region"
+        hx-swap="outerHTML"
+        enctype="application/json">
+    <label>Instrument
+      <select name="instrument" required>
+        <option value="SPI200">SPI200</option>
+        <option value="AUDUSD">AUDUSD</option>
+      </select>
+    </label>
+    <label>Side
+      <select name="side" required>
+        <option value="LONG">LONG</option>
+        <option value="SHORT">SHORT</option>
+      </select>
+    </label>
+    <label>Entry date/time (AWST)
+      <input type="datetime-local" name="entry_dt" required>
+    </label>
+    <label>Entry price
+      <input type="number" name="entry_price" step="0.0001" min="0.0001" required>
+    </label>
+    <label>Contracts
+      <input type="number" name="contracts" step="0.01" min="0.01" required>
+    </label>
+    <label>Stop price (optional)
+      <input type="number" name="stop_price" step="0.0001" min="0">
+    </label>
+    <button type="submit">Open position</button>
+  </form>
+</section>
+<section id="open-trades-section">
+  <h2>Open Paper Trades</h2>
+  <table class="paper-trades-table">
+    <tbody>
+      <tr><td colspan="9" class="empty-state">No open paper trades. Use the form above to record a new entry.</td></tr>
+    </tbody>
+  </table>
+</section>
+<section id="close-form-section"></section>
+<section id="closed-trades-section">
+  <h2>Closed Paper Trades</h2>
+  <table class="paper-trades-table">
+    <tbody>
+      <tr><td colspan="7" class="empty-state">No closed trades yet. Trades will appear here after you close an open position.</td></tr>
+    </tbody>
+  </table>
+</section>
+</div>
 <section aria-labelledby="heading-equity">
   <h2 id="heading-equity">Equity Curve</h2>
   <div class="chart-container">
