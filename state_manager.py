@@ -226,6 +226,24 @@ def _migrate_v5_to_v6(s: dict) -> dict:
   return s
 
 
+def _migrate_v6_to_v7(s: dict) -> dict:
+  '''Phase 20 (v1.2): introduce last_alert_state field on paper_trades rows.
+
+  Existing rows on first v1.2.x post-deploy load have no last_alert_state.
+  Stamp None -- the next daily-run alert evaluator treats None as a fresh
+  state and emails on first transition (D-05).
+
+  Idempotent: never overwrite an existing populated last_alert_state value.
+  Defensive: only touches dict-shaped rows (skips any malformed entries).
+  D-15 silent migration (matches Phase 22 D-15 + Phase 17/19 precedent):
+  no append_warning, no log line.
+  '''
+  for row in s.get('paper_trades', []):
+    if isinstance(row, dict) and 'last_alert_state' not in row:
+      row['last_alert_state'] = None
+  return s
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
@@ -233,6 +251,7 @@ MIGRATIONS: dict = {
   4: _migrate_v3_to_v4,  # Phase 22 D-04/D-05/D-09: strategy_version on signal rows
   5: _migrate_v4_to_v5,  # Phase 17 D-08: ohlc_window + indicator_scalars on signal rows
   6: _migrate_v5_to_v6,  # Phase 19 D-08: paper_trades[] top-level array
+  7: _migrate_v6_to_v7,  # Phase 20 D-08: last_alert_state on paper_trades[] rows
 }
 
 

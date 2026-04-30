@@ -2399,10 +2399,10 @@ class TestMigrateV5ToV6:
     assert out['paper_trades'] == [], (
       f'D-08: paper_trades must be empty list; got {out["paper_trades"]!r}'
     )
-    # Via _migrate walker: schema_version advances to 6
+    # Via _migrate walker: schema_version advances to STATE_SCHEMA_VERSION (7 at Phase 20)
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 6, (
-      f'D-08: _migrate must walk v5->v6; got {out2["schema_version"]}'
+    assert out2['schema_version'] == STATE_SCHEMA_VERSION, (
+      f'D-08: _migrate must walk v5->v{STATE_SCHEMA_VERSION}; got {out2["schema_version"]}'
     )
     assert out2['paper_trades'] == [], (
       f'D-08: walker must stamp paper_trades=[]; got {out2["paper_trades"]!r}'
@@ -2458,7 +2458,9 @@ class TestMigrateV5ToV6:
 
   def test_migrate_v5_to_v6_idempotent_via_full_migrate(self) -> None:
     '''Running _migrate on an already-v6 state with a populated paper_trades
-    array is a no-op: paper_trades preserved, schema_version stays 6.
+    array walks forward to current STATE_SCHEMA_VERSION; paper_trades preserved.
+    (Phase 20: walker now goes to v7; idempotent guard in v6->v7 preserves the
+    existing row's lack of last_alert_state=None.)
     '''
     from state_manager import _migrate
     existing_row = {
@@ -2477,17 +2479,20 @@ class TestMigrateV5ToV6:
       'paper_trades': [existing_row],
     }
     out = _migrate(dict(s))
-    assert out['schema_version'] == 6, (
-      f'D-08: already-v6 state must remain at 6; got {out["schema_version"]}'
+    assert out['schema_version'] == STATE_SCHEMA_VERSION, (
+      f'D-08: v6 state walks to {STATE_SCHEMA_VERSION}; got {out["schema_version"]}'
     )
     assert len(out['paper_trades']) == 1, (
-      'D-08: existing rows must survive no-op walk'
+      'D-08: existing rows must survive the walk'
     )
-    assert out['paper_trades'][0] == existing_row
+    # Phase 20 v6->v7 migration adds last_alert_state=None to the row
+    assert out['paper_trades'][0]['id'] == existing_row['id']
+    assert out['paper_trades'][0]['last_alert_state'] is None
 
   def test_migrate_v5_to_v6_via_full_migrate_sets_schema_6(self) -> None:
     '''Going through _migrate (the dispatch walker) on a v5 state ends at
-    schema_version=6 AND stamps paper_trades=[].
+    STATE_SCHEMA_VERSION AND stamps paper_trades=[].
+    (Phase 20: walker walks v5 -> v6 -> v7 = STATE_SCHEMA_VERSION.)
     '''
     from state_manager import _migrate
     s = {
@@ -2501,8 +2506,8 @@ class TestMigrateV5ToV6:
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     out = _migrate(dict(s))
-    assert out['schema_version'] == 6, (
-      f'Phase 19 D-08: _migrate must walk v5->v6; got {out["schema_version"]}'
+    assert out['schema_version'] == STATE_SCHEMA_VERSION, (
+      f'Phase 19 D-08: _migrate must walk v5->{STATE_SCHEMA_VERSION}; got {out["schema_version"]}'
     )
     assert out.get('paper_trades') == [], (
       f'D-08: walker must stamp paper_trades=[]; got {out.get("paper_trades")!r}'
@@ -2511,12 +2516,13 @@ class TestMigrateV5ToV6:
 
 class TestFullWalkV0ToV6:
   '''End-to-end migration walk from v0 (no schema_version key) all the way to
-  v6. Proves the full chain v0→v1→v2→v3→v4→v5→v6 is registered and functional.
+  STATE_SCHEMA_VERSION (v7 at Phase 20; was v6 at Phase 19).
+  Proves the full chain v0→v1→v2→v3→v4→v5→v6→v7 is registered and functional.
   '''
 
   def test_full_walk_v0_to_v6_then_load_state(self, tmp_path) -> None:
     '''Write a state with no schema_version (v0) to disk, call load_state,
-    assert returned state has schema_version==6 AND:
+    assert returned state has schema_version==STATE_SCHEMA_VERSION AND:
     - strategy_version=='v1.1.0' (Phase 22 v3->v4 backfill)
     - ohlc_window==[] (Phase 17 v4->v5 backfill)
     - indicator_scalars=={} (Phase 17 v4->v5 backfill)
@@ -2545,8 +2551,8 @@ class TestFullWalkV0ToV6:
     import json as _json
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 6, (
-      f'walk-forward chain v0->...->v6 must end at 6; '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 7, (
+      f'walk-forward chain v0->...->v7 must end at 7; '
       f'got {loaded["schema_version"]}'
     )
     # Phase 22 v3->v4 backfill also ran
@@ -2561,4 +2567,214 @@ class TestFullWalkV0ToV6:
     assert loaded.get('paper_trades') == [], (
       f'Phase 19: full v0->v6 walk must stamp paper_trades=[]; '
       f'got {loaded.get("paper_trades")!r}'
+    )
+
+
+class TestMigrateV6ToV7:
+  '''Phase 20 D-08: _migrate_v6_to_v7 backfills last_alert_state=None on
+  existing paper_trades rows.
+
+  Invariants (mirror of TestMigrateV5ToV6):
+    - backfill: v6 rows missing last_alert_state get last_alert_state=None
+    - preserves_other_fields: all pre-existing paper_trades row fields survive
+    - idempotent: existing last_alert_state value NOT overwritten on re-run
+    - skips_non_dict_rows: malformed entries (str, None, int) unchanged
+    - no_paper_trades_key: missing key is a no-op (s.get('paper_trades', []))
+    - silent: no log line, no warnings append (D-15 silent migration)
+    - full v0->v7 walk via load_state: entire migration chain functional
+  '''
+
+  def test_migrate_v6_to_v7_backfills_last_alert_state_on_existing_rows(self) -> None:
+    '''D-08: v6 state with paper_trades rows missing last_alert_state gets
+    last_alert_state=None stamped on each dict-shaped row AND schema_version
+    advances to 7 via _migrate walker.
+    '''
+    from state_manager import _migrate, _migrate_v6_to_v7
+    row1 = {'id': 'SPI200-20260430-001', 'instrument': 'SPI200', 'side': 'LONG',
+             'status': 'open'}
+    row2 = {'id': 'AUDUSD-20260430-001', 'instrument': 'AUDUSD', 'side': 'SHORT',
+             'status': 'open'}
+    s = {
+      'schema_version': 6,
+      'account': INITIAL_ACCOUNT,
+      'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {},
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
+      'paper_trades': [dict(row1), dict(row2)],
+    }
+    # Direct function: _migrate_v6_to_v7 stamps last_alert_state=None
+    out = _migrate_v6_to_v7(dict(s))
+    assert out['paper_trades'][0]['last_alert_state'] is None, (
+      'D-08: _migrate_v6_to_v7 must stamp last_alert_state=None on row 0'
+    )
+    assert out['paper_trades'][1]['last_alert_state'] is None, (
+      'D-08: _migrate_v6_to_v7 must stamp last_alert_state=None on row 1'
+    )
+    # Via _migrate walker: schema_version advances to 7
+    out2 = _migrate(dict(s))
+    assert out2['schema_version'] == 7, (
+      f'D-08: _migrate must walk v6->v7; got {out2["schema_version"]}'
+    )
+    assert out2['paper_trades'][0]['last_alert_state'] is None
+    assert out2['paper_trades'][1]['last_alert_state'] is None
+
+  def test_migrate_v6_to_v7_preserves_other_paper_trade_fields(self) -> None:
+    '''Round-trip equality: every original paper_trades row key+value is
+    preserved; only last_alert_state is added (additive, not destructive).
+    '''
+    from state_manager import _migrate_v6_to_v7
+    original_row = {
+      'id': 'SPI200-20260430-001',
+      'instrument': 'SPI200',
+      'side': 'LONG',
+      'entry_dt': '2026-04-30T08:00:00+08:00',
+      'entry_price': 8200.0,
+      'contracts': 1,
+      'stop_price': 8100.0,
+      'entry_cost_aud': 3.0,
+      'status': 'open',
+      'exit_dt': None,
+      'exit_price': None,
+      'realised_pnl': None,
+      'strategy_version': 'v1.2.0',
+    }
+    s = {
+      'schema_version': 6,
+      'paper_trades': [dict(original_row)],
+    }
+    out = _migrate_v6_to_v7(dict(s))
+    result_row = out['paper_trades'][0]
+    # Every original field is preserved exactly
+    for key, value in original_row.items():
+      assert result_row[key] == value, (
+        f'D-08: field {key!r} must be preserved; expected {value!r}, got {result_row[key]!r}'
+      )
+    # New field added
+    assert 'last_alert_state' in result_row, (
+      'D-08: last_alert_state field must be added by migration'
+    )
+    assert result_row['last_alert_state'] is None
+
+  def test_migrate_v6_to_v7_idempotent(self) -> None:
+    '''Running _migrate_v6_to_v7 directly on a row already carrying
+    last_alert_state=\'APPROACHING\' MUST NOT overwrite the existing value.
+    The idempotent guard is: `if \'last_alert_state\' not in row`.
+    '''
+    from state_manager import _migrate_v6_to_v7
+    existing_row = {
+      'id': 'SPI200-20260430-001', 'instrument': 'SPI200', 'side': 'LONG',
+      'status': 'open', 'last_alert_state': 'APPROACHING',
+    }
+    s = {
+      'schema_version': 7,
+      'paper_trades': [dict(existing_row)],
+    }
+    out = _migrate_v6_to_v7(dict(s))
+    assert out['paper_trades'][0]['last_alert_state'] == 'APPROACHING', (
+      'D-08: idempotent — existing last_alert_state must NOT be overwritten; '
+      f'got {out["paper_trades"][0]["last_alert_state"]!r}'
+    )
+
+  def test_migrate_v6_to_v7_skips_non_dict_rows(self) -> None:
+    '''Malformed paper_trades entries (str, None, int) are skipped by the
+    defensive isinstance(row, dict) guard; only the dict-shaped row is touched.
+    '''
+    from state_manager import _migrate_v6_to_v7
+    valid_row = {'id': 'SPI200-20260430-001', 'instrument': 'SPI200',
+                 'side': 'LONG', 'status': 'open'}
+    s = {
+      'schema_version': 6,
+      'paper_trades': [dict(valid_row), 'not a dict', None, 42],
+    }
+    out = _migrate_v6_to_v7(dict(s))
+    assert out['paper_trades'][0]['last_alert_state'] is None, (
+      'D-08: dict-shaped row must get last_alert_state=None'
+    )
+    assert out['paper_trades'][1] == 'not a dict', (
+      'D-08: non-dict entries must be untouched'
+    )
+    assert out['paper_trades'][2] is None
+    assert out['paper_trades'][3] == 42
+
+  def test_migrate_v6_to_v7_no_paper_trades_key(self) -> None:
+    '''State missing the paper_trades key entirely is handled defensively via
+    s.get(\'paper_trades\', []). Migration is a no-op; schema_version still advances.
+    '''
+    from state_manager import _migrate, _migrate_v6_to_v7
+    s = {
+      'schema_version': 6,
+      'account': INITIAL_ACCOUNT,
+      'last_run': None,
+    }
+    out = _migrate_v6_to_v7(dict(s))
+    assert 'paper_trades' not in out, (
+      'D-08: missing paper_trades key must remain absent after migration'
+    )
+    out2 = _migrate(dict(s))
+    assert out2['schema_version'] == 7
+
+  def test_migrate_v6_to_v7_silent_no_warnings_no_logs(self, caplog) -> None:
+    '''D-15 silent migration: migrating 5 rows must emit zero log records and
+    must NOT append to state[\'warnings\'] (mirrors Phase 19 silent-migration pattern).
+    '''
+    import logging
+    from state_manager import _migrate_v6_to_v7
+    rows = [
+      {'id': f'SPI200-2026043{i}-001', 'instrument': 'SPI200',
+       'side': 'LONG', 'status': 'open'}
+      for i in range(5)
+    ]
+    s = {
+      'schema_version': 6,
+      'paper_trades': [dict(r) for r in rows],
+      'warnings': [],
+    }
+    with caplog.at_level(logging.DEBUG):
+      out = _migrate_v6_to_v7(dict(s))
+    assert len(caplog.records) == 0, (
+      f'D-15: silent migration — no log records expected; got {caplog.records!r}'
+    )
+    assert out.get('warnings') == [], (
+      f'D-15: silent migration — warnings must remain empty; got {out["warnings"]!r}'
+    )
+
+  def test_full_walk_v0_to_v7_then_load_state(self, tmp_path) -> None:
+    '''Write a v0 state (no schema_version) with a paper_trades row missing
+    last_alert_state to disk, call load_state, assert schema_version==7 AND
+    the pre-seeded paper_trades row carries last_alert_state=None.
+    '''
+    import json as _json
+    path = tmp_path / 'state.json'
+    bare_state = {
+      # no schema_version → defaults to 0
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {
+        'SPI200': {
+          'signal': 1, 'signal_as_of': '2026-04-30',
+          'as_of_run': '2026-04-30',
+        },
+        'AUDUSD': {
+          'signal': 0, 'signal_as_of': '2026-04-30',
+          'as_of_run': '2026-04-30',
+        },
+      },
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      'paper_trades': [
+        {'id': 'SPI200-20260430-001', 'instrument': 'SPI200', 'side': 'LONG',
+         'status': 'open'},
+      ],
+    }
+    path.write_text(_json.dumps(bare_state, indent=2))
+    loaded = load_state(path=path)
+    assert loaded['schema_version'] == 7, (
+      f'walk-forward chain v0->...->v7 must end at 7; '
+      f'got {loaded["schema_version"]}'
+    )
+    # Phase 20 v6->v7 backfill
+    assert loaded['paper_trades'][0]['last_alert_state'] is None, (
+      'Phase 20: full walk must stamp last_alert_state=None on paper_trades row'
     )
