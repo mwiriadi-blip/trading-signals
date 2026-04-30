@@ -116,6 +116,10 @@ def _closed_row(trade_id: str = 'SPI200-20260427-001') -> dict:
 class TestOpenPaperTrade:
   '''POST /paper-trade/open valid path — D-09 row shape, entry_cost_aud,
   #trades-region HTMX swap target.
+
+  All POST /paper-trade/open calls use data= (form-encoded) to match what
+  real browsers + HTMX send. D-17: no hx-ext="json-enc"; routes accept
+  application/x-www-form-urlencoded.
   '''
 
   def test_open_valid_spi200_long_appends_row(self, client_with_state_v6, htmx_headers) -> None:
@@ -123,7 +127,7 @@ class TestOpenPaperTrade:
     status=open, strategy_version matching system_params.STRATEGY_VERSION.
     '''
     client, set_state, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200, f'Expected 200; got {r.status_code}: {r.text[:200]}'
     assert captured_saves, 'No state save recorded'
     rows = captured_saves[-1]['paper_trades']
@@ -138,7 +142,7 @@ class TestOpenPaperTrade:
   def test_open_valid_audusd_short_entry_cost_2_5(self, client_with_state_v6, htmx_headers) -> None:
     '''D-02: AUDUSD round_trip=5.0, entry_cost_aud=2.5 (half on open).'''
     client, set_state, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_audusd_short(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_audusd_short(), headers=htmx_headers)
     assert r.status_code == 200
     rows = captured_saves[-1]['paper_trades']
     assert len(rows) == 1
@@ -147,7 +151,7 @@ class TestOpenPaperTrade:
   def test_open_returns_rendered_trades_region_html(self, client_with_state_v6, htmx_headers) -> None:
     '''D-13: response body contains the #trades-region swap target.'''
     client, set_state, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200
     assert '<div id="trades-region"' in r.text, (
       f'D-13: response must contain #trades-region; got: {r.text[:200]}'
@@ -157,7 +161,7 @@ class TestOpenPaperTrade:
     '''D-09: written row has exactly the 13 required keys — no extras, no missing.'''
     from web.routes.paper_trades import _D09_KEYS
     client, set_state, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200
     row = captured_saves[-1]['paper_trades'][0]
     assert set(row.keys()) == _D09_KEYS, (
@@ -171,90 +175,96 @@ class TestOpenPaperTrade:
 # =========================================================================
 
 class TestOpenValidation:
-  '''D-04 every validation rule returns 400 (planner D-22 amendment: 422->400).'''
+  '''D-04 every validation rule returns 400 (planner D-22 amendment: 422->400).
+
+  All calls use data= (form-encoded) matching real browser/HTMX submissions.
+  '''
 
   def test_open_future_entry_dt_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'entry_dt': _future_awst_iso(24)}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400, f'Expected 400; got {r.status_code}: {r.text}'
 
   def test_open_negative_entry_price_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'entry_price': -1.0}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_zero_entry_price_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'entry_price': 0.0}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_zero_contracts_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'contracts': 0}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_negative_contracts_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'contracts': -1}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_fractional_spi_contracts_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     '''D-04: SPI200 mini contracts must be whole-unit; fractional -> 400.'''
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'instrument': 'SPI200', 'contracts': 1.5}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_fractional_audusd_contracts_accepted(self, client_with_state_v6, htmx_headers) -> None:
     '''D-04 explicit allow: AUDUSD allows fractional contracts.'''
     client, _, _ = client_with_state_v6
     payload = {**_valid_audusd_short(), 'instrument': 'AUDUSD', 'contracts': 1.5}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 200, f'Expected 200 for AUDUSD fractional; got {r.status_code}'
 
   def test_open_unknown_instrument_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'instrument': 'NIKKEI'}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_unknown_side_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'side': 'HOLD'}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_long_with_stop_above_entry_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     '''D-04: LONG stop must be < entry_price; stop > entry -> 400.'''
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'side': 'LONG', 'entry_price': 7800.0, 'stop_price': 7900.0}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_short_with_stop_below_entry_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     '''D-04: SHORT stop must be > entry_price; stop < entry -> 400.'''
     client, _, _ = client_with_state_v6
     payload = {**_valid_audusd_short(), 'side': 'SHORT', 'entry_price': 0.6500, 'stop_price': 0.6400}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_negative_stop_price_returns_400(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'stop_price': -1.0}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
     assert r.status_code == 400
 
   def test_open_extra_field_returns_400(self, client_with_state_v6, htmx_headers) -> None:
-    '''D-09: extra=forbid on Pydantic model; unknown field -> 400.'''
+    '''D-09: extra=forbid on Pydantic model; unknown form field -> 400.
+    _parse_form passes the raw form dict to model_validate; extra=forbid
+    rejects unknown keys regardless of transport (JSON or form-encoded).
+    '''
     client, _, _ = client_with_state_v6
     payload = {**_valid_spi200_long(), 'comment': 'sneaky'}
-    r = client.post('/paper-trade/open', json=payload, headers=htmx_headers)
-    assert r.status_code == 400
+    r = client.post('/paper-trade/open', data=payload, headers=htmx_headers)
+    assert r.status_code == 400, f'Expected 400 (extra field forbidden); got {r.status_code}: {r.text[:200]}'
 
 
 # =========================================================================
@@ -262,7 +272,10 @@ class TestOpenValidation:
 # =========================================================================
 
 class TestEditPaperTrade:
-  '''PATCH /paper-trade/<id> — valid path, D-04 on edit, 404 on unknown.'''
+  '''PATCH /paper-trade/<id> — valid path, D-04 on edit, 404 on unknown.
+
+  All PATCH calls use data= (form-encoded) matching real browser/HTMX submissions.
+  '''
 
   def test_patch_open_row_updates_fields(self, client_with_state_v6, htmx_headers) -> None:
     '''D-05: PATCH updates entry_price; strategy_version refreshed.'''
@@ -279,7 +292,7 @@ class TestEditPaperTrade:
                                         'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0}},
                'paper_trades': [_open_row(trade_id)]})
     r = client.patch(f'/paper-trade/{trade_id}',
-                     json={'entry_price': 7850.0},
+                     data={'entry_price': 7850.0},
                      headers=htmx_headers)
     assert r.status_code == 200, f'Expected 200; got {r.status_code}: {r.text[:300]}'
     row = captured_saves[-1]['paper_trades'][0]
@@ -302,14 +315,14 @@ class TestEditPaperTrade:
       'paper_trades': [_open_row(trade_id)],
     })
     r = client.patch(f'/paper-trade/{trade_id}',
-                     json={'entry_price': -1.0},
+                     data={'entry_price': -1.0},
                      headers=htmx_headers)
     assert r.status_code == 400
 
   def test_patch_unknown_id_returns_404(self, client_with_state_v6, htmx_headers) -> None:
     client, _, _ = client_with_state_v6
     r = client.patch('/paper-trade/SPI200-20990101-999',
-                     json={'entry_price': 7800.0},
+                     data={'entry_price': 7800.0},
                      headers=htmx_headers)
     assert r.status_code == 404
 
@@ -328,7 +341,7 @@ class TestEditPaperTrade:
       'paper_trades': [_open_row(trade_id)],
     })
     r = client.patch(f'/paper-trade/{trade_id}',
-                     json={'entry_price': 7900.0},
+                     data={'entry_price': 7900.0},
                      headers=htmx_headers)
     assert r.status_code == 200
     assert '<div id="trades-region"' in r.text
@@ -359,7 +372,7 @@ class TestImmutability:
     trade_id = 'SPI200-20260427-001'
     self._seed_closed(set_state, trade_id)
     r = client.patch(f'/paper-trade/{trade_id}',
-                     json={'entry_price': 7900.0},
+                     data={'entry_price': 7900.0},
                      headers=htmx_headers)
     assert r.status_code == 405, f'Expected 405; got {r.status_code}: {r.text}'
     assert r.text == 'closed rows are immutable', f'Wrong body: {r.text!r}'
@@ -434,7 +447,11 @@ class TestDeletePaperTrade:
 # =========================================================================
 
 class TestClosePaperTrade:
-  '''POST /paper-trade/<id>/close — P&L correctness, validation, 405 on closed.'''
+  '''POST /paper-trade/<id>/close — P&L correctness, validation, 405 on closed.
+
+  All POST /paper-trade/<id>/close calls use data= (form-encoded) matching
+  real browser/HTMX submissions. D-17: no hx-ext="json-enc".
+  '''
 
   def _seed_open(self, set_state, trade_id: str, instrument: str = 'SPI200',
                  side: str = 'LONG', entry_price: float = 7800.0, contracts=2) -> None:
@@ -460,7 +477,7 @@ class TestClosePaperTrade:
     trade_id = 'SPI200-20260430-001'
     self._seed_open(set_state, trade_id, 'SPI200', 'LONG', 7800.0, 2)
     r = client.post(f'/paper-trade/{trade_id}/close',
-                    json={'exit_dt': _past_awst_iso(10), 'exit_price': 7900.0},
+                    data={'exit_dt': _past_awst_iso(10), 'exit_price': 7900.0},
                     headers=htmx_headers)
     assert r.status_code == 200, f'Expected 200; got {r.status_code}: {r.text[:300]}'
     row = captured_saves[-1]['paper_trades'][0]
@@ -489,7 +506,7 @@ class TestClosePaperTrade:
       'paper_trades': [row],
     })
     r = client.post(f'/paper-trade/{trade_id}/close',
-                    json={'exit_dt': _past_awst_iso(10), 'exit_price': 0.6400},
+                    data={'exit_dt': _past_awst_iso(10), 'exit_price': 0.6400},
                     headers=htmx_headers)
     assert r.status_code == 200
     saved_row = captured_saves[-1]['paper_trades'][0]
@@ -511,7 +528,7 @@ class TestClosePaperTrade:
       'paper_trades': [_open_row(trade_id)],
     })
     r = client.post(f'/paper-trade/{trade_id}/close',
-                    json={'exit_dt': _past_awst_iso(10), 'exit_price': 0.0},
+                    data={'exit_dt': _past_awst_iso(10), 'exit_price': 0.0},
                     headers=htmx_headers)
     assert r.status_code == 400
 
@@ -532,7 +549,7 @@ class TestClosePaperTrade:
       'paper_trades': [row],
     })
     r = client.post(f'/paper-trade/{trade_id}/close',
-                    json={'exit_dt': _past_awst_iso(180), 'exit_price': 7900.0},
+                    data={'exit_dt': _past_awst_iso(180), 'exit_price': 7900.0},
                     headers=htmx_headers)
     assert r.status_code == 400, f'Expected 400; got {r.status_code}: {r.text}'
 
@@ -550,7 +567,7 @@ class TestClosePaperTrade:
       'paper_trades': [_closed_row(trade_id)],
     })
     r = client.post(f'/paper-trade/{trade_id}/close',
-                    json={'exit_dt': _past_awst_iso(10), 'exit_price': 7900.0},
+                    data={'exit_dt': _past_awst_iso(10), 'exit_price': 7900.0},
                     headers=htmx_headers)
     assert r.status_code == 405
     assert r.headers.get('allow', '').upper() == 'GET'
@@ -570,7 +587,7 @@ class TestClosePaperTrade:
       'paper_trades': [_open_row(trade_id)],
     })
     r = client.post(f'/paper-trade/{trade_id}/close',
-                    json={'exit_dt': _past_awst_iso(10), 'exit_price': 7900.0},
+                    data={'exit_dt': _past_awst_iso(10), 'exit_price': 7900.0},
                     headers=htmx_headers)
     assert r.status_code == 200
     assert '<div id="trades-region"' in r.text
@@ -634,7 +651,7 @@ class TestCompositeIDGeneration:
 
   def test_first_open_assigns_001(self, client_with_state_v6, htmx_headers) -> None:
     client, _, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200
     row = captured_saves[-1]['paper_trades'][0]
     assert row['id'].endswith('-001'), f'First row must end -001; got {row["id"]}'
@@ -654,7 +671,7 @@ class TestCompositeIDGeneration:
                                'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0}},
       'paper_trades': [_open_row(f'SPI200-{today}-001')],
     })
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200
     rows = captured_saves[-1]['paper_trades']
     ids = [r['id'] for r in rows]
@@ -677,7 +694,7 @@ class TestCompositeIDGeneration:
                                'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0}},
       'paper_trades': [_open_row(f'SPI200-{today}-001', 'SPI200')],
     })
-    r = client.post('/paper-trade/open', json=_valid_audusd_short(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_audusd_short(), headers=htmx_headers)
     assert r.status_code == 200
     rows = captured_saves[-1]['paper_trades']
     audusd_ids = [r['id'] for r in rows if r['instrument'] == 'AUDUSD']
@@ -705,7 +722,7 @@ class TestCompositeIDGeneration:
                                'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0}},
       'paper_trades': rows_999,
     })
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 400, f'Expected 400 on overflow; got {r.status_code}'
     # Response should mention counter overflow / 999
     assert 'overflow' in r.text.lower() or '999' in r.text, (
@@ -722,7 +739,7 @@ class TestStrategyVersionTagging:
 
   def test_open_writes_strategy_version_from_constant(self, client_with_state_v6, htmx_headers) -> None:
     client, _, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200
     row = captured_saves[-1]['paper_trades'][0]
     assert row['strategy_version'] == system_params.STRATEGY_VERSION
@@ -735,7 +752,7 @@ class TestStrategyVersionTagging:
     '''
     monkeypatch.setattr(system_params, 'STRATEGY_VERSION', 'v9.9.9')
     client, _, captured_saves = client_with_state_v6
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(), headers=htmx_headers)
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(), headers=htmx_headers)
     assert r.status_code == 200
     row = captured_saves[-1]['paper_trades'][0]
     assert row['strategy_version'] == 'v9.9.9', (
@@ -762,7 +779,7 @@ class TestStrategyVersionTagging:
       'paper_trades': [_open_row(trade_id)],  # row has 'v1.2.0' initially
     })
     r = client.patch(f'/paper-trade/{trade_id}',
-                     json={'entry_price': 7900.0},
+                     data={'entry_price': 7900.0},
                      headers=htmx_headers)
     assert r.status_code == 200
     row = captured_saves[-1]['paper_trades'][0]
@@ -864,7 +881,7 @@ class TestAuthEnforcement:
     '''Without auth headers: browser HX-Request → 302 redirect; curl → 401.'''
     client, _, _ = client_with_state_v6
     # No htmx_headers (no auth)
-    r = client.post('/paper-trade/open', json=_valid_spi200_long(),
+    r = client.post('/paper-trade/open', data=_valid_spi200_long(),
                     follow_redirects=False)
     assert r.status_code in (302, 401), (
       f'Unauthenticated POST must return 302 or 401; got {r.status_code}'
@@ -873,7 +890,7 @@ class TestAuthEnforcement:
   def test_patch_without_auth_returns_302_or_401(self, client_with_state_v6) -> None:
     client, _, _ = client_with_state_v6
     r = client.patch('/paper-trade/SPI200-20260430-001',
-                     json={'entry_price': 7900.0},
+                     data={'entry_price': 7900.0},
                      follow_redirects=False)
     assert r.status_code in (302, 401)
 

@@ -2250,15 +2250,15 @@ def _render_paper_trades_open_form() -> str:
   '''Phase 19 D-13 — render the open-paper-trade form.
 
   hx-post="/paper-trade/open" + hx-target="#trades-region" + hx-swap="outerHTML".
-  Content-type: standard form encoding (no hx-ext="json-enc" per planner D-17).
-  FastAPI receives this as a JSON body via TestClient json= in tests; in the
-  browser the HTMX client sends JSON because the form fields are labeled as JSON
-  keys (instrument/side/entry_dt/entry_price/contracts/stop_price) which FastAPI
-  parses via Pydantic from the request body.
+  Content-type: application/x-www-form-urlencoded (browser/HTMX default, no
+  hx-ext="json-enc" per planner D-17). The FastAPI route reads request.form()
+  and validates via Pydantic model_validate() — see web/routes/paper_trades.py
+  _parse_form helper (gap-closure 2026-04-30).
 
-  NOTE: planner D-17 clarifies the web layer uses standard POST with JSON body
-  (client.post(..., json={...}) in tests). The form uses standard action POST; no
-  hx-ext="json-enc" attribute required.
+  Gap-closure 2026-04-30: original implementation used a non-standard enctype value
+  (browsers silently fall back to form-encoded, causing route mismatch).
+  Corrected to use application/x-www-form-urlencoded (the HTML default, explicit here
+  for clarity) so browser + HTMX submissions match what the route handler expects.
   '''
   return (
     '<section id="open-trade-form-section">\n'
@@ -2266,7 +2266,7 @@ def _render_paper_trades_open_form() -> str:
     '  <form hx-post="/paper-trade/open"\n'
     '        hx-target="#trades-region"\n'
     '        hx-swap="outerHTML"\n'
-    '        enctype="application/json">\n'
+    '        enctype="application/x-www-form-urlencoded">\n'
     '    <label>Instrument\n'
     '      <select name="instrument" required>\n'
     '        <option value="SPI200">SPI200</option>\n'

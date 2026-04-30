@@ -17,7 +17,11 @@ Contract (CONTEXT.md 2026-04-30 D-01..D-16 + planner D-17..D-22):
   D-11: P&L formulas via pnl_engine (pure-math module)
   D-13: Single #trades-region HTMX swap target for every mutation
   D-15: ALL mutations via mutate_state — no direct load_state/save_state in _apply
-  D-17: No hx-ext="json-enc" (planner D-17 — standard form encoding)
+  D-17: No hx-ext="json-enc"; routes accept application/x-www-form-urlencoded.
+        Browsers + HTMX send form-encoded data by default (no json-enc extension needed).
+        Handlers read Request.form() and validate via Pydantic model_validate().
+        Gap closure 2026-04-30: original implementation incorrectly accepted JSON body;
+        corrected to accept form-encoded body per D-17 and the browser/HTMX contract.
   D-18: Singular /paper-trade/<id> for individual ops; plural /paper-trades for list
   D-21: DELETE carries no body
   D-22: Validation failures return 400 (global RequestValidationError -> 400 handler)
@@ -38,11 +42,14 @@ import logging
 import math
 import zoneinfo
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypeVar
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+_T = TypeVar('_T', bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,33 @@ _D09_KEYS = frozenset({
 def _now_awst() -> datetime:
   '''Return the current datetime in AWST (Australia/Perth). Copy from trades.py:73.'''
   return datetime.now(_AWST)
+
+
+async def _parse_form(request: Request, model_cls: type[_T]) -> _T:
+  '''Read application/x-www-form-urlencoded body from request and validate via Pydantic.
+
+  D-17 gap-closure (2026-04-30): browsers + HTMX (without hx-ext="json-enc") send
+  form-encoded bodies, not JSON. This helper bridges the HTMX → FastAPI gap by:
+  1. Reading the form data dict (starlette Request.form() — already parsed by middleware)
+  2. Dropping empty-string values so optional fields remain None (not "")
+  3. Calling model_cls.model_validate() with from_attributes=False
+  4. Re-raising Pydantic ValidationError as FastAPI RequestValidationError so the
+     global handler in web/app.py remaps to 400 (planner D-22).
+
+  Called from the three mutation POST/PATCH handlers; DELETE has no body (D-21).
+  '''
+  raw_form = await request.form()
+  # Convert ImmutableMultiDict → plain dict; drop empty strings (optional fields)
+  form_dict: dict = {}
+  for key, value in raw_form.multi_items():
+    if value != '':
+      form_dict[key] = value
+
+  try:
+    return model_cls.model_validate(form_dict)
+  except ValidationError as exc:
+    # Wrap as RequestValidationError so web/app.py's handler remaps to 400 (D-22)
+    raise RequestValidationError(errors=exc.errors()) from exc
 
 
 # =========================================================================
@@ -215,10 +249,13 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
   # POST /paper-trade/open
   # -----------------------------------------------------------------------
   @app.post('/paper-trade/open', response_class=HTMLResponse)
-  async def open_paper_trade(req: OpenPaperTradeRequest) -> HTMLResponse:
+  async def open_paper_trade(request: Request) -> HTMLResponse:
     '''Validate D-04, generate composite ID inside flock, append row to
     state.paper_trades. Returns rendered #trades-region HTML fragment.
+
+    D-17 gap-closure: accepts application/x-www-form-urlencoded (browser/HTMX default).
     '''
+    req = await _parse_form(request, OpenPaperTradeRequest)
     def _apply(state: dict) -> None:
       # Fresh import inside closure — kwarg-default capture trap prevention
       # (LEARNINGS 2026-04-29 + planner D-19).
@@ -268,10 +305,13 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
   # PATCH /paper-trade/{trade_id}
   # -----------------------------------------------------------------------
   @app.patch('/paper-trade/{trade_id}', response_class=HTMLResponse)
-  async def edit_paper_trade(trade_id: str, req: EditPaperTradeRequest) -> HTMLResponse:
+  async def edit_paper_trade(trade_id: str, request: Request) -> HTMLResponse:
     '''Edit an open paper trade row in-place. Closed rows return 405.
     D-05: strategy_version is refreshed to current STRATEGY_VERSION on edit.
+
+    D-17 gap-closure: accepts application/x-www-form-urlencoded (browser/HTMX default).
     '''
+    req = await _parse_form(request, EditPaperTradeRequest)
     def _apply(state: dict) -> None:
       from system_params import STRATEGY_VERSION  # noqa: PLC0415 — fresh import (kwarg trap)
 
@@ -345,10 +385,13 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
   # POST /paper-trade/{trade_id}/close
   # -----------------------------------------------------------------------
   @app.post('/paper-trade/{trade_id}/close', response_class=HTMLResponse)
-  async def close_paper_trade(trade_id: str, req: ClosePaperTradeRequest) -> HTMLResponse:
+  async def close_paper_trade(trade_id: str, request: Request) -> HTMLResponse:
     '''Close an open paper trade: compute realised P&L via pnl_engine, flip
     status=closed. Closed rows return 405 (D-05 immutability).
+
+    D-17 gap-closure: accepts application/x-www-form-urlencoded (browser/HTMX default).
     '''
+    req = await _parse_form(request, ClosePaperTradeRequest)
     def _apply(state: dict) -> None:
       from pnl_engine import compute_realised_pnl  # LOCAL — Phase 11 C-2
 
