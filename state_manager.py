@@ -182,11 +182,42 @@ def _migrate_v3_to_v4(s: dict) -> dict:
   return s
 
 
+def _migrate_v4_to_v5(s: dict) -> dict:
+  '''Phase 17 D-08 (v1.2): backfill empty ohlc_window + indicator_scalars
+  on existing dict-shaped signal rows.
+
+  Existing rows on first v1.2.x deploy carry signal / strategy_version /
+  last_scalars but no ohlc_window / indicator_scalars. Stamp empty list +
+  empty dict; main.py populates on the next daily run.
+
+  Idempotent: rows that already carry a populated ohlc_window or
+  indicator_scalars are NOT overwritten (defensive — supports replayed
+  migrations and partial-state edits). Two independent 'field' not in sig
+  guards so a partial-prior-state row still backfills the missing field
+  per LEARNINGS 2026-04-27 idempotency rule.
+
+  Legacy int shape (Phase 3 reset_state) is skipped: only dict-shaped
+  signal rows are migrated. main.py reads both shapes per D-08 upgrade
+  branch.
+
+  D-15 silent migration: no append_warning, no log line.
+  '''
+  signals = s.get('signals', {})
+  for inst_key, sig in signals.items():
+    if isinstance(sig, dict):
+      if 'ohlc_window' not in sig:
+        sig['ohlc_window'] = []
+      if 'indicator_scalars' not in sig:
+        sig['indicator_scalars'] = {}
+  return s
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
   3: _migrate_v2_to_v3,  # Phase 14 D-09: backfill manual_stop on existing Positions
   4: _migrate_v3_to_v4,  # Phase 22 D-04/D-05/D-09: strategy_version on signal rows
+  5: _migrate_v4_to_v5,  # Phase 17 D-08: ohlc_window + indicator_scalars on signal rows
 }
 
 

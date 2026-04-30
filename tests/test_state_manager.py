@@ -1168,7 +1168,10 @@ class TestMigrateV2Backfill:
     }
     migrated = _migrate(state)
     assert migrated['schema_version'] == STATE_SCHEMA_VERSION
-    assert STATE_SCHEMA_VERSION == 4, 'Phase 22 bumps STATE_SCHEMA_VERSION to 4'
+    assert STATE_SCHEMA_VERSION >= 4, (
+      'STATE_SCHEMA_VERSION was 4 at Phase 22, bumped to 5 at Phase 17 D-08; '
+      'must be >= 4'
+    )
 
 
 class TestSaveStateExcludesUnderscoreKeys:
@@ -1894,9 +1897,10 @@ class TestMigrateV3ToV4:
       f'got {out["signals"]["AUDUSD"].get("strategy_version")!r}'
     )
 
-  def test_migrate_v3_to_v4_via_full_migrate_sets_schema_4(self, tmp_path) -> None:
+  def test_migrate_v3_to_v4_via_full_migrate_sets_schema_current(self, tmp_path) -> None:
     '''Going through _migrate (the dispatch walker) on a v3 state ends at
-    schema_version=4 AND backfills strategy_version='v1.1.0' on existing rows.
+    STATE_SCHEMA_VERSION (currently 5 after Phase 17 D-08) AND backfills
+    strategy_version='v1.1.0' on existing rows.
     '''
     from state_manager import _migrate
     s = {
@@ -1913,8 +1917,9 @@ class TestMigrateV3ToV4:
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     out = _migrate(s)
-    assert out['schema_version'] == 4, (
-      f'Phase 22 D-04: _migrate must walk v3 -> v4; got {out["schema_version"]}'
+    assert out['schema_version'] == STATE_SCHEMA_VERSION, (
+      f'Phase 22/17: _migrate must walk v3 -> {STATE_SCHEMA_VERSION}; '
+      f'got {out["schema_version"]}'
     )
     assert out['signals']['SPI200']['strategy_version'] == 'v1.1.0'
     assert out['signals']['AUDUSD']['strategy_version'] == 'v1.1.0'
@@ -2030,8 +2035,9 @@ class TestMigrateV3ToV4:
     }
     path.write_text(json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 4, (
-      f'walk-forward chain v0->v1->v2->v3->v4 must end at 4; '
+    # Phase 17 D-08: STATE_SCHEMA_VERSION is now 5 (was 4 at Phase 22).
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 5, (
+      f'walk-forward chain v0->v1->v2->v3->v4->v5 must end at 5; '
       f'got {loaded["schema_version"]}'
     )
     assert loaded['signals']['SPI200']['strategy_version'] == 'v1.1.0'
@@ -2084,3 +2090,263 @@ class TestMigrateV3ToV4:
       f'D-06: present field must NOT emit WARN; '
       f'got {[r.getMessage() for r in strategy_warns]!r}'
     )
+
+
+class TestMigrateV4ToV5:
+  '''Phase 17 D-08: _migrate_v4_to_v5 backfills ohlc_window=[] +
+  indicator_scalars={} on existing dict-shaped signal rows.
+
+  Invariants (mirror of TestMigrateV3ToV4):
+    - additive: every pre-existing field on each signal row preserved
+    - idempotent: rows that already carry ohlc_window / indicator_scalars
+      are NOT overwritten (two independent guards)
+    - partial-state: missing only one of the two fields → missing one backfilled,
+      present one preserved (proves the two guards are independent)
+    - skip int-shape: Phase 3 reset_state legacy int rows left untouched
+  '''
+
+  def test_migrate_v4_to_v5_backfills_existing_signal_rows(self) -> None:
+    '''D-08: every dict-shaped signal row gets ohlc_window=[] AND
+    indicator_scalars={} when those fields are absent.
+    '''
+    from state_manager import _migrate_v4_to_v5
+    s = {
+      'schema_version': 4,
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+          'last_close': 1234.5,
+          'last_scalars': {'adx': 25.0},
+          'strategy_version': 'v1.2.0',
+        },
+        'AUDUSD': {
+          'signal': -1,
+          'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+          'last_close': 0.6543,
+          'last_scalars': {'adx': 20.0},
+          'strategy_version': 'v1.2.0',
+        },
+      },
+    }
+    out = _migrate_v4_to_v5(s)
+    assert out['signals']['SPI200']['ohlc_window'] == [], (
+      f'D-08: SPI200 must be stamped ohlc_window=[] on first v1.2.x load; '
+      f'got {out["signals"]["SPI200"].get("ohlc_window")!r}'
+    )
+    assert out['signals']['SPI200']['indicator_scalars'] == {}, (
+      f'D-08: SPI200 must be stamped indicator_scalars={{}} on first v1.2.x load; '
+      f'got {out["signals"]["SPI200"].get("indicator_scalars")!r}'
+    )
+    assert out['signals']['AUDUSD']['ohlc_window'] == [], (
+      f'D-08: AUDUSD must be stamped ohlc_window=[] on first v1.2.x load; '
+      f'got {out["signals"]["AUDUSD"].get("ohlc_window")!r}'
+    )
+    assert out['signals']['AUDUSD']['indicator_scalars'] == {}, (
+      f'D-08: AUDUSD must be stamped indicator_scalars={{}} on first v1.2.x load; '
+      f'got {out["signals"]["AUDUSD"].get("indicator_scalars")!r}'
+    )
+
+  def test_migrate_v4_to_v5_via_full_migrate_sets_schema_5(self) -> None:
+    '''Going through _migrate (the dispatch walker) on a v4 state ends at
+    schema_version=5 AND backfills ohlc_window=[] + indicator_scalars={}.
+    '''
+    from state_manager import _migrate
+    s = {
+      'schema_version': 4,
+      'account': INITIAL_ACCOUNT,
+      'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+          'strategy_version': 'v1.2.0',
+        },
+        'AUDUSD': {
+          'signal': 0,
+          'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+          'strategy_version': 'v1.2.0',
+        },
+      },
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
+    }
+    out = _migrate(s)
+    assert out['schema_version'] == 5, (
+      f'Phase 17 D-08: _migrate must walk v4 -> v5; got {out["schema_version"]}'
+    )
+    assert out['signals']['SPI200']['ohlc_window'] == []
+    assert out['signals']['SPI200']['indicator_scalars'] == {}
+    assert out['signals']['AUDUSD']['ohlc_window'] == []
+    assert out['signals']['AUDUSD']['indicator_scalars'] == {}
+
+  def test_migrate_v4_to_v5_preserves_other_signal_fields(self) -> None:
+    '''Round-trip equality: every original key on each signal row preserved
+    with its exact value; only ohlc_window and indicator_scalars are added.
+    '''
+    from state_manager import _migrate_v4_to_v5
+    original_spi = {
+      'signal': 1,
+      'signal_as_of': '2026-04-29',
+      'as_of_run': '2026-04-29',
+      'last_close': 1234.5,
+      'last_scalars': {'adx': 25.0, 'mom1': 0.01},
+      'strategy_version': 'v1.2.0',
+    }
+    s = {'schema_version': 4, 'signals': {'SPI200': dict(original_spi)}}
+    out = _migrate_v4_to_v5(s)
+    sig = out['signals']['SPI200']
+    # Original keys preserved with exact values.
+    for k, v in original_spi.items():
+      assert sig[k] == v, (
+        f'D-08 additive guarantee violated: signals.SPI200.{k} changed '
+        f'from {v!r} to {sig.get(k)!r}'
+      )
+    # New fields present.
+    assert sig['ohlc_window'] == []
+    assert sig['indicator_scalars'] == {}
+    # Exactly the right set of keys.
+    assert set(sig.keys()) == set(original_spi.keys()) | {'ohlc_window', 'indicator_scalars'}
+
+  def test_migrate_v4_to_v5_idempotent_ohlc_window_already_populated(self) -> None:
+    '''Re-running _migrate_v4_to_v5 when ohlc_window is already populated does
+    NOT overwrite (preserves the existing list).
+    '''
+    from state_manager import _migrate_v4_to_v5
+    existing_window = [{'date': '2026-04-29', 'open': 100.0, 'high': 101.0,
+                        'low': 99.0, 'close': 100.5}]
+    s = {
+      'schema_version': 5,
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'ohlc_window': existing_window,
+          'indicator_scalars': {'atr': 0.012},
+        },
+      },
+    }
+    out = _migrate_v4_to_v5(s)
+    assert out['signals']['SPI200']['ohlc_window'] == existing_window, (
+      'idempotency: populated ohlc_window must not be overwritten with []'
+    )
+
+  def test_migrate_v4_to_v5_idempotent_indicator_scalars_already_populated(self) -> None:
+    '''Re-running _migrate_v4_to_v5 when indicator_scalars is already populated
+    does NOT overwrite (preserves the existing dict).
+    '''
+    from state_manager import _migrate_v4_to_v5
+    existing_scalars = {'atr': 0.012, 'adx': 25.0}
+    s = {
+      'schema_version': 5,
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'ohlc_window': [],
+          'indicator_scalars': existing_scalars,
+        },
+      },
+    }
+    out = _migrate_v4_to_v5(s)
+    assert out['signals']['SPI200']['indicator_scalars'] == existing_scalars, (
+      'idempotency: populated indicator_scalars must not be overwritten with {}'
+    )
+
+  def test_migrate_v4_to_v5_idempotent_partial_state(self) -> None:
+    '''A row with ohlc_window present (even empty []) but no indicator_scalars:
+    ohlc_window is preserved, indicator_scalars is backfilled.
+    Proves the two "field not in sig" guards are INDEPENDENT.
+    '''
+    from state_manager import _migrate_v4_to_v5
+    s = {
+      'schema_version': 4,
+      'signals': {
+        'SPI200': {
+          'signal': 1,
+          'ohlc_window': [],   # key present, value empty — must be preserved
+          # indicator_scalars absent — must be backfilled
+        },
+      },
+    }
+    out = _migrate_v4_to_v5(s)
+    sig = out['signals']['SPI200']
+    # ohlc_window key was present — must be the SAME empty list (not overwritten)
+    assert 'ohlc_window' in sig
+    assert sig['ohlc_window'] == [], (
+      'partial-state: ohlc_window=[] (key present) must be preserved, not re-stamped'
+    )
+    # indicator_scalars was missing — must be backfilled to {}
+    assert sig['indicator_scalars'] == {}, (
+      'partial-state: missing indicator_scalars must be backfilled to {}'
+    )
+
+  def test_migrate_v4_to_v5_skips_int_legacy_shape(self) -> None:
+    '''Phase 3 reset_state legacy int shape (signals.SPI200 = 1) MUST NOT be
+    rewritten by the migration — only dict-shaped rows carry ohlc_window.
+    '''
+    from state_manager import _migrate_v4_to_v5
+    s = {
+      'schema_version': 4,
+      'signals': {'SPI200': 1, 'AUDUSD': 0},
+    }
+    out = _migrate_v4_to_v5(s)
+    assert out['signals']['SPI200'] == 1, (
+      f'int-shape SPI200 must stay int; got {out["signals"]["SPI200"]!r}'
+    )
+    assert out['signals']['AUDUSD'] == 0, (
+      f'int-shape AUDUSD must stay int; got {out["signals"]["AUDUSD"]!r}'
+    )
+
+
+class TestFullWalkV0ToV5:
+  '''End-to-end migration walk from v0 (no schema_version key) all the way to
+  v5. Proves the full chain v0→v1→v2→v3→v4→v5 is registered and functional.
+  '''
+
+  def test_full_walk_v0_to_v5_then_load_state(self, tmp_path) -> None:
+    '''Write a state with no schema_version (v0) to disk, call load_state,
+    assert returned state has schema_version==5 AND:
+    - strategy_version=='v1.1.0' (Phase 22 v3->v4 backfill)
+    - ohlc_window==[] (Phase 17 v4->v5 backfill)
+    - indicator_scalars=={} (Phase 17 v4->v5 backfill)
+
+    Uses a v0 state with dict-shaped signals so both migrations have
+    something to operate on.
+    '''
+    path = tmp_path / 'state.json'
+    bare_state = {
+      # no schema_version → defaults to 0
+      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {
+        'SPI200': {
+          'signal': 1, 'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+        },
+        'AUDUSD': {
+          'signal': 0, 'signal_as_of': '2026-04-29',
+          'as_of_run': '2026-04-29',
+        },
+      },
+      'trade_log': [], 'equity_history': [], 'warnings': [],
+    }
+    import json as _json
+    path.write_text(_json.dumps(bare_state, indent=2))
+    loaded = load_state(path=path)
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 5, (
+      f'walk-forward chain v0->...->v5 must end at 5; '
+      f'got {loaded["schema_version"]}'
+    )
+    # Phase 22 v3->v4 backfill also ran
+    assert loaded['signals']['SPI200']['strategy_version'] == 'v1.1.0'
+    assert loaded['signals']['AUDUSD']['strategy_version'] == 'v1.1.0'
+    # Phase 17 v4->v5 backfill
+    assert loaded['signals']['SPI200']['ohlc_window'] == []
+    assert loaded['signals']['SPI200']['indicator_scalars'] == {}
+    assert loaded['signals']['AUDUSD']['ohlc_window'] == []
+    assert loaded['signals']['AUDUSD']['indicator_scalars'] == {}
