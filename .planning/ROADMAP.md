@@ -25,7 +25,7 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 
 - [x] **Phase 17: Per-signal calculation transparency** — Dashboard renders Inputs / Indicators / Vote panels per instrument so the operator can re-derive the signal by hand (completed 2026-04-30)
 - [x] **Phase 19: Paper-trade ledger** — Web form for manual trade entry, per-trade open/closed history, mark-to-market unrealised P&L, aggregate stats (skipping Phase 18 multi-user — single-operator model from v1.1) (completed 2026-04-30)
-- [ ] **Phase 20: Stop-loss monitoring & alerts** — Daily approaching (within 0.5×ATR) AND hit detection per open paper trade, dedup'd email alerts with state-transition logic
+- [x] **Phase 20: Stop-loss monitoring & alerts** — Daily approaching (within 0.5×ATR) AND hit detection per open paper trade, dedup'd email alerts with state-transition logic (completed 2026-04-30)
 - [x] **Phase 22: Strategy versioning & audit trail** — `STRATEGY_VERSION` constant in `system_params.py`, every signal/trade row tagged so historical state stays interpretable across logic changes (completed 2026-04-29)
 - [ ] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge
 

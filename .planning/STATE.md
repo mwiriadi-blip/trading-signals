@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Trader-Grade Transparency & Validation
 status: verifying
-last_updated: "2026-04-30T09:41:16.703Z"
+last_updated: "2026-04-30T12:29:44.475Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
   percent: 100
 ---
 
@@ -23,11 +23,11 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 19 — paper-trade-ledger
+- **Current focus:** Phase 20 — stop-loss-monitoring-alerts
 
 ## Current Position
 
-Phase: 19 (paper-trade-ledger) — EXECUTING
+Phase: 20 (stop-loss-monitoring-alerts) — EXECUTING
 Plan: 1 of 1
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
@@ -118,6 +118,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 22 P01 | 22min | 6 tasks | 10 files |
 | Phase 17 P01 | 90 | 5 tasks | 12 files |
 | Phase 19 P01 | 180 | 6 tasks | 18 files |
+| Phase 20 P01 | 180 | 7 tasks | 16 files |
 
 ## Accumulated Context
 

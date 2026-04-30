@@ -39,10 +39,10 @@
 
 ### ALERT — Stop-loss monitoring & alerts (Phase 20)
 
-- [ ] **ALERT-01** — On every daily run, for each open paper trade with a non-null `stop_price`, compute distance: if `(side==LONG AND today_low <= stop_price)` OR `(side==SHORT AND today_high >= stop_price)` → mark **HIT**; else if `abs(today_close - stop_price) <= 0.5 × ATR(14)` → mark **APPROACHING**; else **CLEAR**.
-- [ ] **ALERT-02** — On state transition `CLEAR → APPROACHING` or `* → HIT`, send a dedicated email alert to `OPERATOR_RECOVERY_EMAIL` (or `SIGNALS_EMAIL_TO`). Subject prefix `[!stop]`. Body: instrument, side, entry, current stop, today's close, distance in ATR units, link to dashboard.
-- [ ] **ALERT-03** — Alerts are deduplicated per-trade-per-state: once a trade's stop is **APPROACHING**, the daily emails do not re-send the alert until the state changes to **CLEAR** or **HIT**. Persisted in `paper_trades[].last_alert_state` field.
-- [ ] **ALERT-04** — Dashboard renders an "Alerts" pane showing each open trade's current alert state (CLEAR / APPROACHING / HIT) with a colored indicator (green/amber/red).
+- [x] **ALERT-01** — On every daily run, for each open paper trade with a non-null `stop_price`, compute distance: if `(side==LONG AND today_low <= stop_price)` OR `(side==SHORT AND today_high >= stop_price)` → mark **HIT**; else if `abs(today_close - stop_price) <= 0.5 × ATR(14)` → mark **APPROACHING**; else **CLEAR**.
+- [x] **ALERT-02** — On state transition `CLEAR → APPROACHING` or `* → HIT`, send a dedicated email alert to `OPERATOR_RECOVERY_EMAIL` (or `SIGNALS_EMAIL_TO`). Subject prefix `[!stop]`. Body: instrument, side, entry, current stop, today's close, distance in ATR units, link to dashboard.
+- [x] **ALERT-03** — Alerts are deduplicated per-trade-per-state: once a trade's stop is **APPROACHING**, the daily emails do not re-send the alert until the state changes to **CLEAR** or **HIT**. Persisted in `paper_trades[].last_alert_state` field.
+- [x] **ALERT-04** — Dashboard renders an "Alerts" pane showing each open trade's current alert state (CLEAR / APPROACHING / HIT) with a colored indicator (green/amber/red).
 
 ### VERSION — Strategy versioning & audit trail (Phase 22)
 
@@ -74,10 +74,10 @@
 | LEDGER-04 | 19 | Complete |
 | LEDGER-05 | 19 | Complete |
 | LEDGER-06 | 19 | Complete |
-| ALERT-01 | 20 | Pending |
-| ALERT-02 | 20 | Pending |
-| ALERT-03 | 20 | Pending |
-| ALERT-04 | 20 | Pending |
+| ALERT-01 | 20 | Complete |
+| ALERT-02 | 20 | Complete |
+| ALERT-03 | 20 | Complete |
+| ALERT-04 | 20 | Complete |
 | VERSION-01 | 22 | Complete |
 | VERSION-02 | 22 | Complete |
 | VERSION-03 | 22 | Complete |
