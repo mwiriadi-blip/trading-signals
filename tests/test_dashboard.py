@@ -2299,3 +2299,258 @@ class TestRenderDashboardStrategyVersion:
       f'access — bypasses the primitive-arg contract). '
       f'imports = {sorted(imported_from_system_params)!r}'
     )
+
+
+# =========================================================================
+# Phase 17 trace panels + format helper tests
+# =========================================================================
+
+SAMPLE_STATE_V5_PATH = DASHBOARD_FIXTURE_DIR / 'sample_state_v5.json'
+
+
+def _load_v5_state() -> dict:
+  '''Load the Phase 17 golden fixture (schema_version=5, 40-entry ohlc_window
+  + 9-key indicator_scalars per instrument).
+  '''
+  return json.loads(SAMPLE_STATE_V5_PATH.read_text())
+
+
+class TestFormatIndicatorValue:
+  '''Phase 17 D-05 + D-06: _format_indicator_value pure helper.
+
+  Three cases: finite float, NaN with seed-short, NaN with flat-price.
+  '''
+
+  def test_format_indicator_value_finite_returns_6_decimal(self) -> None:
+    '''D-05: finite floats render to exactly 6 decimal places.'''
+    from dashboard import _format_indicator_value
+    result = _format_indicator_value(0.012345678, 14, 40)
+    assert result == '0.012346', (
+      f'D-05: 6-decimal format expected "0.012346"; got {result!r}'
+    )
+    result_trailing = _format_indicator_value(1.0, 14, 40)
+    assert result_trailing == '1.000000', (
+      f'D-05: trailing zeros must be preserved; got {result_trailing!r}'
+    )
+
+  def test_format_indicator_value_nan_seed_short(self) -> None:
+    '''D-06: NaN with bars_available < seed_required -> reason text.'''
+    from dashboard import _format_indicator_value
+    result = _format_indicator_value(float('nan'), 20, 14)
+    assert result == 'n/a (need 20 bars, have 14)', (
+      f'D-06: seed-short reason expected; got {result!r}'
+    )
+
+  def test_format_indicator_value_nan_flat_price(self) -> None:
+    '''D-06: NaN with bars_available >= seed_required -> flat-price reason.'''
+    from dashboard import _format_indicator_value
+    result = _format_indicator_value(float('nan'), 14, 40)
+    assert result == 'n/a (flat price)', (
+      f'D-06: flat-price reason expected; got {result!r}'
+    )
+
+
+class TestTracePanels:
+  '''Phase 17 D-01..D-17: trace panels (Inputs / Indicators / Vote) render
+  contract. Covers populated state, empty ohlc_window, formula strings,
+  badge classes, cookie placeholder, cursor CSS, JS toggle, purity.
+  '''
+
+  def _render(self, state: dict, tmp_path, **kwargs) -> str:
+    '''Helper: render dashboard to tmp file, return HTML string.'''
+    out = tmp_path / 'test_dash.html'
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, **kwargs)
+    return out.read_text(encoding='utf-8')
+
+  def test_inputs_panel_renders_40_rows(self, tmp_path) -> None:
+    '''D-02: each instrument's Inputs panel renders exactly 40 data rows.'''
+    state = _load_v5_state()
+    rendered = self._render(state, tmp_path)
+    for inst in ('SPI200', 'AUDUSD'):
+      # Count data-row-index attributes within each instrument's section.
+      rows = re.findall(r'<tr data-row-index="\d+"', rendered)
+      # There should be 80 total (40 per instrument)
+    total_rows = len(re.findall(r'<tr data-row-index="\d+"', rendered))
+    assert total_rows == 80, (
+      f'D-02: expected 80 total ohlc rows (40 per instrument); got {total_rows}'
+    )
+    assert '<tr data-row-index="0"' in rendered, 'First row (index 0) must be present'
+    assert '<tr data-row-index="39"' in rendered, 'Last row (index 39) must be present'
+
+  def test_inputs_panel_empty_state(self, tmp_path) -> None:
+    '''D-11: empty ohlc_window renders "Awaiting first daily run" message.'''
+    state = _load_v5_state()
+    state['signals']['SPI200']['ohlc_window'] = []
+    state['signals']['SPI200']['indicator_scalars'] = {}
+    rendered = self._render(state, tmp_path)
+    assert 'Awaiting first daily run' in rendered, (
+      'D-11: empty ohlc_window must render "Awaiting first daily run" copy'
+    )
+
+  def test_all_formula_strings_present(self, tmp_path) -> None:
+    '''D-13: all 9 formula strings from _TRACE_FORMULAS appear in rendered HTML.'''
+    state = _load_v5_state()
+    rendered = self._render(state, tmp_path)
+    for key, formula in dashboard._TRACE_FORMULAS.items():
+      escaped = html.escape(formula, quote=True)
+      assert escaped in rendered, (
+        f'D-13: formula for {key!r} must appear in HTML; '
+        f'escaped formula: {escaped!r}'
+      )
+
+  def test_indicator_rows_render_6_decimal_values(self, tmp_path) -> None:
+    '''D-05: each finite indicator scalar renders as 6-decimal float.'''
+    state = _load_v5_state()
+    rendered = self._render(state, tmp_path)
+    scalars = state['signals']['SPI200']['indicator_scalars']
+    import math as _math
+    for key, value in scalars.items():
+      if _math.isfinite(value):
+        formatted = f'{value:.6f}'
+        escaped = html.escape(formatted, quote=True)
+        assert escaped in rendered, (
+          f'D-05: SPI200 indicator {key!r} = {value} -> '
+          f'"{formatted}" must appear in HTML'
+        )
+
+  def test_vote_badges_class_dispatch_plus_minus_zero(self, tmp_path) -> None:
+    '''D-07: mom1>0 -> plus badge, mom3<0 -> minus badge, mom12==0 -> zero badge.'''
+    state = _load_v5_state()
+    state['signals']['SPI200']['indicator_scalars']['mom1'] = 0.01
+    state['signals']['SPI200']['indicator_scalars']['mom3'] = -0.02
+    state['signals']['SPI200']['indicator_scalars']['mom12'] = 0.0
+    rendered = self._render(state, tmp_path)
+    assert 'class="trace-badge plus"' in rendered, (
+      'D-07: mom1>0 must emit plus badge'
+    )
+    assert 'class="trace-badge minus"' in rendered, (
+      'D-07: mom3<0 must emit minus badge'
+    )
+    assert 'class="trace-badge zero"' in rendered, (
+      'D-07: mom12==0 must emit zero badge'
+    )
+
+  def test_adx_gate_badge_pass_when_adx_ge_25(self, tmp_path) -> None:
+    '''D-07: ADX=27.4 -> pass badge + ADX value + threshold visible.'''
+    state = _load_v5_state()
+    state['signals']['SPI200']['indicator_scalars']['adx'] = 27.4
+    rendered = self._render(state, tmp_path)
+    assert 'class="trace-badge pass"' in rendered, (
+      'D-07: ADX >= 25 must emit pass badge'
+    )
+    assert '27.400000' in rendered, (
+      'D-07: ADX value must render 6-decimal in the gate row'
+    )
+    assert '>= 25' in rendered or '&gt;= 25' in rendered, (
+      'D-07: threshold ">= 25" must appear in gate row'
+    )
+
+  def test_adx_gate_badge_fail_when_adx_lt_25(self, tmp_path) -> None:
+    '''D-07: ADX=20.0 -> fail badge.'''
+    state = _load_v5_state()
+    state['signals']['SPI200']['indicator_scalars']['adx'] = 20.0
+    rendered = self._render(state, tmp_path)
+    assert 'class="trace-badge fail"' in rendered, (
+      'D-07: ADX < 25 must emit fail badge'
+    )
+
+  def test_render_does_not_mutate_state(self, tmp_path) -> None:
+    '''TRACE-04: render_dashboard must not mutate the state dict.'''
+    import copy
+    state = _load_v5_state()
+    pre = copy.deepcopy(state)
+    self._render(state, tmp_path)
+    assert state == pre, (
+      'TRACE-04: render_dashboard must not mutate the state dict'
+    )
+
+  def test_details_open_placeholders_emitted_at_write_time(self, tmp_path) -> None:
+    '''D-17: render emits {{TRACE_OPEN_SPI200}} and {{TRACE_OPEN_AUDUSD}}
+    placeholders INSIDE the <details> opening tag (substituted at route layer).
+    '''
+    state = _load_v5_state()
+    rendered = self._render(state, tmp_path)
+    assert '{{TRACE_OPEN_SPI200}}' in rendered, (
+      'D-17: SPI200 placeholder must be present in on-disk HTML'
+    )
+    assert '{{TRACE_OPEN_AUDUSD}}' in rendered, (
+      'D-17: AUDUSD placeholder must be present in on-disk HTML'
+    )
+    # Placeholder must be inside the <details data-instrument="..."> tag.
+    assert '<details' in rendered and 'data-instrument="SPI200"{{TRACE_OPEN_SPI200}}' in rendered, (
+      'D-17: SPI200 placeholder must be inside <details data-instrument> tag'
+    )
+    assert 'data-instrument="AUDUSD"{{TRACE_OPEN_AUDUSD}}' in rendered, (
+      'D-17: AUDUSD placeholder must be inside <details data-instrument> tag'
+    )
+
+  def test_render_dashboard_accepts_trace_open_keys_kwarg(self, tmp_path) -> None:
+    '''D-04: render_dashboard accepts trace_open_keys kwarg without error.'''
+    import inspect
+    state = _load_v5_state()
+    # Should not raise ValueError or TypeError.
+    out = tmp_path / 'test2.html'
+    render_dashboard(state, out_path=out, now=FROZEN_NOW, trace_open_keys=['SPI200'])
+
+  def test_render_dashboard_default_trace_open_keys_is_none(self) -> None:
+    '''LEARNINGS 2026-04-29 mutable-default avoidance: trace_open_keys
+    default must be None, not a mutable list [].
+    '''
+    import inspect
+    sig = inspect.signature(dashboard.render_dashboard)
+    default = sig.parameters['trace_open_keys'].default
+    assert default is None, (
+      f'LEARNINGS 2026-04-29: trace_open_keys default must be None '
+      f'(mutable-default [] would be shared across calls); got {default!r}'
+    )
+
+  def test_dashboard_indicator_name_has_cursor_pointer_css(self) -> None:
+    '''D-15 + RESEARCH §Pitfall 1: .trace-indicator-name must have
+    cursor: pointer in _INLINE_CSS (required for iOS Safari click-event firing
+    on non-interactive elements).
+    '''
+    css = dashboard._INLINE_CSS
+    # Accept various whitespace forms; must have cursor: pointer on the class.
+    assert 'trace-indicator-name' in css, (
+      'D-15: .trace-indicator-name must be defined in _INLINE_CSS'
+    )
+    # Check that cursor: pointer appears near trace-indicator-name.
+    assert 'cursor: pointer' in css, (
+      'D-15: cursor: pointer must appear in _INLINE_CSS '
+      '(required for iOS Safari click-event firing on non-interactive elements)'
+    )
+
+  def test_dashboard_emits_trace_toggle_js_with_domcontentloaded(self, tmp_path) -> None:
+    '''D-03/D-12/RESEARCH A4: rendered HTML contains the DOMContentLoaded
+    toggle handler with cookie write including Secure attribute.
+    '''
+    state = _load_v5_state()
+    rendered = self._render(state, tmp_path)
+    assert "document.addEventListener('DOMContentLoaded'" in rendered, (
+      'D-03: DOMContentLoaded handler must be present in rendered HTML'
+    )
+    assert 'tsi_trace_open=' in rendered, (
+      'D-12: cookie write for tsi_trace_open must be in rendered HTML'
+    )
+    assert 'Path=/; SameSite=Lax' in rendered, (
+      'D-12: cookie attributes Path=/ + SameSite=Lax required'
+    )
+    assert 'Max-Age=7776000' in rendered, (
+      'D-12: 90-day cookie Max-Age=7776000 required'
+    )
+    assert 'Secure' in rendered, (
+      'RESEARCH A4: Secure attribute required on cookie write for HTTPS droplet'
+    )
+
+  def test_details_blocks_one_per_instrument(self, tmp_path) -> None:
+    '''D-04: rendered HTML contains exactly one <details> per instrument.'''
+    state = _load_v5_state()
+    rendered = self._render(state, tmp_path)
+    spi_matches = re.findall(r'data-instrument="SPI200"', rendered)
+    aud_matches = re.findall(r'data-instrument="AUDUSD"', rendered)
+    assert len(spi_matches) >= 1, (
+      'D-04: at least one data-instrument="SPI200" must be in HTML'
+    )
+    assert len(aud_matches) >= 1, (
+      'D-04: at least one data-instrument="AUDUSD" must be in HTML'
+    )

@@ -682,6 +682,27 @@ td.calc-cell.entry-target {{
   font-size: var(--fs-label);
   color: var(--color-text-dim);
 }}
+/* Phase 17 D-03/D-04: trace panels (inputs/indicators/vote) */
+.trace-disclosure {{ margin-top: var(--space-3); }}
+.trace-summary {{ cursor: pointer; font-weight: 600; color: var(--color-text-muted); }}
+.trace-panel {{ margin-top: var(--space-2); overflow-x: auto; }}
+.trace-panel table {{ width: 100%; border-collapse: collapse; font-size: var(--fs-label); }}
+.trace-panel td {{ padding: 2px 6px; border-bottom: 1px solid var(--color-border); }}
+.trace-panel td.num {{
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, 'Courier New', monospace;
+}}
+.trace-panel td.date {{ color: var(--color-text-muted); }}
+.trace-indicator-name {{ cursor: pointer; }}  /* D-15 — Mobile Safari click fix */
+.formula-row td {{ font-size: 0.8em; color: var(--color-text-muted); font-style: italic; padding-left: 12px; }}
+.trace-badge {{ display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 700; }}
+.trace-badge.plus  {{ background: #166534; color: #dcfce7; }}
+.trace-badge.minus {{ background: #7f1d1d; color: #fee2e2; }}
+.trace-badge.zero  {{ background: #713f12; color: #fef9c3; }}
+.trace-badge.pass  {{ background: #166534; color: #dcfce7; }}
+.trace-badge.fail  {{ background: #7f1d1d; color: #fee2e2; }}
+.trace-outcome {{ margin-top: var(--space-2); font-weight: 700; }}
 '''
 
 
@@ -761,6 +782,32 @@ def _fmt_last_updated(now: datetime) -> str:
     )
   awst = now.astimezone(pytz.timezone('Australia/Perth'))
   return awst.strftime('%Y-%m-%d %H:%M AWST')
+
+
+# =========================================================================
+# Phase 17 D-05 + D-06: indicator format helper (pure; math only)
+# =========================================================================
+
+def _format_indicator_value(
+  value: float,
+  seed_required: int,
+  bars_available: int,
+) -> str:
+  '''Phase 17 D-05 + D-06: format a single indicator scalar for display.
+
+  Returns 6-decimal string for finite floats (D-05). For NaN values:
+  - bars_available < seed_required -> seed-short reason text (D-06).
+  - bars_available >= seed_required -> flat-price reason text (D-06).
+
+  Allowed import: math (already imported at module top — hex-boundary safe).
+  MUST guard with math.isnan BEFORE the f-string; `f"{nan:.6f}"` produces
+  literal "nan" on CPython (LEARNINGS 2026-04-30 RESEARCH §Pitfall 6).
+  '''
+  if math.isnan(value):
+    if bars_available < seed_required:
+      return f'n/a (need {seed_required} bars, have {bars_available})'
+    return 'n/a (flat price)'
+  return f'{value:.6f}'
 
 
 # =========================================================================
@@ -925,6 +972,77 @@ def _compute_unrealised_pnl_display(
 # Phase 22 D-06: dashboard fallback when no signal row carries strategy_version.
 _DEFAULT_STRATEGY_VERSION = 'v1.0.0'
 
+# =========================================================================
+# Phase 17 D-13: trace panel constants (hex-boundary preserved — no imports
+# from signal_engine, system_params, state_manager, etc.)
+# =========================================================================
+
+# D-13: indicator formula text catalogue (presentation-only, plain text).
+# Lookup keys match state.signals[<inst>].indicator_scalars keys exactly.
+# Inlined here per D-10: formula text is presentation, not logic; the
+# engine's behaviour is pinned by tests/test_signal_engine.py independently.
+_TRACE_FORMULAS: dict[str, str] = {
+  'tr': 'TR = max(High - Low, |High - prev Close|, |Low - prev Close|)',
+  'atr': 'ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)',
+  'plus_di': '+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)',
+  'minus_di': '-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)',
+  'adx': 'ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)',
+  'mom1': 'Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}',
+  'mom3': 'Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}',
+  'mom12': 'Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}',
+  'rvol': 'RVol(20) = Volume_t / SMA(Volume, 20)',
+}
+
+# D-06: seed window length per indicator. Hardcoded per D-10 (NOT imported
+# from signal_engine — if the engine constants drift, the dashboard golden
+# test surfaces the mismatch rather than silently rendering stale text).
+_SEED_LENGTHS: dict[str, int] = {
+  'tr': 1, 'atr': 14, 'plus_di': 20, 'minus_di': 20,
+  'adx': 20, 'mom1': 2, 'mom3': 4, 'mom12': 13, 'rvol': 20,
+}
+
+# D-04: instrument keys whose <details open> we honour at the route-layer
+# cookie read. Mirrors state.signals keys (SPI200, AUDUSD).
+_VALID_TRACE_INSTRUMENT_KEYS: frozenset = frozenset({'SPI200', 'AUDUSD'})
+
+# D-17 (PATTERNS.md §Pattern To Design From Scratch): attribute-level
+# placeholder substitution. dashboard.py emits these literal strings inside
+# each <details data-instrument="..."> opening tag at write time.
+# web/routes/dashboard.py substitutes them per-request with ' open' or ''
+# based on the tsi_trace_open cookie (allowlist-filtered).
+# Note: attribute-level vs Phase 16.1's block-level placeholders — new design.
+_TRACE_OPEN_PLACEHOLDER: dict[str, str] = {
+  'SPI200': '{{TRACE_OPEN_SPI200}}',
+  'AUDUSD': '{{TRACE_OPEN_AUDUSD}}',
+}
+
+# D-03 + D-12: cookie-persisted <details open> + per-indicator tap-to-toggle
+# formula reveal. Vanilla ES5; no library; wrapped in DOMContentLoaded per
+# RESEARCH §Pitfall 8. Cookie attrs include Secure per RESEARCH A4 (HTTPS droplet).
+_TRACE_TOGGLE_JS = '''
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('details[data-instrument]').forEach(function(el) {
+    el.addEventListener('toggle', function() {
+      var openKeys = Array.from(
+        document.querySelectorAll('details[data-instrument][open]')
+      ).map(function(d) { return d.getAttribute('data-instrument'); }).join(',');
+      document.cookie = 'tsi_trace_open=' + openKeys
+        + '; Path=/; SameSite=Lax; Max-Age=7776000; Secure';
+    });
+  });
+  document.querySelectorAll('.trace-indicator-name').forEach(function(cell) {
+    cell.addEventListener('click', function() {
+      var isOpen = this.getAttribute('data-formula-open') === 'true';
+      var next = this.closest('tr').nextElementSibling;
+      if (next && next.classList.contains('formula-row')) {
+        next.hidden = isOpen;
+        this.setAttribute('data-formula-open', isOpen ? 'false' : 'true');
+      }
+    });
+  });
+});
+'''
+
 
 def _resolve_strategy_version(state: dict) -> str:
   '''Phase 22: extract the active strategy version from state.signals.
@@ -966,6 +1084,26 @@ def _resolve_strategy_version(state: dict) -> str:
 
 _SIGNAL_LABEL = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
 _SIGNAL_COLOUR = {1: _COLOR_LONG, -1: _COLOR_SHORT, 0: _COLOR_FLAT}
+
+
+def _resolve_trace_open_keys(
+  state: dict,
+  trace_open_keys: list,
+) -> set:
+  '''Phase 17 D-04: which per-instrument <details> render with the `open`
+  attribute. Caller (web/routes/dashboard.py) computes the list from the
+  tsi_trace_open cookie; this helper applies a defensive allowlist
+  intersection against _VALID_TRACE_INSTRUMENT_KEYS AND against the keys
+  actually present in state.signals.
+
+  Hex-boundary preserved: reads only state-dict primitives + a list of
+  strings; no module-attribute reads, no I/O, no auth.
+  '''
+  present_keys = set(state.get('signals', {}).keys())
+  return {
+    k for k in trace_open_keys
+    if k in _VALID_TRACE_INSTRUMENT_KEYS and k in present_keys
+  }
 
 # Exit-reason display mapping (UI-SPEC §Closed trades table §Reason column).
 # Unknown / unmapped values fall through raw (html.escape applied at render leaf).
@@ -1058,6 +1196,203 @@ def _render_header(
   )
 
 
+def _render_trace_inputs(ohlc_window: list) -> str:
+  '''Phase 17 D-02 + D-11: Inputs panel — rolling 40-bar OHLC table.
+
+  Empty ohlc_window -> "Awaiting first daily run" placeholder per D-11.
+  Non-empty -> one <tr data-row-index="N"> per bar, columns Date/Open/High/Low/Close.
+  All leaf values pass through html.escape per T-17-03 (XSS defence-in-depth).
+  '''
+  if not ohlc_window:
+    return (
+      '<section class="trace-panel">\n'
+      '  <p><em>Awaiting first daily run — calculations will appear after '
+      'the next 08:00 AWST cycle.</em></p>\n'
+      '</section>\n'
+    )
+  rows = []
+  for i, entry in enumerate(ohlc_window):
+    date_esc = html.escape(str(entry.get('date', '')), quote=True)
+    open_esc = html.escape(f'{entry.get("open", 0.0):.2f}', quote=True)
+    high_esc = html.escape(f'{entry.get("high", 0.0):.2f}', quote=True)
+    low_esc = html.escape(f'{entry.get("low", 0.0):.2f}', quote=True)
+    close_esc = html.escape(f'{entry.get("close", 0.0):.2f}', quote=True)
+    rows.append(
+      f'<tr data-row-index="{i}">'
+      f'<td class="date">{date_esc}</td>'
+      f'<td class="num">{open_esc}</td>'
+      f'<td class="num">{high_esc}</td>'
+      f'<td class="num">{low_esc}</td>'
+      f'<td class="num">{close_esc}</td>'
+      '</tr>\n'
+    )
+  return (
+    '<section class="trace-panel">\n'
+    '  <p class="eyebrow">INPUTS — OHLC WINDOW (40 bars)</p>\n'
+    '  <table class="trace-ohlc-table">\n'
+    '    <thead><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead>\n'
+    '    <tbody>\n'
+    + ''.join(rows)
+    + '  </tbody></table>\n'
+    '</section>\n'
+  )
+
+
+# Fixed display order for indicator rows — matches _TRACE_FORMULAS key order.
+_INDICATOR_DISPLAY_ORDER = ['tr', 'atr', 'plus_di', 'minus_di', 'adx', 'mom1', 'mom3', 'mom12', 'rvol']
+_INDICATOR_DISPLAY_NAMES = {
+  'tr': 'TR', 'atr': 'ATR(14)', 'plus_di': '+DI(20)', 'minus_di': '-DI(20)',
+  'adx': 'ADX(20)', 'mom1': 'Mom1', 'mom3': 'Mom3', 'mom12': 'Mom12', 'rvol': 'RVol(20)',
+}
+
+
+def _render_trace_indicators(indicator_scalars: dict, bars_available: int) -> str:
+  '''Phase 17 D-03 + D-05 + D-06: Indicators panel — one row per indicator
+  with tap-to-toggle formula reveal.
+
+  Each indicator row: name cell (cursor:pointer, data-formula-open="false",
+  title=formula tooltip) + value cell (6-decimal or reason text).
+  Followed immediately by a hidden formula-row for D-03 tap-to-toggle.
+
+  Empty indicator_scalars: all 9 rows render with "n/a (need N bars, have 0)".
+  '''
+  rows = []
+  for key in _INDICATOR_DISPLAY_ORDER:
+    formula = _TRACE_FORMULAS.get(key, '')
+    formula_esc = html.escape(formula, quote=True)
+    display_name = _INDICATOR_DISPLAY_NAMES.get(key, key)
+    name_esc = html.escape(display_name, quote=True)
+    seed = _SEED_LENGTHS.get(key, 1)
+    raw = indicator_scalars.get(key, float('nan'))
+    value_str = _format_indicator_value(float(raw), seed, bars_available)
+    value_esc = html.escape(value_str, quote=True)
+    rows.append(
+      f'<tr>'
+      f'<td class="trace-indicator-name" data-formula-open="false" title="{formula_esc}">'
+      f'{name_esc}</td>'
+      f'<td class="num">{value_esc}</td>'
+      f'</tr>\n'
+      f'<tr class="formula-row" hidden>'
+      f'<td colspan="2">{formula_esc}</td>'
+      f'</tr>\n'
+    )
+  return (
+    '<section class="trace-panel">\n'
+    '  <p class="eyebrow">INDICATORS</p>\n'
+    '  <table class="trace-indicators-table">\n'
+    '    <tbody>\n'
+    + ''.join(rows)
+    + '  </tbody></table>\n'
+    '</section>\n'
+  )
+
+
+def _render_trace_vote(indicator_scalars: dict, signal: int) -> str:
+  '''Phase 17 D-07: Vote panel — 3 Mom badges + ADX gate badge + outcome.
+
+  Badge classes: plus/minus/zero for Mom sign; pass/fail for ADX gate.
+  ADX gate threshold: 25.0 (literal per D-10 — NOT imported from system_params).
+  Empty indicator_scalars: "Awaiting first daily run." per D-11.
+  '''
+  if not indicator_scalars:
+    return (
+      '<section class="trace-panel trace-vote">\n'
+      '  <p><em>Awaiting first daily run.</em></p>\n'
+      '</section>\n'
+    )
+  _OUTCOME_LABEL = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
+  ADX_GATE_THRESHOLD = 25.0  # D-10: literal — no import from system_params
+
+  def _mom_badge(val: float) -> str:
+    if math.isnan(val) or val == 0.0:
+      return '<span class="trace-badge zero">0</span>'
+    if val > 0:
+      return '<span class="trace-badge plus">+</span>'
+    return '<span class="trace-badge minus">-</span>'
+
+  mom1 = float(indicator_scalars.get('mom1', float('nan')))
+  mom3 = float(indicator_scalars.get('mom3', float('nan')))
+  mom12 = float(indicator_scalars.get('mom12', float('nan')))
+  adx = float(indicator_scalars.get('adx', float('nan')))
+
+  seed_mom = _SEED_LENGTHS.get('mom1', 2)
+  bars_avail = 40  # display context: we always show 40 bars when populated
+
+  mom1_val = html.escape(_format_indicator_value(mom1, seed_mom, bars_avail), quote=True)
+  mom3_val = html.escape(_format_indicator_value(mom3, _SEED_LENGTHS.get('mom3', 4), bars_avail), quote=True)
+  mom12_val = html.escape(_format_indicator_value(mom12, _SEED_LENGTHS.get('mom12', 13), bars_avail), quote=True)
+
+  adx_finite = not math.isnan(adx)
+  adx_pass = adx_finite and adx >= ADX_GATE_THRESHOLD
+  adx_badge_cls = 'pass' if adx_pass else 'fail'
+  adx_val_str = html.escape(_format_indicator_value(adx, _SEED_LENGTHS.get('adx', 20), bars_avail), quote=True)
+  gate_text = html.escape(f'>= {ADX_GATE_THRESHOLD:.0f}', quote=True)
+  gate_result = 'PASS' if adx_pass else 'FAIL'
+
+  outcome_label = html.escape(_OUTCOME_LABEL.get(signal, 'FLAT'), quote=True)
+
+  # Count positive mom votes (D-07: 2 of 3 majority).
+  votes = sum(1 for v in (mom1, mom3, mom12) if not math.isnan(v) and v > 0)
+  anti_votes = sum(1 for v in (mom1, mom3, mom12) if not math.isnan(v) and v < 0)
+  if votes > anti_votes:
+    prelim = 'LONG'
+  elif anti_votes > votes:
+    prelim = 'SHORT'
+  else:
+    prelim = 'FLAT'
+  prelim_esc = html.escape(prelim, quote=True)
+
+  return (
+    '<section class="trace-panel trace-vote">\n'
+    '  <p class="eyebrow">VOTE</p>\n'
+    '  <table class="trace-vote-table"><tbody>\n'
+    f'  <tr><td>Mom1</td><td>{_mom_badge(mom1)}</td><td class="num">{mom1_val}</td></tr>\n'
+    f'  <tr><td>Mom3</td><td>{_mom_badge(mom3)}</td><td class="num">{mom3_val}</td></tr>\n'
+    f'  <tr><td>Mom12</td><td>{_mom_badge(mom12)}</td><td class="num">{mom12_val}</td></tr>\n'
+    f'  <tr><td>ADX gate</td><td><span class="trace-badge {adx_badge_cls}">{gate_result}</span></td>'
+    f'<td class="num">ADX {adx_val_str} {gate_text}</td></tr>\n'
+    '  </tbody></table>\n'
+    f'  <p>Vote: {prelim_esc}</p>\n'
+    f'  <p class="trace-outcome">FINAL: {outcome_label}</p>\n'
+    '</section>\n'
+  )
+
+
+def _render_trace_panels(
+  sig_dict: dict,
+  instrument_key: str,
+  placeholder: str,
+) -> str:
+  '''Phase 17 D-04: per-instrument <details> wrapper around the three trace
+  panels (Inputs / Indicators / Vote).
+
+  `placeholder` is the literal string "{{TRACE_OPEN_<KEY>}}" (from
+  _TRACE_OPEN_PLACEHOLDER[instrument_key]) — emitted verbatim AFTER the
+  data-instrument attribute. web/routes/dashboard.py substitutes it
+  per-request with " open" or "" based on the tsi_trace_open cookie.
+
+  Design note (PATTERNS.md §Pattern To Design From Scratch): attribute-level
+  substitution vs Phase 16.1's block-level. The placeholder is inside the
+  opening tag, not surrounding a content block.
+  '''
+  inst_esc = html.escape(instrument_key, quote=True)
+  ohlc_window = sig_dict.get('ohlc_window', [])
+  indicator_scalars = sig_dict.get('indicator_scalars', {})
+  signal = sig_dict.get('signal', 0)
+  bars_available = len(ohlc_window)
+  inner = (
+    _render_trace_inputs(ohlc_window)
+    + _render_trace_indicators(indicator_scalars, bars_available)
+    + _render_trace_vote(indicator_scalars, signal)
+  )
+  return (
+    f'<details class="trace-disclosure" data-instrument="{inst_esc}"{placeholder}>\n'
+    '  <summary class="trace-summary">Show calculations</summary>\n'
+    + inner
+    + '</details>\n'
+  )
+
+
 def _render_signal_cards(state: dict) -> str:
   '''UI-SPEC §Signal cards — 2 cards SPI200 + AUDUSD (D-02, DASH-03).
 
@@ -1120,6 +1455,14 @@ def _render_signal_cards(state: dict) -> str:
       f'      <p class="scalars">{scalars_line}</p>\n'
       '    </article>\n'
     )
+    # Phase 17 D-04: append the trace panels disclosure below each signal card.
+    # _render_trace_panels emits a <details data-instrument="..."> wrapper with
+    # the {{TRACE_OPEN_<KEY>}} placeholder for route-layer substitution (D-17).
+    # When sig_entry is int-shape (no trace data), pass an empty dict so the
+    # panels render the "Awaiting first daily run" placeholder per D-11.
+    trace_sig_dict = sig_entry if isinstance(sig_entry, dict) else {}
+    trace_placeholder = _TRACE_OPEN_PLACEHOLDER.get(state_key, '')
+    parts.append(_render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
   parts.append('  </div>\n')
   parts.append('</section>\n')
   return ''.join(parts)
@@ -1973,6 +2316,7 @@ def _render_html_shell(body: str) -> str:
     f'integrity="{_HTMX_JSON_ENC_SRI}" crossorigin="anonymous"></script>\n'
     '  <script>\n'
     + _HANDLE_TRADES_ERROR_JS +
+    _TRACE_TOGGLE_JS +
     '  </script>\n'
     f'  <style>{_INLINE_CSS}</style>\n'
     '</head>\n'
@@ -2046,6 +2390,7 @@ def render_dashboard(
   out_path: Path = Path('dashboard.html'),
   now: datetime | None = None,
   is_cookie_session: bool | None = None,
+  trace_open_keys: list | None = None,  # Phase 17 D-04 — None=all-collapsed default
 ) -> None:
   '''Public API per CONTEXT D-01. Writes dashboard.html atomically; never mutates state.
 
@@ -2061,6 +2406,14 @@ def render_dashboard(
   Phase 16.1 — `is_cookie_session` 3-way semantics (forwarded to
   _render_header). Default None makes main.py daily-loop callers emit
   placeholders; the web layer substitutes at request time.
+
+  Phase 17 D-04 — `trace_open_keys`: caller-supplied list of instrument keys
+  whose <details> should be open. Default None means all panels collapsed
+  (the daily-loop default). web/routes/dashboard.py passes None and instead
+  substitutes {{TRACE_OPEN_<KEY>}} placeholders per-request based on the
+  tsi_trace_open cookie. The trace_open parameter here is reserved for callers
+  that prefer pre-render injection over placeholder substitution.
+  Mutable-default avoided per LEARNINGS 2026-04-29: use None, not [].
   '''
   if now is None:
     perth = pytz.timezone('Australia/Perth')
@@ -2070,6 +2423,10 @@ def render_dashboard(
   # safe — no system_params import). Emits WARN log per dict-shaped
   # signal row that lacks the field (D-06 surfacing).
   strategy_version = _resolve_strategy_version(state)
+  # Phase 17 D-04: compute the set of open instrument keys (defensive
+  # allowlist filter via _resolve_trace_open_keys). main.py daily-loop passes
+  # None (all collapsed); web layer uses placeholder substitution instead.
+  _trace_open = _resolve_trace_open_keys(state, trace_open_keys or [])
   body = (
     _render_header(state, now, is_cookie_session=is_cookie_session)
     + _render_signal_cards(state)

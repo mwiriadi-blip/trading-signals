@@ -37,6 +37,28 @@ function handleTradesError(evt) {
   }
   errorBox.hidden = false;
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('details[data-instrument]').forEach(function(el) {
+    el.addEventListener('toggle', function() {
+      var openKeys = Array.from(
+        document.querySelectorAll('details[data-instrument][open]')
+      ).map(function(d) { return d.getAttribute('data-instrument'); }).join(',');
+      document.cookie = 'tsi_trace_open=' + openKeys
+        + '; Path=/; SameSite=Lax; Max-Age=7776000; Secure';
+    });
+  });
+  document.querySelectorAll('.trace-indicator-name').forEach(function(cell) {
+    cell.addEventListener('click', function() {
+      var isOpen = this.getAttribute('data-formula-open') === 'true';
+      var next = this.closest('tr').nextElementSibling;
+      if (next && next.classList.contains('formula-row')) {
+        next.hidden = isOpen;
+        this.setAttribute('data-formula-open', isOpen ? 'false' : 'true');
+      }
+    });
+  });
+});
   </script>
   <style>
 :root {
@@ -527,6 +549,27 @@ td.calc-cell.entry-target {
   font-size: var(--fs-label);
   color: var(--color-text-dim);
 }
+/* Phase 17 D-03/D-04: trace panels (inputs/indicators/vote) */
+.trace-disclosure { margin-top: var(--space-3); }
+.trace-summary { cursor: pointer; font-weight: 600; color: var(--color-text-muted); }
+.trace-panel { margin-top: var(--space-2); overflow-x: auto; }
+.trace-panel table { width: 100%; border-collapse: collapse; font-size: var(--fs-label); }
+.trace-panel td { padding: 2px 6px; border-bottom: 1px solid var(--color-border); }
+.trace-panel td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, 'Courier New', monospace;
+}
+.trace-panel td.date { color: var(--color-text-muted); }
+.trace-indicator-name { cursor: pointer; }  /* D-15 — Mobile Safari click fix */
+.formula-row td { font-size: 0.8em; color: var(--color-text-muted); font-style: italic; padding-left: 12px; }
+.trace-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 700; }
+.trace-badge.plus  { background: #166534; color: #dcfce7; }
+.trace-badge.minus { background: #7f1d1d; color: #fee2e2; }
+.trace-badge.zero  { background: #713f12; color: #fef9c3; }
+.trace-badge.pass  { background: #166534; color: #dcfce7; }
+.trace-badge.fail  { background: #7f1d1d; color: #fee2e2; }
+.trace-outcome { margin-top: var(--space-2); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -550,12 +593,78 @@ td.calc-cell.entry-target {
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 18.3  ·  Mom<sub>1</sub> -0.5%  ·  Mom<sub>3</sub> +0.1%  ·  Mom<sub>12</sub> +1.4%  ·  RVol 0.95</p>
     </article>
+<details class="trace-disclosure" data-instrument="SPI200"{{TRACE_OPEN_SPI200}}>
+  <summary class="trace-summary">Show calculations</summary>
+<section class="trace-panel">
+  <p><em>Awaiting first daily run — calculations will appear after the next 08:00 AWST cycle.</em></p>
+</section>
+<section class="trace-panel">
+  <p class="eyebrow">INDICATORS</p>
+  <table class="trace-indicators-table">
+    <tbody>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="TR = max(High - Low, |High - prev Close|, |Low - prev Close|)">TR</td><td class="num">n/a (need 1 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">TR = max(High - Low, |High - prev Close|, |Low - prev Close|)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)">ATR(14)</td><td class="num">n/a (need 14 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)">+DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)">-DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)">ADX(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}">Mom1</td><td class="num">n/a (need 2 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}">Mom3</td><td class="num">n/a (need 4 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}">Mom12</td><td class="num">n/a (need 13 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="RVol(20) = Volume_t / SMA(Volume, 20)">RVol(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">RVol(20) = Volume_t / SMA(Volume, 20)</td></tr>
+  </tbody></table>
+</section>
+<section class="trace-panel trace-vote">
+  <p><em>Awaiting first daily run.</em></p>
+</section>
+</details>
     <article class="card">
       <p class="eyebrow">AUD / USD</p>
       <p class="big-label" style="color: #22c55e">LONG</p>
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 27.3  ·  Mom<sub>1</sub> +1.5%  ·  Mom<sub>3</sub> +1.8%  ·  Mom<sub>12</sub> +2.2%  ·  RVol 0.95</p>
     </article>
+<details class="trace-disclosure" data-instrument="AUDUSD"{{TRACE_OPEN_AUDUSD}}>
+  <summary class="trace-summary">Show calculations</summary>
+<section class="trace-panel">
+  <p><em>Awaiting first daily run — calculations will appear after the next 08:00 AWST cycle.</em></p>
+</section>
+<section class="trace-panel">
+  <p class="eyebrow">INDICATORS</p>
+  <table class="trace-indicators-table">
+    <tbody>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="TR = max(High - Low, |High - prev Close|, |Low - prev Close|)">TR</td><td class="num">n/a (need 1 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">TR = max(High - Low, |High - prev Close|, |Low - prev Close|)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)">ATR(14)</td><td class="num">n/a (need 14 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)">+DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)">-DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)">ADX(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}">Mom1</td><td class="num">n/a (need 2 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}">Mom3</td><td class="num">n/a (need 4 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}">Mom12</td><td class="num">n/a (need 13 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="RVol(20) = Volume_t / SMA(Volume, 20)">RVol(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">RVol(20) = Volume_t / SMA(Volume, 20)</td></tr>
+  </tbody></table>
+</section>
+<section class="trace-panel trace-vote">
+  <p><em>Awaiting first daily run.</em></p>
+</section>
+</details>
   </div>
 </section>
 <section aria-labelledby="heading-equity">
