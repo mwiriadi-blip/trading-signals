@@ -478,6 +478,8 @@ TEST_NOTIFIER_PATH = Path('tests/test_notifier.py')
 REGENERATE_NOTIFIER_GOLDEN_PATH = Path('tests/regenerate_notifier_golden.py')
 # Phase 19 Wave 0: add pnl_engine.py to AST guard (D-14 + D-19)
 PNL_ENGINE_PATH = Path('pnl_engine.py')
+# Phase 20: alert_engine.py added to AST guard (D-10 + D-11 pure-math hex-tier)
+ALERT_ENGINE_PATH = Path('alert_engine.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
@@ -590,9 +592,12 @@ FORBIDDEN_MODULES_NOTIFIER = frozenset({
 
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
 # Phase 19: pnl_engine.py added to both lists (D-14 + D-19 pure-math hex-tier)
-_HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH]
+# Phase 20: alert_engine.py added to both lists (D-10 + D-11 pure-math hex-tier)
+_HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
+                  ALERT_ENGINE_PATH]
 # signal_engine.py legitimately uses numpy/pandas; Phase 2 modules must not
-_HEX_PATHS_STDLIB_ONLY = [SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH]
+_HEX_PATHS_STDLIB_ONLY = [SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
+                           ALERT_ENGINE_PATH]
 
 
 def _hash_series_values(values) -> str:
