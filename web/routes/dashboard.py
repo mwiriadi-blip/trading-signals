@@ -82,6 +82,14 @@ _PLACEHOLDER = b'{{WEB_AUTH_SECRET}}'
 _SIGNOUT_PLACEHOLDER = b'{{SIGNOUT_BUTTON}}'
 _SESSION_NOTE_PLACEHOLDER = b'{{SESSION_NOTE}}'
 
+# Phase 17 Plan 17-01 — trace-panel open-state cookie.
+# The unsigned UI-preference cookie `tsi_trace_open` carries a comma-separated
+# list of instrument keys whose <details> should be pre-expanded. The allowlist
+# prevents arbitrary attribute injection into the substituted HTML.
+_VALID_TRACE_INSTRUMENT_KEYS: frozenset = frozenset({'SPI200', 'AUDUSD'})
+_TRACE_OPEN_PLACEHOLDER_SPI200 = b'{{TRACE_OPEN_SPI200}}'
+_TRACE_OPEN_PLACEHOLDER_AUDUSD = b'{{TRACE_OPEN_AUDUSD}}'
+
 
 def _is_stale() -> bool:
   '''D-08: state.json mtime > dashboard.html mtime means regen needed.
@@ -126,6 +134,20 @@ def register(app: FastAPI) -> None:
       return False
     except BadSignature:
       return False
+
+  def _resolve_trace_open(request: Request) -> frozenset:
+    '''Read tsi_trace_open cookie and return allowlisted instrument keys.
+
+    The cookie value is a comma-separated list of instrument keys
+    (e.g. "SPI200,AUDUSD"). Only keys in _VALID_TRACE_INSTRUMENT_KEYS are
+    returned — all other values are discarded. Returns empty frozenset when
+    cookie absent or contains no valid keys.
+    '''
+    raw = request.cookies.get('tsi_trace_open', '')
+    if not raw:
+      return frozenset()
+    parts = {p.strip() for p in raw.split(',') if p.strip()}
+    return frozenset(parts & _VALID_TRACE_INSTRUMENT_KEYS)
 
   @app.get('/')
   def get_dashboard(request: Request, fragment: str | None = None):
@@ -246,6 +268,19 @@ def register(app: FastAPI) -> None:
         _SESSION_NOTE_PLACEHOLDER,
         _render_session_note().encode('utf-8'),
       )
+
+    # Phase 17 Plan 17-01: substitute tsi_trace_open cookie into
+    # <details data-instrument="X"{{TRACE_OPEN_X}}> placeholders.
+    # ' open' pre-expands the <details> element; empty string leaves it closed.
+    trace_open = _resolve_trace_open(request)
+    content = content.replace(
+      _TRACE_OPEN_PLACEHOLDER_SPI200,
+      b' open' if 'SPI200' in trace_open else b'',
+    )
+    content = content.replace(
+      _TRACE_OPEN_PLACEHOLDER_AUDUSD,
+      b' open' if 'AUDUSD' in trace_open else b'',
+    )
 
     if fragment is not None:
       # Extract the tbody whose id matches `fragment`. Returns inner HTML only.

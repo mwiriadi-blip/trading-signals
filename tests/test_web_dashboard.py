@@ -993,3 +993,113 @@ class TestSessionPlaceholderSubstitution:
     assert r.status_code == 200
     assert 'a' * 32 in r.text
     assert '{{WEB_AUTH_SECRET}}' not in r.text
+
+
+class TestTraceCookieAllowlist:
+  '''Phase 17 D-12 + D-16: tsi_trace_open cookie read + allowlist filter +
+  attribute-level placeholder substitution in web/routes/dashboard.py.
+
+  Four tests covering: no cookie, SPI200 only, both instruments, tampered
+  cookie with unknown keys (allowlist filter drops them silently).
+  '''
+
+  def _make_html_with_placeholders(self, path):
+    '''Write dashboard.html with both trace-open placeholders.'''
+    path.write_text(
+      '<html><body>'
+      '<details data-instrument="SPI200"{{TRACE_OPEN_SPI200}}>SPI200</details>'
+      '<details data-instrument="AUDUSD"{{TRACE_OPEN_AUDUSD}}>AUDUSD</details>'
+      '</body></html>',
+      encoding='utf-8',
+    )
+
+  def test_no_tsi_trace_open_cookie_substitutes_empty(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''D-12: no tsi_trace_open cookie -> placeholders replaced with empty
+    string -> no <details ... open> attribute.
+    '''
+    client, tmp, _ = client_with_dashboard
+    self._make_html_with_placeholders(tmp / 'dashboard.html')
+    r = client.get('/', headers=auth_headers)
+    assert r.status_code == 200
+    assert '{{TRACE_OPEN_SPI200}}' not in r.text, (
+      'D-12: SPI200 placeholder must be substituted (not raw)'
+    )
+    assert '{{TRACE_OPEN_AUDUSD}}' not in r.text, (
+      'D-12: AUDUSD placeholder must be substituted (not raw)'
+    )
+    # No cookie -> no "open" attribute on either details element.
+    assert 'data-instrument="SPI200" open' not in r.text, (
+      'D-12: no cookie -> SPI200 must NOT be open'
+    )
+    assert 'data-instrument="AUDUSD" open' not in r.text, (
+      'D-12: no cookie -> AUDUSD must NOT be open'
+    )
+
+  def test_tsi_trace_open_cookie_with_spi200_substitutes_open_for_spi200(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''D-12: tsi_trace_open=SPI200 -> SPI200 details gets " open" attribute,
+    AUDUSD stays closed.
+    '''
+    client, tmp, _ = client_with_dashboard
+    self._make_html_with_placeholders(tmp / 'dashboard.html')
+    r = client.get(
+      '/', headers=auth_headers,
+      cookies={'tsi_trace_open': 'SPI200'},
+    )
+    assert r.status_code == 200
+    assert 'data-instrument="SPI200" open' in r.text, (
+      'D-12: SPI200 in cookie -> <details ... open> must render'
+    )
+    assert 'data-instrument="AUDUSD" open' not in r.text, (
+      'D-12: AUDUSD not in cookie -> must NOT be open'
+    )
+
+  def test_tsi_trace_open_cookie_with_both_substitutes_open_for_both(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''D-12: tsi_trace_open=SPI200,AUDUSD -> both details get " open".'''
+    client, tmp, _ = client_with_dashboard
+    self._make_html_with_placeholders(tmp / 'dashboard.html')
+    r = client.get(
+      '/', headers=auth_headers,
+      cookies={'tsi_trace_open': 'SPI200,AUDUSD'},
+    )
+    assert r.status_code == 200
+    assert 'data-instrument="SPI200" open' in r.text, (
+      'D-12: SPI200 in cookie -> must be open'
+    )
+    assert 'data-instrument="AUDUSD" open' in r.text, (
+      'D-12: AUDUSD in cookie -> must be open'
+    )
+
+  def test_tsi_trace_open_cookie_tampered_unknown_keys_filtered(
+    self, client_with_dashboard, auth_headers,
+  ):
+    '''D-16 (RESEARCH §Security): unknown/tampered cookie values are
+    silently dropped by the allowlist filter. Only SPI200/AUDUSD are valid.
+    '''
+    client, tmp, _ = client_with_dashboard
+    self._make_html_with_placeholders(tmp / 'dashboard.html')
+    r = client.get(
+      '/', headers=auth_headers,
+      cookies={'tsi_trace_open': 'AAPL,EVIL_PAYLOAD,SPI200,javascript:alert(1)'},
+    )
+    assert r.status_code == 200
+    # Only SPI200 is in the allowlist — it should be open.
+    assert 'data-instrument="SPI200" open' in r.text, (
+      'D-16: SPI200 is a valid key — must be open even with mixed tampered cookie'
+    )
+    # AUDUSD is not in the cookie value, so it stays closed.
+    assert 'data-instrument="AUDUSD" open' not in r.text, (
+      'D-16: AUDUSD not in cookie -> must stay closed'
+    )
+    # Tampered values must NOT appear in rendered HTML.
+    assert 'AAPL' not in r.text, 'D-16: tampered key AAPL must not leak into HTML'
+    assert 'EVIL_PAYLOAD' not in r.text, 'D-16: tampered key EVIL_PAYLOAD must not leak'
+    assert 'javascript:alert(1)' not in r.text, 'D-16: XSS payload must not leak'
+    # Placeholders must be gone.
+    assert '{{TRACE_OPEN_SPI200}}' not in r.text
+    assert '{{TRACE_OPEN_AUDUSD}}' not in r.text
