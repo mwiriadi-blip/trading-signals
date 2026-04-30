@@ -1,9 +1,11 @@
 '''Phase 22 (v1.2) — STRATEGY_VERSION + STATE_SCHEMA_VERSION presence/format tests.
 Phase 17 (v1.2) — STATE_SCHEMA_VERSION bump 4->5 for ohlc_window + indicator_scalars.
+Phase 19 (v1.2) — STATE_SCHEMA_VERSION bump 5->6 for paper_trades[] top-level array.
 
 D-01 .. D-04 (22-CONTEXT.md): system_params owns the strategy-version contract
-plus the schema-version bump (3 -> 4 then 4 -> 5). These tests pin the public-API
-contract so any future bump is a deliberate test edit, not a silent constant change.
+plus the schema-version bump (3 -> 4 then 4 -> 5 then 5 -> 6). These tests pin the
+public-API contract so any future bump is a deliberate test edit, not a silent
+constant change.
 '''
 import re
 
@@ -79,10 +81,11 @@ class TestStateSchemaVersionV5:
 
   def test_state_schema_version_is_5(self) -> None:
     '''D-08: STATE_SCHEMA_VERSION bumped 4->5 at Phase 17 (ohlc_window +
-    indicator_scalars on signal rows).
+    indicator_scalars on signal rows). Now superseded by Phase 19 v6.
+    Guard: value must be >= 5 (was 5 at Phase 17; Phase 19 bumped to 6).
     '''
-    assert system_params.STATE_SCHEMA_VERSION == 5, (
-      f'D-08: STATE_SCHEMA_VERSION must be 5 at Phase 17; '
+    assert system_params.STATE_SCHEMA_VERSION >= 5, (
+      f'D-08: STATE_SCHEMA_VERSION must be >= 5 (was 5 at Phase 17, 6 at Phase 19); '
       f'got {system_params.STATE_SCHEMA_VERSION!r}'
     )
 
@@ -103,4 +106,69 @@ class TestStateSchemaVersionV5:
     assert system_params.STRATEGY_VERSION == 'v1.2.0', (
       f'Phase 17 D-08: schema bump must NOT change STRATEGY_VERSION; '
       f'got {system_params.STRATEGY_VERSION!r}'
+    )
+
+
+class TestStateSchemaVersionV6:
+  '''Phase 19 D-08: STATE_SCHEMA_VERSION bumped 5->6 for paper_trades[]
+  top-level array.
+
+  Five guards:
+    - test_state_schema_version_is_6: constant equals 6 (Phase 19 D-08).
+    - test_state_schema_version_is_int: isinstance int (regression guard).
+    - test_strategy_version_unchanged_at_v1_2_0: Phase 19 schema bump must NOT
+      change STRATEGY_VERSION (no signal logic change).
+    - test_spi_constants_unchanged: SPI_MULT==5.0, SPI_COST_AUD==6.0 (CLAUDE.md D-11
+      / Phase 2 lock — Phase 19 reuses).
+    - test_audusd_constants_unchanged: AUDUSD_NOTIONAL==10000.0, AUDUSD_COST_AUD==5.0.
+  '''
+
+  def test_state_schema_version_is_6(self) -> None:
+    '''D-08: STATE_SCHEMA_VERSION bumped 5->6 at Phase 19 (paper_trades[]
+    top-level array).
+    '''
+    assert system_params.STATE_SCHEMA_VERSION == 6, (
+      f'D-08: STATE_SCHEMA_VERSION must be 6 at Phase 19; '
+      f'got {system_params.STATE_SCHEMA_VERSION!r}'
+    )
+
+  def test_state_schema_version_is_int(self) -> None:
+    '''D-08: STATE_SCHEMA_VERSION must remain a plain int after Phase 19 bump.'''
+    assert isinstance(system_params.STATE_SCHEMA_VERSION, int), (
+      f'D-08: STATE_SCHEMA_VERSION must be int; '
+      f'got {type(system_params.STATE_SCHEMA_VERSION)!r}'
+    )
+    assert not isinstance(system_params.STATE_SCHEMA_VERSION, bool), (
+      'D-08: bool is an int subtype — guard against the bool trap'
+    )
+
+  def test_strategy_version_unchanged_at_v1_2_0(self) -> None:
+    '''Phase 19 has no signal logic change — STRATEGY_VERSION must still be v1.2.0
+    after the schema bump. Guards against accidental clobber.
+    '''
+    assert system_params.STRATEGY_VERSION == 'v1.2.0', (
+      f'Phase 19 D-08: schema bump must NOT change STRATEGY_VERSION; '
+      f'got {system_params.STRATEGY_VERSION!r}'
+    )
+
+  def test_spi_constants_unchanged(self) -> None:
+    '''CLAUDE.md D-11 / Phase 2 lock: SPI mini $5/pt, $6 AUD round-trip cost.
+    Phase 19 reuses these constants unchanged.
+    '''
+    assert system_params.SPI_MULT == 5.0, (
+      f'Phase 19: SPI_MULT must remain 5.0; got {system_params.SPI_MULT!r}'
+    )
+    assert system_params.SPI_COST_AUD == 6.0, (
+      f'Phase 19: SPI_COST_AUD must remain 6.0; got {system_params.SPI_COST_AUD!r}'
+    )
+
+  def test_audusd_constants_unchanged(self) -> None:
+    '''CLAUDE.md D-11 / Phase 2 lock: AUDUSD $10k notional, $5 AUD round-trip cost.
+    Phase 19 reuses these constants unchanged.
+    '''
+    assert system_params.AUDUSD_NOTIONAL == 10000.0, (
+      f'Phase 19: AUDUSD_NOTIONAL must remain 10000.0; got {system_params.AUDUSD_NOTIONAL!r}'
+    )
+    assert system_params.AUDUSD_COST_AUD == 5.0, (
+      f'Phase 19: AUDUSD_COST_AUD must remain 5.0; got {system_params.AUDUSD_COST_AUD!r}'
     )

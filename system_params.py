@@ -118,7 +118,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
 MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
-STATE_SCHEMA_VERSION: int = 5       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08)
+STATE_SCHEMA_VERSION: int = 6       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08)
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================
