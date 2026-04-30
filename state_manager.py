@@ -212,12 +212,27 @@ def _migrate_v4_to_v5(s: dict) -> dict:
   return s
 
 
+def _migrate_v5_to_v6(s: dict) -> dict:
+  '''Phase 19 (v1.2): introduce paper_trades array.
+
+  v5 rows had no paper_trades concept. Add empty list at top level.
+  Idempotent: never overwrite an existing populated paper_trades.
+
+  D-15 silent migration: no append_warning, no log line — operator-driven
+  ledger; first POST will populate it on demand.
+  '''
+  if 'paper_trades' not in s:
+    s['paper_trades'] = []
+  return s
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
   3: _migrate_v2_to_v3,  # Phase 14 D-09: backfill manual_stop on existing Positions
   4: _migrate_v3_to_v4,  # Phase 22 D-04/D-05/D-09: strategy_version on signal rows
   5: _migrate_v4_to_v5,  # Phase 17 D-08: ohlc_window + indicator_scalars on signal rows
+  6: _migrate_v5_to_v6,  # Phase 19 D-08: paper_trades[] top-level array
 }
 
 
