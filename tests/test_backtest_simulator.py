@@ -26,14 +26,17 @@ def _bull_5y_df(start='2020-01-01', n_bars=1300, base=7000.0, drift=0.5) -> pd.D
   }, index=idx)
 
 
-def _bear_to_bull_df(start='2020-01-01', n_bull=600, n_bear=600) -> pd.DataFrame:
-  """SHORT then LONG — produces a signal_reversal exit."""
-  idx_bear = pd.date_range(start=start, periods=n_bear, freq='B', tz='Australia/Perth')
-  bear_closes = [8000.0 - i * 1.0 for i in range(n_bear)]
-  idx_bull = pd.date_range(start=idx_bear[-1] + pd.Timedelta(days=3), periods=n_bull, freq='B', tz='Australia/Perth')
-  bull_closes = [bear_closes[-1] + i * 1.5 for i in range(n_bull)]
-  idx = idx_bear.append(idx_bull)
-  closes = bear_closes + bull_closes
+def _bull_to_bear_df(n_bull=400, n_bear=400, drift=10.0, base=7000.0) -> pd.DataFrame:
+  """LONG then SHORT — drift is steep enough that Mom1(21-bar return) clears
+  MOM_THRESHOLD=0.02. With drift=10/day from base=7000, Mom1 ≈ 21*10/7000 ≈ 0.030.
+  Produces stop_hit and signal-reversal exits suitable for cost-model assertions.
+  """
+  idx_bull = pd.date_range(start='2020-01-01', periods=n_bull, freq='B', tz='Australia/Perth')
+  bull_closes = [base + i * drift for i in range(n_bull)]
+  idx_bear = pd.date_range(start=idx_bull[-1] + pd.Timedelta(days=3), periods=n_bear, freq='B', tz='Australia/Perth')
+  bear_closes = [bull_closes[-1] - i * drift for i in range(n_bear)]
+  idx = idx_bull.append(idx_bear)
+  closes = bull_closes + bear_closes
   return pd.DataFrame({
     'Open':   [c - 5 for c in closes],
     'High':   [c + 10 for c in closes],
@@ -46,15 +49,15 @@ def _bear_to_bull_df(start='2020-01-01', n_bull=600, n_bear=600) -> pd.DataFrame
 class TestDeterminism:
   def test_simulate_returns_simresult(self):
     df = _bull_5y_df()
-    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 10_000.0)
+    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 100_000.0)
     assert isinstance(result, SimResult)
     assert len(result.equity_curve) == len(df)
     assert len(result.dates) == len(df)
 
   def test_two_runs_identical(self):
     df = _bull_5y_df()
-    a = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 10_000.0)
-    b = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 10_000.0)
+    a = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 100_000.0)
+    b = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 100_000.0)
     assert a.trades == b.trades
     assert a.equity_curve == b.equity_curve
     assert a.dates == b.dates
@@ -70,8 +73,8 @@ class TestDeterminism:
 
 class TestCostModel:
   def test_cost_aud_in_trade_log_is_full_round_trip(self):
-    df = _bear_to_bull_df()
-    result = simulate(df, 'SPI200', SPI_MULT, 6.0, 10_000.0)
+    df = _bull_to_bear_df()
+    result = simulate(df, 'SPI200', SPI_MULT, 6.0, 100_000.0)
     if not result.trades:
       pytest.skip('no trades closed in this synthetic frame')
     for t in result.trades:
@@ -79,8 +82,8 @@ class TestCostModel:
 
   def test_gross_minus_cost_equals_net(self):
     """gross_pnl_aud - (cost_aud / 2)*n = net_pnl_aud (since open-half already in unrealised)."""
-    df = _bear_to_bull_df()
-    result = simulate(df, 'SPI200', SPI_MULT, 6.0, 10_000.0)
+    df = _bull_to_bear_df()
+    result = simulate(df, 'SPI200', SPI_MULT, 6.0, 100_000.0)
     if not result.trades:
       pytest.skip('no trades')
     for t in result.trades:
@@ -97,8 +100,8 @@ class TestExitReasons:
   def test_exit_reason_verbatim_from_sizing_engine(self):
     """Per planner D-20: simulator preserves sizing_engine values verbatim;
     no remapping to D-05's 'signal_change'."""
-    df = _bear_to_bull_df()
-    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 10_000.0)
+    df = _bull_to_bear_df()
+    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 100_000.0)
     allowed = {'flat_signal', 'signal_reversal', 'trailing_stop', 'adx_drop',
                'manual_stop', 'stop_hit', 'adx_exit'}  # include sizing_engine raw values
     for t in result.trades:
@@ -109,13 +112,13 @@ class TestNanSafety:
   def test_warmup_bars_produce_no_trades(self):
     """First ~20 bars have NaN ATR/ADX — must produce FLAT signals, no exceptions."""
     df = _bull_5y_df(n_bars=30)
-    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 10_000.0)
+    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 100_000.0)
     assert len(result.equity_curve) == 30
     assert all(math.isfinite(b) for b in result.equity_curve)
 
   def test_short_frame_does_not_crash(self):
     df = _bull_5y_df(n_bars=5)  # below all warmups
-    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 10_000.0)
+    result = simulate(df, 'SPI200', SPI_MULT, SPI_COST_AUD, 100_000.0)
     assert result.trades == []
     assert len(result.equity_curve) == 5
-    assert result.final_account == 10_000.0
+    assert result.final_account == 100_000.0
