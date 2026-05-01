@@ -1,10 +1,11 @@
 ---
 phase: 23
 slug: five-year-backtest-validation-gate
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-05-01
+reviewed_at: 2026-05-01
 ---
 
 # Phase 23 — UI Design Contract
@@ -309,11 +310,11 @@ No new third-party HTML/JS is introduced by Phase 23. The Chart.js CDN was vette
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved (2026-05-01, gsd-ui-checker)
