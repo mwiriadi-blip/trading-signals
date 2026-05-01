@@ -93,6 +93,18 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 5. CLI: `python -m backtest --years 5` re-runs the backtest, prints summary, persists JSON to `.planning/backtests/<strategy_version>-<timestamp>.json`
 6. Result tagged with `strategy_version` from VERSION-01; multiple backtest runs across versions visible in `/backtest?history=true` view
 
+**Plans:** 7 plans
+
+Plans:
+- [ ] 23-01-wave0-scaffolding-PLAN.md — Wave 0 scaffolding: pyarrow pin, backtest/ skeleton, AST guard extension, golden fixture, test skeletons
+- [ ] 23-02-data-fetcher-PLAN.md — Wave 1A backtest/data_fetcher.py (yfinance + parquet cache + <5y bail)
+- [ ] 23-03-simulator-PLAN.md — Wave 1B backtest/simulator.py (bar-by-bar replay reusing signal_engine + sizing_engine)
+- [ ] 23-04-metrics-PLAN.md — Wave 1C backtest/metrics.py (Sharpe / max DD / win rate / expectancy / cum return)
+- [ ] 23-05-render-PLAN.md — Wave 2A backtest/render.py (3-tab HTML report + history + override form)
+- [ ] 23-06-cli-PLAN.md — Wave 2B backtest/cli.py (argparse + JSON write + exit codes + log lines)
+- [ ] 23-07-web-routes-PLAN.md — Wave 2C web/routes/backtest.py (4 routes + path-traversal + cookie auth)
+
+
 ## Phase Dependencies (build order)
 
 ```
