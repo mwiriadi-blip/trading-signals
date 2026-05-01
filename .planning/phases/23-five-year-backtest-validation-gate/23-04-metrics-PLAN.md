@@ -38,6 +38,13 @@ must_haves:
       pattern: "cummax"
 ---
 
+> **Operator confirmation required before /gsd-execute-phase 23:**
+> This plan implements planner-derived locked decision D-19 (dual sharpe — emit
+> both `sharpe_daily` raw and `sharpe_annualized = sharpe_daily × √252`).
+> CONTEXT D-05's metrics field name `sharpe_daily` stays verbatim for backward
+> compatibility; `sharpe_annualized` is added alongside it for display.
+> Confirm or revise CONTEXT D-05 before execute.
+
 <objective>
 Implement `backtest/metrics.py` — pure aggregation of equity curve + trades into the 7-field metrics block per CONTEXT D-05 (extended with `sharpe_annualized` per planner D-19). Replaces Wave 0 NotImplementedError.
 

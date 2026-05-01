@@ -38,6 +38,14 @@ must_haves:
       pattern: "from signal_engine import|from sizing_engine import"
 ---
 
+> **Operator confirmation required before /gsd-execute-phase 23:**
+> This plan implements planner-derived locked decision D-20 (`exit_reason` uses
+> sizing_engine's verbatim values: `flat_signal`, `signal_reversal`,
+> `trailing_stop`, `adx_drop`, `manual_stop` — NOT D-05's illustrative
+> `"signal_change"` example). The simulator emits these strings as-is from
+> sizing_engine.step output; no transformation. Confirm or revise CONTEXT D-05
+> before execute.
+
 <objective>
 Implement `backtest/simulator.py` — pure bar-by-bar replay reusing the live signal+sizing engines verbatim per CONTEXT D-10. Replaces Wave 0 NotImplementedError. The simulator is the heart of BACKTEST-01: it composes existing engines without modifying them.
 

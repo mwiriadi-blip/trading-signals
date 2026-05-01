@@ -42,6 +42,13 @@ must_haves:
       pattern: "json.dump"
 ---
 
+> **Operator confirmation required before /gsd-execute-phase 23:**
+> This plan implements planner-derived locked decisions D-19 (dual sharpe — emit
+> both `sharpe_daily` raw and `sharpe_annualized = sharpe_daily × √252`) and
+> D-20 (`exit_reason` uses sizing_engine's verbatim values: `flat_signal`,
+> `signal_reversal`, `trailing_stop`, `adx_drop`, `manual_stop` — NOT D-05's
+> illustrative `"signal_change"`). Confirm or revise CONTEXT D-05 before execute.
+
 <objective>
 Implement `backtest/cli.py` — the argparse adapter that orchestrates data_fetcher → simulator → metrics → JSON write. Replaces Wave 0 NotImplementedError. Reused by `web/routes/backtest.py` POST handler (Wave 2 Plan 07) for the override form.
 
@@ -273,7 +280,9 @@ No new external trust boundaries. CLI is operator-invoked locally; JSON output i
                             refresh: bool):
       """Fetch + simulate one instrument. Returns (sim_result, df_index_dates)."""
       symbol = INSTRUMENT_SYMBOLS[instrument]
-      logger.info('[Backtest] Fetching %s %s %s..%s', instrument, symbol, start, end)
+      # NOTE (Warning 4): data_fetcher emits '[Backtest] Fetching ... (cache hit/miss)'
+      # per CONTEXT D-11. Do NOT duplicate that log line here — exactly one
+      # '[Backtest] Fetching' line per instrument should appear in caplog.
       df = fetch_ohlcv(symbol, start, end, refresh=refresh)
       multiplier = INSTRUMENT_MULTIPLIERS[instrument]
       result = simulate(df, instrument, multiplier, cost_round_trip, initial_account)
@@ -578,10 +587,21 @@ No new external trust boundaries. CLI is operator-invoked locally; JSON output i
 
 
     class TestExitCode:
+      @pytest.mark.timeout(10)
       def test_pass_returns_zero(self, tmp_path, patched_fetcher):
+        # Warning 5 (D-18 perf budget regression guard): a 10x runtime regression
+        # against the ~120ms baseline (RESEARCH §Pattern 2) trips this 10s timeout.
+        # Manual droplet timing still owns the absolute 60s uvicorn bound.
+        import time as _time
+        _t0 = _time.time()
         out = tmp_path / 'pass.json'
         args = RunArgs(output=out)
         _, _, exit_code = run_backtest(args)
+        _elapsed = _time.time() - _t0
+        assert _elapsed < 5.0, (
+          f'5y backtest with stubbed fetch should complete <5s; got {_elapsed:.2f}s '
+          f'(absolute uvicorn bound is 60s; this is the cheap regression guard)'
+        )
         # Bull 5y df should produce >100% return
         report = json.loads(out.read_text())
         if report['metadata']['pass']:
@@ -607,18 +627,38 @@ No new external trust boundaries. CLI is operator-invoked locally; JSON output i
     class TestLogFormat:
       def test_log_lines_use_backtest_prefix(self, tmp_path, patched_fetcher, caplog):
         out = tmp_path / 'log.json'
-        with caplog.at_level(logging.INFO, logger='backtest.cli'):
+        with caplog.at_level(logging.INFO):
           args = RunArgs(output=out)
           run_backtest(args)
         messages = [r.getMessage() for r in caplog.records]
         joined = '\n'.join(messages)
-        assert '[Backtest] Fetching SPI200' in joined
-        assert '[Backtest] Fetching AUDUSD' in joined
+        # Warning 4: data_fetcher owns '[Backtest] Fetching <symbol>' lines;
+        # cli does NOT duplicate them. CLI emits Simulating/Combined/PASS-FAIL/Wrote.
         assert '[Backtest] Simulating SPI200' in joined
         assert '[Backtest] Simulating AUDUSD' in joined
         assert '[Backtest] Combined cum_return=' in joined
         assert ('[Backtest] PASS' in joined) or ('[Backtest] FAIL' in joined)
         assert '[Backtest] Wrote' in joined
+
+      def test_fetching_log_line_per_instrument_exactly_once(self, tmp_path,
+                                                              patched_fetcher, caplog):
+        # Warning 4 regression guard: data_fetcher emits exactly one
+        # '[Backtest] Fetching' line per instrument; cli must not duplicate.
+        # patched_fetcher stubs fetch_ohlcv directly so no '[Backtest] Fetching'
+        # line is emitted (the fetcher's logger never runs). The invariant we
+        # can still assert in this stubbed env: cli does NOT emit any
+        # '[Backtest] Fetching' line on its own.
+        out = tmp_path / 'log2.json'
+        with caplog.at_level(logging.INFO, logger='backtest.cli'):
+          args = RunArgs(output=out)
+          run_backtest(args)
+        messages = [r.getMessage() for r in caplog.records
+                    if r.name == 'backtest.cli']
+        cli_fetching = sum(1 for m in messages if '[Backtest] Fetching' in m)
+        assert cli_fetching == 0, (
+          f'cli must not emit [Backtest] Fetching (data_fetcher owns it); '
+          f'got {cli_fetching}'
+        )
 
 
     class TestStrategyVersionTagging:

@@ -312,9 +312,15 @@ df_read = pd.read_parquet(path, engine='pyarrow')  # round-trip preserves index
     )
 
 
-    def _make_5y_df(start: str = '2021-05-01', end: str = '2026-05-01') -> pd.DataFrame:
-      """Synthetic 5y daily OHLCV frame with TZ-aware DatetimeIndex."""
-      idx = pd.date_range(start=start, end=end, freq='B', tz='Australia/Perth')  # business days
+    def _make_5y_df(start: str = '2021-04-15', end: str = '2026-05-15') -> pd.DataFrame:
+      """Synthetic 5y+ calendar-daily OHLCV frame with TZ-aware DatetimeIndex.
+
+      Warning 3 fix: uses freq='D' (calendar daily) and slightly wider start/end
+      so the frame's calendar span comfortably exceeds 5 years. This lets the
+      tests below call the PRODUCTION min_years=5 threshold instead of the
+      previous min_years=4 workaround.
+      """
+      idx = pd.date_range(start=start, end=end, freq='D', tz='Australia/Perth')  # calendar days
       n = len(idx)
       return pd.DataFrame({
         'Open':   [7000.0 + i * 0.1 for i in range(n)],
@@ -345,7 +351,12 @@ df_read = pd.read_parquet(path, engine='pyarrow')  # round-trip preserves index
         mock = MagicMock()
         def _history(**kwargs):
           calls.append({'symbol': symbol, **kwargs})
-          return _make_5y_df(start=kwargs['start'], end=kwargs['end'])
+          # Widen synthetic frame by 60 days each side so calendar span comfortably
+          # exceeds min_years=5 regardless of the requested window (Warning 3).
+          import datetime as _dt
+          s = (_dt.date.fromisoformat(kwargs['start']) - _dt.timedelta(days=60)).isoformat()
+          e = (_dt.date.fromisoformat(kwargs['end']) + _dt.timedelta(days=60)).isoformat()
+          return _make_5y_df(start=s, end=e)
         mock.history = _history
         return mock
 
@@ -356,7 +367,7 @@ df_read = pd.read_parquet(path, engine='pyarrow')  # round-trip preserves index
     class TestCacheHitMiss:
       def test_cache_miss_calls_yfinance_and_writes_parquet(self, tmp_path, mock_yfinance):
         df = fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01',
-                        cache_dir=tmp_path, min_years=4)
+                        cache_dir=tmp_path, min_years=5)
         assert len(mock_yfinance) == 1
         assert mock_yfinance[0]['symbol'] == '^AXJO'
         cache_file = tmp_path / '^AXJO-2021-05-01-2026-05-01.parquet'
@@ -365,15 +376,15 @@ df_read = pd.read_parquet(path, engine='pyarrow')  # round-trip preserves index
 
       def test_cache_hit_skips_yfinance(self, tmp_path, mock_yfinance):
         # First call: cache miss
-        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=4)
+        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=5)
         assert len(mock_yfinance) == 1
         # Second call: cache hit (file just created, well under 24h old)
-        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=4)
+        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=5)
         assert len(mock_yfinance) == 1, 'second call should not invoke yfinance'
 
       def test_stale_cache_refetches(self, tmp_path, mock_yfinance, monkeypatch):
         # Seed cache
-        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=4)
+        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=5)
         assert len(mock_yfinance) == 1
         # Make cache appear 25h old
         cache_file = tmp_path / '^AXJO-2021-05-01-2026-05-01.parquet'
@@ -381,14 +392,14 @@ df_read = pd.read_parquet(path, engine='pyarrow')  # round-trip preserves index
         import os as _os
         _os.utime(cache_file, (old_ts, old_ts))
         # Next call must re-fetch
-        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=4)
+        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=5)
         assert len(mock_yfinance) == 2
 
 
     class TestParquetRoundTrip:
       def test_parquet_preserves_tz_aware_index(self, tmp_path, mock_yfinance):
         df1 = fetch_ohlcv('AUDUSD=X', '2021-05-01', '2026-05-01',
-                         cache_dir=tmp_path, min_years=4)
+                         cache_dir=tmp_path, min_years=5)
         # Read directly to bypass the cache-fresh path
         cache_file = tmp_path / 'AUDUSD=X-2021-05-01-2026-05-01.parquet'
         df2 = pd.read_parquet(cache_file, engine='pyarrow')
@@ -399,17 +410,17 @@ df_read = pd.read_parquet(path, engine='pyarrow')  # round-trip preserves index
 
       def test_required_columns_present(self, tmp_path, mock_yfinance):
         df = fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01',
-                        cache_dir=tmp_path, min_years=4)
+                        cache_dir=tmp_path, min_years=5)
         assert {'Open', 'High', 'Low', 'Close', 'Volume'}.issubset(set(df.columns))
 
 
     class TestRefreshFlag:
       def test_refresh_true_ignores_fresh_cache(self, tmp_path, mock_yfinance):
-        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=4)
+        fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01', cache_dir=tmp_path, min_years=5)
         assert len(mock_yfinance) == 1
         # refresh=True forces re-fetch even though cache is brand new
         fetch_ohlcv('^AXJO', '2021-05-01', '2026-05-01',
-                   cache_dir=tmp_path, min_years=4, refresh=True)
+                   cache_dir=tmp_path, min_years=5, refresh=True)
         assert len(mock_yfinance) == 2
 
 
