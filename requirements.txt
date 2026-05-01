@@ -15,3 +15,6 @@ ruff==0.6.9
 schedule==1.2.2
 uvicorn[standard]==0.46.0
 yfinance==1.2.0
+
+# Phase 23 — backtest module dep (parquet engine for cache I/O)
+pyarrow==24.0.0
