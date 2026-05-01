@@ -52,10 +52,10 @@
 
 ### BACKTEST — 5-year backtest validation gate (Phase 23)
 
-- [ ] **BACKTEST-01** — `backtest/` module added (hex-boundary respected: pure compute, no I/O, no `state_manager` import). Walks 5 years of OHLCV per instrument from yfinance, applies the live signal engine (`signal_engine.compute_indicators` + `get_signal`) bar-by-bar, simulates open/close per signal change, applies trailing stops + pyramid rules from `sizing_engine`, accumulates P&L.
-- [ ] **BACKTEST-02** — Runs across both instruments (SPI 200 + AUD/USD), aggregates equity curve, computes metrics: cumulative return %, Sharpe (daily), max drawdown, win rate, expectancy, total trades. Each result tagged with `strategy_version` (VERSION-01).
-- [ ] **BACKTEST-03** — `/backtest` route on dashboard renders the most recent backtest report: equity curve chart (Chart.js), metrics table, pass/fail badge. **Pass criterion: cumulative return > 100% over 5y**. Other metrics displayed but not gating.
-- [ ] **BACKTEST-04** — Backtest re-runnable on demand via CLI (`python -m backtest --years 5`) and on every `STRATEGY_VERSION` bump. Result persisted to `.planning/backtests/<strategy_version>-<timestamp>.json` for audit history. Fail-loud: if cumulative return ≤ 100%, the report renders with a red "FAIL" badge and the operator is expected to revert the strategy change.
+- [x] **BACKTEST-01** — `backtest/` module added (hex-boundary respected: pure compute, no I/O, no `state_manager` import). Walks 5 years of OHLCV per instrument from yfinance, applies the live signal engine (`signal_engine.compute_indicators` + `get_signal`) bar-by-bar, simulates open/close per signal change, applies trailing stops + pyramid rules from `sizing_engine`, accumulates P&L.
+- [x] **BACKTEST-02** — Runs across both instruments (SPI 200 + AUD/USD), aggregates equity curve, computes metrics: cumulative return %, Sharpe (daily), max drawdown, win rate, expectancy, total trades. Each result tagged with `strategy_version` (VERSION-01).
+- [x] **BACKTEST-03** — `/backtest` route on dashboard renders the most recent backtest report: equity curve chart (Chart.js), metrics table, pass/fail badge. **Pass criterion: cumulative return > 100% over 5y**. Other metrics displayed but not gating.
+- [x] **BACKTEST-04** — Backtest re-runnable on demand via CLI (`python -m backtest --years 5`) and on every `STRATEGY_VERSION` bump. Result persisted to `.planning/backtests/<strategy_version>-<timestamp>.json` for audit history. Fail-loud: if cumulative return ≤ 100%, the report renders with a red "FAIL" badge and the operator is expected to revert the strategy change.
 
 ---
 
@@ -81,10 +81,10 @@
 | VERSION-01 | 22 | Complete |
 | VERSION-02 | 22 | Complete |
 | VERSION-03 | 22 | Complete |
-| BACKTEST-01 | 23 | Pending |
-| BACKTEST-02 | 23 | Pending |
-| BACKTEST-03 | 23 | Pending |
-| BACKTEST-04 | 23 | Pending |
+| BACKTEST-01 | 23 | Complete |
+| BACKTEST-02 | 23 | Complete |
+| BACKTEST-03 | 23 | Complete |
+| BACKTEST-04 | 23 | Complete |
 
 ## Out of scope (deferred to v1.3 or later)
 

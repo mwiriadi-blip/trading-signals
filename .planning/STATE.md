@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Trader-Grade Transparency & Validation
-status: executing
+status: milestone_complete
 last_updated: "2026-05-01T10:50:58.021Z"
 last_activity: 2026-05-01
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 11
   completed_plans: 10
-  percent: 91
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -27,12 +27,12 @@ progress:
 
 ## Current Position
 
-Phase: 23 (five-year-backtest-validation-gate) — EXECUTING
-Plan: 1 of 7
+Phase: 23
+Plan: Not started
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Executing Phase 23
+- **Status:** Milestone complete
 - **Last activity:** 2026-05-01
 - **Progress:** [██████████] 100%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
