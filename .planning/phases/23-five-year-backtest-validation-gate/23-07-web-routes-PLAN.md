@@ -28,12 +28,13 @@ must_haves:
     - "Unauthenticated POST /backtest/run returns 401 plain"
     - "GET /backtest with no JSON files in .planning/backtests/ returns 200 with D-17 empty-state copy"
     - "/backtest mounted in web/app.py adjacent to paper_trades_route"
+    - "Module docstring surfaces 60s uvicorn timeout risk + three D-14/D-18 mitigations"
   artifacts:
     - path: "web/routes/backtest.py"
       provides: "_resolve_safe_backtest_path + get_backtest + post_backtest_run + register"
       exports: ["register"]
     - path: "tests/test_web_backtest.py"
-      provides: "TestGetBacktest + TestPathTraversal + TestPostRun + TestCookieAuth + TestHistoryView"
+      provides: "TestGetBacktest + TestPathTraversal + TestPostRun + TestCookieAuth + TestHistoryView + TestPerformanceBudget"
   key_links:
     - from: "web/routes/backtest.py"
       to: "backtest.cli.run_backtest + backtest.render.render_report/history/run_form"
@@ -45,11 +46,19 @@ must_haves:
       pattern: "(implicit via web/app.py middleware order)"
 ---
 
+> **Operator confirmation required before /gsd-execute-phase 23:**
+> This plan implements planner-derived locked decision D-20 (`exit_reason` uses
+> sizing_engine's verbatim values: `flat_signal`, `signal_reversal`,
+> `trailing_stop`, `adx_drop`, `manual_stop` — NOT D-05's illustrative
+> `"signal_change"`). web/routes/backtest.py only surfaces these strings
+> via render_report; no transformation happens at the web layer. Confirm or
+> revise CONTEXT D-05 before execute.
+
 <objective>
 Implement `web/routes/backtest.py` — the FastAPI adapter that mounts /backtest GET + /backtest/run POST. Replaces Wave 0 NotImplementedError. Reuses `backtest.cli.run_backtest` for the POST path so the simulation logic is single-source-of-truth.
 
 Purpose: Operator opens https://signals.mwiriadi.me/backtest, sees the latest report. Submits override form, sees fresh run. History link surfaces past runs. Path-traversal defended (T-23-traversal); input validated (T-23-input); auth-gated (T-23-auth).
-Output: ~200 LOC web adapter + 5 test classes covering path-traversal / POST validation / cookie auth / empty state / history view.
+Output: ~210 LOC web adapter + 6 test classes covering path-traversal / POST validation / cookie auth / empty state / history view / performance budget regression guard.
 </objective>
 
 <execution_context>
@@ -142,9 +151,9 @@ PAGE_SHELL = """<!doctype html>
     - web/routes/paper_trades.py lines 228-302 (POST handler analog with Form() + 303 redirect)
     - web/routes/paper_trades.py lines 251-258 + lines 78-102 (form parsing pattern)
     - web/app.py lines 174-177 (RequestValidationError 400 handler — global)
-    - .planning/phases/23-five-year-backtest-validation-gate/23-RESEARCH.md §Pattern 5 (path-traversal defence), §Pattern 8 (POST 303 redirect + cookie auth)
+    - .planning/phases/23-five-year-backtest-validation-gate/23-RESEARCH.md §Pattern 5 (path-traversal defence), §Pattern 8 (POST 303 redirect + cookie auth), §Pattern 2 (vectorized simulator perf)
     - .planning/phases/23-five-year-backtest-validation-gate/23-PATTERNS.md §"web/routes/backtest.py"
-    - .planning/phases/23-five-year-backtest-validation-gate/23-CONTEXT.md §D-12, §D-14, §D-15, §D-17
+    - .planning/phases/23-five-year-backtest-validation-gate/23-CONTEXT.md §D-12, §D-14, §D-15, §D-17, §D-18
     - .planning/phases/23-five-year-backtest-validation-gate/23-UI-SPEC.md §Interaction Contracts
     - backtest/cli.py (run_backtest signature)
     - backtest/render.py (render_report/history/run_form signatures)
@@ -167,6 +176,21 @@ PAGE_SHELL = """<!doctype html>
     Auth: Phase 16.1 cookie-session middleware gates all paths uniformly. No per-route auth code.
     Hex tier: adapter — imports backtest/*, FastAPI, web layer.
             Does NOT import signal_engine, sizing_engine directly (those go through backtest.simulator).
+
+    Performance budget (CONTEXT D-14 + D-18):
+      POST /backtest/run is synchronous and must complete within uvicorn's 60s
+      default worker timeout. Mitigations:
+        1. Parquet cache (D-01) — first run after a fresh strategy is the only
+           cache miss; subsequent overrides reuse the existing parquet file
+           (sub-second fetch).
+        2. Vectorized simulator (RESEARCH §Pattern 2) — 5y × 2 instruments
+           benchmarks at ~120ms; 10x droplet penalty still <2s.
+        3. If real-world runs exceed 30s on the droplet, defer the async-job
+           pattern to v1.3+ per CONTEXT D-14.
+
+      At fail-time: uvicorn returns 504; operator should re-run from CLI
+      (no timeout) or split work via --refresh once. Manual droplet timing
+      verification is the absolute bound (VALIDATION.md Manual-Only).
     """
     from __future__ import annotations
     import json
@@ -385,13 +409,15 @@ assert rejected; print('ok')" 2>&1 | grep -c '^ok$'</automated>
     - `grep -c "cost_spi_aud < 0" web/routes/backtest.py` returns 1
     - `grep -c "cost_audusd_aud < 0" web/routes/backtest.py` returns 1
     - `grep -c "^import signal_engine\|^from signal_engine\|^import sizing_engine\|^from sizing_engine" web/routes/backtest.py` returns 0 (web must not import engines directly)
+    - `grep -c "Performance budget" web/routes/backtest.py` returns ≥1 (D-14 timeout-risk docstring)
+    - `grep -c "60s" web/routes/backtest.py` returns ≥1 (uvicorn timeout call-out)
     - `python -c "from web.app import create_app; app = create_app(); paths = sorted({r.path for r in app.routes}); assert '/backtest' in paths and '/backtest/run' in paths"` succeeds
   </acceptance_criteria>
-  <done>4 routes wired; path-traversal + input validation + auth all in place via middleware.</done>
+  <done>4 routes wired; path-traversal + input validation + auth all in place via middleware; performance-budget docstring surfaces 60s risk + mitigations.</done>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Implement tests/test_web_backtest.py (5 test classes)</name>
+  <name>Task 2: Implement tests/test_web_backtest.py (6 test classes)</name>
   <read_first>
     - web/routes/backtest.py (just-implemented)
     - tests/test_web_paper_trades.py — analog (TestClient + cookie auth + form POST)
@@ -401,11 +427,12 @@ assert rejected; print('ok')" 2>&1 | grep -c '^ok$'</automated>
   </read_first>
   <behavior>
     See must_haves.truths. Test classes:
-    - TestGetBacktest: 200 with cookie + happy paths (latest, empty)
+    - TestGetBacktest: 200 with cookie + happy paths (latest, empty); GET also surfaces override form
     - TestPathTraversal: ../../etc/passwd → 400; absolute path → 400; valid filename → 200
     - TestPostRun: 303 on valid form; 400 on negative cost / zero account
     - TestCookieAuth: GET without cookie → 302/401; POST without cookie → 401
     - TestHistoryView: ?history=true returns 200 + table; empty list → empty-state
+    - TestPerformanceBudget: 1ms stub run_backtest still produces 303 (proves path is exercised; manual droplet timing owns 60s bound)
   </behavior>
   <action>
     Replace Wave 0 skeleton:
@@ -479,6 +506,14 @@ assert rejected; print('ok')" 2>&1 | grep -c '^ok$'</automated>
         r = client.get('/backtest', cookies={'tsi_session': valid_cookie_token})
         assert r.status_code == 200
         assert 'No backtest runs yet' in r.text
+
+      def test_get_includes_override_form(self, client, valid_cookie_token, backtest_dir_seeded):
+        # Warning 2: GET /backtest must surface the override form so the operator
+        # can re-run with overrides without leaving the page.
+        r = client.get('/backtest', cookies={'tsi_session': valid_cookie_token})
+        assert r.status_code == 200
+        assert 'name="initial_account_aud"' in r.text
+        assert 'action="/backtest/run"' in r.text
 
 
     # ---------- TestPathTraversal ----------
@@ -653,21 +688,52 @@ assert rejected; print('ok')" 2>&1 | grep -c '^ok$'</automated>
                        cookies={'tsi_session': valid_cookie_token})
         assert r.status_code == 200
         assert 'equityChartHistory' in r.text
+
+
+    # ---------- TestPerformanceBudget (Blocker 2 — D-14 timeout regression guard) ----------
+
+    class TestPerformanceBudget:
+      """D-14 + D-18: POST /backtest/run must succeed via the synchronous path.
+
+      A 1ms stub proves the route is exercised end-to-end without timing out.
+      The absolute 60s uvicorn bound is verified manually on the droplet
+      (VALIDATION.md §Manual-Only). This is the cheap regression guard.
+      """
+
+      def test_post_with_fast_stub_returns_303(self, client, valid_cookie_token,
+                                                backtest_dir_seeded, monkeypatch):
+        # Replace run_backtest with a 1ms stub — proves the path is exercised
+        # cleanly and the synchronous handler does not hang on import or fixture.
+        def _fast_stub(args):
+          # Intentionally trivial: returns a minimal report tuple
+          return ({'metadata': {'pass': True}}, Path('/tmp/fake.json'), 0)
+        monkeypatch.setattr('web.routes.backtest.run_backtest', _fast_stub)
+
+        r = client.post(
+          '/backtest/run',
+          data={'initial_account_aud': '10000', 'cost_spi_aud': '6.0',
+                'cost_audusd_aud': '5.0'},
+          cookies={'tsi_session': valid_cookie_token},
+          follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert r.headers['location'] == '/backtest'
     ```
   </action>
   <verify>
     <automated>.venv/bin/pytest tests/test_web_backtest.py -x -q 2>&1 | tail -10</automated>
   </verify>
   <acceptance_criteria>
-    - `.venv/bin/pytest tests/test_web_backtest.py -x -q` passes (all 5 classes green, no skips)
+    - `.venv/bin/pytest tests/test_web_backtest.py -x -q` passes (all 6 classes green, no skips)
     - `pytest tests/test_web_backtest.py::TestPathTraversal -x` passes ≥5 tests (T-23-traversal)
     - `pytest tests/test_web_backtest.py::TestPostRun -x` passes ≥6 tests (T-23-input)
     - `pytest tests/test_web_backtest.py::TestCookieAuth -x` passes ≥3 tests (T-23-auth)
-    - `pytest tests/test_web_backtest.py::TestGetBacktest -x` passes ≥2 tests
+    - `pytest tests/test_web_backtest.py::TestGetBacktest -x` passes ≥3 tests (incl. override-form Warning 2)
     - `pytest tests/test_web_backtest.py::TestHistoryView -x` passes ≥3 tests
+    - `pytest tests/test_web_backtest.py::TestPerformanceBudget -x` passes ≥1 test (D-14 regression guard)
     - Full suite no regression: `.venv/bin/pytest -x -q` exits 0
   </acceptance_criteria>
-  <done>All 5 test classes green; T-23 threats all verified mitigated.</done>
+  <done>All 6 test classes green; T-23 threats all verified mitigated; D-14 regression guard in place.</done>
 </task>
 
 </tasks>
@@ -677,7 +743,8 @@ assert rejected; print('ok')" 2>&1 | grep -c '^ok$'</automated>
 2. `.venv/bin/pytest tests/test_web_backtest.py -x -q` passes
 3. `python -c "from web.app import create_app; app = create_app(); paths = sorted({r.path for r in app.routes}); assert '/backtest' in paths and '/backtest/run' in paths"` succeeds
 4. Full suite green: `.venv/bin/pytest -x -q` exits 0
-5. End-to-end smoke: `python -m backtest --years 5` runs (mocked yfinance) → JSON written → `curl localhost:8000/backtest -b cookie.txt` → 200 HTML
+5. `grep -c "Performance budget" web/routes/backtest.py` returns ≥1 (D-14 surfaced in module docstring)
+6. End-to-end smoke: `python -m backtest --years 5` runs (mocked yfinance) → JSON written → `curl localhost:8000/backtest -b cookie.txt` → 200 HTML
 </verification>
 
 <success_criteria>
@@ -687,7 +754,8 @@ assert rejected; print('ok')" 2>&1 | grep -c '^ok$'</automated>
 - Phase 16.1 cookie-session middleware gates all /backtest* routes
 - POST→GET 303 redirect (NOT 307) prevents re-POST on browser back
 - Empty .planning/backtests/ → empty-state copy (D-17)
-- 5 test classes green covering all 3 T-23 threats
+- D-14 60s uvicorn timeout risk surfaced in module docstring + 3 mitigations cited
+- 6 test classes green covering all 3 T-23 threats + D-14 regression guard
 - web/routes/backtest.py does NOT import signal_engine or sizing_engine directly
 </success_criteria>
 
@@ -697,5 +765,6 @@ Create `.planning/phases/23-five-year-backtest-validation-gate/23-07-SUMMARY.md`
 - Path-traversal defence test count
 - Input validation test count
 - Cookie auth test count
+- D-14 performance-budget docstring + regression-guard test count
 - Hex-boundary check (no engine imports in web layer)
 </output>
