@@ -18,7 +18,7 @@ must_haves:
   truths:
     - "render_report(report) returns full HTML body fragment with three Chart.js tab containers (combined/spi200/audusd)"
     - "render_history(reports) returns table + 10-run-cap overlay chart + back link"
-    - "render_run_form(defaults) returns form with three numeric inputs + submit button"
+    - "render_run_form(defaults) returns form with three numeric inputs + submit button + D-14 spinner CSS + inline disable-submit script"
     - "All three render functions inject Chart.js data via json.dumps(...).replace('</', '<\\\\/') (RESEARCH §Pattern 4) — never html.escape on JS data"
     - "Chart.js 4.4.6 UMD URL + SRI hash present verbatim in script tag"
     - "Pass/fail badge renders ✓ PASS green or ✗ FAIL red per CONTEXT D-16 + UI-SPEC"
@@ -30,7 +30,7 @@ must_haves:
       provides: "render_report(), render_history(), render_run_form()"
       exports: ["render_report", "render_history", "render_run_form"]
     - path: "tests/test_backtest_render.py"
-      provides: "TestRenderReport + TestChartJsSri + TestRenderHistory + TestRenderRunForm + TestEmptyState + TestJsonInjectionDefence"
+      provides: "TestRenderReport + TestChartJsSri + TestRenderHistory + TestRenderRunForm + TestEmptyState + TestJsonInjectionDefence + TestSubmitButtonDisableUX"
   key_links:
     - from: "backtest/render.py"
       to: "Chart.js CDN (cdn.jsdelivr.net/npm/chart.js@4.4.6)"
@@ -38,11 +38,17 @@ must_haves:
       pattern: "_CHARTJS_SRI"
 ---
 
+> **Operator confirmation required before /gsd-execute-phase 23:**
+> This plan implements planner-derived locked decision D-19 (dual sharpe — emit
+> both `sharpe_daily` raw and `sharpe_annualized = sharpe_daily × √252`) — the
+> metrics row in `_render_metrics_row` displays the annualised value while
+> persisting both. Confirm or revise CONTEXT D-05 before execute.
+
 <objective>
-Implement `backtest/render.py` — pure HTML render for the /backtest report page (3-tab layout), the history view (`?history=true`), and the operator override form (D-14). Replaces Wave 0 NotImplementedError.
+Implement `backtest/render.py` — pure HTML render for the /backtest report page (3-tab layout), the history view (`?history=true`), and the operator override form (D-14, including spinner + disable-submit UX). Replaces Wave 0 NotImplementedError.
 
 Purpose: Produce a self-contained HTML body that mounts in the FastAPI route handler. Hex-pure (no I/O, no env reads); does NOT import dashboard.py.
-Output: ~250 LOC render module + 6 test classes covering structure + Chart.js SRI + JSON injection defence + empty-state copy.
+Output: ~280 LOC render module + 7 test classes covering structure + Chart.js SRI + JSON injection defence + empty-state copy + D-14 submit UX.
 </objective>
 
 <execution_context>
@@ -73,7 +79,7 @@ def render_history(reports: list[dict]) -> str:
   """
 
 def render_run_form(defaults: dict) -> str:
-  """Returns HTML form fragment: 3 numeric inputs + submit button.
+  """Returns HTML form fragment: 3 numeric inputs + submit button + D-14 spinner + disable script.
   defaults = {'initial_account_aud': 10000.0, 'cost_spi_aud': 6.0, 'cost_audusd_aud': 5.0}
   """
 
@@ -123,7 +129,7 @@ FAIL_WORD = 'FAIL'
     - tests/fixtures/backtest/golden_report.json (Wave 0 fixture — render input)
     - .planning/phases/23-five-year-backtest-validation-gate/23-RESEARCH.md §Pattern 3 (Chart.js multi-instance ARIA tabs), §Pattern 4 (JSON injection defence)
     - .planning/phases/23-five-year-backtest-validation-gate/23-PATTERNS.md §"backtest/render.py"
-    - .planning/phases/23-five-year-backtest-validation-gate/23-UI-SPEC.md (full design contract — copywriting + tabs + badge)
+    - .planning/phases/23-five-year-backtest-validation-gate/23-UI-SPEC.md (full design contract — copywriting + tabs + badge + spinner)
     - .planning/phases/23-five-year-backtest-validation-gate/23-CONTEXT.md §D-04, §D-06, §D-07, §D-14, §D-16, §D-17
   </read_first>
   <behavior>
@@ -138,6 +144,7 @@ FAIL_WORD = 'FAIL'
     - Test 9: render_run_form defaults: initial_account_aud=10000, cost_spi_aud=6, cost_audusd_aud=5
     - Test 10: JSON-injection defence — payload containing `</script>` becomes `<\/script>` in output
     - Test 11: html.escape applied to operator-visible strings (e.g. exit_reason="<script>alert(1)</script>" rendered escaped in trade table)
+    - Test 12 (D-14): render_run_form output contains spinner CSS (class="spinner", @keyframes spin), submit-disable script (b.disabled=true, form.classList.add("running"), label "Running… (this can take up to 60s)")
   </behavior>
   <action>
     Replace `backtest/render.py` Wave 0 stub with full implementation. Keep _CHARTJS_URL/_CHARTJS_SRI from Wave 0 verbatim.
@@ -344,7 +351,14 @@ FAIL_WORD = 'FAIL'
 
 
     def render_run_form(defaults: dict) -> str:
-      """Phase 23 D-14 — operator override form."""
+      """Phase 23 D-14 — operator override form.
+
+      D-14 + UI-SPEC §"Long-running submit UX": on submit, disable the button,
+      change label to "Running… (this can take up to 60s)", show a CSS-only
+      amber spinner ring (16px, 1s rotation), and set aria-disabled="true".
+      Inline ~8 LOC <script> handles the disable + label swap. This prevents
+      double-submission during the synchronous 30-60s POST.
+      """
       ia = float(defaults.get('initial_account_aud', 10_000.0))
       cs = float(defaults.get('cost_spi_aud', 6.0))
       ca = float(defaults.get('cost_audusd_aud', 5.0))
@@ -361,6 +375,25 @@ FAIL_WORD = 'FAIL'
         f'<input type="number" id="cost_audusd_aud" name="cost_audusd_aud" '
         f'value="{ca:.2f}" min="0" step="0.5" required aria-required="true">'
         '<button type="submit" class="btn-primary">Run with overrides</button>'
+        # D-14 + UI-SPEC §"Long-running submit UX" — spinner + disable on submit
+        '<style>'
+        '.spinner{display:none;width:16px;height:16px;border:2px solid #eab308;'
+        'border-top-color:transparent;border-radius:50%;'
+        'animation:spin 1s linear infinite;vertical-align:middle;margin-left:8px}'
+        '@keyframes spin{to{transform:rotate(360deg)}}'
+        'form.running .spinner{display:inline-block}'
+        '</style>'
+        '<span class="spinner" aria-hidden="true"></span>'
+        '<script>'
+        '(function(){'
+        'var f=document.querySelector(\'form.override-form\');if(!f)return;'
+        'f.addEventListener("submit",function(){'
+        'var b=f.querySelector(\'button[type="submit"]\');'
+        'if(b){b.disabled=true;b.setAttribute("aria-disabled","true");'
+        'b.textContent="Running… (this can take up to 60s)";}'
+        'f.classList.add("running");'
+        '});})();'
+        '</script>'
         '</form>'
       )
 
@@ -501,7 +534,7 @@ FAIL_WORD = 'FAIL'
     ```
   </action>
   <verify>
-    <automated>python -c "import json, pathlib; from backtest.render import render_report, render_history, render_run_form; r = json.loads(pathlib.Path('tests/fixtures/backtest/golden_report.json').read_text()); html = render_report(r); assert 'equityChartCombined' in html; assert 'equityChartSpi200' in html; assert 'equityChartAudusd' in html; assert 'sha384-MH1axGwz' in html; assert '✓' in html or 'PASS' in html; print('ok')" 2>&1 | grep -c '^ok$'</automated>
+    <automated>python -c "import json, pathlib; from backtest.render import render_report, render_history, render_run_form; r = json.loads(pathlib.Path('tests/fixtures/backtest/golden_report.json').read_text()); html = render_report(r); assert 'equityChartCombined' in html; assert 'equityChartSpi200' in html; assert 'equityChartAudusd' in html; assert 'sha384-MH1axGwz' in html; assert '✓' in html or 'PASS' in html; assert 'class=\"spinner\"' in html; assert '@keyframes spin' in html; assert 'Running… (this can take up to 60s)' in html; print('ok')" 2>&1 | grep -c '^ok$'</automated>
   </verify>
   <acceptance_criteria>
     - `grep -c '^def render_report' backtest/render.py` returns 1
@@ -511,19 +544,23 @@ FAIL_WORD = 'FAIL'
     - `grep -c "_CHARTJS_SRI = 'sha384-MH1axGwz" backtest/render.py` returns 1
     - `grep -c '^import dashboard\|^from dashboard' backtest/render.py` returns 0 (D-07)
     - `grep -c "json.dumps" backtest/render.py` returns ≥1 (Chart.js payload defence)
-    - `grep -c "replace('</', '<\\\\\\\\\\\\/')" backtest/render.py` returns ≥1 (or check for the literal substring; alternative grep below)
     - `grep -F "replace('</', '<\\\\/')" backtest/render.py | wc -l` returns ≥1
     - `grep -c 'html.escape' backtest/render.py` returns ≥1
     - `grep -c 'role="tab"' backtest/render.py` returns ≥3 (3 tabs)
     - `grep -c 'role="tabpanel"' backtest/render.py` returns ≥3 (3 panels)
+    - `grep -c 'class="spinner"' backtest/render.py` returns ≥1 (D-14 spinner)
+    - `grep -c '@keyframes spin' backtest/render.py` returns 1 (D-14 spinner CSS)
+    - `grep -c 'classList.add("running")' backtest/render.py` returns 1 (D-14 disable)
+    - `grep -c 'b.disabled=true' backtest/render.py` returns 1 (D-14 disable)
+    - `grep -F 'Running… (this can take up to 60s)' backtest/render.py | wc -l` returns ≥1 (D-14 label swap)
     - `.venv/bin/pytest tests/test_signal_engine.py::TestDeterminism::test_backtest_render_no_forbidden_imports -x -q` passes
     - `python -c "import json, pathlib; from backtest.render import render_report; r = json.loads(pathlib.Path('tests/fixtures/backtest/golden_report.json').read_text()); html = render_report(r); print(len(html))"` returns >2000 (non-trivial HTML body)
   </acceptance_criteria>
-  <done>render_report/history/run_form callable; AST guard green; golden fixture renders successfully.</done>
+  <done>render_report/history/run_form callable; AST guard green; golden fixture renders successfully; D-14 spinner + disable UX present.</done>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Implement tests/test_backtest_render.py (6 test classes)</name>
+  <name>Task 2: Implement tests/test_backtest_render.py (7 test classes)</name>
   <read_first>
     - backtest/render.py (just-implemented)
     - tests/fixtures/backtest/golden_report.json
@@ -533,6 +570,7 @@ FAIL_WORD = 'FAIL'
   </read_first>
   <behavior>
     See task 1 behavior list. Each test class targets one render area + edge cases.
+    TestSubmitButtonDisableUX (NEW) verifies D-14 spinner + disable contract.
   </behavior>
   <action>
     Replace Wave 0 skeleton:
@@ -653,21 +691,11 @@ FAIL_WORD = 'FAIL'
         # Table shows all 12
         assert html.count('<tr>') >= 12
         # But overlay chart only includes 10 (count datasets via JSON payload)
-        # Look for "label":"v0..." through v11 — only first 10 present in chart payload
-        # Simpler check: count occurrences of '"label":"v' in the JSON IIFE
-        # (capped slice = runs[:10])
-        # Just assert v10 + v11 NOT in the chart payload IIFE area
-        chart_block = html.split('id="equityChartHistory"')[-1] if 'equityChartHistory' in html else ''
-        # Hard to slice precisely; use the simpler invariant: overlay capped
-        # Verify by counting label entries — should be exactly 10 in the JSON payload
-        # (combined approach: split by IIFE marker)
         if '"datasets":' in html:
-          # Parse the chart datasets count
           import re
           # Find the IIFE chart block
           m = re.search(r'var p=\{[^;]*?"datasets":\[(.*?)\]', html, re.DOTALL)
           if m:
-            # Count "label": occurrences inside datasets array
             datasets_str = m.group(1)
             assert datasets_str.count('"label"') == 10, (
               f'overlay should cap at 10 datasets, got {datasets_str.count(chr(34) + "label" + chr(34))}'
@@ -718,10 +746,7 @@ FAIL_WORD = 'FAIL'
         r = json.loads(json.dumps(golden_report))
         r['equity_curve'][0]['date'] = '</script><script>alert(1)</script>'
         html = render_report(r)
-        # The payload IIFE block must NOT contain a raw </script> close tag;
-        # json.dumps + replace turns </ into <\/ inside the script block.
-        # Find the IIFE script blocks
-        # Simpler: any literal `</script>alert` indicates injection succeeded
+        # The payload IIFE block must NOT contain a raw </script> close tag inline.
         assert '</script>alert' not in html, 'JSON injection defence failed'
         # The escaped form should be present somewhere if the date made it in
         assert '<\\/script>' in html or '<\\/' in html
@@ -733,19 +758,72 @@ FAIL_WORD = 'FAIL'
         # escaped: < becomes &lt;
         assert '&lt;img src=x onerror=alert(1)&gt;' in html or '&lt;img' in html
         assert '<img src=x onerror=alert(1)>' not in html
+
+
+    class TestSubmitButtonDisableUX:
+      """D-14 + UI-SPEC §"Long-running submit UX" — spinner + disable on submit."""
+
+      def test_spinner_class_present(self):
+        html = render_run_form({})
+        assert 'class="spinner"' in html, 'spinner element missing (D-14)'
+
+      def test_keyframes_spin_present(self):
+        html = render_run_form({})
+        assert '@keyframes spin' in html, 'spinner CSS animation missing (D-14)'
+
+      def test_form_running_class_added_on_submit(self):
+        html = render_run_form({})
+        assert 'classList.add("running")' in html, (
+          'submit handler must add running class to show spinner (D-14)'
+        )
+
+      def test_button_disabled_on_submit(self):
+        html = render_run_form({})
+        assert 'b.disabled=true' in html, (
+          'submit handler must disable button to prevent double-submit (D-14)'
+        )
+
+      def test_aria_disabled_set_on_submit(self):
+        html = render_run_form({})
+        assert 'setAttribute("aria-disabled","true")' in html, (
+          'submit handler must set aria-disabled for assistive tech (D-14)'
+        )
+
+      def test_label_swap_on_submit(self):
+        html = render_run_form({})
+        assert 'Running… (this can take up to 60s)' in html, (
+          'submit handler must swap label per D-14 UI-SPEC verbatim'
+        )
+
+      def test_spinner_in_render_report_output(self):
+        # Must also surface inside render_report's embedded form
+        sample = {
+          'metadata': {'strategy_version': 'v1.2.0', 'years': 5,
+                       'run_dt': '2026-05-01T08:00:00+08:00',
+                       'initial_account_aud': 10000.0,
+                       'cost_spi_aud': 6.0, 'cost_audusd_aud': 5.0},
+          'metrics': {'combined': {'pass': True, 'cumulative_return_pct': 127.0}},
+          'equity_curve': [{'date': '2021-05-01', 'balance_combined': 10000.0,
+                            'balance_spi': 5000.0, 'balance_audusd': 5000.0}],
+          'trades': [],
+        }
+        html = render_report(sample)
+        assert 'class="spinner"' in html
+        assert '@keyframes spin' in html
     ```
   </action>
   <verify>
     <automated>.venv/bin/pytest tests/test_backtest_render.py -x -q 2>&1 | tail -10</automated>
   </verify>
   <acceptance_criteria>
-    - `.venv/bin/pytest tests/test_backtest_render.py -x -q` passes (all 6 classes green, no skips)
+    - `.venv/bin/pytest tests/test_backtest_render.py -x -q` passes (all 7 classes green, no skips)
     - `pytest tests/test_backtest_render.py::TestChartJsSri -x` ≥3 tests passing
     - `pytest tests/test_backtest_render.py::TestJsonInjectionDefence -x` ≥2 tests passing
     - `pytest tests/test_backtest_render.py::TestEmptyState -x` ≥2 tests passing
+    - `pytest tests/test_backtest_render.py::TestSubmitButtonDisableUX -x` ≥6 tests passing (D-14 contract)
     - Full suite no regression
   </acceptance_criteria>
-  <done>All 6 test classes green; XSS + JSON-injection defences validated.</done>
+  <done>All 7 test classes green; XSS + JSON-injection defences validated; D-14 submit UX validated.</done>
 </task>
 
 </tasks>
@@ -755,7 +833,8 @@ FAIL_WORD = 'FAIL'
 2. `.venv/bin/pytest tests/test_backtest_render.py -x -q` passes
 3. `.venv/bin/pytest tests/test_signal_engine.py::TestDeterminism -x -q` continues to pass
 4. `grep -c "import dashboard" backtest/render.py` returns 0 (D-07)
-5. Full suite green
+5. `grep -c '@keyframes spin' backtest/render.py` returns 1 (D-14)
+6. Full suite green
 </verification>
 
 <success_criteria>
@@ -765,7 +844,8 @@ FAIL_WORD = 'FAIL'
 - JSON injection defence applied to all <script> data blocks
 - html.escape applied to operator-visible strings
 - Empty-state copy verbatim from CONTEXT D-17 + UI-SPEC
-- 6 test classes green
+- D-14 spinner + disable-submit UX in render_run_form (CSS keyframes + inline script)
+- 7 test classes green
 </success_criteria>
 
 <output>
@@ -773,5 +853,6 @@ Create `.planning/phases/23-five-year-backtest-validation-gate/23-05-SUMMARY.md`
 - 3 render functions signatures
 - Chart.js SRI presence proof
 - XSS defence proof
+- D-14 spinner + disable UX proof
 - Test count + pass status
 </output>
