@@ -227,7 +227,7 @@ class TestLoopDriver:
 
   def test_non_utc_process_raises(self, monkeypatch) -> None:
     monkeypatch.setattr('main._get_process_tzname', lambda: 'AEST')
-    with pytest.raises(AssertionError, match='must be UTC'):
+    with pytest.raises(RuntimeError, match='must be UTC'):
       main_module._run_schedule_loop(
         job=lambda args: (0, None, None, None),
         args=argparse.Namespace(),
@@ -804,7 +804,7 @@ class TestCrashEmailLayerB:
     rc = main_module.main([])
     assert rc == 1
     assert len(recorded) == 1
-    assert isinstance(recorded[0][0], AssertionError)
+    assert isinstance(recorded[0][0], RuntimeError)
 
   def test_layer_a_per_job_error_does_not_fire_crash_email(
       self, monkeypatch, caplog) -> None:

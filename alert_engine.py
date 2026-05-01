@@ -21,9 +21,6 @@ import math
 from typing import Literal
 
 
-AlertState = Literal['CLEAR', 'APPROACHING', 'HIT']
-
-
 def compute_alert_state(
   side: str,
   today_low: float,

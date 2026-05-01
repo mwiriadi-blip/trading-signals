@@ -44,6 +44,15 @@ logger = logging.getLogger(__name__)
 # F-01 schema constant — Phase 18 will detect-and-migrate via this field.
 SCHEMA_VERSION = 1
 
+
+def _ensure_aware(dt: datetime) -> datetime:
+  '''Coerce naive datetime to UTC. All auth_store writes use UTC;
+  naive values come from manual edits or pre-timezone-aware code.
+  '''
+  if dt.tzinfo is None:
+    return dt.replace(tzinfo=timezone.utc)
+  return dt
+
 # Default path. auth_store helpers accept `path: Path = ...` kwarg so tests
 # can redirect writes to tmp_path. Production callers omit the kwarg.
 DEFAULT_AUTH_PATH = Path('auth.json')
@@ -414,7 +423,7 @@ def consume_magic_link(
     if row['consumed']:
       return (False, None)
     try:
-      expires_at_dt = datetime.fromisoformat(row['expires_at'])
+      expires_at_dt = _ensure_aware(datetime.fromisoformat(row['expires_at']))
     except (TypeError, ValueError):
       return (False, None)
     if expires_at_dt < now:
@@ -440,7 +449,7 @@ def count_recent_magic_links(
   count = 0
   for row in data['pending_magic_links']:
     try:
-      created_at_dt = datetime.fromisoformat(row['created_at'])
+      created_at_dt = _ensure_aware(datetime.fromisoformat(row['created_at']))
     except (TypeError, ValueError):
       continue
     if created_at_dt > cutoff:
@@ -464,7 +473,7 @@ def purge_expired_magic_links(
   kept: list[PendingMagicLink] = []
   for row in data['pending_magic_links']:
     try:
-      expires_at_dt = datetime.fromisoformat(row['expires_at'])
+      expires_at_dt = _ensure_aware(datetime.fromisoformat(row['expires_at']))
     except (TypeError, ValueError):
       kept.append(row)
       continue

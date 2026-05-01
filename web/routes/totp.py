@@ -40,6 +40,8 @@ from fastapi.responses import HTMLResponse, Response
 from itsdangerous import BadSignature, SignatureExpired
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
+from web.routes.login import _is_safe_next
+
 logger = logging.getLogger(__name__)
 
 ENROLL_PATH = '/enroll-totp'
@@ -99,27 +101,6 @@ def _derive_device_label(
 
   date_str = granted_at_iso.split('T')[0] if 'T' in granted_at_iso else granted_at_iso
   return f'{name} · {ip_label} · {date_str}'
-
-# Reuse the open-redirect validator from web.routes.login (same shape, single
-# source of truth — no separate copy here).
-
-
-def _is_safe_next(next_value) -> bool:
-  if not isinstance(next_value, str) or not next_value:
-    return False
-  if len(next_value) > 512:
-    return False
-  if not next_value.startswith('/'):
-    return False
-  if next_value.startswith('//') or next_value.startswith('/\\'):
-    return False
-  if '\\' in next_value or '://' in next_value:
-    return False
-  for ch in next_value:
-    if ord(ch) < 0x20 or ch == '\x7f':
-      return False
-  return True
-
 
 # Inline CSS — same token block as login.py. Locked subset of UI-SPEC §Surface
 # (palette tokens + form rules + extra .qr-code rule for the enrollment image).

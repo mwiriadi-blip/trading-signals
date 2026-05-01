@@ -28,6 +28,7 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 - [x] **Phase 20: Stop-loss monitoring & alerts** — Daily approaching (within 0.5×ATR) AND hit detection per open paper trade, dedup'd email alerts with state-transition logic (completed 2026-04-30)
 - [x] **Phase 22: Strategy versioning & audit trail** — `STRATEGY_VERSION` constant in `system_params.py`, every signal/trade row tagged so historical state stays interpretable across logic changes (completed 2026-04-29)
 - [x] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge (completed 2026-05-01)
+- [ ] **Phase 24: v1.2 codemoot fix phase** — Fix 3 verified bugs + cleanup 7 code-quality items from post-milestone codemoot review
 
 ## Phase Details
 
