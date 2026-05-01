@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "strategy_version": "v1.2.0",
+    "run_dt": "2026-05-01T08:00:00+08:00",
+    "years": 5,
+    "end_date": "2026-05-01",
+    "start_date": "2021-05-01",
+    "initial_account_aud": 10000.0,
+    "cost_spi_aud": 6.0,
+    "cost_audusd_aud": 5.0,
+    "instruments": ["SPI200", "AUDUSD"],
+    "pass": true
+  },
+  "metrics": {
+    "combined": {
+      "cumulative_return_pct": 127.45,
+      "sharpe_daily": 0.053,
+      "sharpe_annualized": 0.84,
+      "max_drawdown_pct": -23.10,
+      "win_rate": 0.5,
+      "expectancy_aud": 188.25,
+      "total_trades": 2,
+      "pass": true
+    },
+    "SPI200": {
+      "cumulative_return_pct": 110.20,
+      "sharpe_daily": 0.048,
+      "sharpe_annualized": 0.76,
+      "max_drawdown_pct": -18.50,
+      "win_rate": 1.0,
+      "expectancy_aud": 376.50,
+      "total_trades": 1,
+      "pass": true
+    },
+    "AUDUSD": {
+      "cumulative_return_pct": 95.10,
+      "sharpe_daily": 0.041,
+      "sharpe_annualized": 0.65,
+      "max_drawdown_pct": -23.10,
+      "win_rate": 0.0,
+      "expectancy_aud": 0.0,
+      "total_trades": 1,
+      "pass": false
+    }
+  },
+  "equity_curve": [
+    {"date": "2021-05-01", "balance_spi": 10000.0, "balance_audusd": 10000.0, "balance_combined": 20000.0},
+    {"date": "2021-05-12", "balance_spi": 10376.50, "balance_audusd": 10000.0, "balance_combined": 20376.50},
+    {"date": "2025-12-15", "balance_spi": 10376.50, "balance_audusd": 9510.00, "balance_combined": 19886.50},
+    {"date": "2026-05-01", "balance_spi": 11020.0, "balance_audusd": 9510.00, "balance_combined": 20530.0}
+  ],
+  "trades": [
+    {
+      "open_dt": "2021-05-04",
+      "close_dt": "2021-05-12",
+      "instrument": "SPI200",
+      "side": "LONG",
+      "entry_price": 7012.5,
+      "exit_price": 7089.0,
+      "contracts": 1,
+      "entry_atr": 35.2,
+      "exit_reason": "signal_reversal",
+      "gross_pnl_aud": 382.50,
+      "cost_aud": 6.0,
+      "net_pnl_aud": 376.50,
+      "balance_after_aud": 10376.50,
+      "level": 1
+    },
+    {
+      "open_dt": "2025-09-01",
+      "close_dt": "2025-12-15",
+      "instrument": "AUDUSD",
+      "side": "SHORT",
+      "entry_price": 0.6520,
+      "exit_price": 0.6569,
+      "contracts": 1,
+      "entry_atr": 0.0085,
+      "exit_reason": "trailing_stop",
+      "gross_pnl_aud": -485.00,
+      "cost_aud": 5.0,
+      "net_pnl_aud": -490.00,
+      "balance_after_aud": 9510.00,
+      "level": 1
+    }
+  ]
+}
