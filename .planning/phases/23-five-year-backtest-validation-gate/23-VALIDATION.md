@@ -5,7 +5,7 @@ status: approved
 nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-01
-updated: 2026-05-01
+updated: 2026-05-01  # plan-checker iteration 2 revisions applied
 ---
 
 # Phase 23 — Validation Strategy
@@ -52,11 +52,11 @@ updated: 2026-05-01
 | 23-04-T1 | 23-04 | 1 | BACKTEST-02 | — | metrics formulas + dual sharpe + pass criterion strict | unit | `python -c "from backtest.metrics import compute_metrics; m=compute_metrics([10000.0,22745.0],[]); assert m['cumulative_return_pct']>100.0; assert m['pass'] is True"` | depends on 23-01-T2 | ⬜ pending |
 | 23-04-T2 | 23-04 | 1 | BACKTEST-02 | — | formulas + edge cases (zero/all-loss/all-win/sharpe-annualized/dd-cummax) | unit | `pytest tests/test_backtest_metrics.py -x` | depends on 23-01-T6 | ⬜ pending |
 | 23-05-T1 | 23-05 | 2 | BACKTEST-03 | T-23-cdn | render_report has 3 tab containers + Chart.js SRI + override form | unit | `python -c "import json,pathlib; from backtest.render import render_report; r=json.loads(pathlib.Path('tests/fixtures/backtest/golden_report.json').read_text()); html=render_report(r); assert 'equityChartCombined' in html and 'sha384-MH1axGwz' in html"` | depends on 23-01-T2 + 23-01-T5 | ⬜ pending |
-| 23-05-T2 | 23-05 | 2 | BACKTEST-03 | T-23-cdn | render structure + Chart.js SRI + JSON-injection defence + empty-state | unit | `pytest tests/test_backtest_render.py -x` | depends on 23-01-T6 + 23-04-T2 | ⬜ pending |
+| 23-05-T2 | 23-05 | 2 | BACKTEST-03 | T-23-cdn | render structure + Chart.js SRI + JSON-injection defence + empty-state + submit-disable + spinner UX (D-14) | unit | `pytest tests/test_backtest_render.py -x` | depends on 23-01-T6 + 23-04-T2 | ⬜ pending |
 | 23-06-T1 | 23-06 | 2 | BACKTEST-04 | — | argparse surface + JSON write + STRATEGY_VERSION fresh access | unit | `python -c "from backtest.cli import main, run_backtest, _build_parser, RunArgs; ns=_build_parser().parse_args([]); assert ns.years == 5 and ns.initial_account_aud == 10000.0"` | depends on 23-02 + 23-03 + 23-04 | ⬜ pending |
 | 23-06-T2 | 23-06 | 2 | BACKTEST-02..04 | — | D-05 schema serialised + exit-code mapping + log-line format + G-45 fresh access | unit | `pytest tests/test_backtest_cli.py -x` | depends on 23-01-T6 + 23-06-T1 | ⬜ pending |
 | 23-07-T1 | 23-07 | 2 | BACKTEST-03..04 | T-23-traversal, T-23-input, T-23-auth | path-traversal defence + 303 redirect + Phase 16.1 auth gate | unit | `python -c "from web.routes.backtest import _resolve_safe_backtest_path; from pathlib import Path; import tempfile; tmp=Path(tempfile.mkdtemp()); (tmp/'good.json').write_text('{}'); assert _resolve_safe_backtest_path('good.json', tmp).name == 'good.json'"` | depends on 23-01-T3 + 23-05 + 23-06 | ⬜ pending |
-| 23-07-T2 | 23-07 | 2 | BACKTEST-03..04 | T-23-traversal, T-23-input, T-23-auth | full route surface incl. ?run= + POST + cookie auth | integration | `pytest tests/test_web_backtest.py -x` | depends on 23-01-T6 + 23-05-T2 + 23-06-T2 | ⬜ pending |
+| 23-07-T2 | 23-07 | 2 | BACKTEST-03..04 | T-23-traversal, T-23-input, T-23-auth | full route surface incl. ?run= + POST + cookie auth + override-form on GET (Warning 2) + perf-budget regression guard (D-14) | integration | `pytest tests/test_web_backtest.py -x` | depends on 23-01-T6 + 23-05-T2 + 23-06-T2 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
