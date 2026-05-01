@@ -1874,8 +1874,14 @@ def main(argv: list[str] | None = None) -> int:
     # CLI-04: --once is a one-shot for GHA mode. No loop.
     if args.once:
       rc, once_state, _old_signals, _run_date = run_daily_check(args)
-      if not args.test and once_state.get('warnings'):
-        state_manager.save_state(once_state)
+      # CR-01 fix: once_state is None on weekends (run_daily_check returns
+      # (0, None, None, run_date) for weekend skip). Guard against None.
+      # WR-01 fix: use mutate_state (fcntl lock) instead of save_state.
+      if once_state is not None and once_state.get('warnings'):
+        _final_once = once_state
+        def _apply_once_warnings(fresh: dict) -> None:
+          fresh['warnings'] = _final_once['warnings']
+        state_manager.mutate_state(_apply_once_warnings)
       return rc
     # Default (no flag): Phase 7 D-04 + D-05 — immediate first run, then loop.
     _run_daily_check_caught(run_daily_check, args)
