@@ -27,7 +27,7 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 - [x] **Phase 19: Paper-trade ledger** — Web form for manual trade entry, per-trade open/closed history, mark-to-market unrealised P&L, aggregate stats (skipping Phase 18 multi-user — single-operator model from v1.1) (completed 2026-04-30)
 - [x] **Phase 20: Stop-loss monitoring & alerts** — Daily approaching (within 0.5×ATR) AND hit detection per open paper trade, dedup'd email alerts with state-transition logic (completed 2026-04-30)
 - [x] **Phase 22: Strategy versioning & audit trail** — `STRATEGY_VERSION` constant in `system_params.py`, every signal/trade row tagged so historical state stays interpretable across logic changes (completed 2026-04-29)
-- [ ] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge
+- [x] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge (completed 2026-05-01)
 
 ## Phase Details
 
@@ -93,16 +93,16 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 5. CLI: `python -m backtest --years 5` re-runs the backtest, prints summary, persists JSON to `.planning/backtests/<strategy_version>-<timestamp>.json`
 6. Result tagged with `strategy_version` from VERSION-01; multiple backtest runs across versions visible in `/backtest?history=true` view
 
-**Plans:** 7 plans
+**Plans:** 7/7 plans complete
 
 Plans:
-- [ ] 23-01-wave0-scaffolding-PLAN.md — Wave 0 scaffolding: pyarrow pin, backtest/ skeleton, AST guard extension, golden fixture, test skeletons
-- [ ] 23-02-data-fetcher-PLAN.md — Wave 1A backtest/data_fetcher.py (yfinance + parquet cache + <5y bail)
-- [ ] 23-03-simulator-PLAN.md — Wave 1B backtest/simulator.py (bar-by-bar replay reusing signal_engine + sizing_engine)
-- [ ] 23-04-metrics-PLAN.md — Wave 1C backtest/metrics.py (Sharpe / max DD / win rate / expectancy / cum return)
-- [ ] 23-05-render-PLAN.md — Wave 2A backtest/render.py (3-tab HTML report + history + override form)
-- [ ] 23-06-cli-PLAN.md — Wave 2B backtest/cli.py (argparse + JSON write + exit codes + log lines)
-- [ ] 23-07-web-routes-PLAN.md — Wave 2C web/routes/backtest.py (4 routes + path-traversal + cookie auth)
+- [x] 23-01-wave0-scaffolding-PLAN.md — Wave 0 scaffolding: pyarrow pin, backtest/ skeleton, AST guard extension, golden fixture, test skeletons
+- [x] 23-02-data-fetcher-PLAN.md — Wave 1A backtest/data_fetcher.py (yfinance + parquet cache + <5y bail)
+- [x] 23-03-simulator-PLAN.md — Wave 1B backtest/simulator.py (bar-by-bar replay reusing signal_engine + sizing_engine)
+- [x] 23-04-metrics-PLAN.md — Wave 1C backtest/metrics.py (Sharpe / max DD / win rate / expectancy / cum return)
+- [x] 23-05-render-PLAN.md — Wave 2A backtest/render.py (3-tab HTML report + history + override form)
+- [x] 23-06-cli-PLAN.md — Wave 2B backtest/cli.py (argparse + JSON write + exit codes + log lines)
+- [x] 23-07-web-routes-PLAN.md — Wave 2C web/routes/backtest.py (4 routes + path-traversal + cookie auth)
 
 
 ## Phase Dependencies (build order)
