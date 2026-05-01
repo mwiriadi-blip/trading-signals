@@ -40,7 +40,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import alert_engine
 import data_fetcher
 import signal_engine
 import sizing_engine
@@ -74,14 +73,6 @@ AWST = ZoneInfo('Australia/Perth')
 SYMBOL_MAP: dict = {
   'SPI200': '^AXJO',
   'AUDUSD': 'AUDUSD=X',
-}
-
-# Per-instrument contract specs (CLAUDE.md Phase 2 D-11 + system_params.py).
-# multiplier = point-value (AUD per price-point per contract)
-# cost_aud   = ROUND-TRIP cost (split half-on-open / half-on-close per D-13)
-_SYMBOL_CONTRACT_SPECS: dict = {
-  'SPI200': {'multiplier': SPI_MULT, 'cost_aud': SPI_COST_AUD},
-  'AUDUSD': {'multiplier': AUDUSD_NOTIONAL, 'cost_aud': AUDUSD_COST_AUD},
 }
 
 # DATA-04 (Pitfall 6): minimum bars required before compute_indicators.
@@ -697,10 +688,11 @@ def _run_schedule_loop(
   import schedule  # LOCAL — C-2 / hex-lite / AST blocklist discipline
 
   tzname = _get_process_tzname()
-  assert tzname == 'UTC', (
-    f'[Sched] process tz must be UTC; got {tzname!r}. '
-    f'Set TZ=UTC in the deploy environment.'
-  )
+  if tzname != 'UTC':
+    raise RuntimeError(
+      f'[Sched] process tz must be UTC; got {tzname!r}. '
+      f'Set TZ=UTC in the deploy environment.'
+    )
 
   _scheduler = scheduler or schedule
   _sleep = sleep_fn or _time.sleep
@@ -1881,7 +1873,9 @@ def main(argv: list[str] | None = None) -> int:
       return rc
     # CLI-04: --once is a one-shot for GHA mode. No loop.
     if args.once:
-      rc, _state, _old_signals, _run_date = run_daily_check(args)
+      rc, once_state, _old_signals, _run_date = run_daily_check(args)
+      if not args.test and once_state.get('warnings'):
+        state_manager.save_state(once_state)
       return rc
     # Default (no flag): Phase 7 D-04 + D-05 — immediate first run, then loop.
     _run_daily_check_caught(run_daily_check, args)
