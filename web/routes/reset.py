@@ -43,6 +43,8 @@ from fastapi.responses import HTMLResponse, Response
 from itsdangerous import BadSignature, SignatureExpired
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
+from web.middleware.auth import _get_client_ip
+
 logger = logging.getLogger(__name__)
 
 RESET_PATH = '/reset-totp'
@@ -203,7 +205,7 @@ def register(app: FastAPI) -> None:
     logger.info(
       '[Web] magic-link consumed: action=%s ip=%s',
       action,
-      _client_ip_from_request(request),
+      _get_client_ip(request),
     )
     resp = Response(status_code=302)
     resp.headers['Location'] = '/enroll-totp?reset=1'
@@ -211,11 +213,3 @@ def register(app: FastAPI) -> None:
     resp.headers['Referrer-Policy'] = 'no-referrer'
     resp.raw_headers.append((b'set-cookie', set_cookie.encode('latin-1')))
     return resp
-
-
-def _client_ip_from_request(request: Request) -> str:
-  '''Mirror AuthMiddleware._log_failure IP extraction.'''
-  xff = request.headers.get('x-forwarded-for', '')
-  if xff:
-    return xff.split(',')[0].strip() or '-'
-  return request.client.host if request.client else '-'
