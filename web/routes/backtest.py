@@ -26,6 +26,7 @@ Performance budget (CONTEXT D-14 + D-18):
   verification is the absolute bound (VALIDATION.md Manual-Only).
 """
 from __future__ import annotations
+import html
 import json
 import logging
 import os
@@ -81,9 +82,13 @@ def _list_reports(backtest_dir: Path | None = None) -> list[Path]:
   return files
 
 
-def _load_report(path: Path) -> dict:
-  """Load and parse JSON. Adds the filename into metadata (used by history/?run links)."""
-  data = json.loads(path.read_text())
+def _load_report(path: Path) -> dict | None:
+  """Load and parse JSON. Returns None on corrupt/truncated files."""
+  try:
+    data = json.loads(path.read_text())
+  except (json.JSONDecodeError, OSError) as exc:
+    logger.warning('%s corrupt backtest file %s: %s', _LOG_PREFIX, path.name, exc)
+    return None
   data.setdefault('metadata', {})
   data['metadata']['filename'] = path.name
   return data
@@ -125,12 +130,20 @@ async def get_backtest(request: Request) -> HTMLResponse:
         status_code=400,
       )
     report = _load_report(path)
+    if report is None:
+      return HTMLResponse(
+        content=_wrap_html(
+          '<section class="error"><h1>Backtest file is corrupt.</h1>'
+          '<p><a href="/backtest">← Back to latest run</a></p></section>'
+        ),
+        status_code=400,
+      )
     return HTMLResponse(content=_wrap_html(render_report(report)), status_code=200)
 
   # ?history=true branch
   if params.get('history') == 'true':
     files = _list_reports()
-    reports = [_load_report(p) for p in files]
+    reports = [r for r in (_load_report(p) for p in files) if r is not None]
     return HTMLResponse(content=_wrap_html(render_history(reports)), status_code=200)
 
   # Default branch — latest report or empty state
@@ -138,7 +151,7 @@ async def get_backtest(request: Request) -> HTMLResponse:
   if not files:
     return HTMLResponse(content=_wrap_html(render_report({})), status_code=200)
   latest = _load_report(files[0])
-  return HTMLResponse(content=_wrap_html(render_report(latest)), status_code=200)
+  return HTMLResponse(content=_wrap_html(render_report(latest or {})), status_code=200)
 
 
 # ---------- POST /backtest/run (operator override form D-14) ----------
@@ -194,7 +207,7 @@ async def post_backtest_run(
     logger.warning('%s ShortFrameError: %s', _LOG_PREFIX, exc)
     return HTMLResponse(
       content=_wrap_html(
-        f'<section class="error"><h1>Backtest cannot run.</h1><p>{exc}</p>'
+        f'<section class="error"><h1>Backtest cannot run.</h1><p>{html.escape(str(exc))}</p>'
         f'<p><a href="/backtest">← Back</a></p></section>'
       ),
       status_code=400,
