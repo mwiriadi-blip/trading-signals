@@ -80,18 +80,27 @@ def _fetch_yfinance(symbol: str, start: str, end: str) -> pd.DataFrame:
   return df
 
 
+_TRADING_DAYS_PER_YEAR = 252
+
+
 def _validate_min_years(df: pd.DataFrame, symbol: str, min_years: int) -> None:
-  """Raises ShortFrameError per CONTEXT D-17 if data spans < min_years."""
+  """Raises ShortFrameError per CONTEXT D-17 if data spans < min_years.
+
+  Uses trading-day count (rows in the DataFrame) rather than calendar-day
+  span, avoiding false negatives when yfinance returns exactly N calendar
+  years but fractionally fewer than N years of trading days.
+  """
   if df.empty:
     raise ShortFrameError(
       f'[Backtest] FAIL {symbol} returned empty frame; need {min_years}y',
     )
-  span_days = (df.index.max() - df.index.min()).days
-  span_years = span_days / 365.25
-  if span_years < min_years:
+  trading_days = len(df)
+  required = min_years * _TRADING_DAYS_PER_YEAR
+  if trading_days < required:
+    span_years = trading_days / _TRADING_DAYS_PER_YEAR
     raise ShortFrameError(
-      f'[Backtest] FAIL {symbol} only has {span_years:.2f} years of data; '
-      f'need {min_years}',
+      f'[Backtest] FAIL {symbol} only has {trading_days} trading days '
+      f'({span_years:.2f}y); need {required} ({min_years}y)',
     )
 
 
