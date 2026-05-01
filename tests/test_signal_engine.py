@@ -590,11 +590,27 @@ FORBIDDEN_MODULES_NOTIFIER = frozenset({
   'schedule', 'dotenv',
 })
 
+# Phase 23: backtest pure-math hex tier (BACKTEST-01..04 + D-09).
+# simulator.py / metrics.py / render.py — pure ONLY but ALLOWED to import
+# signal_engine, sizing_engine, pandas, numpy (different from STDLIB_ONLY).
+# data_fetcher.py is the documented I/O exception (CONTEXT D-09) — NOT added here.
+BACKTEST_SIMULATOR_PATH = Path('backtest/simulator.py')
+BACKTEST_METRICS_PATH = Path('backtest/metrics.py')
+BACKTEST_RENDER_PATH = Path('backtest/render.py')
+_BACKTEST_PATHS_PURE = [BACKTEST_SIMULATOR_PATH, BACKTEST_METRICS_PATH, BACKTEST_RENDER_PATH]
+
+# Backtest pure modules forbid all of FORBIDDEN_MODULES PLUS pyarrow.
+# render.py legitimately needs json+html (Chart.js payload, html.escape) — handled per-file below.
+FORBIDDEN_MODULES_BACKTEST_PURE = FORBIDDEN_MODULES | frozenset({'pyarrow'})
+
 # Paths walked by test_forbidden_imports_absent (extended in Phase 2 Wave 0)
 # Phase 19: pnl_engine.py added to both lists (D-14 + D-19 pure-math hex-tier)
 # Phase 20: alert_engine.py added to both lists (D-10 + D-11 pure-math hex-tier)
+# Phase 23: simulator.py and metrics.py added (render.py uses json+html legitimately
+# and is checked by test_backtest_render_no_forbidden_imports below)
 _HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
-                  ALERT_ENGINE_PATH]
+                  ALERT_ENGINE_PATH,
+                  BACKTEST_SIMULATOR_PATH, BACKTEST_METRICS_PATH]
 # signal_engine.py legitimately uses numpy/pandas; Phase 2 modules must not
 _HEX_PATHS_STDLIB_ONLY = [SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
                            ALERT_ENGINE_PATH]
@@ -787,6 +803,42 @@ class TestDeterminism:
       f'Pure-math modules must not do I/O, network, clock reads, or import sibling '
       f'hexes (state_manager / notifier / dashboard). Move this functionality to '
       f'main.py or an appropriate adapter.'
+    )
+
+  def test_backtest_render_no_forbidden_imports(self) -> None:
+    '''Phase 23 D-09: backtest/render.py has the same forbidden-imports rule
+    as simulator/metrics PLUS pyarrow, but is ALLOWED `json` and `html` from stdlib
+    (Chart.js JSON payload defence + html.escape — RESEARCH §Pattern 4).
+
+    backtest/data_fetcher.py is the documented I/O exception (CONTEXT D-09) and
+    is NOT checked here.
+    '''
+    path = BACKTEST_RENDER_PATH
+    if not path.exists():
+      pytest.skip(f'{path} not yet created (Wave 0 dep)')
+
+    imports = _top_level_imports(path)
+    # render.py forbids the FULL FORBIDDEN_MODULES set EXCEPT json (Chart.js
+    # payload) and html (html.escape) — both stdlib, no I/O. Also forbid pyarrow.
+    forbidden_for_render = (FORBIDDEN_MODULES | frozenset({'pyarrow'})) - frozenset({'json'})
+    leaked = imports & forbidden_for_render
+    assert not leaked, (
+      f'{path} imports forbidden modules: {sorted(leaked)} '
+      f'(BACKTEST render hex-boundary D-09 violation; html+json legitimate, others not)'
+    )
+
+  @pytest.mark.parametrize('module_path', [BACKTEST_SIMULATOR_PATH, BACKTEST_METRICS_PATH,
+                                            BACKTEST_RENDER_PATH])
+  def test_backtest_pure_no_pyarrow_import(self, module_path: Path) -> None:
+    '''Phase 23 D-09: backtest pure modules (simulator/metrics/render) must NOT
+    import pyarrow — that lives in data_fetcher.py only (the I/O exception).'''
+    if not module_path.exists():
+      pytest.skip(f'{module_path} not yet created (Wave 0 dep)')
+
+    imports = _top_level_imports(module_path)
+    assert 'pyarrow' not in imports, (
+      f'{module_path} imports pyarrow — backtest pure modules forbid pyarrow per D-09; '
+      f'pyarrow lives only in backtest/data_fetcher.py (the documented I/O exception)'
     )
 
   @pytest.mark.parametrize('module_path', _HEX_PATHS_STDLIB_ONLY)
