@@ -60,8 +60,20 @@ fi
 if ! .venv/bin/python -m pip --version > /dev/null 2>&1; then
   echo "[deploy] pip missing in .venv — bootstrapping ensurepip..."
   if ! .venv/bin/python -m ensurepip --upgrade > /dev/null 2>&1; then
-    echo "[deploy] ERROR: could not bootstrap pip in .venv. Recreate venv after installing python3.13-venv." >&2
-    exit 1
+    echo "[deploy] ensurepip unavailable — falling back to get-pip.py..."
+    GET_PIP_SCRIPT="$(mktemp)"
+    if ! curl -fsSLo "${GET_PIP_SCRIPT}" https://bootstrap.pypa.io/get-pip.py; then
+      rm -f "${GET_PIP_SCRIPT}"
+      echo "[deploy] ERROR: could not download get-pip.py." >&2
+      exit 1
+    fi
+    if ! .venv/bin/python "${GET_PIP_SCRIPT}" --disable-pip-version-check > /dev/null 2>&1; then
+      rm -f "${GET_PIP_SCRIPT}"
+      echo "[deploy] ERROR: could not bootstrap pip in .venv (ensurepip + get-pip.py failed)." >&2
+      echo "[deploy] Recreate venv after installing python3.13-venv, or install pip for Python 3.13 manually." >&2
+      exit 1
+    fi
+    rm -f "${GET_PIP_SCRIPT}"
   fi
 fi
 
