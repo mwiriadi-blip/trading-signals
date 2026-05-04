@@ -161,6 +161,18 @@ def register(app: FastAPI) -> None:
     mutate_state(_apply)
     return JSONResponse({'ok': True}, headers={'HX-Trigger': 'markets-changed'})
 
+  # Register the literal path before /markets/{market_id} to avoid
+  # dynamic-segment shadowing ("settings" being treated as a market_id).
+  @app.patch('/markets/settings')
+  def save_market_settings(req: MarketSettingsRequest) -> Response:
+    _save_settings(req.market_id, req)
+    return JSONResponse({'ok': True}, headers={'HX-Trigger': 'settings-changed'})
+
+  @app.patch('/markets/{market_id}/settings')
+  def save_market_settings_for_path(market_id: str, req: MarketSettingsRequest) -> Response:
+    _save_settings(market_id, req)
+    return JSONResponse({'ok': True}, headers={'HX-Trigger': 'settings-changed'})
+
   @app.patch('/markets/{market_id}')
   def update_market(market_id: str, req: MarketPatchRequest) -> Response:
     from state_manager import mutate_state
@@ -177,16 +189,6 @@ def register(app: FastAPI) -> None:
 
     mutate_state(_apply)
     return JSONResponse({'ok': True}, headers={'HX-Trigger': 'markets-changed'})
-
-  @app.patch('/markets/{market_id}/settings')
-  def save_market_settings_for_path(market_id: str, req: MarketSettingsRequest) -> Response:
-    _save_settings(market_id, req)
-    return JSONResponse({'ok': True}, headers={'HX-Trigger': 'settings-changed'})
-
-  @app.patch('/markets/settings')
-  def save_market_settings(req: MarketSettingsRequest) -> Response:
-    _save_settings(req.market_id, req)
-    return JSONResponse({'ok': True}, headers={'HX-Trigger': 'settings-changed'})
 
   @app.patch('/account/balance', response_class=HTMLResponse)
   def save_account_balance(req: AccountBalanceRequest) -> HTMLResponse:

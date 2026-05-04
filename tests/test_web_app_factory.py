@@ -340,3 +340,41 @@ class TestMarketRoutesRegistered:
     assert settings['one_contract_floor'] is True
     assert settings['contract_cap'] == 4
     assert settings['direction_mode'] == 'long_only'
+
+  def test_patch_market_settings_literal_path_updates_settings(self, monkeypatch, tmp_path):
+    '''Regression: /markets/settings must not be shadowed by /markets/{market_id}.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from state_manager import load_state, reset_state, save_state
+    from web.app import create_app
+
+    save_state(reset_state())
+    client = TestClient(create_app())
+    payload = {
+      'market_id': 'SPI200',
+      'adx_gate': 20.0,
+      'momentum_votes_required': 1,
+      'trail_mult_long': 2.5,
+      'trail_mult_short': 2.0,
+      'risk_pct_long': 5.0,
+      'risk_pct_short': 0.5,
+      'one_contract_floor': True,
+      'contract_cap': None,
+      'direction_mode': 'long_only',
+    }
+    response = client.patch(
+      '/markets/settings',
+      json=payload,
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+
+    assert response.status_code == 200
+    settings = load_state()['strategy_settings']['SPI200']
+    assert settings['adx_gate'] == 20.0
+    assert settings['momentum_votes_required'] == 1
+    assert settings['risk_pct_long'] == 0.05
+    assert settings['risk_pct_short'] == 0.005
+    assert settings['one_contract_floor'] is True
+    assert settings['contract_cap'] is None
+    assert settings['direction_mode'] == 'long_only'
