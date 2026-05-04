@@ -2673,7 +2673,7 @@ def _render_tabbed_dashboard(ctx: RenderContext) -> str:
 def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
   if nav_mode == 'file':
     pages = (
-      ('signals', 'dashboard.html', 'Signals'),
+      ('signals', 'dashboard-signals.html', 'Signals'),
       ('account', 'dashboard-account.html', 'Account Management'),
       ('settings', 'dashboard-settings.html', 'Settings'),
       ('market-test', 'dashboard-market-test.html', 'Market Test'),

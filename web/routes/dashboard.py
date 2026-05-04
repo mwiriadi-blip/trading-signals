@@ -174,6 +174,13 @@ def register(app: FastAPI) -> None:
   def get_signals_page_file_alias(request: Request, fragment: str | None = None):
     return _serve_dashboard_page(request, 'signals', fragment=fragment)
 
+  @app.get('/dashboard.html')
+  def get_signals_legacy_dashboard_alias(request: Request, fragment: str | None = None):
+    # Legacy file-link alias kept for backwards compatibility with older
+    # generated pages/bookmarks; canonical multi-page signals path is
+    # /dashboard-signals.html (and /signals).
+    return _serve_dashboard_page(request, 'signals', fragment=fragment)
+
   @app.get('/account')
   def get_account_page(request: Request, fragment: str | None = None):
     return _serve_dashboard_page(request, 'account', fragment=fragment)

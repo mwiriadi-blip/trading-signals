@@ -143,6 +143,20 @@ class TestDashboardResponse:
       f'Expected 401 without auth, got {r.status_code}: {r.text[:120]}'
     )
 
+  def test_dashboard_html_alias_serves_signals_page(self, client_with_dashboard, auth_headers):
+    '''Legacy /dashboard.html alias should continue to serve signals page.'''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard-signals.html').write_text('<html><body>signals-page</body></html>', encoding='utf-8')
+    (tmp / 'dashboard.html').write_text('<html><nav class="tabs">fresh</nav></html>', encoding='utf-8')
+    (tmp / 'state.json').write_text('{}', encoding='utf-8')
+    base_ns = 1_700_000_000_000_000_000
+    _set_mtime_ns(tmp / 'state.json', base_ns)
+    _set_mtime_ns(tmp / 'dashboard.html', base_ns + 100_000_000)
+    _set_mtime_ns(tmp / 'dashboard-signals.html', base_ns + 100_000_000)
+    r = client.get('/dashboard.html', headers=auth_headers)
+    assert r.status_code == 200
+    assert 'signals-page' in r.text
+
 
 class TestStaleness:
   '''D-08: state.json mtime > dashboard.html mtime triggers regen.
