@@ -148,7 +148,7 @@ class TestStaleness:
     html_path = tmp / 'dashboard.html'
 
     state_path.write_text('{}', encoding='utf-8')
-    html_path.write_text('<html>fresh</html>', encoding='utf-8')
+    html_path.write_text('<html><nav class="tabs">fresh</nav></html>', encoding='utf-8')
 
     # Set state mtime to T, dashboard mtime to T + 100ms (html is fresher).
     base_ns = 1_700_000_000_000_000_000  # arbitrary fixed nanosecond timestamp
@@ -207,13 +207,31 @@ class TestStaleness:
       f'If 0: staleness check is broken. If >1: regen loop or retry bug.'
     )
 
+  def test_missing_tab_marker_triggers_regen(self, client_with_dashboard, auth_headers):
+    '''Code-only dashboard upgrades must not serve a stale pre-tabs cache.'''
+    client, tmp, calls = client_with_dashboard
+    state_path = tmp / 'state.json'
+    html_path = tmp / 'dashboard.html'
+
+    state_path.write_text('{}', encoding='utf-8')
+    html_path.write_text('<html><h2>Signal Status</h2></html>', encoding='utf-8')
+
+    now = time.time()
+    os.utime(state_path, (now - 60, now - 60))
+    os.utime(html_path, (now, now))
+
+    r = client.get('/', headers=auth_headers)
+    assert r.status_code == 200
+    assert r.text == '<html>regenerated</html>'
+    assert len(calls) == 1
+
   def test_equal_mtime_does_not_trigger_regen(self, client_with_dashboard, auth_headers):
     '''D-08: strict greater-than — equal mtimes do NOT regen.'''
     client, tmp, calls = client_with_dashboard
     state_path = tmp / 'state.json'
     html_path = tmp / 'dashboard.html'
 
-    html_path.write_text('<html>tied</html>', encoding='utf-8')
+    html_path.write_text('<html><nav class="tabs">tied</nav></html>', encoding='utf-8')
     state_path.write_text('{}', encoding='utf-8')
 
     same_ns = 1_700_000_000_000_000_000

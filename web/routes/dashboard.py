@@ -71,6 +71,7 @@ logger = logging.getLogger(__name__)
 
 _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py default
 _STATE_PATH = 'state.json'
+_REQUIRED_DASHBOARD_MARKER = b'<nav class="tabs"'
 
 # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder with
 # env secret at request time so on-disk dashboard.html never carries the
@@ -96,6 +97,7 @@ def _is_stale() -> bool:
 
   Returns True if dashboard.html is missing (caller handles via os.path.exists).
   Returns True if state.json is newer than dashboard.html (regen path).
+  Returns True if cached dashboard.html predates the tabbed dashboard marker.
   Returns False if dashboard.html is fresh relative to state.json.
   Returns False if state.json itself is missing (no state to render from).
   '''
@@ -107,6 +109,11 @@ def _is_stale() -> bool:
     state_mtime = os.stat(_STATE_PATH).st_mtime_ns
   except FileNotFoundError:
     return False  # no state.json — serve whatever dashboard.html is
+  try:
+    if _REQUIRED_DASHBOARD_MARKER not in Path(_DASHBOARD_PATH).read_bytes():
+      return True
+  except OSError:
+    return True
   return state_mtime > html_mtime
 
 
