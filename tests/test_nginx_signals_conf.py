@@ -97,9 +97,9 @@ class TestNginxConfTlsTuning:
     # Mozilla 2024 — tickets off by default.
     assert re.search(r'ssl_session_tickets\s+off\s*;', conf_text)
 
-  def test_ocsp_stapling_enabled(self, conf_text):
-    assert re.search(r'ssl_stapling\s+on\s*;', conf_text)
-    assert re.search(r'ssl_stapling_verify\s+on\s*;', conf_text)
+  def test_ocsp_stapling_disabled_for_current_cert_chain(self, conf_text):
+    assert re.search(r'ssl_stapling\s+off\s*;', conf_text)
+    assert re.search(r'ssl_stapling_verify\s+off\s*;', conf_text)
 
   def test_resolver_present_for_stapling(self, conf_text):
     # OCSP needs a DNS resolver.
