@@ -56,9 +56,18 @@ if ! .venv/bin/python -c "import sys; raise SystemExit(0 if sys.version_info[:2]
   exit 1
 fi
 
+# Some distro builds can leave a venv without the pip launcher script.
+if ! .venv/bin/python -m pip --version > /dev/null 2>&1; then
+  echo "[deploy] pip missing in .venv — bootstrapping ensurepip..."
+  if ! .venv/bin/python -m ensurepip --upgrade > /dev/null 2>&1; then
+    echo "[deploy] ERROR: could not bootstrap pip in .venv. Recreate venv after installing python3.13-venv." >&2
+    exit 1
+  fi
+fi
+
 # D-23 step 5: install requirements (idempotent)
 echo "[deploy] installing requirements..."
-.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt
 
 # D-23 step 6: restart BOTH units via TWO `sudo -n` calls (REVIEWS HIGH #4)
 echo "[deploy] restarting services..."
