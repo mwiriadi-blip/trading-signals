@@ -47,6 +47,7 @@ from web.routes import totp as totp_route
 from web.routes import paper_trades as paper_trades_route
 from web.routes import trades as trades_route
 from web.routes import backtest as backtest_route
+from web.routes import markets as markets_route
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
   trades_route.register(application)
   paper_trades_route.register(application)  # Phase 19 D-12: paper-trade ledger routes
   backtest_route.register(application)  # Phase 23 D-12: backtest validation gate
+  markets_route.register(application)
   # Phase 16.1 — auth-bootstrap routes. Registered BEFORE add_middleware
   # per Phase 13 D-06; PUBLIC_PATHS in AuthMiddleware lets them through
   # without an active session.

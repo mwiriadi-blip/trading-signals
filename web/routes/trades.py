@@ -106,7 +106,7 @@ class OpenTradeRequest(BaseModel):
 
   model_config = ConfigDict(extra='forbid')
 
-  instrument: Literal['SPI200', 'AUDUSD']
+  instrument: str = Field(pattern=r'^[A-Z0-9_]{2,20}$')
   direction: Literal['LONG', 'SHORT']
   entry_price: float = Field(gt=0)
   contracts: int = Field(ge=1)
@@ -153,7 +153,7 @@ class CloseTradeRequest(BaseModel):
 
   model_config = ConfigDict(extra='forbid')
 
-  instrument: Literal['SPI200', 'AUDUSD']
+  instrument: str = Field(pattern=r'^[A-Z0-9_]{2,20}$')
   exit_price: float = Field(gt=0)
   executed_at: _date | None = None
 
@@ -184,7 +184,7 @@ class ModifyTradeRequest(BaseModel):
 
   model_config = ConfigDict(extra='forbid')
 
-  instrument: Literal['SPI200', 'AUDUSD']
+  instrument: str = Field(pattern=r'^[A-Z0-9_]{2,20}$')
   new_stop: float | None = None
   new_contracts: int | None = None
 
@@ -329,7 +329,7 @@ def _render_position_row_partial(state, instrument, pos) -> str:
 def _render_positions_tbody_partial(state) -> str:
   '''Re-render the full positions <tbody> contents (UI-SPEC §Decision 3).'''
   rows = []
-  for inst in ('SPI200', 'AUDUSD'):
+  for inst in (state.get('markets') or state.get('positions', {})):
     pos = state.get('positions', {}).get(inst)
     if pos is not None:
       rows.append(_render_position_row_partial(state, inst, pos))
@@ -471,6 +471,9 @@ def register(app: FastAPI) -> None:
     result_holder: dict = {'kind': None, 'extra': None}
 
     def _apply(state):
+      known_markets = state.get('markets') or state.get('positions', {})
+      if req.instrument not in known_markets:
+        raise _OpenConflict(f'unknown market {req.instrument}')
       existing = state['positions'].get(req.instrument)
       if existing is not None and existing['direction'] != req.direction:
         # D-01: opposite direction is a hard conflict
@@ -544,6 +547,11 @@ def register(app: FastAPI) -> None:
       state = mutate_state(_apply)
     except _OpenConflict as exc:
       logger.warning('[Web] /trades/open conflict: %s', exc)
+      if str(exc).startswith('unknown market '):
+        return JSONResponse(
+          status_code=400,
+          content={'errors': [{'field': 'instrument', 'reason': str(exc)}]},
+        )
       return Response(
         content=str(exc), status_code=409,
         media_type='text/plain; charset=utf-8',
@@ -566,6 +574,9 @@ def register(app: FastAPI) -> None:
     capture: dict = {'gross_pnl': None, 'cost_aud': None, 'n_contracts': None}
 
     def _apply(state):
+      known_markets = state.get('markets') or state.get('positions', {})
+      if req.instrument not in known_markets:
+        raise _OpenConflict(f'unknown market {req.instrument}')
       pos = state['positions'].get(req.instrument)
       if pos is None:
         msg = f'no open position for instrument {req.instrument}'
@@ -640,6 +651,9 @@ def register(app: FastAPI) -> None:
     from state_manager import mutate_state
 
     def _apply(state):
+      known_markets = state.get('markets') or state.get('positions', {})
+      if req.instrument not in known_markets:
+        raise _OpenConflict(f'unknown market {req.instrument}')
       pos = state['positions'].get(req.instrument)
       if pos is None:
         msg = f'no open position for instrument {req.instrument}'

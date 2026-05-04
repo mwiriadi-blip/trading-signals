@@ -196,7 +196,10 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 # Vote logic + latest-indicator extractor (D-06, D-08, D-09, D-10)
 # =========================================================================
 
-def get_signal(df: pd.DataFrame) -> int:
+def get_signal(
+  df: pd.DataFrame,
+  settings: dict | None = None,
+) -> int:
   '''2-of-3 momentum vote on the last bar, gated by ADX >= ADX_GATE.
 
   Returns one of {LONG=1, SHORT=-1, FLAT=0} as a bare int (D-06).
@@ -217,16 +220,24 @@ def get_signal(df: pd.DataFrame) -> int:
   (Caller flow: df2 = compute_indicators(df); signal = get_signal(df2).)
   '''
   row = df.iloc[-1]
+  adx_gate = ADX_GATE
+  votes_required = 2
+  mom_threshold = MOM_THRESHOLD
+  if settings is not None:
+    adx_gate = float(settings.get('adx_gate', adx_gate))
+    votes_required = int(settings.get('momentum_votes_required', votes_required))
+    mom_threshold = float(settings.get('momentum_threshold', mom_threshold))
+
   adx = row['ADX']
-  if pd.isna(adx) or adx < ADX_GATE:
+  if pd.isna(adx) or adx < adx_gate:
     return FLAT
   moms = [row['Mom1'], row['Mom3'], row['Mom12']]
   valid = [m for m in moms if not pd.isna(m)]
-  votes_up = sum(1 for m in valid if m > MOM_THRESHOLD)
-  votes_dn = sum(1 for m in valid if m < -MOM_THRESHOLD)
-  if votes_up >= 2:
+  votes_up = sum(1 for m in valid if m > mom_threshold)
+  votes_dn = sum(1 for m in valid if m < -mom_threshold)
+  if votes_up >= votes_required:
     return LONG
-  if votes_dn >= 2:
+  if votes_dn >= votes_required:
     return SHORT
   return FLAT
 

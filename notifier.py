@@ -1800,11 +1800,23 @@ def _render_alert_email_html(transitions: list[dict], dashboard_url: str) -> str
   n = len(transitions)
   # Per-state badge inline styles (D-14 hex pairs from CONTEXT D-14 verbatim).
   _BADGE_STYLES = {
-    'CLEAR':      'background:#d4edda;color:#155724;padding:2px 6px;border-radius:4px;font-weight:bold;',
-    'APPROACHING':'background:#fff3cd;color:#856404;padding:2px 6px;border-radius:4px;font-weight:bold;',
-    'HIT':        'background:#f8d7da;color:#721c24;padding:2px 6px;border-radius:4px;font-weight:bold;',
+    'CLEAR': (
+      'background:#d4edda;color:#155724;padding:2px 6px;'
+      'border-radius:4px;font-weight:bold;'
+    ),
+    'APPROACHING': (
+      'background:#fff3cd;color:#856404;padding:2px 6px;'
+      'border-radius:4px;font-weight:bold;'
+    ),
+    'HIT': (
+      'background:#f8d7da;color:#721c24;padding:2px 6px;'
+      'border-radius:4px;font-weight:bold;'
+    ),
   }
-  default_badge = 'background:#e9ecef;color:#6c757d;padding:2px 6px;border-radius:4px;font-weight:bold;'
+  default_badge = (
+    'background:#e9ecef;color:#6c757d;padding:2px 6px;'
+    'border-radius:4px;font-weight:bold;'
+  )
 
   rows_html = []
   for t in transitions:

@@ -1423,6 +1423,44 @@ class TestDetectDrift:
     events = detect_drift(positions, signals)
     assert events == []
 
+
+class TestPerMarketSettings:
+  def test_one_contract_floor_and_cap_apply_after_raw_size(self) -> None:
+    from signal_engine import LONG
+    from sizing_engine import calc_position_size
+    decision = calc_position_size(
+      account=10_000.0,
+      signal=LONG,
+      atr=100.0,
+      rvol=0.12,
+      multiplier=5.0,
+      settings={
+        'risk_pct_long': 0.01,
+        'trail_mult_long': 3.0,
+        'one_contract_floor': True,
+        'contract_cap': 1,
+      },
+    )
+    assert decision.contracts == 1
+
+  def test_contract_cap_limits_larger_position(self) -> None:
+    from signal_engine import LONG
+    from sizing_engine import calc_position_size
+    decision = calc_position_size(
+      account=100_000.0,
+      signal=LONG,
+      atr=10.0,
+      rvol=0.12,
+      multiplier=1.0,
+      settings={
+        'risk_pct_long': 0.20,
+        'trail_mult_long': 1.0,
+        'one_contract_floor': False,
+        'contract_cap': 3,
+      },
+    )
+    assert decision.contracts == 3
+
   def test_no_event_when_signal_missing(self) -> None:
     from sizing_engine import detect_drift
     positions = {'SPI200': _make_position(direction='LONG', entry_price=7800.0, atr_entry=50.0)}

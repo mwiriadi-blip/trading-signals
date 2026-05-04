@@ -76,6 +76,8 @@ from system_params import (
   STATE_SCHEMA_VERSION,  # noqa: F401 — used in _migrate (Wave 1)
   # Phase 8 additions (D-14, CONF-02): tier vocabulary + default labels
   AUDUSD_CONTRACTS,
+  DEFAULT_MARKETS,
+  DEFAULT_STRATEGY_SETTINGS,
   SPI_CONTRACTS,
   _DEFAULT_AUDUSD_LABEL,
   _DEFAULT_SPI_LABEL,
@@ -103,6 +105,7 @@ _REQUIRED_STATE_KEYS = frozenset({
   'signals', 'trade_log', 'equity_history', 'warnings',
   # Phase 8 (v2 schema): CONF-01 + CONF-02 required top-level keys
   'initial_account', 'contracts',
+  'markets', 'strategy_settings',
 })
 
 # =========================================================================
@@ -244,6 +247,57 @@ def _migrate_v6_to_v7(s: dict) -> dict:
   return s
 
 
+def _default_market_registry() -> dict:
+  return {key: dict(value) for key, value in DEFAULT_MARKETS.items()}
+
+
+def _default_strategy_settings(markets: dict | None = None) -> dict:
+  source = markets if markets is not None else DEFAULT_MARKETS
+  return {
+    key: dict(DEFAULT_STRATEGY_SETTINGS)
+    for key in source
+  }
+
+
+def _migrate_v7_to_v8(s: dict) -> dict:
+  '''Phase 24: add market registry + per-market strategy settings.
+
+  Preserves existing SPI/AUDUSD state while making future market additions
+  data-driven. Existing manually added keys in positions/signals are also
+  represented if present.
+  '''
+  markets = s.get('markets')
+  if not isinstance(markets, dict):
+    markets = _default_market_registry()
+  else:
+    merged = _default_market_registry()
+    for key, value in markets.items():
+      if isinstance(value, dict):
+        merged[key] = {**merged.get(key, {}), **value}
+    markets = merged
+
+  for container_name, default_value in (
+    ('positions', None),
+    ('signals', 0),
+  ):
+    container = s.setdefault(container_name, {})
+    if isinstance(container, dict):
+      for key in markets:
+        container.setdefault(key, default_value)
+
+  settings = s.get('strategy_settings')
+  if not isinstance(settings, dict):
+    settings = _default_strategy_settings(markets)
+  else:
+    merged_settings = _default_strategy_settings(markets)
+    for key, value in settings.items():
+      if isinstance(value, dict):
+        merged_settings[key] = {**merged_settings.get(key, dict(DEFAULT_STRATEGY_SETTINGS)), **value}
+    settings = merged_settings
+
+  return {**s, 'markets': markets, 'strategy_settings': settings}
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
@@ -252,6 +306,7 @@ MIGRATIONS: dict = {
   5: _migrate_v4_to_v5,  # Phase 17 D-08: ohlc_window + indicator_scalars on signal rows
   6: _migrate_v5_to_v6,  # Phase 19 D-08: paper_trades[] top-level array
   7: _migrate_v6_to_v7,  # Phase 20 D-08: last_alert_state on paper_trades[] rows
+  8: _migrate_v7_to_v8,  # Phase 24: markets + strategy_settings
 }
 
 
@@ -408,14 +463,14 @@ def _backup_corrupt(path: Path, now: datetime) -> str:
   )
   return backup_name
 
-def _validate_trade(trade: dict) -> None:
+def _validate_trade(trade: dict, allowed_instruments: set[str] | None = None) -> None:
   '''D-15 + D-19 (extended 2026-04-21 reviews-revision pass): raise ValueError
   if trade dict is missing required fields or has invalid field values/types.
 
   Required fields per _REQUIRED_TRADE_FIELDS (11 total).
 
   D-15 (base):
-    instrument must be in {'SPI200', 'AUDUSD'}.
+    instrument must be a non-empty str.
     direction must be in {'LONG', 'SHORT'}.
     n_contracts must be int > 0.
 
@@ -437,10 +492,15 @@ def _validate_trade(trade: dict) -> None:
       f'record_trade: missing required fields: {sorted(missing)}'
     )
   # D-15 base checks
-  if trade['instrument'] not in {'SPI200', 'AUDUSD'}:
+  if not isinstance(trade['instrument'], str) or not trade['instrument']:
     raise ValueError(
       f'record_trade: invalid instrument={trade["instrument"]!r}; '
-      f'must be in {{SPI200, AUDUSD}}'
+      'must be a non-empty str'
+    )
+  if allowed_instruments is not None and trade['instrument'] not in allowed_instruments:
+    raise ValueError(
+      f'record_trade: invalid instrument={trade["instrument"]!r}; '
+      f'must be in {sorted(allowed_instruments)}'
     )
   if trade['direction'] not in {'LONG', 'SHORT'}:
     raise ValueError(
@@ -550,6 +610,8 @@ def reset_state(initial_account: float = INITIAL_ACCOUNT) -> dict:
       'SPI200': _DEFAULT_SPI_LABEL,
       'AUDUSD': _DEFAULT_AUDUSD_LABEL,
     },
+    'markets': _default_market_registry(),
+    'strategy_settings': _default_strategy_settings(),
   }
 
 def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = False) -> dict:
@@ -611,6 +673,8 @@ def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = Fals
     return state
   # Happy path: migrate, then D-18 validate, then return
   state = _migrate(state)
+  if 'markets' not in state or 'strategy_settings' not in state:
+    state = _migrate_v7_to_v8(state)
   _validate_loaded_state(state)           # D-18: raises ValueError on missing keys
   # D-14 (Phase 8): materialise runtime-only _resolved_contracts from
   # tier labels. Underscore prefix = excluded from save_state (below).
@@ -620,6 +684,12 @@ def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = Fals
     'SPI200':  SPI_CONTRACTS[state['contracts']['SPI200']],
     'AUDUSD':  AUDUSD_CONTRACTS[state['contracts']['AUDUSD']],
   }
+  for key, market in state.get('markets', {}).items():
+    if key not in state['_resolved_contracts'] and isinstance(market, dict):
+      state['_resolved_contracts'][key] = {
+        'multiplier': float(market.get('multiplier', 1.0)),
+        'cost_aud': float(market.get('cost_aud', 0.0)),
+      }
   return state
 
 def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
@@ -803,7 +873,7 @@ def record_trade(state: dict, trade: dict) -> dict:
     realised_pnl as gross_pnl causes double-counting of the closing cost.
     Phase 4 orchestrator is responsible for this projection.
   '''
-  _validate_trade(trade)
+  _validate_trade(trade, allowed_instruments=set(state.get('positions', {}).keys()))
   # D-14: closing-half cost split. Phase 2 deducted opening half via
   # compute_unrealised_pnl during the position's lifetime. Phase 3 deducts
   # the closing half here at trade close.

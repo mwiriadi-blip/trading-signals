@@ -91,6 +91,8 @@ from system_params import (  # noqa: F401 — Wave 1 contract specs + trail mult
   _COLOR_TEXT_MUTED,
   AUDUSD_COST_AUD,
   AUDUSD_NOTIONAL,
+  DEFAULT_MARKETS,
+  DEFAULT_STRATEGY_SETTINGS,
   FALLBACK_CONTRACT_SPECS,
   INITIAL_ACCOUNT,
   SPI_COST_AUD,
@@ -187,6 +189,41 @@ _INSTRUMENT_DISPLAY_NAMES = {
 # module (and any out-of-tree consumers that imported the name) continue to
 # work without churn.
 _CONTRACT_SPECS = FALLBACK_CONTRACT_SPECS
+
+
+def _market_registry(state: dict | None = None) -> dict:
+  markets = (state or {}).get('markets')
+  if not isinstance(markets, dict):
+    return {key: dict(value) for key, value in DEFAULT_MARKETS.items()}
+  merged = {key: dict(value) for key, value in DEFAULT_MARKETS.items()}
+  for key, value in markets.items():
+    if isinstance(value, dict):
+      merged[key] = {**merged.get(key, {}), **value}
+  return dict(sorted(
+    merged.items(),
+    key=lambda item: (item[1].get('sort_order', 999), item[0]),
+  ))
+
+
+def _enabled_market_registry(state: dict | None = None) -> dict:
+  return {
+    key: market for key, market in _market_registry(state).items()
+    if market.get('enabled', True)
+  }
+
+
+def _display_names(state: dict | None = None) -> dict[str, str]:
+  return {
+    key: str(market.get('display_name') or key)
+    for key, market in _enabled_market_registry(state).items()
+  }
+
+
+def _strategy_settings_for(state: dict, market_id: str) -> dict:
+  settings = state.get('strategy_settings', {}).get(market_id, {})
+  if not isinstance(settings, dict):
+    settings = {}
+  return {**DEFAULT_STRATEGY_SETTINGS, **settings}
 
 
 # =========================================================================
@@ -734,6 +771,47 @@ td.calc-cell.entry-target {{
 .pnl-positive {{ color: var(--color-long); }}
 .pnl-negative {{ color: var(--color-short); }}
 .pnl-zero {{ color: var(--color-text-dim); }}
+.tabs {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+}}
+.tabs a {{
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+}}
+.tabs a:hover, .tabs a:focus {{ color: var(--color-text); background: var(--color-surface); }}
+.tab-panel {{
+  scroll-margin-top: var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-8);
+}}
+.market-selector {{
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}}
+.market-selector h2 {{ margin: 0; }}
+.market-selector select {{
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+}}
+.checkbox-field {{
+  align-self: center;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}}
+.account-stats-grid {{ grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }}
+.market-test-result {{ margin-top: var(--space-4); }}
 @media (max-width: 600px) {{
   .stats-bar-item {{ min-width: calc(33% - var(--space-4)); }}
 }}
@@ -988,7 +1066,7 @@ def _compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
 # shared fixture — drift surfaces as a red test.
 # =========================================================================
 
-def _compute_trail_stop_display(position: dict) -> float:
+def _compute_trail_stop_display(position: dict, settings: dict | None = None) -> float:
   '''UI-SPEC §Positions table Trail Stop formula. Anchors on position['atr_entry']
   (NOT today's ATR — matches sizing_engine D-15 semantics).
 
@@ -1020,11 +1098,13 @@ def _compute_trail_stop_display(position: dict) -> float:
     peak = position.get('peak_price')
     if peak is None:
       peak = position['entry_price']
-    return peak - TRAIL_MULT_LONG * atr_entry
+    trail_mult = float((settings or {}).get('trail_mult_long', TRAIL_MULT_LONG))
+    return peak - trail_mult * atr_entry
   trough = position.get('trough_price')
   if trough is None:
     trough = position['entry_price']
-  return trough + TRAIL_MULT_SHORT * atr_entry
+  trail_mult = float((settings or {}).get('trail_mult_short', TRAIL_MULT_SHORT))
+  return trough + trail_mult * atr_entry
 
 
 def _compute_unrealised_pnl_display(
@@ -1508,7 +1588,7 @@ def _render_signal_cards(state: dict) -> str:
     '  <h2 id="heading-signals">Signal Status</h2>\n',
     '  <div class="cards-row">\n',
   ]
-  for state_key, display in _INSTRUMENT_DISPLAY_NAMES.items():
+  for state_key, display in _display_names(state).items():
     eyebrow = html.escape(display, quote=True)
     sig_entry = signals.get(state_key)
     # D-08 upgrade branch (Pitfall 7 from Phase 4): state['signals'][key] may be
@@ -1570,7 +1650,23 @@ def _render_signal_cards(state: dict) -> str:
   return ''.join(parts)
 
 
-def _render_open_form() -> str:
+def _render_market_selector(state: dict) -> str:
+  options = ''.join(
+    f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
+    for key, display in _display_names(state).items()
+  )
+  return (
+    '<section class="market-selector" aria-labelledby="heading-market-selector">\n'
+    '  <h2 id="heading-market-selector">Market</h2>\n'
+    '  <select aria-label="Market selection">\n'
+    f'{options}'
+    '  </select>\n'
+    '  <a class="btn-row btn-modify" href="#settings-tab">Add market</a>\n'
+    '</section>\n'
+  )
+
+
+def _render_open_form(state: dict | None = None) -> str:
   '''UI-SPEC §Decision 1 + §Decision 7: Open New Position form, ABOVE the
   Open Positions table. 4 required fields inline; 4 optional in collapsed
   <details>. POST /trades/open via HTMX; 4xx errors surface in inline
@@ -1594,6 +1690,11 @@ def _render_open_form() -> str:
 
   hx-headers on the <section> propagates to all HTMX requests inside it.
   '''
+  options = ''.join(
+    f'        <option value="{html.escape(key, quote=True)}">'
+    f'{html.escape(display, quote=True)}</option>\n'
+    for key, display in _display_names(state).items()
+  )
   return (
     '<section class="open-form" '
     '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
@@ -1607,8 +1708,7 @@ def _render_open_form() -> str:
     '    <div class="field">\n'
     '      <label for="open-form-instrument">Instrument</label>\n'
     '      <select id="open-form-instrument" name="instrument" required>\n'
-    '        <option value="SPI200">SPI200</option>\n'
-    '        <option value="AUDUSD">AUDUSD</option>\n'
+    f'{options}'
     '      </select>\n'
     '    </div>\n'
     '    <div class="field">\n'
@@ -1667,7 +1767,7 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
   via hx-target="#position-group-{state_key}" with hx-swap="innerHTML" so
   close/modify confirmation panels swap cleanly without orphan rows.
   '''
-  display = _INSTRUMENT_DISPLAY_NAMES.get(state_key, state_key)
+  display = _display_names(state).get(state_key, state_key)
   signals = state.get('signals', {})
   instrument_cell = html.escape(display, quote=True)
   direction_int = 1 if pos['direction'] == 'LONG' else -1
@@ -1682,7 +1782,8 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
     current_cell = html.escape(_fmt_currency(last_close), quote=True)
   contracts_cell = html.escape(str(pos['n_contracts']), quote=True)
   pyramid_cell = html.escape(f'Lvl {pos["pyramid_level"]}', quote=True)
-  trail_stop = _compute_trail_stop_display(pos)
+  settings = _strategy_settings_for(state, state_key)
+  trail_stop = _compute_trail_stop_display(pos, settings)
   trail_currency = html.escape(_fmt_currency(trail_stop), quote=True)
   # Phase 14 D-09 + UI-SPEC §Decision 6 + CONTEXT D-15: manual_stop badge.
   # Tooltip explicitly says "(manual; dashboard only)" per CONTEXT D-15 promise:
@@ -1779,7 +1880,8 @@ def _render_calc_row(state: dict, state_key: str, pos: dict) -> str:
 
   # STOP cell — reuse Phase 14 _compute_trail_stop_display for the value
   # (handles manual_stop precedence + NaN guards).
-  trail_stop = _compute_trail_stop_display(pos)
+  settings = _strategy_settings_for(state, state_key)
+  trail_stop = _compute_trail_stop_display(pos, settings)
   stop_html = (
     html.escape(_fmt_currency(trail_stop), quote=True)
     if trail_stop is not None and math.isfinite(trail_stop)
@@ -1974,16 +2076,19 @@ def _render_entry_target_row(state: dict, state_key: str) -> str:
       account = float(state.get('account', 0.0))
       contracts_per_inst = state.get('_resolved_contracts', {}).get(state_key) or {}
       multiplier = float(contracts_per_inst.get('multiplier', 1.0))
-      decision = calc_position_size(account, sig_val, atr, rvol, multiplier)
+      decision = calc_position_size(
+        account, sig_val, atr, rvol, multiplier,
+        settings=_strategy_settings_for(state, state_key),
+      )
       if decision.contracts > 0:
         contracts_html = html.escape(
           f'{decision.contracts} contracts', quote=True,
         )
-        from system_params import TRAIL_MULT_LONG, TRAIL_MULT_SHORT
+        settings = _strategy_settings_for(state, state_key)
         if sig_val == 1:
-          initial_stop = last_close - TRAIL_MULT_LONG * atr
+          initial_stop = last_close - float(settings.get('trail_mult_long', TRAIL_MULT_LONG)) * atr
         else:
-          initial_stop = last_close + TRAIL_MULT_SHORT * atr
+          initial_stop = last_close + float(settings.get('trail_mult_short', TRAIL_MULT_SHORT)) * atr
         if math.isfinite(initial_stop):
           initial_stop_html = html.escape(_fmt_currency(initial_stop), quote=True)
   except Exception:
@@ -2054,7 +2159,68 @@ def _render_drift_banner(state: dict) -> str:
   )
 
 
-def _render_positions_table(state: dict) -> str:
+def _render_trailing_stop_guidance(state: dict) -> str:
+  rows = []
+  for market_id, display in _display_names(state).items():
+    pos = state.get('positions', {}).get(market_id)
+    if pos is None:
+      continue
+    sig = state.get('signals', {}).get(market_id, {})
+    last_close = sig.get('last_close') if isinstance(sig, dict) else None
+    settings = _strategy_settings_for(state, market_id)
+    stop = _compute_trail_stop_display(pos, settings)
+    current_html = _fmt_em_dash()
+    distance_html = _fmt_em_dash()
+    if last_close is not None and math.isfinite(float(last_close)) and math.isfinite(stop):
+      current = float(last_close)
+      current_html = html.escape(_fmt_currency(current), quote=True)
+      distance_html = html.escape(
+        f'{_fmt_currency(abs(current - stop))} / {_fmt_percent_unsigned(abs(current - stop) / current)}',
+        quote=True,
+      )
+    stop_html = html.escape(_fmt_currency(stop), quote=True) if math.isfinite(stop) else _fmt_em_dash()
+    atr = float(pos.get('atr_entry', float('nan')))
+    next_add = _fmt_em_dash()
+    if math.isfinite(atr) and atr > 0:
+      level = int(pos.get('pyramid_level', 0))
+      if pos.get('direction') == 'LONG':
+        next_add_val = float(pos.get('entry_price', 0.0)) + (level + 1) * atr
+      else:
+        next_add_val = float(pos.get('entry_price', 0.0)) - (level + 1) * atr
+      next_add = html.escape(_fmt_currency(next_add_val), quote=True)
+    signal_as_of = sig.get('signal_as_of', 'never') if isinstance(sig, dict) else 'never'
+    rows.append(
+      '      <tr>\n'
+      f'        <td>{html.escape(display, quote=True)}</td>\n'
+      f'        <td>{html.escape(pos.get("direction", ""), quote=True)}</td>\n'
+      f'        <td class="num">{current_html}</td>\n'
+      f'        <td class="num">{stop_html}</td>\n'
+      f'        <td class="num">{distance_html}</td>\n'
+      f'        <td class="num">{next_add}</td>\n'
+      f'        <td>{html.escape(str(signal_as_of), quote=True)}</td>\n'
+      '      </tr>\n'
+    )
+  if not rows:
+    rows.append(
+      '      <tr><td colspan="7" class="empty-state">'
+      'No open positions need trailing-stop updates.'
+      '</td></tr>\n'
+    )
+  return (
+    '<section aria-labelledby="heading-trailing-stops">\n'
+    '  <h2 id="heading-trailing-stops">Trailing Stops</h2>\n'
+    '  <table class="data-table">\n'
+    '    <thead><tr><th>Market</th><th>Direction</th><th>Current</th>'
+    '<th>Trailing Stop</th><th>Distance</th><th>Next Add</th><th>Updated</th></tr></thead>\n'
+    '    <tbody>\n'
+    f'{"".join(rows)}'
+    '    </tbody>\n'
+    '  </table>\n'
+    '</section>\n'
+  )
+
+
+def _render_positions_table(state: dict, include_open_form: bool = True) -> str:
   '''UI-SPEC §Open positions table — 9 cols incl. Actions (DASH-05, B-1, Phase 14).
 
   Phase 14 changes (TRADE-05):
@@ -2092,7 +2258,7 @@ def _render_positions_table(state: dict) -> str:
   positions = state.get('positions', {})
   tbody_blocks = []
   any_position = False
-  for state_key in _INSTRUMENT_DISPLAY_NAMES:
+  for state_key in _display_names(state):
     pos = positions.get(state_key)
     if pos is None:
       # Phase 15 CALC-02: when no position is held but the signal is LONG/SHORT,
@@ -2135,8 +2301,9 @@ def _render_positions_table(state: dict) -> str:
       '      </tr>\n'
       '    </tbody>\n'
     )
+  prefix = _render_open_form(state) if include_open_form else ''
   return (
-    _render_open_form()
+    prefix
     + '<section aria-labelledby="heading-positions">\n'
     '  <h2 id="heading-positions">Open Positions</h2>\n'
     '  <table class="data-table">\n'
@@ -2173,7 +2340,7 @@ def _render_trades_table(state: dict) -> str:
   for trade in slice_newest_first:
     closed = html.escape(trade.get('exit_date', ''), quote=True)
     instrument_key = trade.get('instrument', '')
-    instrument_display = _INSTRUMENT_DISPLAY_NAMES.get(instrument_key, instrument_key)
+    instrument_display = _display_names(state).get(instrument_key, instrument_key)
     instrument = html.escape(instrument_display, quote=True)
     direction_raw = trade.get('direction', '')
     direction_int = 1 if direction_raw == 'LONG' else -1 if direction_raw == 'SHORT' else 0
@@ -2589,6 +2756,162 @@ def _render_key_stats(state: dict) -> str:
   )
 
 
+def _compute_account_stat_values(state: dict) -> dict:
+  initial = float(state.get('initial_account', INITIAL_ACCOUNT))
+  account = float(state.get('account', initial))
+  realised = sum(float(t.get('net_pnl', 0.0)) for t in state.get('trade_log', []))
+  unrealised = 0.0
+  open_trades = 0
+  exposure = 0.0
+  for market_id, pos in state.get('positions', {}).items():
+    if pos is None:
+      continue
+    open_trades += 1
+    sig = state.get('signals', {}).get(market_id, {})
+    last_close = sig.get('last_close') if isinstance(sig, dict) else None
+    if last_close is None:
+      continue
+    resolved = state.get('_resolved_contracts', {}).get(market_id, {})
+    multiplier = float(resolved.get('multiplier', 1.0))
+    exposure += abs(float(last_close) * float(pos.get('n_contracts', 0)) * multiplier)
+    upnl = _compute_unrealised_pnl_display(pos, market_id, float(last_close), state)
+    if upnl is not None:
+      unrealised += upnl
+  equity = account + unrealised
+  return {
+    'initial': initial,
+    'account': account,
+    'realised': realised,
+    'unrealised': unrealised,
+    'equity': equity,
+    'total_return': ((equity / initial) - 1.0) if initial > 0 else 0.0,
+    'max_drawdown': _compute_max_drawdown(state),
+    'win_rate': _compute_win_rate(state),
+    'open_exposure': exposure,
+    'open_trades': open_trades,
+    'closed_trades': len(state.get('trade_log', [])),
+  }
+
+
+def _render_account_stats(state: dict) -> str:
+  stats = _compute_account_stat_values(state)
+  tiles = [
+    ('Starting Balance', _fmt_currency(stats['initial'])),
+    ('Account Balance', _fmt_currency(stats['account'])),
+    ('Realised P&L', f'{stats["realised"]:+,.2f}'),
+    ('Unrealised P&L', f'{stats["unrealised"]:+,.2f}'),
+    ('Total Return', _fmt_percent_signed(stats['total_return'])),
+    ('Max Drawdown', stats['max_drawdown']),
+    ('Win Rate', stats['win_rate']),
+    ('Open Exposure', _fmt_currency(stats['open_exposure'])),
+    ('Open Trades', str(stats['open_trades'])),
+    ('Closed Trades', str(stats['closed_trades'])),
+  ]
+  body = ''.join(
+    '    <div class="stat-tile">\n'
+    f'      <p class="label">{html.escape(label, quote=True)}</p>\n'
+    f'      <p class="value">{html.escape(value, quote=True)}</p>\n'
+    '    </div>\n'
+    for label, value in tiles
+  )
+  return (
+    '<section aria-labelledby="heading-account-stats">\n'
+    '  <h2 id="heading-account-stats">Key Stats</h2>\n'
+    '  <div class="stats-grid account-stats-grid">\n'
+    f'{body}'
+    '  </div>\n'
+    '</section>\n'
+  )
+
+
+def _render_settings_tab(state: dict) -> str:
+  sections = []
+  for market_id, display in _display_names(state).items():
+    settings = _strategy_settings_for(state, market_id)
+    cap_value = '' if settings.get('contract_cap') is None else str(settings.get('contract_cap'))
+    checked = ' checked' if settings.get('one_contract_floor') else ''
+    market_id_esc = html.escape(market_id, quote=True)
+    sections.append(
+      '<section class="open-form settings-form" '
+      '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
+      f'  <p class="eyebrow">{html.escape(display, quote=True)} SETTINGS</p>\n'
+      '  <form hx-patch="/markets/settings" hx-ext="json-enc" '
+      'hx-swap="none" hx-on::after-request="handleTradesError(event)">\n'
+      f'    <input type="hidden" name="market_id" value="{market_id_esc}">\n'
+      f'    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="{settings["adx_gate"]}"></div>\n'
+      f'    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="{settings["momentum_votes_required"]}"></div>\n'
+      f'    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="{settings["trail_mult_long"]}"></div>\n'
+      f'    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="{settings["trail_mult_short"]}"></div>\n'
+      f'    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="{float(settings["risk_pct_long"]) * 100:.2f}"></div>\n'
+      f'    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="{float(settings["risk_pct_short"]) * 100:.2f}"></div>\n'
+      f'    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value="{html.escape(cap_value, quote=True)}"></div>\n'
+      f'    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"{checked}> 1-contract floor</label>\n'
+      '    <button type="submit" class="btn-primary">Save Settings</button>\n'
+      '  </form>\n'
+      '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
+      '</section>\n'
+    )
+  return ''.join(sections)
+
+
+def _render_add_market_form(state: dict) -> str:
+  del state
+  return (
+    '<section class="open-form" '
+    '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
+    '  <p class="eyebrow">ADD MARKET</p>\n'
+    '  <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" '
+    'hx-on::after-request="handleTradesError(event)">\n'
+    '    <div class="field"><label>Market ID</label><input name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>\n'
+    '    <div class="field"><label>Display name</label><input name="display_name" required></div>\n'
+    '    <div class="field"><label>Symbol</label><input name="symbol" required></div>\n'
+    '    <div class="field"><label>Currency</label><input name="currency" value="AUD" required></div>\n'
+    '    <div class="field"><label>Multiplier</label><input name="multiplier" type="number" step="0.0001" min="0.0001" required></div>\n'
+    '    <div class="field"><label>Cost AUD</label><input name="cost_aud" type="number" step="0.01" min="0" value="0"></div>\n'
+    '    <button type="submit" class="btn-primary">Add Market</button>\n'
+    '  </form>\n'
+    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
+    '</section>\n'
+  )
+
+
+def _render_market_test_tab(state: dict) -> str:
+  options = ''.join(
+    f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
+    for key, display in _display_names(state).items()
+  )
+  return (
+    '<section class="open-form market-test-form" '
+    '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
+    '  <p class="eyebrow">MARKET TEST</p>\n'
+    '  <form hx-post="/market-test/run" hx-target="#market-test-result" '
+    'hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">\n'
+    '    <div class="field"><label>Market</label><select name="market_id" required>\n'
+    f'{options}'
+    '    </select></div>\n'
+    '    <div class="field"><label>Start date</label><input name="start_date" type="date" required></div>\n'
+    '    <div class="field"><label>End date</label><input name="end_date" type="date" required></div>\n'
+    '    <div class="field"><label>Initial balance</label><input name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>\n'
+    '    <div class="field"><label>ADX override</label><input name="adx_gate" type="number" step="0.1" min="0"></div>\n'
+    '    <div class="field"><label>Votes override</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>\n'
+    '    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1"></div>\n'
+    '    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1"></div>\n'
+    '    <button type="submit" class="btn-primary">Run Test</button>\n'
+    '  </form>\n'
+    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
+    '  <div id="market-test-result" class="market-test-result"></div>\n'
+    '</section>\n'
+  )
+  return (
+    '<section aria-labelledby="heading-account-stats">\n'
+    '  <h2 id="heading-account-stats">Key Stats</h2>\n'
+    '  <div class="stats-grid account-stats-grid">\n'
+    f'{body}'
+    '  </div>\n'
+    '</section>\n'
+  )
+
+
 def _render_footer(strategy_version: str) -> str:
   '''UI-SPEC §Footer disclaimer — "Signal-only system. Not financial advice."
 
@@ -2685,6 +3008,50 @@ def _render_equity_chart_container(state: dict) -> str:
     '    })();\n'
     '  </script>\n'
     '</section>\n'
+  )
+
+
+def _render_tabbed_dashboard(state: dict, strategy_version: str) -> str:
+  signals_body = (
+    _render_market_selector(state)
+    + _render_signal_cards(state)
+    + _render_paper_trades_region(state)
+    + _render_trailing_stop_guidance(state)
+    + _render_equity_chart_container(state)
+    + _render_drift_banner(state)
+    + _render_positions_table(state, include_open_form=True)
+  )
+  account_body = (
+    _render_account_stats(state)
+    + _render_positions_table(state, include_open_form=False)
+    + _render_trades_table(state)
+  )
+  settings_body = _render_settings_tab(state) + _render_add_market_form(state)
+  market_test_body = _render_market_test_tab(state)
+  return (
+    '<nav class="tabs" aria-label="Dashboard tabs">\n'
+    '  <a href="#signals-tab">Signals</a>\n'
+    '  <a href="#account-tab">Account Management</a>\n'
+    '  <a href="#settings-tab">Settings</a>\n'
+    '  <a href="#market-test-tab">Market Test</a>\n'
+    '</nav>\n'
+    '<section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">\n'
+    '  <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>\n'
+    f'{signals_body}'
+    '</section>\n'
+    '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
+    '  <h2 id="account-tab-heading">Account Management</h2>\n'
+    f'{account_body}'
+    '</section>\n'
+    '<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">\n'
+    '  <h2 id="settings-tab-heading">Settings</h2>\n'
+    f'{settings_body}'
+    '</section>\n'
+    '<section id="market-test-tab" class="tab-panel" aria-labelledby="market-test-tab-heading">\n'
+    '  <h2 id="market-test-tab-heading">Market Test</h2>\n'
+    f'{market_test_body}'
+    '</section>\n'
+    + _render_footer(strategy_version)
   )
 
 
@@ -2836,22 +3203,7 @@ def render_dashboard(
   _trace_open = _resolve_trace_open_keys(state, trace_open_keys or [])
   body = (
     _render_header(state, now, is_cookie_session=is_cookie_session)
-    + _render_signal_cards(state)
-    # Phase 19 D-06: paper-trades region (sticky stats bar + open/closed tables)
-    # sits AFTER signal cards and BEFORE equity chart, so operator sees
-    # paper-trade stats immediately below the signal cards.
-    + _render_paper_trades_region(state)
-    + _render_equity_chart_container(state)
-    # Phase 15 REVIEWS H-2: drift sentinel banner sits BEFORE positions
-    # table per D-13 hierarchy. When future Phase-N corruption + stale
-    # dashboard banners ship, they will be inserted ABOVE this drift line
-    # in the same composition; the email-side stack order in
-    # notifier._render_header_email is the reference (corruption > stale > drift).
-    + _render_drift_banner(state)
-    + _render_positions_table(state)
-    + _render_trades_table(state)
-    + _render_key_stats(state)
-    + _render_footer(strategy_version)
+    + _render_tabbed_dashboard(state, strategy_version)
   )
   html_str = _render_html_shell(body)
   _atomic_write_html(html_str, out_path)

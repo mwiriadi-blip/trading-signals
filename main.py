@@ -1228,6 +1228,19 @@ def run_daily_check(
 
   # Step 2: load state.
   state = state_manager.load_state()
+  enabled_markets = dict(sorted(
+    (
+      (key, market)
+      for key, market in state.get('markets', {}).items()
+      if isinstance(market, dict) and market.get('enabled', True)
+    ),
+    key=lambda item: (item[1].get('sort_order', 999), item[0]),
+  ))
+  if not enabled_markets:
+    enabled_markets = {
+      key: {'symbol': value}
+      for key, value in SYMBOL_MAP.items()
+    }
 
   # Phase 8 review-driven amendment (Codex MEDIUM): refresh the module-level
   # cache as soon as load_state returns. The outer crash handler in main()
@@ -1253,7 +1266,8 @@ def run_daily_check(
       if isinstance(state['signals'].get(state_key), dict)
       else state['signals'].get(state_key)
     )
-    for state_key, yf_sym in SYMBOL_MAP.items()
+    for state_key, market in enabled_markets.items()
+    for yf_sym in [market.get('symbol', SYMBOL_MAP.get(state_key, state_key))]
   }
 
   # Step 3: per-symbol loop — fetch + indicators + signal + size + persist.
@@ -1261,7 +1275,9 @@ def run_daily_check(
   pending_warnings: list[tuple[str, str]] = []  # Wave 3 DATA-05 appends; empty in Wave 2.
   last_close_by_state_key: dict[str, float] = {}  # reused in step 4 equity rollup.
 
-  for state_key, yf_symbol in SYMBOL_MAP.items():
+  for state_key, market in enabled_markets.items():
+    yf_symbol = market.get('symbol', SYMBOL_MAP.get(state_key, state_key))
+    strategy_settings = state.get('strategy_settings', {}).get(state_key, {})
     # Phase 8 D-17: resolve tier from state['_resolved_contracts'] materialised
     # by state_manager.load_state (Plan 01). sizing_engine never imports the
     # contract dicts — orchestrator passes multiplier + cost_aud_open through.
@@ -1313,7 +1329,18 @@ def run_daily_check(
     # persisted under state[signals][state_key][last_scalars] (G-2).
     df_with_indicators = signal_engine.compute_indicators(df)
     scalars = signal_engine.get_latest_indicators(df_with_indicators)
-    new_signal = signal_engine.get_signal(df_with_indicators)
+    try:
+      new_signal = signal_engine.get_signal(
+        df_with_indicators, settings=strategy_settings,
+      )
+    except TypeError as exc:
+      if 'settings' not in str(exc):
+        raise
+      # Backward-compatible test/adapter path for monkeypatched get_signal
+      # callables that still expose the original one-argument signature.
+      new_signal = signal_engine.get_signal(df_with_indicators)
+    step_scalars = dict(scalars)
+    step_scalars['_settings'] = strategy_settings
 
     # 3.g: D-08 backward-compat read — accept int OR dict shape.
     raw = state['signals'].get(state_key)
@@ -1337,7 +1364,7 @@ def run_daily_check(
     result = sizing_engine.step(
       position=position,
       bar=bar,
-      indicators=scalars,
+      indicators=step_scalars,
       old_signal=old_signal,
       new_signal=new_signal,
       account=state['account'],
@@ -1464,7 +1491,7 @@ def run_daily_check(
   # tier from operator --reset config), not scalar system_params imports.
   equity = state['account']
   for sk, pos in state['positions'].items():
-    if pos is not None:
+    if pos is not None and sk in last_close_by_state_key:
       resolved = state['_resolved_contracts'][sk]
       equity += sizing_engine.compute_unrealised_pnl(
         pos,

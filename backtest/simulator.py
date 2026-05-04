@@ -34,26 +34,34 @@ class SimResult:
   final_account: float
 
 
-def _extract_signals(df_ind: pd.DataFrame) -> list[int]:
+def _extract_signals(df_ind: pd.DataFrame, settings: dict | None = None) -> list[int]:
   """Per-bar LONG/SHORT/FLAT extraction — O(n), NOT O(n^2) (RESEARCH §Pattern 2).
 
   Replicates signal_engine.get_signal logic inline against the pre-computed
   indicators. Avoids the get_signal(df.iloc[:i+1]) anti-pattern.
   """
+  adx_gate = ADX_GATE
+  mom_threshold = MOM_THRESHOLD
+  votes_required = 2
+  if settings is not None:
+    adx_gate = float(settings.get('adx_gate', adx_gate))
+    mom_threshold = float(settings.get('momentum_threshold', mom_threshold))
+    votes_required = int(settings.get('momentum_votes_required', votes_required))
+
   signals: list[int] = []
   for i in range(len(df_ind)):
     row = df_ind.iloc[i]
     adx = row['ADX']
-    if pd.isna(adx) or adx < ADX_GATE:
+    if pd.isna(adx) or adx < adx_gate:
       signals.append(FLAT)
       continue
     moms = [row['Mom1'], row['Mom3'], row['Mom12']]
     valid = [m for m in moms if not pd.isna(m)]
-    votes_up = sum(1 for m in valid if m > MOM_THRESHOLD)
-    votes_dn = sum(1 for m in valid if m < -MOM_THRESHOLD)
-    if votes_up >= 2:
+    votes_up = sum(1 for m in valid if m > mom_threshold)
+    votes_dn = sum(1 for m in valid if m < -mom_threshold)
+    if votes_up >= votes_required:
       signals.append(LONG)
-    elif votes_dn >= 2:
+    elif votes_dn >= votes_required:
       signals.append(SHORT)
     else:
       signals.append(FLAT)
@@ -96,6 +104,7 @@ def simulate(
   multiplier: float,
   cost_round_trip_aud: float,
   initial_account_aud: float,
+  settings: dict | None = None,
 ) -> SimResult:
   """Phase 23 BACKTEST-01 — bar-by-bar replay.
 
@@ -115,7 +124,7 @@ def simulate(
     raise ValueError(f'cost_round_trip_aud must be non-negative, got {cost_round_trip_aud}')
 
   df_ind = compute_indicators(df)
-  signals = _extract_signals(df_ind)
+  signals = _extract_signals(df_ind, settings=settings)
   cost_open = cost_round_trip_aud / 2.0  # half/half split per Phase 2 D-13
 
   account = float(initial_account_aud)
@@ -131,6 +140,8 @@ def simulate(
     idx = df_ind.index[i]
     bar = _row_to_bar(row, idx)
     indicators = _row_to_indicators(row)
+    if settings is not None:
+      indicators['_settings'] = settings
     new_signal = signals[i]
 
     # Capture position state BEFORE step() in case the position closes this bar

@@ -211,6 +211,7 @@ class TestLoadSave:
       'initial_account': INITIAL_ACCOUNT,
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
+    state = {**reset_state(), **state}
     save_state(state, path=path)
     loaded = load_state(path=path)
     # Phase 8: load_state materialises _resolved_contracts (runtime-only
@@ -880,15 +881,15 @@ class TestReset:
   '''
 
   def test_reset_state_has_all_10_top_level_keys(self) -> None:
-    '''STATE-01 (extended Phase 8 v2): reset_state returns dict with exactly
-    10 top-level keys — 8 original + 2 Phase 8 additions (initial_account,
-    contracts) required by _validate_loaded_state under schema v2.'''
+    '''STATE-01: reset_state returns all required top-level keys.'''
     state = reset_state()
     expected_keys = {
       'schema_version', 'account', 'last_run', 'positions',
       'signals', 'trade_log', 'equity_history', 'warnings',
       # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys
       'initial_account', 'contracts',
+      # Phase 24 (v8): market registry + per-market settings
+      'markets', 'strategy_settings',
     }
     assert set(state.keys()) == expected_keys, (
       f'STATE-01 (v2): reset_state keys mismatch. Expected {sorted(expected_keys)}, '
@@ -1044,6 +1045,7 @@ class TestSchemaVersion:
       'initial_account': INITIAL_ACCOUNT,
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
+    state = {**reset_state(), **state}
     save_state(state, path=path)
     loaded = load_state(path=path)
     assert loaded['schema_version'] == STATE_SCHEMA_VERSION
@@ -2551,8 +2553,8 @@ class TestFullWalkV0ToV6:
     import json as _json
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 7, (
-      f'walk-forward chain v0->...->v7 must end at 7; '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 8, (
+      f'walk-forward chain v0->...->v8 must end at 8; '
       f'got {loaded["schema_version"]}'
     )
     # Phase 22 v3->v4 backfill also ran
@@ -2615,8 +2617,8 @@ class TestMigrateV6ToV7:
     )
     # Via _migrate walker: schema_version advances to 7
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 7, (
-      f'D-08: _migrate must walk v6->v7; got {out2["schema_version"]}'
+    assert out2['schema_version'] == 8, (
+      f'D-08: _migrate must walk v6->v8; got {out2["schema_version"]}'
     )
     assert out2['paper_trades'][0]['last_alert_state'] is None
     assert out2['paper_trades'][1]['last_alert_state'] is None
@@ -2714,7 +2716,7 @@ class TestMigrateV6ToV7:
       'D-08: missing paper_trades key must remain absent after migration'
     )
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 7
+    assert out2['schema_version'] == 8
 
   def test_migrate_v6_to_v7_silent_no_warnings_no_logs(self, caplog) -> None:
     '''D-15 silent migration: migrating 5 rows must emit zero log records and
@@ -2770,11 +2772,43 @@ class TestMigrateV6ToV7:
     }
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == 7, (
-      f'walk-forward chain v0->...->v7 must end at 7; '
+    assert loaded['schema_version'] == 8, (
+      f'walk-forward chain v0->...->v8 must end at 8; '
       f'got {loaded["schema_version"]}'
     )
     # Phase 20 v6->v7 backfill
     assert loaded['paper_trades'][0]['last_alert_state'] is None, (
       'Phase 20: full walk must stamp last_alert_state=None on paper_trades row'
     )
+
+
+class TestMarketRegistrySchema:
+  def test_v7_state_load_backfills_markets_and_settings(self, tmp_path) -> None:
+    import json as _json
+    path = tmp_path / 'state.json'
+    path.write_text(_json.dumps({
+      'schema_version': 7,
+      'account': INITIAL_ACCOUNT,
+      'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      'trade_log': [],
+      'equity_history': [],
+      'warnings': [],
+      'initial_account': INITIAL_ACCOUNT,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
+      'paper_trades': [],
+    }))
+    loaded = load_state(path=path)
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION
+    assert loaded['markets']['SPI200']['symbol'] == '^AXJO'
+    assert loaded['markets']['AUDUSD']['symbol'] == 'AUDUSD=X'
+    assert loaded['strategy_settings']['SPI200']['momentum_votes_required'] == 2
+    assert loaded['strategy_settings']['AUDUSD']['one_contract_floor'] is False
+
+  def test_record_trade_allows_market_present_in_positions(self) -> None:
+    state = reset_state()
+    state['positions']['XJO_CFD'] = None
+    trade = _make_trade(instrument='XJO_CFD')
+    record_trade(state, trade)
+    assert state['trade_log'][-1]['instrument'] == 'XJO_CFD'

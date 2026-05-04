@@ -118,8 +118,44 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
 MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
-STATE_SCHEMA_VERSION: int = 7       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08); Phase 20 → v7 (last_alert_state on paper_trades[] rows; D-08)
+STATE_SCHEMA_VERSION: int = 8       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08); Phase 20 → v7 (last_alert_state on paper_trades[] rows; D-08); v8 markets + per-market strategy_settings.
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
+
+# =========================================================================
+# Phase 24 constants — market registry + per-market strategy settings
+# =========================================================================
+
+DEFAULT_MARKETS: dict[str, dict] = {
+  'SPI200': {
+    'display_name': 'SPI 200',
+    'symbol': '^AXJO',
+    'currency': 'AUD',
+    'multiplier': SPI_MULT,
+    'cost_aud': SPI_COST_AUD,
+    'enabled': True,
+    'sort_order': 10,
+  },
+  'AUDUSD': {
+    'display_name': 'AUD / USD',
+    'symbol': 'AUDUSD=X',
+    'currency': 'AUD',
+    'multiplier': AUDUSD_NOTIONAL,
+    'cost_aud': AUDUSD_COST_AUD,
+    'enabled': True,
+    'sort_order': 20,
+  },
+}
+
+DEFAULT_STRATEGY_SETTINGS: dict[str, float | int | bool | None] = {
+  'adx_gate': ADX_GATE,
+  'momentum_votes_required': 2,
+  'trail_mult_long': TRAIL_MULT_LONG,
+  'trail_mult_short': TRAIL_MULT_SHORT,
+  'risk_pct_long': RISK_PCT_LONG,
+  'risk_pct_short': RISK_PCT_SHORT,
+  'one_contract_floor': False,
+  'contract_cap': None,
+}
 
 # =========================================================================
 # Palette constants — Phase 5 + Phase 6 shared (D-02 retrofit)

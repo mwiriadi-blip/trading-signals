@@ -28,6 +28,7 @@ from system_params import (
   VOL_SCALE_MAX,
   VOL_SCALE_MIN,
   VOL_SCALE_TARGET,
+  DEFAULT_STRATEGY_SETTINGS,
   Position,
 )
 
@@ -138,7 +139,7 @@ def detect_drift(positions: dict, signals: dict) -> list:
               reversal recommended (close {held}, open {new_dir})."
   '''
   events: list = []
-  for instrument in ('SPI200', 'AUDUSD'):
+  for instrument in positions:
     pos = positions.get(instrument)
     if pos is None:
       continue
@@ -213,6 +214,7 @@ def calc_position_size(
   atr: float,
   rvol: float,
   multiplier: float,
+  settings: dict | None = None,
 ) -> SizingDecision:
   '''SIZE-01..05. ATR-based risk sizing with vol-targeting. No floor applied.
 
@@ -236,12 +238,13 @@ def calc_position_size(
   Returns:
     SizingDecision with contracts >= 0 and optional warning string.
   '''
+  settings = settings or DEFAULT_STRATEGY_SETTINGS
   if signal == LONG:
-    risk_pct = RISK_PCT_LONG
-    trail_mult = TRAIL_MULT_LONG
+    risk_pct = float(settings.get('risk_pct_long', RISK_PCT_LONG))
+    trail_mult = float(settings.get('trail_mult_long', TRAIL_MULT_LONG))
   elif signal == SHORT:
-    risk_pct = RISK_PCT_SHORT
-    trail_mult = TRAIL_MULT_SHORT
+    risk_pct = float(settings.get('risk_pct_short', RISK_PCT_SHORT))
+    trail_mult = float(settings.get('trail_mult_short', TRAIL_MULT_SHORT))
   else:
     # FLAT (0) is a caller error; surface as size=0 with a clear warning.
     return SizingDecision(
@@ -260,6 +263,11 @@ def calc_position_size(
     )
   n_raw = (account * risk_pct / stop_dist) * vol_scale
   n_contracts = int(n_raw)  # truncating int(); SIZE-05 handles contracts==0 (no floor)
+  if settings.get('one_contract_floor') and 0.0 < n_raw < 1.0:
+    n_contracts = 1
+  cap = settings.get('contract_cap')
+  if cap is not None:
+    n_contracts = min(n_contracts, int(cap))
   warning: str | None = None
   if n_contracts == 0:
     warning = (
@@ -273,6 +281,7 @@ def get_trailing_stop(
   position: Position,
   current_price: float,
   atr: float,
+  settings: dict | None = None,
 ) -> float:
   '''EXIT-06/07: compute current trailing stop price. D-15 anchor: stop distance
   uses position['atr_entry'], NOT the `atr` argument.
@@ -339,12 +348,14 @@ def get_trailing_stop(
     peak = position['peak_price']
     if peak is None:
       peak = position['entry_price']
-    return peak - TRAIL_MULT_LONG * atr_entry
+    trail_mult = float((settings or {}).get('trail_mult_long', TRAIL_MULT_LONG))
+    return peak - trail_mult * atr_entry
   # SHORT branch
   trough = position['trough_price']
   if trough is None:
     trough = position['entry_price']
-  return trough + TRAIL_MULT_SHORT * atr_entry
+  trail_mult = float((settings or {}).get('trail_mult_short', TRAIL_MULT_SHORT))
+  return trough + trail_mult * atr_entry
 
 
 def check_stop_hit(
@@ -352,6 +363,7 @@ def check_stop_hit(
   high: float,
   low: float,
   atr: float,
+  settings: dict | None = None,
 ) -> bool:
   '''EXIT-08/09: True if today's intraday bar hit the trailing stop.
   D-15 anchor: uses position['atr_entry'], NOT the `atr` argument.
@@ -412,13 +424,15 @@ def check_stop_hit(
     peak = position['peak_price']
     if peak is None:
       peak = position['entry_price']
-    stop = peak - TRAIL_MULT_LONG * atr_entry
+    trail_mult = float((settings or {}).get('trail_mult_long', TRAIL_MULT_LONG))
+    stop = peak - trail_mult * atr_entry
     return low <= stop
   # SHORT branch
   trough = position['trough_price']
   if trough is None:
     trough = position['entry_price']
-  stop = trough + TRAIL_MULT_SHORT * atr_entry
+  trail_mult = float((settings or {}).get('trail_mult_short', TRAIL_MULT_SHORT))
+  stop = trough + trail_mult * atr_entry
   return high >= stop
 
 
@@ -569,6 +583,7 @@ def step(
   sizing_decision: SizingDecision | None = None
   pyramid_decision: PyramidDecision | None = None
   forced_exit = False
+  settings = indicators.get('_settings') if isinstance(indicators.get('_settings'), dict) else None
 
   # -----------------------------------------------------------------------
   # Phase 0 (D-16): peak/trough update — shallow copy, update BEFORE exits.
@@ -604,10 +619,12 @@ def step(
       forced_exit = True
     elif check_stop_hit(
       current_position, bar['high'], bar['low'], indicators.get('atr', float('nan')),
+      settings=settings,
     ):
       # EXIT-08/09 stop hit: close at computed stop level (B-5).
       stop_level = get_trailing_stop(
         current_position, bar['close'], indicators.get('atr', float('nan')),
+        settings=settings,
       )
       # B-5: if stop_level is NaN (should not happen if atr_entry is finite),
       # fall back to bar['close'] to avoid producing a NaN exit price.
@@ -656,6 +673,7 @@ def step(
           atr=indicators.get('atr', float('nan')),
           rvol=indicators.get('rvol', float('nan')),
           multiplier=multiplier,
+          settings=settings,
         )
         if sizing_decision.contracts > 0:
           # Build new position dict (fresh; not a copy of old).

@@ -9,8 +9,6 @@ app_instance fixture) because TestSecretValidation needs to control the
 env var BEFORE create_app() is called — the whole point of the test class
 is asserting the failure modes.
 '''
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -243,3 +241,75 @@ class TestRecoveryEmailValidation:
     from web.app import create_app
     app = create_app()
     assert app.state.operator_recovery_email == 'ops@example.com'
+
+
+class TestMarketRoutesRegistered:
+  def test_market_routes_are_registered(self, monkeypatch):
+    monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    import sys
+    sys.modules.pop('web.app', None)
+    from web.app import create_app
+    app = create_app()
+    paths = {r.path for r in app.routes if hasattr(r, 'path')}
+    assert '/markets' in paths
+    assert '/markets/{market_id}' in paths
+    assert '/markets/settings' in paths
+    assert '/markets/{market_id}/settings' in paths
+    assert '/market-test/run' in paths
+
+  def test_patch_market_metadata_updates_existing_market(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from state_manager import load_state, reset_state, save_state
+    from web.app import create_app
+
+    save_state(reset_state())
+    client = TestClient(create_app())
+    response = client.patch(
+      '/markets/SPI200',
+      json={'display_name': 'Australia 200', 'enabled': False, 'sort_order': 99},
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+
+    assert response.status_code == 200
+    state = load_state()
+    assert state['markets']['SPI200']['display_name'] == 'Australia 200'
+    assert state['markets']['SPI200']['enabled'] is False
+    assert state['markets']['SPI200']['sort_order'] == 99
+
+  def test_patch_market_settings_path_alias_updates_settings(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from state_manager import load_state, reset_state, save_state
+    from web.app import create_app
+
+    save_state(reset_state())
+    client = TestClient(create_app())
+    payload = {
+      'market_id': 'AUDUSD',
+      'adx_gate': 17.5,
+      'momentum_votes_required': 3,
+      'trail_mult_long': 2.5,
+      'trail_mult_short': 1.5,
+      'risk_pct_long': 5.0,
+      'risk_pct_short': 2.5,
+      'one_contract_floor': True,
+      'contract_cap': 4,
+    }
+    response = client.patch(
+      '/markets/AUDUSD/settings',
+      json=payload,
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+
+    assert response.status_code == 200
+    settings = load_state()['strategy_settings']['AUDUSD']
+    assert settings['adx_gate'] == 17.5
+    assert settings['momentum_votes_required'] == 3
+    assert settings['risk_pct_long'] == 0.05
+    assert settings['risk_pct_short'] == 0.025
+    assert settings['one_contract_floor'] is True
+    assert settings['contract_cap'] == 4

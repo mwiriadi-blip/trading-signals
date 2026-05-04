@@ -2181,9 +2181,10 @@ class TestRenderSignoutButton:
     state = _make_render_state_with_position()
     render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
     rendered = out.read_text()
-    assert rendered.count('hx-headers') == 2, (
-      f'D-13 belt-and-suspenders: expected exactly 2 hx-headers occurrences '
-      f'(open-form + position-table-section), got {rendered.count("hx-headers")}'
+    assert rendered.count('hx-headers') == 7, (
+      f'Phase 24: expected 7 hx-headers occurrences '
+      f'(trade forms + settings + add-market + market-test), '
+      f'got {rendered.count("hx-headers")}'
     )
 
 
@@ -3096,3 +3097,27 @@ class TestRenderAlertBadge:
     '''Empty open trades uses colspan="10" after adding Alert column.'''
     html_out = dashboard._render_paper_trades_open([], {})
     assert 'colspan="10"' in html_out
+
+
+class TestPhase24TabbedDashboard:
+  def test_render_dashboard_includes_four_tabs_and_market_test(self, tmp_path) -> None:
+    import state_manager
+    state = state_manager.reset_state()
+    out = tmp_path / 'dashboard.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_out = out.read_text()
+    assert 'Signals' in html_out
+    assert 'Account Management' in html_out
+    assert 'Settings' in html_out
+    assert 'Market Test' in html_out
+    assert 'hx-post="/market-test/run"' in html_out
+
+  def test_settings_forms_are_rendered_per_market(self, tmp_path) -> None:
+    import state_manager
+    state = state_manager.reset_state()
+    out = tmp_path / 'dashboard.html'
+    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    html_out = out.read_text()
+    assert html_out.count('hx-patch="/markets/settings"') >= 2
+    assert 'name="adx_gate"' in html_out
+    assert 'name="one_contract_floor"' in html_out

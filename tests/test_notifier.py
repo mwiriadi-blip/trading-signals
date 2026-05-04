@@ -2020,9 +2020,10 @@ def test_ruff_clean_notifier() -> None:
   '''
   import json
   import subprocess
+  import sys
 
   result = subprocess.run(
-    ['ruff', 'check', 'notifier.py', '--output-format=json'],
+    [sys.executable, '-m', 'ruff', 'check', 'notifier.py', '--output-format=json'],
     capture_output=True,
     text=True,
     timeout=30,
@@ -2066,6 +2067,7 @@ def test_ruff_clean_notifier_detects_f401_regression(tmp_path) -> None:
   '''
   import json
   import subprocess
+  import sys
 
   # Fixture with a clear, unused import — must unambiguously trigger F401.
   fixture = tmp_path / 'f401_regression_probe_clean.py'
@@ -2074,7 +2076,7 @@ def test_ruff_clean_notifier_detects_f401_regression(tmp_path) -> None:
     'import os\n'
   )
   result = subprocess.run(
-    ['ruff', 'check', str(fixture), '--output-format=json'],
+    [sys.executable, '-m', 'ruff', 'check', str(fixture), '--output-format=json'],
     capture_output=True,
     text=True,
     timeout=30,

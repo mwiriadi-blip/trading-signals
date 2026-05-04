@@ -6,6 +6,8 @@ Encrypt, with HTTP→HTTPS 301 redirect, HSTS, rate-limited `/healthz`,
 and the `SIGNALS_EMAIL_FROM` env var wiring that finishes the Resend
 domain refactor.
 
+Current production target: `signals.mwiriadi.me`.
+
 **Audience:** project operator (Marc).
 **Where this runs:** the DigitalOcean droplet, as the `trader` user
 that runs the `trading-signals` + `trading-signals-web` systemd units

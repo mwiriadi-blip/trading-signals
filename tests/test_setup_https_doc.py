@@ -2,7 +2,7 @@
 
 Mirrors tests/test_setup_droplet_doc.py structural pattern + extends with
 TestCrossArtifactDriftGuard which asserts the runbook stays in sync with:
-  - nginx/signals.conf (Plan 01) — `<owned-domain>` placeholder
+  - nginx/signals.conf (Plan 01) — production domain deployment artifact
   - deploy.sh (Plan 03) — 4 `sudo -n` commands documented in sudoers rule
   - notifier.py (Plan 02) — SIGNALS_EMAIL_FROM env var name
   - systemd/trading-signals-web.service (Phase 11) — EnvironmentFile= path
@@ -290,15 +290,11 @@ class TestCrossArtifactDriftGuard:
     )
     assert 'nginx/signals.conf' in doc_text
 
-  def test_owned_domain_placeholder_matches_nginx_conf(self, doc_text):
-    '''Doc's sed command must target the exact placeholder in nginx/signals.conf.'''
+  def test_production_domain_matches_nginx_conf(self, doc_text):
+    '''Doc and nginx config must reference the production host.'''
     conf_text = Path('nginx/signals.conf').read_text()
-    assert '<owned-domain>' in conf_text, (
-      'nginx/signals.conf missing <owned-domain> placeholder (D-01)'
-    )
-    assert '<owned-domain>' in doc_text
-    # sed command in doc targets the placeholder.
-    assert re.search(r'sed.*<owned-domain>', doc_text)
+    assert 'signals.mwiriadi.me' in conf_text
+    assert 'signals.mwiriadi.me' in doc_text
 
   def test_deploy_sh_reload_calls_match_sudoers_rule(self, doc_text):
     '''Drift guard: doc's sudoers extension must enumerate exactly

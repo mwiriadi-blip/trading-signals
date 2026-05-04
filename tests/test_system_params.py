@@ -177,22 +177,19 @@ class TestStateSchemaVersionV6:
 
 
 class TestStateSchemaVersionV7:
-  '''Phase 20 D-08: STATE_SCHEMA_VERSION bumped 6->7 for last_alert_state field
-  on paper_trades[] rows.
+  '''Phase 24: STATE_SCHEMA_VERSION bumped 7->8 for markets/settings.
 
   Three guards:
-    - test_state_schema_version_is_7: constant equals 7 (Phase 20 D-08).
+    - test_state_schema_version_is_8: constant equals 8.
     - test_state_schema_version_is_int: isinstance int (regression guard).
     - test_strategy_version_unchanged_at_v1_2_0: Phase 20 schema bump must NOT
       change STRATEGY_VERSION (no signal logic change).
   '''
 
-  def test_state_schema_version_is_7(self) -> None:
-    '''D-08: STATE_SCHEMA_VERSION bumped 6->7 at Phase 20 (last_alert_state on
-    paper_trades[] rows; D-08).
-    '''
-    assert system_params.STATE_SCHEMA_VERSION == 7, (
-      f'D-08: STATE_SCHEMA_VERSION must be 7 at Phase 20; '
+  def test_state_schema_version_is_8(self) -> None:
+    '''Phase 24: STATE_SCHEMA_VERSION bumped 7->8 for markets/settings.'''
+    assert system_params.STATE_SCHEMA_VERSION == 8, (
+      f'Phase 24: STATE_SCHEMA_VERSION must be 8; '
       f'got {system_params.STATE_SCHEMA_VERSION!r}'
     )
 

@@ -9,7 +9,8 @@ Covers:
           ACME challenge carve-out, TLS tuning (Mozilla Intermediate).
   WEB-04: HSTS `max-age=31536000; includeSubDomains` at server scope,
           `always` flag, no `preload` (D-12).
-  T-12-01: cert material never referenced in committed file (certbot injects).
+  Production deployment: committed config is pinned to signals.mwiriadi.me
+          with standalone-certbot-issued cert paths and HTTP redirect.
   T-12-02: ACME challenge path exempt from rate-limit.
   T-12-06: HSTS stays at server scope (never inside location — Pitfall 3).
 '''
@@ -32,28 +33,31 @@ class TestNginxConfStructure:
   '''D-08: single 443 server block; WEB-03 edge reverse-proxy.'''
 
   def test_listen_443_ssl(self, conf_text):
-    assert re.search(r'^\s*listen\s+443\s+ssl\s*;', conf_text, re.MULTILINE)
+    assert re.search(r'^\s*listen\s+443\s+ssl\s+http2\s*;', conf_text, re.MULTILINE)
 
   def test_listen_ipv6_443_ssl(self, conf_text):
-    assert re.search(r'^\s*listen\s+\[::\]:443\s+ssl\s*;', conf_text, re.MULTILINE)
+    assert re.search(
+      r'^\s*listen\s+\[::\]:443\s+ssl\s+http2\s*;',
+      conf_text,
+      re.MULTILINE,
+    )
 
   def test_http2_on(self, conf_text):
-    assert re.search(r'^\s*http2\s+on\s*;', conf_text, re.MULTILINE)
+    assert 'http2' in conf_text
 
   def test_server_name_present(self, conf_text):
-    assert re.search(r'^\s*server_name\s+signals\.<owned-domain>\.com\s*;',
+    assert re.search(r'^\s*server_name\s+signals\.mwiriadi\.me\s*;',
                      conf_text, re.MULTILINE)
 
 
-class TestNginxConfPlaceholder:
-  '''D-01: committed placeholder `<owned-domain>`; operator seds at install.'''
+class TestNginxConfProductionDomain:
+  '''Committed config is the production domain deployment artifact.'''
 
-  def test_owned_domain_placeholder_literal_present(self, conf_text):
-    assert 'signals.<owned-domain>.com' in conf_text
+  def test_production_domain_literal_present(self, conf_text):
+    assert 'signals.mwiriadi.me' in conf_text
 
-  def test_no_hardcoded_production_domain(self, conf_text):
-    # No leaked production domains. carbonbookkeeping is the intended target
-    # but it MUST NOT appear in the committed file (operator subs it in).
+  def test_no_old_placeholder_domain(self, conf_text):
+    assert 'signals.<owned-domain>.com' not in conf_text
     assert 'carbonbookkeeping' not in conf_text
 
 
@@ -232,24 +236,25 @@ class TestNginxConfProxy:
 
 
 class TestNginxConfForbiddenPatterns:
-  '''Negative assertions: certbot owns these; pre-existing versions
-  confuse certbot (Pitfall 1) or leak cert paths into git (T-12-01).
+  '''Negative assertions that still apply to the production nginx artifact.
   '''
 
-  def test_no_listen_80_directive(self, conf_text):
-    '''Pitfall 1: certbot injects the 80-redirect block. A pre-existing
-    listen 80 confuses certbot's "add HTTPS to this server" heuristic.
-    '''
-    assert not re.search(r'^\s*listen\s+80\b', conf_text, re.MULTILINE)
+  def test_port_80_redirect_present(self, conf_text):
+    assert re.search(r'^\s*listen\s+80\s*;', conf_text, re.MULTILINE)
+    assert re.search(r'return\s+301\s+https://', conf_text)
 
-  def test_no_ssl_certificate_line(self, conf_text):
-    '''T-12-01: certbot injects `ssl_certificate` on first run.'''
-    assert not re.search(r'^\s*ssl_certificate\s+', conf_text, re.MULTILINE)
+  def test_ssl_certificate_line_uses_production_domain(self, conf_text):
+    assert re.search(
+      r'^\s*ssl_certificate\s+/etc/letsencrypt/live/signals\.mwiriadi\.me/',
+      conf_text,
+      re.MULTILINE,
+    )
 
-  def test_no_ssl_certificate_key_line(self, conf_text):
-    '''T-12-01: certbot injects `ssl_certificate_key` on first run.'''
-    assert not re.search(
-      r'^\s*ssl_certificate_key\s+', conf_text, re.MULTILINE,
+  def test_ssl_certificate_key_line_uses_production_domain(self, conf_text):
+    assert re.search(
+      r'^\s*ssl_certificate_key\s+/etc/letsencrypt/live/signals\.mwiriadi\.me/',
+      conf_text,
+      re.MULTILINE,
     )
 
   def test_no_bind_all_interfaces(self, conf_text):
@@ -257,8 +262,5 @@ class TestNginxConfForbiddenPatterns:
     # localhost; nginx itself listens on :443 per listen directives).
     assert '0.0.0.0' not in conf_text
 
-  def test_no_handwritten_http_to_https_redirect(self, conf_text):
-    '''Pitfall 1: certbot injects the 301 block; hand-writing it fights
-    certbot's state machine and produces duplicate `return 301` directives.
-    '''
-    assert not re.search(r'return\s+301\s+https://', conf_text)
+  def test_no_placeholder_cert_path(self, conf_text):
+    assert '<owned-domain>' not in conf_text
