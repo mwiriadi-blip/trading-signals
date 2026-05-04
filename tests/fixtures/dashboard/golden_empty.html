@@ -660,10 +660,10 @@ td.calc-cell.entry-target {
   </p>
 </header>
 <nav class="tabs" aria-label="Dashboard tabs">
-  <a href="#signals-tab">Signals</a>
-  <a href="#account-tab">Account Management</a>
-  <a href="#settings-tab">Settings</a>
-  <a href="#market-test-tab">Market Test</a>
+  <a href="dashboard-signals.html">Signals</a>
+  <a href="dashboard-account.html">Account Management</a>
+  <a href="dashboard-settings.html">Settings</a>
+  <a href="dashboard-market-test.html">Market Test</a>
 </nav>
 <section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">
   <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>
@@ -831,6 +831,64 @@ td.calc-cell.entry-target {
   <h2 id="heading-equity">Equity Curve</h2>
   <div class="chart-container empty-state">No equity history yet — first full run needed</div>
 </section>
+</section>
+<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">
+  <h2 id="account-tab-heading">Account Management</h2>
+<div id="account-management-region">
+<section class="open-form account-balance-form">
+  <p class="eyebrow">ACCOUNT BASELINE</p>
+  <form hx-patch="/account/balance" hx-ext="json-enc" hx-target="#account-management-region" hx-swap="outerHTML" hx-on::after-request="handleTradesError(event)">
+    <div class="field"><label>Starting balance</label><input name="initial_account" type="number" step="0.01" min="0.01" value="100000.00" required></div>
+    <div class="field"><label>Account balance</label><input name="account" type="number" step="0.01" min="0" value="100000.00" required></div>
+    <button type="submit" class="btn-primary">Update Balances</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section aria-labelledby="heading-account-stats">
+  <h2 id="heading-account-stats">Key Stats</h2>
+  <div class="stats-grid account-stats-grid">
+    <div class="stat-tile">
+      <p class="label">Starting Balance</p>
+      <p class="value">$100,000.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Account Balance</p>
+      <p class="value">$100,000.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Realised P&amp;L</p>
+      <p class="value">+0.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Unrealised P&amp;L</p>
+      <p class="value">+0.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Total Return</p>
+      <p class="value">+0.0%</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Max Drawdown</p>
+      <p class="value">—</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Win Rate</p>
+      <p class="value">—</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Open Exposure</p>
+      <p class="value">$0.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Open Trades</p>
+      <p class="value">0</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Closed Trades</p>
+      <p class="value">0</p>
+    </div>
+  </div>
+</section>
 <section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">OPEN NEW POSITION</p>
   <form
@@ -913,78 +971,6 @@ td.calc-cell.entry-target {
     </tbody>
   </table>
 </section>
-</section>
-<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">
-  <h2 id="account-tab-heading">Account Management</h2>
-<section aria-labelledby="heading-account-stats">
-  <h2 id="heading-account-stats">Key Stats</h2>
-  <div class="stats-grid account-stats-grid">
-    <div class="stat-tile">
-      <p class="label">Starting Balance</p>
-      <p class="value">$100,000.00</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Account Balance</p>
-      <p class="value">$100,000.00</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Realised P&amp;L</p>
-      <p class="value">+0.00</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Unrealised P&amp;L</p>
-      <p class="value">+0.00</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Total Return</p>
-      <p class="value">+0.0%</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Max Drawdown</p>
-      <p class="value">—</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Win Rate</p>
-      <p class="value">—</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Open Exposure</p>
-      <p class="value">$0.00</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Open Trades</p>
-      <p class="value">0</p>
-    </div>
-    <div class="stat-tile">
-      <p class="label">Closed Trades</p>
-      <p class="value">0</p>
-    </div>
-  </div>
-</section>
-<section aria-labelledby="heading-positions">
-  <h2 id="heading-positions">Open Positions</h2>
-  <table class="data-table">
-    <caption class="visually-hidden">Open positions with current price, contracts, trail stop, and unrealised P&amp;L</caption>
-    <thead>
-      <tr>
-        <th scope="col">Instrument</th>
-        <th scope="col">Direction</th>
-        <th scope="col">Entry</th>
-        <th scope="col">Current</th>
-        <th scope="col">Contracts</th>
-        <th scope="col">Pyramid</th>
-        <th scope="col">Trail Stop</th>
-        <th scope="col">Unrealised P&amp;L</th>
-        <th scope="col">Actions</th>
-      </tr>
-    </thead>
-    <tbody id="positions-empty">
-      <tr>
-        <td colspan="9" class="empty-state">— No open positions —</td>
-      </tr>
-    </tbody>
-  </table>
-</section>
 <section aria-labelledby="heading-trades">
   <h2 id="heading-trades">Closed Trades</h2>
   <p class="subtle">last 20</p>
@@ -1008,6 +994,7 @@ td.calc-cell.entry-target {
     </tbody>
   </table>
 </section>
+</div>
 </section>
 <section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">
   <h2 id="settings-tab-heading">Settings</h2>
@@ -1022,6 +1009,7 @@ td.calc-cell.entry-target {
     <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
     <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
     <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
+    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
     <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
     <button type="submit" class="btn-primary">Save Settings</button>
   </form>
@@ -1038,6 +1026,7 @@ td.calc-cell.entry-target {
     <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
     <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
     <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
+    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
     <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
     <button type="submit" class="btn-primary">Save Settings</button>
   </form>

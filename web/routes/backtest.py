@@ -27,7 +27,6 @@ Performance budget (CONTEXT D-14 + D-18):
 """
 from __future__ import annotations
 import html
-import json
 import logging
 import os
 import re
@@ -36,7 +35,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from backtest.cli import RunArgs, run_backtest
+from backtest.cli import RunArgs, load_report, run_backtest
 from backtest.data_fetcher import DataFetchError, ShortFrameError
 from backtest.render import render_history, render_report
 
@@ -84,14 +83,7 @@ def _list_reports(backtest_dir: Path | None = None) -> list[Path]:
 
 def _load_report(path: Path) -> dict | None:
   """Load and parse JSON. Returns None on corrupt/truncated files."""
-  try:
-    data = json.loads(path.read_text())
-  except (json.JSONDecodeError, OSError) as exc:
-    logger.warning('%s corrupt backtest file %s: %s', _LOG_PREFIX, path.name, exc)
-    return None
-  data.setdefault('metadata', {})
-  data['metadata']['filename'] = path.name
-  return data
+  return load_report(path)
 
 
 def _wrap_html(body: str) -> str:

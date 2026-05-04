@@ -16,6 +16,19 @@ import pyotp
 import pytest
 from fastapi.testclient import TestClient
 
+
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
+
 KNOWN_SECRET = 'JBSWY3DPEHPK3PXP'  # Fixed for determinism + freezer compat
 
 
@@ -83,7 +96,7 @@ class TestEnrollTotpGetGated:
   def test_with_valid_tsi_enroll_renders_qr_and_secret(
     self, client, enroll_secret_seeded, valid_enroll_token,
   ):
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/enroll-totp', cookies={'tsi_enroll': valid_enroll_token},
     )
     assert r.status_code == 200
@@ -105,7 +118,7 @@ class TestEnrollTotpPostValidCode:
   ):
     import auth_store
     code = pyotp.TOTP(KNOWN_SECRET).now()
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/enroll-totp',
       cookies={'tsi_enroll': valid_enroll_token},
       data={'code': code},
@@ -132,7 +145,7 @@ class TestEnrollTotpPostInvalidCode:
     self, client, enroll_secret_seeded, valid_enroll_token,
   ):
     import auth_store
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/enroll-totp',
       cookies={'tsi_enroll': valid_enroll_token},
       data={'code': '000000'},
@@ -159,7 +172,7 @@ class TestVerifyTotpGetGated:
   def test_with_valid_tsi_pending_renders_form(
     self, client, verify_secret_seeded, valid_pending_token,
   ):
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/verify-totp', cookies={'tsi_pending': valid_pending_token},
     )
     assert r.status_code == 200
@@ -174,7 +187,7 @@ class TestVerifyTotpPostValidCode:
     self, client, verify_secret_seeded, valid_pending_token,
   ):
     code = pyotp.TOTP(KNOWN_SECRET).now()
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/verify-totp',
       cookies={'tsi_pending': valid_pending_token},
       data={'code': code},
@@ -192,7 +205,7 @@ class TestVerifyTotpPostInvalidCode:
   def test_invalid_code_re_renders(
     self, client, verify_secret_seeded, valid_pending_token,
   ):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/verify-totp',
       cookies={'tsi_pending': valid_pending_token},
       data={'code': '000000'},
@@ -208,7 +221,7 @@ class TestVerifyTotpPostHasTrustDeviceCheckbox:
     self, client, verify_secret_seeded, valid_pending_token,
   ):
     '''Plan 02 wires the checkbox; Plan 01 just renders stable markup.'''
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/verify-totp', cookies={'tsi_pending': valid_pending_token},
     )
     body = r.text
@@ -260,7 +273,7 @@ class TestVerifyTotpTrustDeviceFlow:
     pre_devices = auth_store.load_auth(path=verify_secret_seeded)['trusted_devices']
     assert len(pre_devices) == 0
 
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/verify-totp',
       cookies={'tsi_pending': valid_pending_token},
       data={'code': code, 'trust_device': 'on'},
@@ -291,7 +304,7 @@ class TestVerifyTotpTrustDeviceFlow:
   ):
     import auth_store
     code = pyotp.TOTP(KNOWN_SECRET).now()
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/verify-totp',
       cookies={'tsi_pending': valid_pending_token},
       data={'code': code},  # trust_device omitted (default '')
@@ -327,7 +340,7 @@ class TestVerifyTotpTrustDeviceFlow:
         'u': 'marc', 'iat': int(_time.time()), 'next': '/', 'pwd_ok': True,
       })
       code = pyotp.TOTP(KNOWN_SECRET).now()
-      r = client.post(
+      r = _request_with_cookies(client, 'POST', 
         '/verify-totp',
         cookies={'tsi_pending': pending_token},
         data={'code': code, 'trust_device': 'on'},
@@ -350,7 +363,7 @@ class TestVerifyTotpTrustDeviceFlow:
   ):
     import auth_store
     code = pyotp.TOTP(KNOWN_SECRET).now()
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/verify-totp',
       cookies={'tsi_pending': valid_pending_token},
       data={'code': code, 'trust_device': 'on'},
@@ -374,7 +387,9 @@ class TestVerifyTotpTrustDeviceFlow:
         'u': 'marc', 'iat': int(_time.time()), 'next': '/', 'pwd_ok': True,
       })
       code = pyotp.TOTP(KNOWN_SECRET).now()
-      r = client.post(
+      r = _request_with_cookies(
+        client,
+        'POST',
         '/verify-totp',
         cookies={'tsi_pending': pending_token},
         data={'code': code, 'trust_device': 'on'},
@@ -393,7 +408,9 @@ class TestVerifyTotpTrustDeviceFlow:
     import auth_store
     from itsdangerous.url_safe import URLSafeTimedSerializer
     code = pyotp.TOTP(KNOWN_SECRET).now()
-    r = client.post(
+    r = _request_with_cookies(
+      client,
+      'POST',
       '/verify-totp',
       cookies={'tsi_pending': valid_pending_token},
       data={'code': code, 'trust_device': 'on'},
@@ -424,8 +441,11 @@ class TestQrCodeRenderedFromPyotpProvisioningUri:
     '''Lighter-weight than full QR-decode round-trip: assert the data-URI is
     a PNG-as-base64 prefix AND the manual-entry secret string is in the body.
     '''
-    r = client.get(
-      '/enroll-totp', cookies={'tsi_enroll': valid_enroll_token},
+    r = _request_with_cookies(
+      client,
+      'GET',
+      '/enroll-totp',
+      cookies={'tsi_enroll': valid_enroll_token},
     )
     body = r.text
     assert 'data:image/png;base64,' in body

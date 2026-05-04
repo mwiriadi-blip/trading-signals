@@ -21,8 +21,8 @@
 The `.github/workflows/daily.yml` workflow runs every weekday at 00:00 UTC:
 
 1. Checks out the repo at HEAD.
-2. Installs Python 3.11.8 (pinned in `.python-version`) with pip cache.
-3. Runs `python main.py --once` — fetches OHLCV, computes signals, updates `state.json`, renders `dashboard.html`, sends the daily email.
+2. Installs Python 3.13.x (pinned in `.python-version`) with pip cache.
+3. Runs `.venv/bin/python main.py --once` — fetches OHLCV, computes signals, updates `state.json`, renders `dashboard.html`, sends the daily email.
 4. If step 3 succeeded, commits the updated `state.json` back to the repo using `stefanzweifel/git-auto-commit-action@v5` with `add_options: '-f'` (force-add; `state.json` is gitignored locally).
 
 ### Cost estimate
@@ -50,7 +50,7 @@ Why Replit is an alternative, not primary:
    - `RESEND_API_KEY`
    - `SIGNALS_EMAIL_TO`
 3. Enable **Reserved VM + Always On** under the Replit project's Deployments / Always On settings. Required for the `schedule` loop to persist across Replit's resource-reclaim cycles.
-4. Click **Run**. `python main.py` (no flags) enters the schedule loop automatically per Phase 7 default-mode dispatch:
+4. Click **Run**. `.venv/bin/python main.py` (no flags) enters the schedule loop automatically per Phase 7 default-mode dispatch:
    - Runs an immediate first check (SCHED-02).
    - Registers `schedule.every().day.at('00:00').do(...)` for the daily loop.
    - Loops forever calling `schedule.run_pending()` every 60 seconds.
@@ -90,16 +90,17 @@ If the assertion fails (custom `TZ` environment variable somewhere), set `TZ=UTC
 
 ## Local development
 
-Phase 7 introduced a default-mode schedule loop. Running `python main.py`
+Phase 7 introduced a default-mode schedule loop. Running `.venv/bin/python main.py`
 with NO flags now enters an infinite `schedule.run_pending()` loop, and
 `_run_schedule_loop` asserts the process TZ is UTC. That means local
 developers need to be aware of TZ in one specific case.
 
-- **`python main.py` (default / loop mode) requires `TZ=UTC` in the shell.**
+- **Provision a local venv with Python 3.13 first:** `python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+- **`.venv/bin/python main.py` (default / loop mode) requires `TZ=UTC` in the shell.**
   If you run this on a non-UTC workstation (e.g. macOS with `Australia/Perth`),
-  export UTC first: `export TZ=UTC && python main.py`. Without this, the UTC
+  export UTC first: `export TZ=UTC && .venv/bin/python main.py`. Without this, the UTC
   assertion raises at loop entry and the process exits non-zero.
-- **`python main.py --once`, `python main.py --test`, `python main.py --force-email`, and `python main.py --reset` are always safe locally, regardless of shell TZ.** These flags short-circuit before the schedule loop, so the UTC assertion never runs. The weekday gate inside `run_daily_check` uses `_compute_run_date()` which reads AWST via `zoneinfo`, not process TZ — so "today AWST" is computed correctly no matter what `TZ` your shell has.
+- **`.venv/bin/python main.py --once`, `.venv/bin/python main.py --test`, `.venv/bin/python main.py --force-email`, and `.venv/bin/python main.py --reset` are always safe locally, regardless of shell TZ.** These flags short-circuit before the schedule loop, so the UTC assertion never runs. The weekday gate inside `run_daily_check` uses `_compute_run_date()` which reads AWST via `zoneinfo`, not process TZ — so "today AWST" is computed correctly no matter what `TZ` your shell has.
 
 ***
 
@@ -159,9 +160,9 @@ The README.md status badge URL embeds the literal string `${{GITHUB_REPOSITORY}}
 
 ### "AssertionError: [Sched] process tz must be UTC" when running locally
 
-You ran `python main.py` (default loop mode) on a workstation with non-UTC system TZ. Either:
-- Run `export TZ=UTC && python main.py` (recommended for local loop-mode dev).
-- Use `python main.py --once` instead — `--once` short-circuits before the loop so the TZ assertion never runs.
+You ran `.venv/bin/python main.py` (default loop mode) on a workstation with non-UTC system TZ. Either:
+- Run `export TZ=UTC && .venv/bin/python main.py` (recommended for local loop-mode dev).
+- Use `.venv/bin/python main.py --once` instead — `--once` short-circuits before the loop so the TZ assertion never runs.
 
 ***
 

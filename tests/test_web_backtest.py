@@ -28,6 +28,17 @@ def client():
   from web.app import create_app
   return TestClient(create_app())
 
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
 
 @pytest.fixture
 def backtest_dir_seeded(tmp_path, monkeypatch):
@@ -63,7 +74,7 @@ def empty_backtest_dir(tmp_path, monkeypatch):
 
 class TestGetBacktest:
   def test_get_returns_latest_report(self, client, valid_cookie_token, backtest_dir_seeded):
-    r = client.get('/backtest', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/backtest', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     body = r.text
     assert 'equityChartCombined' in body
@@ -73,12 +84,12 @@ class TestGetBacktest:
 
   def test_get_empty_dir_returns_empty_state(self, client, valid_cookie_token,
                                              empty_backtest_dir):
-    r = client.get('/backtest', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/backtest', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     assert 'No backtest runs yet' in r.text
 
   def test_get_includes_override_form(self, client, valid_cookie_token, backtest_dir_seeded):
-    r = client.get('/backtest', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/backtest', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     assert 'name="initial_account_aud"' in r.text
     assert 'action="/backtest/run"' in r.text
@@ -89,32 +100,32 @@ class TestGetBacktest:
 class TestPathTraversal:
   def test_traversal_dotdot_etc_passwd_returns_400(self, client, valid_cookie_token,
                                                    backtest_dir_seeded):
-    r = client.get('/backtest?run=../../etc/passwd',
+    r = _request_with_cookies(client, 'GET', '/backtest?run=../../etc/passwd',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 400
     assert 'Invalid backtest filename' in r.text
 
   def test_traversal_absolute_path_returns_400(self, client, valid_cookie_token,
                                                backtest_dir_seeded):
-    r = client.get('/backtest?run=/etc/passwd',
+    r = _request_with_cookies(client, 'GET', '/backtest?run=/etc/passwd',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 400
 
   def test_traversal_with_slashes_returns_400(self, client, valid_cookie_token,
                                               backtest_dir_seeded):
-    r = client.get('/backtest?run=foo/bar.json',
+    r = _request_with_cookies(client, 'GET', '/backtest?run=foo/bar.json',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 400
 
   def test_unknown_filename_returns_400(self, client, valid_cookie_token,
                                         backtest_dir_seeded):
-    r = client.get('/backtest?run=does-not-exist.json',
+    r = _request_with_cookies(client, 'GET', '/backtest?run=does-not-exist.json',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 400
 
   def test_valid_filename_returns_200(self, client, valid_cookie_token,
                                       backtest_dir_seeded):
-    r = client.get('/backtest?run=v1.1.0-20260430T080000.json',
+    r = _request_with_cookies(client, 'GET', '/backtest?run=v1.1.0-20260430T080000.json',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     assert 'v1.1.0' in r.text
@@ -133,7 +144,7 @@ class TestPostRun:
 
   def test_valid_post_redirects_303(self, client, valid_cookie_token,
                                      patched_run_backtest, backtest_dir_seeded):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '10000', 'cost_spi_aud': '6.0',
             'cost_audusd_aud': '5.0'},
@@ -145,7 +156,7 @@ class TestPostRun:
 
   def test_zero_account_returns_400(self, client, valid_cookie_token,
                                     patched_run_backtest, backtest_dir_seeded):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '0', 'cost_spi_aud': '6.0',
             'cost_audusd_aud': '5.0'},
@@ -157,7 +168,7 @@ class TestPostRun:
 
   def test_negative_account_returns_400(self, client, valid_cookie_token,
                                         patched_run_backtest, backtest_dir_seeded):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '-100', 'cost_spi_aud': '6.0',
             'cost_audusd_aud': '5.0'},
@@ -168,7 +179,7 @@ class TestPostRun:
 
   def test_negative_cost_spi_returns_400(self, client, valid_cookie_token,
                                           patched_run_backtest, backtest_dir_seeded):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '10000', 'cost_spi_aud': '-1',
             'cost_audusd_aud': '5.0'},
@@ -180,7 +191,7 @@ class TestPostRun:
 
   def test_negative_cost_audusd_returns_400(self, client, valid_cookie_token,
                                              patched_run_backtest, backtest_dir_seeded):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '10000', 'cost_spi_aud': '6.0',
             'cost_audusd_aud': '-0.01'},
@@ -192,7 +203,7 @@ class TestPostRun:
 
   def test_zero_cost_is_allowed(self, client, valid_cookie_token,
                                 patched_run_backtest, backtest_dir_seeded):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '10000', 'cost_spi_aud': '0',
             'cost_audusd_aud': '0'},
@@ -232,7 +243,7 @@ class TestCookieAuth:
 class TestHistoryView:
   def test_history_returns_200_with_table(self, client, valid_cookie_token,
                                            backtest_dir_seeded):
-    r = client.get('/backtest?history=true',
+    r = _request_with_cookies(client, 'GET', '/backtest?history=true',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     body = r.text
@@ -242,14 +253,14 @@ class TestHistoryView:
 
   def test_history_empty_dir_returns_200_empty_state(self, client, valid_cookie_token,
                                                      empty_backtest_dir):
-    r = client.get('/backtest?history=true',
+    r = _request_with_cookies(client, 'GET', '/backtest?history=true',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     assert 'No backtest history yet' in r.text
 
   def test_history_overlay_chart_present(self, client, valid_cookie_token,
                                           backtest_dir_seeded):
-    r = client.get('/backtest?history=true',
+    r = _request_with_cookies(client, 'GET', '/backtest?history=true',
                    cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     assert 'equityChartHistory' in r.text
@@ -271,7 +282,7 @@ class TestPerformanceBudget:
       return ({'metadata': {'pass': True}}, Path('/tmp/fake.json'), 0)
     monkeypatch.setattr('web.routes.backtest.run_backtest', _fast_stub)
 
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/backtest/run',
       data={'initial_account_aud': '10000', 'cost_spi_aud': '6.0',
             'cost_audusd_aud': '5.0'},

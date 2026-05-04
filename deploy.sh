@@ -41,6 +41,21 @@ git pull --ff-only origin main
 
 # D-23 step 4 was pip-upgrade — DROPPED per REVIEWS MEDIUM #7.
 
+# Python runtime guard/provisioning: enforce repo pin (3.13) on droplet.
+if [ ! -x .venv/bin/python ]; then
+  if ! command -v python3.13 > /dev/null 2>&1; then
+    echo "[deploy] ERROR: python3.13 not found. Install Python 3.13 before deploy." >&2
+    exit 1
+  fi
+  echo "[deploy] .venv missing — creating with python3.13..."
+  python3.13 -m venv .venv
+fi
+
+if ! .venv/bin/python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)"; then
+  echo "[deploy] ERROR: .venv is not Python 3.13. Recreate with: rm -rf .venv && python3.13 -m venv .venv" >&2
+  exit 1
+fi
+
 # D-23 step 5: install requirements (idempotent)
 echo "[deploy] installing requirements..."
 .venv/bin/pip install -r requirements.txt

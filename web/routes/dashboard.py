@@ -90,6 +90,12 @@ _SESSION_NOTE_PLACEHOLDER = b'{{SESSION_NOTE}}'
 _VALID_TRACE_INSTRUMENT_KEYS: frozenset = frozenset({'SPI200', 'AUDUSD'})
 _TRACE_OPEN_PLACEHOLDER_SPI200 = b'{{TRACE_OPEN_SPI200}}'
 _TRACE_OPEN_PLACEHOLDER_AUDUSD = b'{{TRACE_OPEN_AUDUSD}}'
+_PAGE_OUTPUTS = {
+  'signals': 'dashboard-signals.html',
+  'account': 'dashboard-account.html',
+  'settings': 'dashboard-settings.html',
+  'market-test': 'dashboard-market-test.html',
+}
 
 
 def _is_stale() -> bool:
@@ -158,6 +164,82 @@ def register(app: FastAPI) -> None:
 
   @app.get('/')
   def get_dashboard(request: Request, fragment: str | None = None):
+    return _serve_dashboard_root(request, fragment=fragment)
+
+  @app.get('/signals')
+  def get_signals_page(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'signals', fragment=fragment)
+
+  @app.get('/dashboard-signals.html')
+  def get_signals_page_file_alias(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'signals', fragment=fragment)
+
+  @app.get('/account')
+  def get_account_page(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'account', fragment=fragment)
+
+  @app.get('/dashboard-account.html')
+  def get_account_page_file_alias(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'account', fragment=fragment)
+
+  @app.get('/settings')
+  def get_settings_page(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'settings', fragment=fragment)
+
+  @app.get('/dashboard-settings.html')
+  def get_settings_page_file_alias(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'settings', fragment=fragment)
+
+  @app.get('/market-test')
+  def get_market_test_page(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'market-test', fragment=fragment)
+
+  @app.get('/dashboard-market-test.html')
+  def get_market_test_page_file_alias(request: Request, fragment: str | None = None):
+    return _serve_dashboard_page(request, 'market-test', fragment=fragment)
+
+  def _serve_dashboard_page(
+    request: Request,
+    page: str,
+    fragment: str | None = None,
+  ):
+    # Page routes share the same forward-stop fragment handler.
+    fwd = _forward_stop_fragment_response(request, fragment)
+    if fwd is not None:
+      return fwd
+
+    import dashboard
+    from state_manager import load_state
+
+    page_output = _PAGE_OUTPUTS.get(page, _PAGE_OUTPUTS['signals'])
+    page_path = Path(page_output)
+    try:
+      if _is_stale() or not page_path.exists():
+        dashboard.render_dashboard_page(load_state(), page=page, out_path=page_path)
+    except Exception as exc:  # noqa: BLE001 — D-10 never-crash
+      logger.warning(
+        '[Web] dashboard regen failed for page=%s, serving stale: %s: %s',
+        page,
+        type(exc).__name__,
+        exc,
+      )
+
+    if not page_path.exists():
+      return PlainTextResponse(
+        content='dashboard not ready',
+        status_code=503,
+        media_type='text/plain; charset=utf-8',
+      )
+    return _serve_dashboard_content(
+      request=request,
+      content=page_path.read_bytes(),
+      fragment=fragment,
+    )
+
+  def _serve_dashboard_root(
+    request: Request,
+    fragment: str | None = None,
+  ):
     '''Phase 13 GET / + Phase 14 REVIEWS HIGH #4 (placeholder substitution).
 
     The on-disk dashboard.html (rendered by main.run_daily_check via
@@ -171,71 +253,17 @@ def register(app: FastAPI) -> None:
     inner HTML (used by Plan 14-05's per-tbody listener for partial
     refresh on positions-changed events).
     '''
-    # Phase 15 CALC-03 + REVIEWS L-1: forward-stop fragment — EXACT match.
-    # Handled BEFORE the dashboard.html file-read path because this fragment
-    # does not need the on-disk dashboard.html to exist (it reads state.json
-    # directly via load_state). Degenerate Z returns em-dash, never 4xx.
-    if fragment == 'forward-stop':
-      import html as _html
-      import math as _math
-
-      from dashboard import _fmt_currency, _fmt_em_dash  # LOCAL — C-2
-      from sizing_engine import get_trailing_stop  # LOCAL — C-2
-      from state_manager import load_state as _ls  # LOCAL — C-2
-
-      instrument = request.query_params.get('instrument', '')
-      z_raw = request.query_params.get('z', '')
-      span_id_suffix = _html.escape(instrument, quote=True) if instrument else 'unknown'
-
-      def _em_dash_response():
-        body = f'<span id="forward-stop-{span_id_suffix}-w">{_fmt_em_dash()}</span>'
-        return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
-
-      try:
-        z = float(z_raw)
-      except (ValueError, TypeError):
-        return _em_dash_response()
-      if not _math.isfinite(z) or z <= 0:
-        return _em_dash_response()
-
-      try:
-        state = _ls()
-      except Exception:
-        return _em_dash_response()
-
-      pos = state.get('positions', {}).get(instrument)
-      if pos is None:
-        return _em_dash_response()
-
-      synth = dict(pos)
-      direction = synth.get('direction', 'LONG')
-      if direction == 'LONG':
-        peak = synth.get('peak_price') or synth.get('entry_price', 0.0)
-        synth['peak_price'] = max(peak, z)
-      else:
-        trough = synth.get('trough_price') or synth.get('entry_price', 0.0)
-        synth['trough_price'] = min(trough, z)
-
-      try:
-        w = get_trailing_stop(synth, 0.0, 0.0)
-      except Exception:
-        return _em_dash_response()
-
-      if not _math.isfinite(w):
-        w_html = _fmt_em_dash()
-      else:
-        w_html = _html.escape(_fmt_currency(w), quote=True)
-
-      body = f'<span id="forward-stop-{span_id_suffix}-w">{w_html}</span>'
-      return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
+    fwd = _forward_stop_fragment_response(request, fragment)
+    if fwd is not None:
+      return fwd
 
     # D-07 / Phase 11 C-2: local imports preserve hex boundary.
-    from dashboard import render_dashboard
+    import dashboard
     from state_manager import load_state
 
     try:
       if _is_stale():
-        render_dashboard(load_state())
+        dashboard.render_dashboard(load_state())
     except Exception as exc:  # noqa: BLE001 — D-10 never-crash
       logger.warning(
         '[Web] dashboard regen failed, serving stale: %s: %s',
@@ -249,11 +277,76 @@ def register(app: FastAPI) -> None:
         status_code=503,
         media_type='text/plain; charset=utf-8',
       )
+    return _serve_dashboard_content(
+      request=request,
+      content=Path(_DASHBOARD_PATH).read_bytes(),
+      fragment=fragment,
+    )
 
+  def _forward_stop_fragment_response(request: Request, fragment: str | None):
+    # Phase 15 CALC-03 + REVIEWS L-1: forward-stop fragment — EXACT match.
+    # Handled BEFORE the dashboard.html file-read path because this fragment
+    # does not need the on-disk dashboard.html to exist (it reads state.json
+    # directly via load_state). Degenerate Z returns em-dash, never 4xx.
+    if fragment != 'forward-stop':
+      return None
+    import html as _html
+    import math as _math
+
+    from dashboard import _fmt_currency, _fmt_em_dash  # LOCAL — C-2
+    from sizing_engine import get_trailing_stop  # LOCAL — C-2
+    from state_manager import load_state as _ls  # LOCAL — C-2
+
+    instrument = request.query_params.get('instrument', '')
+    z_raw = request.query_params.get('z', '')
+    span_id_suffix = _html.escape(instrument, quote=True) if instrument else 'unknown'
+
+    def _em_dash_response():
+      body = f'<span id="forward-stop-{span_id_suffix}-w">{_fmt_em_dash()}</span>'
+      return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
+
+    try:
+      z = float(z_raw)
+    except (ValueError, TypeError):
+      return _em_dash_response()
+    if not _math.isfinite(z) or z <= 0:
+      return _em_dash_response()
+
+    try:
+      state = _ls()
+    except (OSError, ValueError, TypeError):
+      return _em_dash_response()
+
+    pos = state.get('positions', {}).get(instrument)
+    if pos is None:
+      return _em_dash_response()
+
+    synth = dict(pos)
+    direction = synth.get('direction', 'LONG')
+    if direction == 'LONG':
+      peak = synth.get('peak_price') or synth.get('entry_price', 0.0)
+      synth['peak_price'] = max(peak, z)
+    else:
+      trough = synth.get('trough_price') or synth.get('entry_price', 0.0)
+      synth['trough_price'] = min(trough, z)
+
+    try:
+      w = get_trailing_stop(synth, 0.0, 0.0)
+    except (ValueError, TypeError, KeyError):
+      return _em_dash_response()
+
+    if not _math.isfinite(w):
+      w_html = _fmt_em_dash()
+    else:
+      w_html = _html.escape(_fmt_currency(w), quote=True)
+
+    body = f'<span id="forward-stop-{span_id_suffix}-w">{w_html}</span>'
+    return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
+
+  def _serve_dashboard_content(request: Request, content: bytes, fragment: str | None):
     # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder
     # with env secret at request time so on-disk dashboard.html never
     # carries the real value.
-    content = Path(_DASHBOARD_PATH).read_bytes()
     secret = os.environ.get('WEB_AUTH_SECRET', '').encode('utf-8')
     content = content.replace(_PLACEHOLDER, secret)
 

@@ -18,12 +18,15 @@ rendering" for details.
 ## Quickstart
 
 ```bash
-pip install -r requirements.txt
+.venv/bin/python --version  # should report Python 3.13.x
+# If .venv does not exist yet:
+python3.13 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
-python main.py --once      # one-shot run (GitHub Actions / cron mode)
-python main.py             # run once, then enter schedule loop (requires TZ=UTC locally)
-python main.py --test      # dry run — no state mutation; email marked [TEST]
-python main.py --reset     # reinitialise state.json to fresh $100k
+.venv/bin/python main.py --once      # one-shot run (GitHub Actions / cron mode)
+.venv/bin/python main.py             # run once, then enter schedule loop (requires TZ=UTC locally)
+.venv/bin/python main.py --test      # dry run — no state mutation; email marked [TEST]
+.venv/bin/python main.py --reset     # reinitialise state.json to fresh $100k
 ```
 
 See `docs/DEPLOY.md` → "Local development" for notes on `TZ=UTC` when

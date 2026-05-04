@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -177,6 +178,28 @@ def _resolve_path(path: Path | None) -> Path:
   return path if path is not None else DEFAULT_AUTH_PATH
 
 
+def _quarantine_corrupt_auth_file(path: Path) -> None:
+  '''Best-effort quarantine of a corrupt auth.json payload.
+
+  Moves the unreadable file aside so subsequent writes can succeed cleanly.
+  Any failure here is logged but does not block fallback to default auth data.
+  '''
+  suffix = time.strftime('%Y%m%dT%H%M%S', time.gmtime())
+  quarantine_path = path.with_name(f'{path.name}.corrupt-{suffix}')
+  try:
+    os.replace(path, quarantine_path)
+    logger.warning(
+      '[Auth] moved corrupt auth store to %s; using defaults',
+      quarantine_path,
+    )
+  except OSError as exc:
+    logger.warning(
+      '[Auth] failed to quarantine corrupt auth store %s: %s',
+      path,
+      exc,
+    )
+
+
 def load_auth(path: Path | None = None) -> AuthData:
   '''Read auth.json. Returns a fresh default dict if the file is missing.
 
@@ -187,7 +210,17 @@ def load_auth(path: Path | None = None) -> AuthData:
   resolved = _resolve_path(path)
   if not resolved.exists():
     return _default_auth_data()
-  return json.loads(resolved.read_text(encoding='utf-8'))
+  try:
+    payload = json.loads(resolved.read_text(encoding='utf-8'))
+  except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+    logger.warning('[Auth] corrupt auth store %s: %s', resolved, exc)
+    _quarantine_corrupt_auth_file(resolved)
+    return _default_auth_data()
+  if not isinstance(payload, dict):
+    logger.warning('[Auth] invalid auth store shape in %s: expected object', resolved)
+    _quarantine_corrupt_auth_file(resolved)
+    return _default_auth_data()
+  return payload
 
 
 def save_auth(data: AuthData, path: Path | None = None) -> None:

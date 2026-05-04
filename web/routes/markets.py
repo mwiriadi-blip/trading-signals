@@ -5,6 +5,7 @@ import html
 import json
 import logging
 from datetime import date
+from typing import Literal
 
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -48,12 +49,20 @@ class MarketSettingsRequest(BaseModel):
   risk_pct_short: float = Field(gt=0)
   one_contract_floor: bool = False
   contract_cap: int | None = None
+  direction_mode: Literal['both', 'long_only', 'short_only'] = 'both'
 
   @model_validator(mode='after')
   def _cap_positive(self) -> MarketSettingsRequest:
     if self.contract_cap is not None and self.contract_cap <= 0:
       raise ValueError('contract_cap must be greater than zero when supplied')
     return self
+
+
+class AccountBalanceRequest(BaseModel):
+  model_config = ConfigDict(extra='forbid')
+
+  initial_account: float = Field(gt=0)
+  account: float = Field(ge=0)
 
 
 def _settings_to_state(req: MarketSettingsRequest) -> dict:
@@ -66,6 +75,7 @@ def _settings_to_state(req: MarketSettingsRequest) -> dict:
     'risk_pct_short': float(req.risk_pct_short) / 100.0,
     'one_contract_floor': bool(req.one_contract_floor),
     'contract_cap': req.contract_cap,
+    'direction_mode': req.direction_mode,
   }
 
 
@@ -177,6 +187,18 @@ def register(app: FastAPI) -> None:
   def save_market_settings(req: MarketSettingsRequest) -> Response:
     _save_settings(req.market_id, req)
     return JSONResponse({'ok': True}, headers={'HX-Trigger': 'settings-changed'})
+
+  @app.patch('/account/balance', response_class=HTMLResponse)
+  def save_account_balance(req: AccountBalanceRequest) -> HTMLResponse:
+    from state_manager import mutate_state, load_state
+    from dashboard import _render_account_management_region
+
+    def _apply(state: dict) -> None:
+      state['initial_account'] = float(req.initial_account)
+      state['account'] = float(req.account)
+
+    mutate_state(_apply)
+    return HTMLResponse(_render_account_management_region(load_state()))
 
   @app.post('/market-test/run', response_class=HTMLResponse)
   def run_market_test(

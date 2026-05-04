@@ -23,6 +23,19 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
+
 # Local mirrors of tests/conftest.py constants (single source of truth lives in
 # conftest.py; mirrored here because pytest's conftest auto-discovery does not
 # expose conftest as an importable module without tests/__init__.py).
@@ -968,7 +981,7 @@ class TestSessionPlaceholderSubstitution:
       '</body></html>',
       encoding='utf-8',
     )
-    r = client.get('/', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     body = r.text
     assert 'class="signout-form"' in body
@@ -1063,7 +1076,7 @@ class TestTraceCookieAllowlist:
     '''
     client, tmp, _ = client_with_dashboard
     self._make_html_with_placeholders(tmp / 'dashboard.html')
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/', headers=auth_headers,
       cookies={'tsi_trace_open': 'SPI200'},
     )
@@ -1081,7 +1094,7 @@ class TestTraceCookieAllowlist:
     '''D-12: tsi_trace_open=SPI200,AUDUSD -> both details get " open".'''
     client, tmp, _ = client_with_dashboard
     self._make_html_with_placeholders(tmp / 'dashboard.html')
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/', headers=auth_headers,
       cookies={'tsi_trace_open': 'SPI200,AUDUSD'},
     )
@@ -1101,7 +1114,7 @@ class TestTraceCookieAllowlist:
     '''
     client, tmp, _ = client_with_dashboard
     self._make_html_with_placeholders(tmp / 'dashboard.html')
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/', headers=auth_headers,
       cookies={'tsi_trace_open': 'AAPL,EVIL_PAYLOAD,SPI200,javascript:alert(1)'},
     )

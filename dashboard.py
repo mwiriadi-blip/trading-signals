@@ -76,6 +76,30 @@ from pathlib import Path
 
 import pytz  # noqa: F401 — Wave 1 Australia/Perth localisation
 
+from dashboard_renderer import formatters as dr_formatters
+from dashboard_renderer import stats as dr_stats
+from dashboard_renderer.context import RenderContext
+from dashboard_renderer.components.footer import render_footer as dr_render_footer
+from dashboard_renderer.components.header import render_header as dr_render_header
+from dashboard_renderer.components.header import (
+  render_header_from_context as dr_render_header_from_context,
+)
+from dashboard_renderer.components.paper_trades import (
+  render_paper_trades_region as dr_render_paper_trades_region,
+)
+from dashboard_renderer.components.positions import (
+  render_positions_table as dr_render_positions_table,
+)
+from dashboard_renderer.components.settings import (
+  render_add_market_form as dr_render_add_market_form,
+  render_market_test_tab as dr_render_market_test_tab,
+  render_settings_tab as dr_render_settings_tab,
+)
+from dashboard_renderer.components.signals import (
+  render_signal_cards as dr_render_signal_cards,
+)
+from dashboard_renderer.components.trades import render_trades_table as dr_render_trades_table
+from dashboard_renderer.io import atomic_write_html as dr_atomic_write_html
 from state_manager import (
   load_state,  # noqa: F401 — CLI convenience path; prod uses caller-supplied state
 )
@@ -829,71 +853,32 @@ td.calc-cell.entry-target {{
 
 def _fmt_em_dash() -> str:
   '''UI-SPEC §Format Helper Contracts: single call site for the em-dash empty-value token.'''
-  return '—'
+  return dr_formatters.fmt_em_dash()
 
 
 def _fmt_currency(value: float) -> str:
-  '''UI-SPEC §Format Helper Contracts: $1,234.56 / -$567.89 / $0.00.
-
-  Always 2 dp. Negative uses leading -$, NEVER parentheses. No K/M/B suffix.
-  '''
-  if value < 0:
-    return f'-${-value:,.2f}'
-  return f'${value:,.2f}'
+  '''UI-SPEC §Format Helper Contracts: $1,234.56 / -$567.89 / $0.00.'''
+  return dr_formatters.fmt_currency(value)
 
 
 def _fmt_percent_signed(fraction: float) -> str:
-  '''UI-SPEC §Format Helper Contracts: +5.3% / -12.5% / +0.0%.
-
-  Input is a fraction (0.053 → +5.3%). Signed zero renders as '+0.0%'.
-  '''
-  return f'{fraction * 100:+.1f}%'
+  '''UI-SPEC §Format Helper Contracts: +5.3% / -12.5% / +0.0%.'''
+  return dr_formatters.fmt_percent_signed(fraction)
 
 
 def _fmt_percent_unsigned(fraction: float) -> str:
   '''UI-SPEC §Format Helper Contracts: 58.3% / 12.5%. Input is a fraction.'''
-  return f'{fraction * 100:.1f}%'
+  return dr_formatters.fmt_percent_unsigned(fraction)
 
 
 def _fmt_pnl_with_colour(value: float) -> str:
-  '''UI-SPEC §Format Helper Contracts + CONTEXT D-16: P&L span coloured by sign.
-
-  Positive: <span style="color: #22c55e">+$1,234.56</span>
-  Negative: <span style="color: #ef4444">-$567.89</span>
-  Zero:     <span style="color: #cbd5e1">$0.00</span>
-
-  Belt-and-braces html.escape on both colour + body (numeric formats already safe;
-  the escape keeps reviewer scan trivial per D-15).
-  '''
-  if value > 0:
-    colour = _COLOR_LONG
-    body = f'+{_fmt_currency(value)}'
-  elif value < 0:
-    colour = _COLOR_SHORT
-    body = _fmt_currency(value)
-  else:
-    colour = _COLOR_TEXT_MUTED
-    body = '$0.00'
-  return (
-    f'<span style="color: {html.escape(colour, quote=True)}">'
-    f'{html.escape(body, quote=True)}</span>'
-  )
+  '''UI-SPEC §Format Helper Contracts + CONTEXT D-16: P&L span coloured by sign.'''
+  return dr_formatters.fmt_pnl_with_colour(value)
 
 
 def _fmt_last_updated(now: datetime) -> str:
-  '''UI-SPEC §Format Helper Contracts + DASH-08: YYYY-MM-DD HH:MM AWST.
-
-  Raises ValueError on naive datetime (RESEARCH Pitfall 9: a naive now silently
-  produces different bytes per CI runner timezone, breaking golden-snapshot
-  determinism). Always applies Australia/Perth via astimezone → strftime.
-  '''
-  if now.tzinfo is None:
-    raise ValueError(
-      '_fmt_last_updated requires a timezone-aware datetime; '
-      f'got naive datetime={now!r}'
-    )
-  awst = now.astimezone(pytz.timezone('Australia/Perth'))
-  return awst.strftime('%Y-%m-%d %H:%M AWST')
+  '''UI-SPEC §Format Helper Contracts + DASH-08: YYYY-MM-DD HH:MM AWST.'''
+  return dr_formatters.fmt_last_updated(now)
 
 
 # =========================================================================
@@ -905,21 +890,8 @@ def _format_indicator_value(
   seed_required: int,
   bars_available: int,
 ) -> str:
-  '''Phase 17 D-05 + D-06: format a single indicator scalar for display.
-
-  Returns 6-decimal string for finite floats (D-05). For NaN values:
-  - bars_available < seed_required -> seed-short reason text (D-06).
-  - bars_available >= seed_required -> flat-price reason text (D-06).
-
-  Allowed import: math (already imported at module top — hex-boundary safe).
-  MUST guard with math.isnan BEFORE the f-string; `f"{nan:.6f}"` produces
-  literal "nan" on CPython (LEARNINGS 2026-04-30 RESEARCH §Pitfall 6).
-  '''
-  if math.isnan(value):
-    if bars_available < seed_required:
-      return f'n/a (need {seed_required} bars, have {bars_available})'
-    return 'n/a (flat price)'
-  return f'{value:.6f}'
+  '''Phase 17 D-05 + D-06: format a single indicator scalar for display.'''
+  return dr_formatters.format_indicator_value(value, seed_required, bars_available)
 
 
 # =========================================================================
@@ -927,67 +899,23 @@ def _format_indicator_value(
 # =========================================================================
 
 def _compute_sharpe(state: dict) -> str:
-  '''CONTEXT D-07: daily log-returns, rf=0, annualised × √252. Returns em-dash
-  if <30 samples, any non-positive equity (Pitfall 4: math.log domain error),
-  or flat equity / <2 log-returns (Pitfall 3: statistics.stdev needs >= 2 samples).
-  '''
-  equities = [row['equity'] for row in state.get('equity_history', [])]
-  if len(equities) < 30:
-    return _fmt_em_dash()
-  if any(e <= 0 for e in equities):  # Pitfall 4: math.log domain error guard
-    return _fmt_em_dash()
-  log_returns = [math.log(equities[i] / equities[i - 1]) for i in range(1, len(equities))]
-  if len(log_returns) < 2:  # Pitfall 3: statistics.stdev requires >= 2 samples
-    return _fmt_em_dash()
-  mean_r = statistics.mean(log_returns)
-  std_r = statistics.stdev(log_returns)
-  if std_r == 0:  # Pitfall 3 belt-and-braces: degenerate flat streak
-    return _fmt_em_dash()
-  sharpe = (mean_r / std_r) * math.sqrt(252)
-  return f'{sharpe:.2f}'
+  '''CONTEXT D-07: daily log-returns, rf=0, annualised × √252.'''
+  return dr_stats.compute_sharpe(state, em_dash=_fmt_em_dash())
 
 
 def _compute_max_drawdown(state: dict) -> str:
-  '''CONTEXT D-08: rolling peak-to-trough %. Always <= 0. Empty history → em-dash.'''
-  equities = [row['equity'] for row in state.get('equity_history', [])]
-  if not equities:
-    return _fmt_em_dash()
-  running_max = equities[0]
-  max_dd = 0.0
-  for eq in equities:
-    running_max = max(running_max, eq)
-    if running_max == 0:  # Pitfall 5: guard divide-by-zero on pathological fixture
-      continue
-    dd = (eq - running_max) / running_max  # always <= 0
-    max_dd = min(max_dd, dd)
-  return f'{max_dd * 100:.1f}%'
+  '''CONTEXT D-08: rolling peak-to-trough %. Always <= 0.'''
+  return dr_stats.compute_max_drawdown(state, em_dash=_fmt_em_dash())
 
 
 def _compute_win_rate(state: dict) -> str:
-  '''CONTEXT D-09: closed trades with gross_pnl > 0.
-
-  Uses gross_pnl (NOT realised/net_pnl) — industry "win before costs" convention.
-  '''
-  closed = state.get('trade_log', [])
-  if not closed:
-    return _fmt_em_dash()
-  wins = sum(1 for t in closed if t.get('gross_pnl', 0) > 0)
-  return f'{wins / len(closed) * 100:.1f}%'
+  '''CONTEXT D-09: closed trades with gross_pnl > 0.'''
+  return dr_stats.compute_win_rate(state, em_dash=_fmt_em_dash())
 
 
 def _compute_total_return(state: dict) -> str:
-  '''D-16 (Phase 8): use state['initial_account'] as the baseline;
-  fall through to system_params.INITIAL_ACCOUNT for pre-Phase-8 state
-  that missed _migrate v2 backfill (defense-in-depth).
-  '''
-  initial = state.get('initial_account', INITIAL_ACCOUNT)
-  eq_hist = state.get('equity_history', [])
-  if eq_hist:
-    current = eq_hist[-1].get('equity', state.get('account', initial))
-  else:
-    current = state.get('account', initial)
-  total_return = (current - initial) / initial
-  return f'{total_return * 100:+.1f}%'  # signed format: '+5.3%', '-2.1%', '+0.0%'
+  '''D-16 (Phase 8): use state["initial_account"] as the baseline.'''
+  return dr_stats.compute_total_return(state)
 
 
 def _compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
@@ -1004,58 +932,7 @@ def _compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
   Zero realised_pnl rows are excluded from wins AND losses (CONTEXT D-06).
   Open rows with last_close=None or NaN skip unrealised contribution.
   '''
-  if paper_trades is None:
-    paper_trades = []
-  if signals is None:
-    signals = {}
-
-  from pnl_engine import compute_unrealised_pnl  # LOCAL — Phase 11 C-2
-
-  _MULT = {'SPI200': 5.0, 'AUDUSD': 10000.0}
-
-  realised = 0.0
-  unrealised = 0.0
-  wins = 0
-  losses = 0
-
-  for row in paper_trades:
-    status = row.get('status')
-    if status == 'closed':
-      pnl = row.get('realised_pnl') or 0.0
-      realised += pnl
-      if pnl > 0:
-        wins += 1
-      elif pnl < 0:
-        losses += 1
-    elif status == 'open':
-      instrument = row.get('instrument', '')
-      sig = signals.get(instrument, {})
-      lc = sig.get('last_close')
-      if lc is None:
-        continue
-      try:
-        lc_float = float(lc)
-      except (TypeError, ValueError):
-        continue
-      if math.isnan(lc_float):
-        continue
-      mult = _MULT.get(instrument, 1.0)
-      upnl = compute_unrealised_pnl(
-        row['side'], row['entry_price'], lc_float,
-        row['contracts'], mult, row['entry_cost_aud'],
-      )
-      unrealised += upnl
-
-  denom = wins + losses
-  win_rate = f'{wins * 100 // denom}%' if denom > 0 else '—'
-
-  return {
-    'realised': realised,
-    'unrealised': unrealised,
-    'wins': wins,
-    'losses': losses,
-    'win_rate': win_rate,
-  }
+  return dr_stats.compute_aggregate_stats(paper_trades=paper_trades, signals=signals)
 
 
 # =========================================================================
@@ -1083,28 +960,7 @@ def _compute_trail_stop_display(position: dict, settings: dict | None = None) ->
   Pitfall 5: position.get('manual_stop') so pre-migration position dicts
   (no key) silently fall through to computed.
   '''
-  atr_entry = position['atr_entry']
-  if not math.isfinite(atr_entry):
-    return float('nan')  # B-1: NaN-pass-through (lockstep with sizing_engine)
-  # Phase 14 D-09: manual_stop takes precedence over computed trailing stop.
-  manual = position.get('manual_stop')
-  if manual is not None:
-    return manual
-  # REVIEW HR-02: explicit `is None` to match sizing_engine.py:247-254 semantics.
-  # The previous `or` truthiness check dropped 0.0 (a valid peak/trough value
-  # for AUDUSD-near-zero edge cases) to entry_price — diverging from the
-  # sizing engine's lockstep contract. Use `is None` so 0.0 propagates.
-  if position['direction'] == 'LONG':
-    peak = position.get('peak_price')
-    if peak is None:
-      peak = position['entry_price']
-    trail_mult = float((settings or {}).get('trail_mult_long', TRAIL_MULT_LONG))
-    return peak - trail_mult * atr_entry
-  trough = position.get('trough_price')
-  if trough is None:
-    trough = position['entry_price']
-  trail_mult = float((settings or {}).get('trail_mult_short', TRAIL_MULT_SHORT))
-  return trough + trail_mult * atr_entry
+  return dr_stats.compute_trail_stop_display(position, settings=settings)
 
 
 def _compute_unrealised_pnl_display(
@@ -1125,26 +981,20 @@ def _compute_unrealised_pnl_display(
   (pre-Phase-8 state shape or non-load_state callers like unit tests that
   build state dicts directly). Mirrors D-17 resolved-tier flow.
   '''
-  if current_close is None:
-    return None
-  resolved = None
-  if state is not None:
-    resolved = state.get('_resolved_contracts', {}).get(state_key)
-  if resolved is not None:
-    multiplier = resolved['multiplier']
-    cost_aud_round_trip = resolved['cost_aud']
-  else:
-    logger.debug(
-      '[Dashboard] _resolved_contracts missing for %s; falling back to '
-      'module-level _CONTRACT_SPECS default tier', state_key,
-    )
-    multiplier, cost_aud_round_trip = _CONTRACT_SPECS[state_key]
-  cost_aud_open = cost_aud_round_trip / 2
-  direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
-  price_diff = current_close - position['entry_price']
-  gross = direction_mult * price_diff * position['n_contracts'] * multiplier
-  open_cost = cost_aud_open * position['n_contracts']
-  return gross - open_cost
+  if current_close is not None:
+    has_resolved = state is not None and state.get('_resolved_contracts', {}).get(state_key) is not None
+    if not has_resolved:
+      logger.debug(
+        '[Dashboard] _resolved_contracts missing for %s; falling back to '
+        'module-level _CONTRACT_SPECS default tier', state_key,
+      )
+  return dr_stats.compute_unrealised_pnl_display(
+    position=position,
+    state_key=state_key,
+    current_close=current_close,
+    contract_specs=_CONTRACT_SPECS,
+    state=state,
+  )
 
 
 # =========================================================================
@@ -1357,25 +1207,14 @@ def _render_header(
             render_dashboard(..., is_cookie_session=True)).
     False — render the session note inline (test path: header-auth flow).
   '''
-  subtitle = html.escape('SPI 200 & AUD/USD mechanical system', quote=True)
-  last_updated = html.escape(_fmt_last_updated(now), quote=True)
-  if is_cookie_session is None:
-    auth_widget = '{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}'
-  elif is_cookie_session:
-    auth_widget = _render_signout_button()
-  else:
-    auth_widget = _render_session_note()
-  return (
-    '<header>\n'
-    '  <h1>Trading Signals</h1>\n'
-    f'  <p class="subtitle">{subtitle}</p>\n'
-    '  <p class="meta">\n'
-    '    <span class="label">Last updated</span>\n'
-    f'    <span class="value">{last_updated}</span>\n'
-    f'    {auth_widget}\n'
-    '  </p>\n'
-    '</header>\n'
-  )
+  return dr_render_header(state, now, is_cookie_session=is_cookie_session)
+
+
+def _render_header_ctx(
+  ctx: RenderContext,
+  is_cookie_session: bool | None = None,
+) -> str:
+  return dr_render_header_from_context(ctx, is_cookie_session=is_cookie_session)
 
 
 def _render_trace_inputs(ohlc_window: list) -> str:
@@ -1582,72 +1421,7 @@ def _render_signal_cards(state: dict) -> str:
   last_scalars, last_close}. Empty state (missing key): big "—" chip in
   _COLOR_FLAT + "Signal as of never" + single em-dash scalars line.
   '''
-  signals = state.get('signals', {})
-  parts = [
-    '<section aria-labelledby="heading-signals">\n',
-    '  <h2 id="heading-signals">Signal Status</h2>\n',
-    '  <div class="cards-row">\n',
-  ]
-  for state_key, display in _display_names(state).items():
-    eyebrow = html.escape(display, quote=True)
-    sig_entry = signals.get(state_key)
-    # D-08 upgrade branch (Pitfall 7 from Phase 4): state['signals'][key] may be
-    # either an int (Phase 3 reset_state shape) OR a dict (Phase 4 nested shape).
-    # Rule 1 auto-fix during Wave 2: regenerator hit AttributeError on reset
-    # state fixture which has int shape. Renderer must handle both.
-    if sig_entry is None:
-      label = html.escape(_fmt_em_dash(), quote=True)
-      colour = html.escape(_COLOR_FLAT, quote=True)
-      signal_as_of_line = 'Signal as of never'
-      scalars_line = html.escape(_fmt_em_dash(), quote=True)
-    elif isinstance(sig_entry, int):
-      # Phase 3 int shape: no signal_as_of, no last_scalars — render as FLAT
-      # (or the literal signal value if mapped) with "never" timestamp.
-      label = html.escape(_SIGNAL_LABEL.get(sig_entry, _fmt_em_dash()), quote=True)
-      colour = html.escape(_SIGNAL_COLOUR.get(sig_entry, _COLOR_FLAT), quote=True)
-      signal_as_of_line = 'Signal as of never'
-      scalars_line = html.escape(_fmt_em_dash(), quote=True)
-    else:
-      signal_int = sig_entry.get('signal', 0)
-      label = html.escape(_SIGNAL_LABEL.get(signal_int, _fmt_em_dash()), quote=True)
-      colour = html.escape(_SIGNAL_COLOUR.get(signal_int, _COLOR_FLAT), quote=True)
-      signal_as_of = html.escape(sig_entry.get('signal_as_of', 'never'), quote=True)
-      signal_as_of_line = f'Signal as of {signal_as_of}'
-      scalars = sig_entry.get('last_scalars') or {}
-      if scalars:
-        adx = f'{scalars.get("adx", 0.0):.1f}'
-        mom1 = _fmt_percent_signed(scalars.get('mom1', 0.0))
-        mom3 = _fmt_percent_signed(scalars.get('mom3', 0.0))
-        mom12 = _fmt_percent_signed(scalars.get('mom12', 0.0))
-        rvol = f'{scalars.get("rvol", 0.0):.2f}'
-        scalars_line = (
-          f'ADX {html.escape(adx, quote=True)}  ·  '
-          f'Mom<sub>1</sub> {html.escape(mom1, quote=True)}  ·  '
-          f'Mom<sub>3</sub> {html.escape(mom3, quote=True)}  ·  '
-          f'Mom<sub>12</sub> {html.escape(mom12, quote=True)}  ·  '
-          f'RVol {html.escape(rvol, quote=True)}'
-        )
-      else:
-        scalars_line = html.escape(_fmt_em_dash(), quote=True)
-    parts.append(
-      '    <article class="card">\n'
-      f'      <p class="eyebrow">{eyebrow}</p>\n'
-      f'      <p class="big-label" style="color: {colour}">{label}</p>\n'
-      f'      <p class="sub">{signal_as_of_line}</p>\n'
-      f'      <p class="scalars">{scalars_line}</p>\n'
-      '    </article>\n'
-    )
-    # Phase 17 D-04: append the trace panels disclosure below each signal card.
-    # _render_trace_panels emits a <details data-instrument="..."> wrapper with
-    # the {{TRACE_OPEN_<KEY>}} placeholder for route-layer substitution (D-17).
-    # When sig_entry is int-shape (no trace data), pass an empty dict so the
-    # panels render the "Awaiting first daily run" placeholder per D-11.
-    trace_sig_dict = sig_entry if isinstance(sig_entry, dict) else {}
-    trace_placeholder = _TRACE_OPEN_PLACEHOLDER.get(state_key, '')
-    parts.append(_render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
-  parts.append('  </div>\n')
-  parts.append('</section>\n')
-  return ''.join(parts)
+  return dr_render_signal_cards(state)
 
 
 def _render_market_selector(state: dict) -> str:
@@ -2255,77 +2029,7 @@ def _render_positions_table(state: dict, include_open_form: bool = True) -> str:
   <tbody id="positions-empty"> per F-4 + REVIEWS HIGH #3.
   Current column sources state['signals'][key]['last_close'] (B-1 retrofit).
   '''
-  positions = state.get('positions', {})
-  tbody_blocks = []
-  any_position = False
-  for state_key in _display_names(state):
-    pos = positions.get(state_key)
-    if pos is None:
-      # Phase 15 CALC-02: when no position is held but the signal is LONG/SHORT,
-      # render an entry-target row in its own tbody. Returns '' for FLAT signal.
-      entry_target_html = _render_entry_target_row(state, state_key)
-      if entry_target_html:
-        any_position = True
-        state_key_esc = html.escape(state_key, quote=True)
-        tbody_blocks.append(
-          f'    <tbody id="entry-target-{state_key_esc}">\n'
-          f'{entry_target_html}'
-          f'    </tbody>\n'
-        )
-      continue
-    any_position = True
-    state_key_esc = html.escape(state_key, quote=True)
-    row_html = _render_single_position_row(state, state_key, pos)
-    # Phase 15: append calculator sub-row inside this instrument's tbody.
-    sub_row = _render_calc_row(state, state_key, pos)
-    # Per-instrument tbody — REVIEWS HIGH #3 + HIGH #4.
-    # f-string brace escaping: {{ → { and }} → } in the rendered output.
-    # The hx-headers attribute literally contains "{{WEB_AUTH_SECRET}}"
-    # (the on-disk placeholder) — substituted at GET / time by
-    # web/routes/dashboard.py per Plan 14-04 Task 5.
-    tbody_blocks.append(
-      f'    <tbody id="position-group-{state_key_esc}" '
-      f'''hx-headers='{{"X-Trading-Signals-Auth": "{{{{WEB_AUTH_SECRET}}}}"}}' '''
-      f'hx-trigger="positions-changed from:body" '
-      f'hx-get="/?fragment=position-group-{state_key_esc}" '
-      f'hx-swap="innerHTML">\n'
-      f'{row_html}'
-      f'{sub_row}'
-      f'    </tbody>\n'
-    )
-  if not any_position:
-    tbody_blocks.append(
-      '    <tbody id="positions-empty">\n'
-      '      <tr>\n'
-      '        <td colspan="9" class="empty-state">— No open positions —</td>\n'
-      '      </tr>\n'
-      '    </tbody>\n'
-    )
-  prefix = _render_open_form(state) if include_open_form else ''
-  return (
-    prefix
-    + '<section aria-labelledby="heading-positions">\n'
-    '  <h2 id="heading-positions">Open Positions</h2>\n'
-    '  <table class="data-table">\n'
-    '    <caption class="visually-hidden">Open positions with current price, '
-    'contracts, trail stop, and unrealised P&amp;L</caption>\n'
-    '    <thead>\n'
-    '      <tr>\n'
-    '        <th scope="col">Instrument</th>\n'
-    '        <th scope="col">Direction</th>\n'
-    '        <th scope="col">Entry</th>\n'
-    '        <th scope="col">Current</th>\n'
-    '        <th scope="col">Contracts</th>\n'
-    '        <th scope="col">Pyramid</th>\n'
-    '        <th scope="col">Trail Stop</th>\n'
-    '        <th scope="col">Unrealised P&amp;L</th>\n'
-    '        <th scope="col">Actions</th>\n'
-    '      </tr>\n'
-    '    </thead>\n'
-    f'{"".join(tbody_blocks)}'
-    '  </table>\n'
-    '</section>\n'
-  )
+  return dr_render_positions_table(state, include_open_form=include_open_form)
 
 
 def _render_trades_table(state: dict) -> str:
@@ -2334,67 +2038,7 @@ def _render_trades_table(state: dict) -> str:
   Slice [-20:][::-1] → last 20 reversed so most-recent is the first row.
   Empty trade_log renders single <td colspan="7"> placeholder.
   '''
-  trade_log = state.get('trade_log', [])
-  slice_newest_first = list(reversed(trade_log[-20:]))
-  rendered_rows = []
-  for trade in slice_newest_first:
-    closed = html.escape(trade.get('exit_date', ''), quote=True)
-    instrument_key = trade.get('instrument', '')
-    instrument_display = _display_names(state).get(instrument_key, instrument_key)
-    instrument = html.escape(instrument_display, quote=True)
-    direction_raw = trade.get('direction', '')
-    direction_int = 1 if direction_raw == 'LONG' else -1 if direction_raw == 'SHORT' else 0
-    dir_label = html.escape(direction_raw, quote=True)
-    dir_colour = html.escape(_SIGNAL_COLOUR.get(direction_int, _COLOR_FLAT), quote=True)
-    entry_price = html.escape(_fmt_currency(trade.get('entry_price', 0.0)), quote=True)
-    exit_price = html.escape(_fmt_currency(trade.get('exit_price', 0.0)), quote=True)
-    contracts = html.escape(str(trade.get('n_contracts', 0)), quote=True)
-    exit_reason_raw = trade.get('exit_reason', '')
-    reason_display = _EXIT_REASON_DISPLAY.get(exit_reason_raw, exit_reason_raw)
-    reason = html.escape(reason_display, quote=True)
-    pnl_cell = _fmt_pnl_with_colour(trade.get('net_pnl', 0.0))
-    rendered_rows.append(
-      '      <tr>\n'
-      f'        <td>{closed}</td>\n'
-      f'        <td>{instrument}</td>\n'
-      f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
-      f'        <td class="num">{entry_price} → {exit_price}</td>\n'
-      f'        <td class="num">{contracts}</td>\n'
-      f'        <td>{reason}</td>\n'
-      f'        <td class="num">{pnl_cell}</td>\n'
-      '      </tr>\n'
-    )
-  if not rendered_rows:
-    rendered_rows = [
-      '      <tr>\n'
-      '        <td colspan="7" class="empty-state">— No closed trades yet —</td>\n'
-      '      </tr>\n'
-    ]
-  body = ''.join(rendered_rows)
-  return (
-    '<section aria-labelledby="heading-trades">\n'
-    '  <h2 id="heading-trades">Closed Trades</h2>\n'
-    '  <p class="subtle">last 20</p>\n'
-    '  <table class="data-table">\n'
-    '    <caption class="visually-hidden">Most recent 20 closed trades, '
-    'newest first</caption>\n'
-    '    <thead>\n'
-    '      <tr>\n'
-    '        <th scope="col">Closed</th>\n'
-    '        <th scope="col">Instrument</th>\n'
-    '        <th scope="col">Direction</th>\n'
-    '        <th scope="col">Entry → Exit</th>\n'
-    '        <th scope="col">Contracts</th>\n'
-    '        <th scope="col">Reason</th>\n'
-    '        <th scope="col">P&amp;L</th>\n'
-    '      </tr>\n'
-    '    </thead>\n'
-    '    <tbody>\n'
-    f'{body}'
-    '    </tbody>\n'
-    '  </table>\n'
-    '</section>\n'
-  )
+  return dr_render_trades_table(state)
 
 
 def _render_paper_trades_stats(stats: dict | None = None) -> str:
@@ -2688,18 +2332,7 @@ def _render_paper_trades_region(state: dict) -> str:
   This entire <div> is the HTMX hx-target="#trades-region" swap target for every
   paper-trade mutation (POST /paper-trade/open, PATCH, DELETE, POST close).
   '''
-  paper_trades = state.get('paper_trades', [])
-  signals = state.get('signals', {})
-  stats = _compute_aggregate_stats(paper_trades, signals)
-  return (
-    '<div id="trades-region">\n'
-    + _render_paper_trades_stats(stats)
-    + _render_paper_trades_open_form()
-    + _render_paper_trades_open(paper_trades, signals)
-    + _render_close_form_section()
-    + _render_paper_trades_closed(paper_trades)
-    + '</div>\n'
-  )
+  return dr_render_paper_trades_region(state)
 
 
 def _render_key_stats(state: dict) -> str:
@@ -2824,92 +2457,45 @@ def _render_account_stats(state: dict) -> str:
   )
 
 
+def _render_account_balance_form(state: dict) -> str:
+  initial = float(state.get('initial_account', INITIAL_ACCOUNT))
+  account = float(state.get('account', initial))
+  return (
+    '<section class="open-form account-balance-form">\n'
+    '  <p class="eyebrow">ACCOUNT BASELINE</p>\n'
+    '  <form hx-patch="/account/balance" hx-ext="json-enc" '
+    'hx-target="#account-management-region" hx-swap="outerHTML" '
+    'hx-on::after-request="handleTradesError(event)">\n'
+    f'    <div class="field"><label>Starting balance</label><input name="initial_account" type="number" step="0.01" min="0.01" value="{initial:.2f}" required></div>\n'
+    f'    <div class="field"><label>Account balance</label><input name="account" type="number" step="0.01" min="0" value="{account:.2f}" required></div>\n'
+    '    <button type="submit" class="btn-primary">Update Balances</button>\n'
+    '  </form>\n'
+    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
+    '</section>\n'
+  )
+
+
+def _render_account_management_region(state: dict) -> str:
+  return (
+    '<div id="account-management-region">\n'
+    + _render_account_balance_form(state)
+    + _render_account_stats(state)
+    + _render_positions_table(state, include_open_form=True)
+    + _render_trades_table(state)
+    + '</div>\n'
+  )
+
+
 def _render_settings_tab(state: dict) -> str:
-  sections = []
-  for market_id, display in _display_names(state).items():
-    settings = _strategy_settings_for(state, market_id)
-    cap_value = '' if settings.get('contract_cap') is None else str(settings.get('contract_cap'))
-    checked = ' checked' if settings.get('one_contract_floor') else ''
-    market_id_esc = html.escape(market_id, quote=True)
-    sections.append(
-      '<section class="open-form settings-form" '
-      '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
-      f'  <p class="eyebrow">{html.escape(display, quote=True)} SETTINGS</p>\n'
-      '  <form hx-patch="/markets/settings" hx-ext="json-enc" '
-      'hx-swap="none" hx-on::after-request="handleTradesError(event)">\n'
-      f'    <input type="hidden" name="market_id" value="{market_id_esc}">\n'
-      f'    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="{settings["adx_gate"]}"></div>\n'
-      f'    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="{settings["momentum_votes_required"]}"></div>\n'
-      f'    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="{settings["trail_mult_long"]}"></div>\n'
-      f'    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="{settings["trail_mult_short"]}"></div>\n'
-      f'    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="{float(settings["risk_pct_long"]) * 100:.2f}"></div>\n'
-      f'    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="{float(settings["risk_pct_short"]) * 100:.2f}"></div>\n'
-      f'    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value="{html.escape(cap_value, quote=True)}"></div>\n'
-      f'    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"{checked}> 1-contract floor</label>\n'
-      '    <button type="submit" class="btn-primary">Save Settings</button>\n'
-      '  </form>\n'
-      '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
-      '</section>\n'
-    )
-  return ''.join(sections)
+  return dr_render_settings_tab(state)
 
 
 def _render_add_market_form(state: dict) -> str:
-  del state
-  return (
-    '<section class="open-form" '
-    '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
-    '  <p class="eyebrow">ADD MARKET</p>\n'
-    '  <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" '
-    'hx-on::after-request="handleTradesError(event)">\n'
-    '    <div class="field"><label>Market ID</label><input name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>\n'
-    '    <div class="field"><label>Display name</label><input name="display_name" required></div>\n'
-    '    <div class="field"><label>Symbol</label><input name="symbol" required></div>\n'
-    '    <div class="field"><label>Currency</label><input name="currency" value="AUD" required></div>\n'
-    '    <div class="field"><label>Multiplier</label><input name="multiplier" type="number" step="0.0001" min="0.0001" required></div>\n'
-    '    <div class="field"><label>Cost AUD</label><input name="cost_aud" type="number" step="0.01" min="0" value="0"></div>\n'
-    '    <button type="submit" class="btn-primary">Add Market</button>\n'
-    '  </form>\n'
-    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
-    '</section>\n'
-  )
+  return dr_render_add_market_form(state)
 
 
 def _render_market_test_tab(state: dict) -> str:
-  options = ''.join(
-    f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
-    for key, display in _display_names(state).items()
-  )
-  return (
-    '<section class="open-form market-test-form" '
-    '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
-    '  <p class="eyebrow">MARKET TEST</p>\n'
-    '  <form hx-post="/market-test/run" hx-target="#market-test-result" '
-    'hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">\n'
-    '    <div class="field"><label>Market</label><select name="market_id" required>\n'
-    f'{options}'
-    '    </select></div>\n'
-    '    <div class="field"><label>Start date</label><input name="start_date" type="date" required></div>\n'
-    '    <div class="field"><label>End date</label><input name="end_date" type="date" required></div>\n'
-    '    <div class="field"><label>Initial balance</label><input name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>\n'
-    '    <div class="field"><label>ADX override</label><input name="adx_gate" type="number" step="0.1" min="0"></div>\n'
-    '    <div class="field"><label>Votes override</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>\n'
-    '    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1"></div>\n'
-    '    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1"></div>\n'
-    '    <button type="submit" class="btn-primary">Run Test</button>\n'
-    '  </form>\n'
-    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
-    '  <div id="market-test-result" class="market-test-result"></div>\n'
-    '</section>\n'
-  )
-  return (
-    '<section aria-labelledby="heading-account-stats">\n'
-    '  <h2 id="heading-account-stats">Key Stats</h2>\n'
-    '  <div class="stats-grid account-stats-grid">\n'
-    f'{body}'
-    '  </div>\n'
-    '</section>\n'
-  )
+  return dr_render_market_test_tab(state)
 
 
 def _render_footer(strategy_version: str) -> str:
@@ -2922,13 +2508,7 @@ def _render_footer(strategy_version: str) -> str:
   hex-boundary rule that dashboard.py never imports
   system_params.STRATEGY_VERSION (LEARNINGS 2026-04-27).
   '''
-  version_esc = html.escape(strategy_version, quote=True)
-  return (
-    '<footer>\n'
-    '  Signal-only system. Not financial advice.\n'
-    f'  <div class="strategy-version">Strategy version: <code>{version_esc}</code></div>\n'
-    '</footer>\n'
-  )
+  return dr_render_footer(strategy_version)
 
 
 def _render_equity_chart_container(state: dict) -> str:
@@ -3011,51 +2591,132 @@ def _render_equity_chart_container(state: dict) -> str:
   )
 
 
-def _render_tabbed_dashboard(state: dict, strategy_version: str) -> str:
-  signals_body = (
-    _render_market_selector(state)
-    + _render_signal_cards(state)
-    + _render_paper_trades_region(state)
-    + _render_trailing_stop_guidance(state)
-    + _render_equity_chart_container(state)
-    + _render_drift_banner(state)
-    + _render_positions_table(state, include_open_form=True)
-  )
-  account_body = (
-    _render_account_stats(state)
-    + _render_positions_table(state, include_open_form=False)
-    + _render_trades_table(state)
-  )
-  settings_body = _render_settings_tab(state) + _render_add_market_form(state)
-  market_test_body = _render_market_test_tab(state)
+def _render_page_body(ctx: RenderContext, page: str) -> str:
+  '''Render one dashboard tab body from RenderContext.
+
+  Phase 3: page composition consumes RenderContext across boundaries so callers
+  no longer thread state/strategy_version primitives independently.
+  '''
+  state = ctx.state
+  page_map = {
+    'signals': (
+      'signals-tab',
+      'signals-tab-heading',
+      'Signals',
+      'visually-hidden',
+      lambda: (
+        _render_market_selector(state)
+        + _render_signal_cards(state)
+        + _render_paper_trades_region(state)
+        + _render_trailing_stop_guidance(state)
+        + _render_equity_chart_container(state)
+        + _render_drift_banner(state)
+      ),
+    ),
+    'account': (
+      'account-tab',
+      'account-tab-heading',
+      'Account Management',
+      '',
+      lambda: _render_account_management_region(state),
+    ),
+    'settings': (
+      'settings-tab',
+      'settings-tab-heading',
+      'Settings',
+      '',
+      lambda: _render_settings_tab(state) + _render_add_market_form(state),
+    ),
+    'market-test': (
+      'market-test-tab',
+      'market-test-tab-heading',
+      'Market Test',
+      '',
+      lambda: _render_market_test_tab(state),
+    ),
+  }
+  return page_map.get(page, page_map['signals'])
+
+
+def _render_tabbed_dashboard(ctx: RenderContext) -> str:
+  _, _, _, _, render_signals = _render_page_body(ctx, 'signals')
+  _, _, _, _, render_account = _render_page_body(ctx, 'account')
+  _, _, _, _, render_settings = _render_page_body(ctx, 'settings')
+  _, _, _, _, render_market_test = _render_page_body(ctx, 'market-test')
   return (
     '<nav class="tabs" aria-label="Dashboard tabs">\n'
-    '  <a href="#signals-tab">Signals</a>\n'
-    '  <a href="#account-tab">Account Management</a>\n'
-    '  <a href="#settings-tab">Settings</a>\n'
-    '  <a href="#market-test-tab">Market Test</a>\n'
+    '  <a href="dashboard-signals.html">Signals</a>\n'
+    '  <a href="dashboard-account.html">Account Management</a>\n'
+    '  <a href="dashboard-settings.html">Settings</a>\n'
+    '  <a href="dashboard-market-test.html">Market Test</a>\n'
     '</nav>\n'
     '<section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">\n'
     '  <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>\n'
-    f'{signals_body}'
+    f'{render_signals()}'
     '</section>\n'
     '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
     '  <h2 id="account-tab-heading">Account Management</h2>\n'
-    f'{account_body}'
+    f'{render_account()}'
     '</section>\n'
     '<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">\n'
     '  <h2 id="settings-tab-heading">Settings</h2>\n'
-    f'{settings_body}'
+    f'{render_settings()}'
     '</section>\n'
     '<section id="market-test-tab" class="tab-panel" aria-labelledby="market-test-tab-heading">\n'
     '  <h2 id="market-test-tab-heading">Market Test</h2>\n'
-    f'{market_test_body}'
+    f'{render_market_test()}'
     '</section>\n'
-    + _render_footer(strategy_version)
+    + _render_footer(ctx.strategy_version)
   )
 
 
-def _render_html_shell(body: str) -> str:
+def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
+  if nav_mode == 'file':
+    pages = (
+      ('signals', 'dashboard.html', 'Signals'),
+      ('account', 'dashboard-account.html', 'Account Management'),
+      ('settings', 'dashboard-settings.html', 'Settings'),
+      ('market-test', 'dashboard-market-test.html', 'Market Test'),
+    )
+  else:
+    pages = (
+      ('signals', '/signals', 'Signals'),
+      ('account', '/account', 'Account Management'),
+      ('settings', '/settings', 'Settings'),
+      ('market-test', '/market-test', 'Market Test'),
+    )
+  links = []
+  for page_key, href, label in pages:
+    cls = ' class="active"' if page_key == active_page else ''
+    links.append(
+      f'  <a href="{href}"{cls}>{label}</a>\n',
+    )
+  return '<nav class="tabs" aria-label="Dashboard tabs">\n' + ''.join(links) + '</nav>\n'
+
+
+def _render_single_page_dashboard(
+  ctx: RenderContext,
+  page: str,
+  nav_mode: str = 'web',
+) -> str:
+  selected = _render_page_body(ctx, page)
+  section_id, heading_id, heading_text, heading_cls, render_body = selected
+  body = render_body()
+  heading_class_attr = f' class="{heading_cls}"' if heading_cls else ''
+  return (
+    _render_dashboard_page_nav(
+      page if page in ('signals', 'account', 'settings', 'market-test') else 'signals',
+      nav_mode=nav_mode,
+    )
+    + f'<section id="{section_id}" class="tab-panel" aria-labelledby="{heading_id}">\n'
+    + f'  <h2 id="{heading_id}"{heading_class_attr}>{heading_text}</h2>\n'
+    + body
+    + '</section>\n'
+    + _render_footer(ctx.strategy_version)
+  )
+
+
+def _render_html_shell(ctx: RenderContext, body: str) -> str:  # noqa: ARG001
   '''UI-SPEC §Component Hierarchy — <!DOCTYPE> + <head> + Chart.js + HTMX + inline CSS + <body>.
 
   Chart.js 4.4.6 loads in <head> with SRI. Phase 14 adds HTMX 1.9.12 SRI-pinned
@@ -3126,33 +2787,7 @@ def _atomic_write_html(data: str, path: Path) -> None:
   platform — text-mode default on Windows translates `\\n` -> `\\r\\n`
   which would drift the committed goldens (byte-stability gate).
   '''
-  parent = path.parent
-  tmp_path_str = None
-  try:
-    with tempfile.NamedTemporaryFile(
-      dir=parent, delete=False, mode='w', suffix='.tmp', encoding='utf-8',
-      newline='\n',  # C-7 reviews: force LF regardless of platform
-    ) as tmp:
-      tmp_path_str = tmp.name
-      tmp.write(data)
-      tmp.flush()
-      os.fsync(tmp.fileno())
-    # tempfile is now closed (NamedTemporaryFile context exit)
-    # D-17: os.replace BEFORE parent-dir fsync (rename durability)
-    os.replace(tmp_path_str, path)
-    if os.name == 'posix':
-      dir_fd = os.open(str(parent), os.O_RDONLY)
-      try:
-        os.fsync(dir_fd)
-      finally:
-        os.close(dir_fd)
-    tmp_path_str = None  # success: do not delete in finally
-  finally:
-    if tmp_path_str is not None:
-      try:
-        os.unlink(tmp_path_str)
-      except FileNotFoundError:
-        pass
+  dr_atomic_write_html(data, path)
 
 
 # =========================================================================
@@ -3166,48 +2801,37 @@ def render_dashboard(
   is_cookie_session: bool | None = None,
   trace_open_keys: list | None = None,  # Phase 17 D-04 — None=all-collapsed default
 ) -> None:
-  '''Public API per CONTEXT D-01. Writes dashboard.html atomically; never mutates state.
+  '''Compatibility wrapper; primary orchestration now lives in dashboard_renderer.api.'''
+  from dashboard_renderer.api import render_dashboard as dr_render_dashboard
 
-  Block order MUST match UI-SPEC §Component Hierarchy Rendering-order rule:
-  header → signal cards → equity chart → positions table → closed trades →
-  key stats → footer.
-
-  C-1 reviews: when `now` is None, construct AWST wall-clock via
-  PERTH.localize(datetime.now()) — NEVER via `datetime(..., tzinfo=PERTH)`
-  which silently adopts the historical LMT offset (+07:43:24 for Perth
-  pre-1895).
-
-  Phase 16.1 — `is_cookie_session` 3-way semantics (forwarded to
-  _render_header). Default None makes main.py daily-loop callers emit
-  placeholders; the web layer substitutes at request time.
-
-  Phase 17 D-04 — `trace_open_keys`: caller-supplied list of instrument keys
-  whose <details> should be open. Default None means all panels collapsed
-  (the daily-loop default). web/routes/dashboard.py passes None and instead
-  substitutes {{TRACE_OPEN_<KEY>}} placeholders per-request based on the
-  tsi_trace_open cookie. The trace_open parameter here is reserved for callers
-  that prefer pre-render injection over placeholder substitution.
-  Mutable-default avoided per LEARNINGS 2026-04-29: use None, not [].
-  '''
-  if now is None:
-    perth = pytz.timezone('Australia/Perth')
-    now = datetime.now(perth)
-  logger.info('[Dashboard] rendering to %s', out_path)
-  # Phase 22: extract strategy_version off the state dict (hex-boundary
-  # safe — no system_params import). Emits WARN log per dict-shaped
-  # signal row that lacks the field (D-06 surfacing).
-  strategy_version = _resolve_strategy_version(state)
-  # Phase 17 D-04: compute the set of open instrument keys (defensive
-  # allowlist filter via _resolve_trace_open_keys). main.py daily-loop passes
-  # None (all collapsed); web layer uses placeholder substitution instead.
-  _trace_open = _resolve_trace_open_keys(state, trace_open_keys or [])
-  body = (
-    _render_header(state, now, is_cookie_session=is_cookie_session)
-    + _render_tabbed_dashboard(state, strategy_version)
+  dr_render_dashboard(
+    state,
+    out_path=out_path,
+    now=now,
+    is_cookie_session=is_cookie_session,
+    trace_open_keys=trace_open_keys,
   )
-  html_str = _render_html_shell(body)
-  _atomic_write_html(html_str, out_path)
-  logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
+
+
+def render_dashboard_page(
+  state: dict,
+  page: str,
+  out_path: Path = Path('dashboard.html'),
+  now: datetime | None = None,
+  is_cookie_session: bool | None = None,
+  trace_open_keys: list | None = None,
+) -> None:
+  '''Compatibility wrapper; primary orchestration now lives in dashboard_renderer.api.'''
+  from dashboard_renderer.api import render_dashboard_page as dr_render_dashboard_page
+
+  dr_render_dashboard_page(
+    state,
+    page=page,
+    out_path=out_path,
+    now=now,
+    is_cookie_session=is_cookie_session,
+    trace_open_keys=trace_open_keys,
+  )
 
 
 if __name__ == '__main__':

@@ -16,6 +16,20 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
+
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
 
@@ -74,7 +88,7 @@ class TestDevicesGet:
 
     # Mark uid_a as the current device by attaching its tsi_trusted cookie
     trusted_token = _make_trusted_token(uid_a)
-    r = client.get('/devices', cookies={
+    r = _request_with_cookies(client, 'GET', '/devices', cookies={
       'tsi_session': valid_cookie_token,
       'tsi_trusted': trusted_token,
     })
@@ -118,7 +132,7 @@ class TestDevicesGet:
     uid_b = auth_store.add_trusted_device(label='B')
     uid_c = auth_store.add_trusted_device(label='C')
     auth_store.revoke_device(uid_c)
-    r = client.get('/devices', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/devices', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     revoke_buttons = re.findall(
       r'<button[^>]*name="uuid"[^>]*value="([^"]+)"', r.text,
@@ -133,7 +147,7 @@ class TestDevicesGet:
     import auth_store
     auth_store.add_trusted_device(label='A')
     auth_store.add_trusted_device(label='B')
-    r1 = client.get('/devices', cookies={'tsi_session': valid_cookie_token})
+    r1 = _request_with_cookies(client, 'GET', '/devices', cookies={'tsi_session': valid_cookie_token})
     assert 'Revoke all other' in r1.text or 'revoke-all' in r1.text.lower()
 
   def test_revoke_all_button_absent_when_only_one_active(
@@ -141,7 +155,7 @@ class TestDevicesGet:
   ):
     import auth_store
     auth_store.add_trusted_device(label='only-one')
-    r = client.get('/devices', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/devices', cookies={'tsi_session': valid_cookie_token})
     # Only single active device — revoke-all is a no-op, hide the button.
     assert 'revoke-all' not in r.text.lower() or 'Revoke all other' not in r.text
 
@@ -151,7 +165,7 @@ class TestDevicesGet:
     '''Defensive XSS: even though real UAs don't contain <script>, escape anyway.'''
     import auth_store
     auth_store.add_trusted_device(label='<script>alert(1)</script>')
-    r = client.get('/devices', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/devices', cookies={'tsi_session': valid_cookie_token})
     assert '<script>alert(1)</script>' not in r.text
     assert '&lt;script&gt;' in r.text
 
@@ -169,7 +183,7 @@ class TestDevicesRevoke:
     import auth_store
     uid = auth_store.add_trusted_device(label='to-revoke')
     auth_store.add_trusted_device(label='other')
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/devices/revoke',
       cookies={'tsi_session': valid_cookie_token},
       data={'uuid': uid},
@@ -182,7 +196,7 @@ class TestDevicesRevoke:
   def test_post_revoke_unknown_uuid_is_no_op_redirects(
     self, client, fresh_auth_path, valid_cookie_token,
   ):
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/devices/revoke',
       cookies={'tsi_session': valid_cookie_token},
       data={'uuid': 'does-not-exist'},
@@ -218,7 +232,7 @@ class TestDevicesRevokeAll:
     uid_c = auth_store.add_trusted_device(label='C')
 
     trusted_token = _make_trusted_token(uid_a)
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/devices/revoke-all',
       cookies={
         'tsi_session': valid_cookie_token,
@@ -256,7 +270,7 @@ class TestDevicesCurrentDeviceDetection:
     uid_a = auth_store.add_trusted_device(label='AAA-CURRENT')
     auth_store.add_trusted_device(label='BBB-OTHER')
     trusted_token = _make_trusted_token(uid_a)
-    r = client.get('/devices', cookies={
+    r = _request_with_cookies(client, 'GET', '/devices', cookies={
       'tsi_session': valid_cookie_token,
       'tsi_trusted': trusted_token,
     })
@@ -291,7 +305,7 @@ class TestDevicesCurrentDeviceDetection:
     import auth_store
     auth_store.add_trusted_device(label='A')
     auth_store.add_trusted_device(label='B')
-    r = client.get('/devices', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'GET', '/devices', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     # No tsi_trusted cookie present → no row gets the "(this device)" marker.
     assert '(this device)' not in r.text

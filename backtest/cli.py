@@ -21,7 +21,9 @@ import dataclasses
 import datetime as dt
 import json
 import logging
+import os
 import sys
+import tempfile
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -162,6 +164,54 @@ def _build_combined_curve(spi_result, audusd_result) -> list[dict]:
   return curve
 
 
+def _atomic_write_json(path: Path, payload: dict) -> None:
+  """Atomic JSON persistence: tempfile + fsync + replace + dir fsync."""
+  path.parent.mkdir(parents=True, exist_ok=True)
+  tmp_path_str: str | None = None
+  try:
+    with tempfile.NamedTemporaryFile(
+      mode='w',
+      encoding='utf-8',
+      dir=str(path.parent),
+      prefix=f'.{path.name}.',
+      suffix='.tmp',
+      delete=False,
+    ) as tmp:
+      json.dump(payload, tmp, indent=2, allow_nan=False)
+      tmp.write('\n')
+      tmp.flush()
+      os.fsync(tmp.fileno())
+      tmp_path_str = tmp.name
+    os.replace(tmp_path_str, path)
+    dir_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+      os.fsync(dir_fd)
+    finally:
+      os.close(dir_fd)
+    tmp_path_str = None
+  finally:
+    if tmp_path_str is not None:
+      try:
+        os.unlink(tmp_path_str)
+      except FileNotFoundError:
+        pass
+
+
+def load_report(path: Path) -> dict | None:
+  """Corruption-safe report read. Returns None on unreadable JSON."""
+  try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+  except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+    logger.warning('[Backtest] corrupt report %s: %s', path, exc)
+    return None
+  if not isinstance(data, dict):
+    logger.warning('[Backtest] invalid report shape %s: expected object', path)
+    return None
+  data.setdefault('metadata', {})
+  data['metadata']['filename'] = path.name
+  return data
+
+
 def run_backtest(args: RunArgs) -> tuple[dict, Path, int]:
   """Phase 23 BACKTEST-01..04 entry. Returns (report_dict, output_path, exit_code).
 
@@ -239,9 +289,7 @@ def run_backtest(args: RunArgs) -> tuple[dict, Path, int]:
 
   # Persist JSON
   output_path = args.output if args.output else _output_path(strategy_version, run_dt_obj)
-  output_path.parent.mkdir(parents=True, exist_ok=True)
-  with output_path.open('w') as fh:
-    json.dump(report, fh, indent=2, allow_nan=False)
+  _atomic_write_json(output_path, report)
   logger.info('[Backtest] Wrote %s', output_path)
 
   return report, output_path, exit_code

@@ -1,70 +1,175 @@
-# Trading Signals — SPI 200 & AUD/USD Mechanical System
+# Ruflo — Claude Code Configuration
 
-**Python signal-only trading app.** Computes daily ATR/ADX/momentum signals for `^AXJO` (SPI 200) and `AUDUSD=X`, persists state, renders a dashboard, and emails a weekday report at 08:00 AWST. Never places live trades.
+## Rules
 
-See [.planning/PROJECT.md](.planning/PROJECT.md) for full context and [SPEC.md](SPEC.md) for the complete functional specification.
+- Do what has been asked; nothing more, nothing less
+- NEVER create files unless absolutely necessary — prefer editing existing files
+- NEVER create documentation files unless explicitly requested
+- NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
+- ALWAYS read a file before editing it
+- NEVER commit secrets, credentials, or .env files
+- Keep files under 500 lines
+- Validate input at system boundaries
 
-## Stack
+## Agent Comms (SendMessage-First Coordination)
 
-- **Python 3.11** with CommonJS-style flat module layout
-- **yfinance** `>=1.2,<2.0 (pinned 1.2.0 in requirements.txt)` — data source
-- **pandas 2.3+ (pinned 2.3.3 in requirements.txt)** / **numpy 2.0+ (pinned 2.0.2 in requirements.txt)** — DataFrame math
-- **requests** — Resend HTTPS calls (no SDK)
-- **schedule** — in-process daily loop for Replit path
-- **python-dotenv** — local `.env` only
-- **pytz** — `Australia/Perth` timezone
-- **Chart.js 4.4.6 UMD** (CDN, pinned) — dashboard equity curve
-- **pytest** + **pytest-freezer** — fixture-driven signal tests
-- **Contract specs (per Phase 2 D-11):** SPI 200 mini multiplier = $5/point, $6 AUD round-trip cost; AUD/USD notional = $10,000, $5 AUD round-trip cost. Round-trip is split half on open (in `compute_unrealised_pnl`), half on close (in Phase 3 `record_trade`) per D-13.
-
-**Hand-roll** ATR(14), ADX(20), +DI, -DI, Mom, RVol — no pandas-ta or TA-Lib.
-
-Exact version pins (no `>=`, no `~=`) are maintained in requirements.txt per STATE.md §Todos Carried Forward. Phase 1 pins only the 5 deps actually used in Phase 1; later phases add their own. Bumps are deliberate PRs.
-
-## Conventions
-
-- 2-space indent, single quotes, PEP 8 via `ruff`
-- Snake_case for functions, UPPER_SNAKE for constants
-- Instrument keys: `SPI200`, `AUDUSD` (matches state.json)
-- Signal integers: `LONG=1`, `SHORT=-1`, `FLAT=0`
-- Dates: ISO `YYYY-MM-DD`; times always AWST in user-facing output
-- Log prefixes: `[Signal]`, `[State]`, `[Email]`, `[Sched]`, `[Fetch]`
-
-## Architecture
-
-Hexagonal-lite. Pure math in `signal_engine.py` (indicators + vote) and `sizing_engine.py` (position sizing, trailing stops, pyramid state machine — added in Phase 2 per D-07); shared constants and `Position` TypedDict in `system_params.py`; I/O adapters in `state_manager.py`, `notifier.py`, `dashboard.py`. `main.py` is the thin orchestrator with one `run_daily_check()` function.
-
-- `signal_engine.py ↔ state_manager.py` must not import each other — all interaction through `main.py`
-- `sizing_engine.py` and `system_params.py` are pure-math/constants modules; same hex-boundary rule applies (no imports of `state_manager`, `notifier`, `dashboard`, `main`, `requests`, `datetime`, `os`, etc.). Enforced by `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` (extended Wave 0 of Phase 2).
-- All pure functions take plain args, return plain values — no `datetime.now()`, no env-var reads inside them
-- `state.json` writes are atomic: tempfile + fsync + `os.replace`
-- `--test` is structurally read-only (enforced by splitting compute and persist)
-- Email sends NEVER crash the workflow — Resend failure is logged and skipped
-
-## Operator Decisions (locked in during project init)
-
-- **Deployment:** DigitalOcean droplet systemd is the primary path (Phase 11+). GitHub Actions cron is disabled (`.github/workflows/daily.yml.disabled` — retained for rollback per Phase 10 INFRA-03). Replit Always On remains documented as an alternative in `docs/DEPLOY.md` (docs file is stale; see Phase 10 CONTEXT §Deferred Ideas).
-- **Sizing:** No `max(1, …)` floor — if sized contracts = 0, skip the trade and warn
-- **FLAT close:** LONG→FLAT closes the LONG; SHORT→FLAT closes the SHORT
-- **Trailing stop:** Intraday HIGH/LOW drives both peak updates and hit detection
-
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-
-## Next Steps
-
-Roadmap has **8 phases** covering **78 v1 requirements** (see [.planning/ROADMAP.md](.planning/ROADMAP.md)). Start with:
+Named agents coordinate via `SendMessage`, not polling or shared state.
 
 ```
-/gsd-discuss-phase 1   # Signal Engine Core — Indicators & Vote
+Lead (you) ←→ architect ←→ developer ←→ tester ←→ reviewer
+              (named agents message each other directly)
 ```
 
-Phases 1 and 3 share no code and can be planned in parallel if capacity allows.
+### Spawning a Coordinated Team
+
+```javascript
+// ALL agents in ONE message, each knows WHO to message next
+Agent({ prompt: "Research the codebase. SendMessage findings to 'architect'.",
+  subagent_type: "researcher", name: "researcher", run_in_background: true })
+Agent({ prompt: "Wait for 'researcher'. Design solution. SendMessage to 'coder'.",
+  subagent_type: "system-architect", name: "architect", run_in_background: true })
+Agent({ prompt: "Wait for 'architect'. Implement it. SendMessage to 'tester'.",
+  subagent_type: "coder", name: "coder", run_in_background: true })
+Agent({ prompt: "Wait for 'coder'. Write tests. SendMessage results to 'reviewer'.",
+  subagent_type: "tester", name: "tester", run_in_background: true })
+Agent({ prompt: "Wait for 'tester'. Review code quality and security.",
+  subagent_type: "reviewer", name: "reviewer", run_in_background: true })
+
+// Kick off the pipeline
+SendMessage({ to: "researcher", summary: "Start", message: "[task context]" })
+```
+
+### Patterns
+
+| Pattern | Flow | Use When |
+|---------|------|----------|
+| **Pipeline** | A → B → C → D | Sequential dependencies (feature dev) |
+| **Fan-out** | Lead → A, B, C → Lead | Independent parallel work (research) |
+| **Supervisor** | Lead ↔ workers | Ongoing coordination (complex refactor) |
+
+### Rules
+
+- ALWAYS name agents — `name: "role"` makes them addressable
+- ALWAYS include comms instructions in prompts — who to message, what to send
+- Spawn ALL agents in ONE message with `run_in_background: true`
+- After spawning: STOP, tell user what's running, wait for results
+- NEVER poll status — agents message back or complete automatically
+
+## Swarm & Routing
+
+### Config
+- **Topology**: hierarchical-mesh (anti-drift)
+- **Max Agents**: 15
+- **Memory**: hybrid
+- **HNSW**: Enabled
+- **Neural**: Enabled
+
+```bash
+npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
+```
+
+### Agent Routing
+
+| Task | Agents | Topology |
+|------|--------|----------|
+| Bug Fix | researcher, coder, tester | hierarchical |
+| Feature | architect, coder, tester, reviewer | hierarchical |
+| Refactor | architect, coder, reviewer | hierarchical |
+| Performance | perf-engineer, coder | hierarchical |
+| Security | security-architect, auditor | hierarchical |
+
+### When to Swarm
+- **YES**: 3+ files, new features, cross-module refactoring, API changes, security, performance
+- **NO**: single file edits, 1-2 line fixes, docs updates, config changes, questions
+
+### 3-Tier Model Routing
+
+| Tier | Handler | Use Cases |
+|------|---------|-----------|
+| 1 | Agent Booster (WASM) | Simple transforms — skip LLM, use Edit directly |
+| 2 | Haiku | Simple tasks, low complexity |
+| 3 | Sonnet/Opus | Architecture, security, complex reasoning |
+
+## Memory & Learning
+
+### Before Any Task
+```bash
+npx @claude-flow/cli@latest memory search --query "[task keywords]" --namespace patterns
+npx @claude-flow/cli@latest hooks route --task "[task description]"
+```
+
+### After Success
+```bash
+npx @claude-flow/cli@latest memory store --namespace patterns --key "[name]" --value "[what worked]"
+npx @claude-flow/cli@latest hooks post-task --task-id "[id]" --success true --store-results true
+```
+
+### MCP Tools (use `ToolSearch("keyword")` to discover)
+
+| Category | Key Tools |
+|----------|-----------|
+| **Memory** | `memory_store`, `memory_search`, `memory_search_unified` |
+| **Bridge** | `memory_import_claude`, `memory_bridge_status` |
+| **Swarm** | `swarm_init`, `swarm_status`, `swarm_health` |
+| **Agents** | `agent_spawn`, `agent_list`, `agent_status` |
+| **Hooks** | `hooks_route`, `hooks_post-task`, `hooks_worker-dispatch` |
+| **Security** | `aidefence_scan`, `aidefence_is_safe`, `aidefence_has_pii` |
+| **Hive-Mind** | `hive-mind_init`, `hive-mind_consensus`, `hive-mind_spawn` |
+
+### Background Workers
+
+| Worker | When |
+|--------|------|
+| `audit` | After security changes |
+| `optimize` | After performance work |
+| `testgaps` | After adding features |
+| `map` | Every 5+ file changes |
+| `document` | After API changes |
+
+```bash
+npx @claude-flow/cli@latest hooks worker dispatch --trigger audit
+```
+
+## Agents
+
+**Core**: `coder`, `reviewer`, `tester`, `planner`, `researcher`
+**Architecture**: `system-architect`, `backend-dev`, `mobile-dev`
+**Security**: `security-architect`, `security-auditor`
+**Performance**: `performance-engineer`, `perf-analyzer`
+**Coordination**: `hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
+**GitHub**: `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
+
+Any string works as a custom agent type.
+
+## Build & Test
+
+- ALWAYS run tests after code changes
+- ALWAYS verify build succeeds before committing
+
+```bash
+npm run build && npm test
+```
+
+## CLI Quick Reference
+
+```bash
+npx @claude-flow/cli@latest init --wizard           # Setup
+npx @claude-flow/cli@latest swarm init --v3-mode     # Start swarm
+npx @claude-flow/cli@latest memory search --query "" # Vector search
+npx @claude-flow/cli@latest hooks route --task ""    # Route to agent
+npx @claude-flow/cli@latest doctor --fix             # Diagnostics
+npx @claude-flow/cli@latest security scan            # Security scan
+npx @claude-flow/cli@latest performance benchmark    # Benchmarks
+```
+
+26 commands, 140+ subcommands. Use `--help` on any command for details.
+
+## Setup
+
+```bash
+claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
+npx @claude-flow/cli@latest daemon start
+npx @claude-flow/cli@latest doctor --fix
+```
+
+**Agent tool** handles execution (agents, files, code, git). **MCP tools** handle coordination (swarm, memory, hooks). **CLI** is the same via Bash.

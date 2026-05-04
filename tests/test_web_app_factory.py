@@ -256,7 +256,32 @@ class TestMarketRoutesRegistered:
     assert '/markets/{market_id}' in paths
     assert '/markets/settings' in paths
     assert '/markets/{market_id}/settings' in paths
+    assert '/account/balance' in paths
     assert '/market-test/run' in paths
+
+  def test_patch_account_balance_updates_initial_and_current(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from state_manager import load_state, reset_state, save_state
+    from web.app import create_app
+
+    state = reset_state(initial_account=100000.0)
+    state['account'] = 105000.0
+    save_state(state)
+
+    client = TestClient(create_app())
+    response = client.patch(
+      '/account/balance',
+      json={'initial_account': 120000.0, 'account': 123456.78},
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+
+    assert response.status_code == 200
+    updated = load_state()
+    assert updated['initial_account'] == 120000.0
+    assert updated['account'] == 123456.78
+    assert 'Starting Balance' in response.text
 
   def test_patch_market_metadata_updates_existing_market(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
@@ -298,6 +323,7 @@ class TestMarketRoutesRegistered:
       'risk_pct_short': 2.5,
       'one_contract_floor': True,
       'contract_cap': 4,
+      'direction_mode': 'long_only',
     }
     response = client.patch(
       '/markets/AUDUSD/settings',
@@ -313,3 +339,4 @@ class TestMarketRoutesRegistered:
     assert settings['risk_pct_short'] == 0.025
     assert settings['one_contract_floor'] is True
     assert settings['contract_cap'] == 4
+    assert settings['direction_mode'] == 'long_only'

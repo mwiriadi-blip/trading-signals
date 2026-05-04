@@ -18,6 +18,19 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
+
 WEB_AUTH_PATH = Path('web/middleware/auth.py')
 
 
@@ -579,7 +592,7 @@ class TestAuditLogExactlyOnce:
     if 'bad_header' in case:
       headers['X-Trading-Signals-Auth'] = 'wrong-secret'
     with caplog.at_level(logging.WARNING, logger='web.middleware.auth'):
-      client_no_auth.get('/', headers=headers, cookies=cookies)
+      _request_with_cookies(client_no_auth, 'GET', '/', headers=headers, cookies=cookies)
     auth_warns = [
       r for r in caplog.records
       if r.name == 'web.middleware.auth' and '[Web] auth failure' in r.getMessage()
@@ -620,7 +633,7 @@ class TestTrustedDeviceCookie:
     import auth_store
     uid = auth_store.add_trusted_device(label='trusted-device-A')
     token = _make_trusted_token(uid)
-    r = client_with_auth.get(
+    r = _request_with_cookies(client_with_auth, 'GET', 
       '/', cookies={'tsi_trusted': token},
     )
     # 200 (Plan 13-05 dashboard) or 503 (Plan 13-02 stub) — anything that's
@@ -636,7 +649,7 @@ class TestTrustedDeviceCookie:
     uid = auth_store.add_trusted_device(label='B')
     auth_store.revoke_device(uid)
     token = _make_trusted_token(uid)
-    r = client_with_auth.get(
+    r = _request_with_cookies(client_with_auth, 'GET', 
       '/', cookies={'tsi_trusted': token}, follow_redirects=False,
     )
     assert r.status_code != 200, (
@@ -651,7 +664,7 @@ class TestTrustedDeviceCookie:
     self, client_with_auth, isolated_auth_json,
   ):
     token = _make_trusted_token('uuid-not-in-auth-json')
-    r = client_with_auth.get(
+    r = _request_with_cookies(client_with_auth, 'GET', 
       '/', cookies={'tsi_trusted': token}, follow_redirects=False,
     )
     assert r.status_code != 200, (
@@ -673,7 +686,7 @@ class TestTrustedDeviceCookie:
     with freeze_time('2026-03-29T00:00:00+00:00'):  # 31 days before today
       old_token = _make_trusted_token(uid)
     # Real-time request — token is now 31d old → SignatureExpired
-    r = client_with_auth.get(
+    r = _request_with_cookies(client_with_auth, 'GET', 
       '/', cookies={'tsi_trusted': old_token}, follow_redirects=False,
     )
     assert r.status_code != 200, 'Expired tsi_trusted MUST NOT grant'
@@ -686,7 +699,7 @@ class TestTrustedDeviceCookie:
     token = _make_trusted_token(uid)
     # Flip the last char to break the signature
     tampered = token[:-1] + ('A' if token[-1] != 'A' else 'B')
-    r = client_with_auth.get(
+    r = _request_with_cookies(client_with_auth, 'GET', 
       '/', cookies={'tsi_trusted': tampered}, follow_redirects=False,
     )
     assert r.status_code != 200, 'Tampered tsi_trusted MUST NOT grant'
@@ -697,7 +710,7 @@ class TestTrustedDeviceCookie:
     import auth_store
     uid = auth_store.add_trusted_device(label='E')
     trusted_token = _make_trusted_token(uid)
-    r = client_with_auth.get('/', cookies={
+    r = _request_with_cookies(client_with_auth, 'GET', '/', cookies={
       'tsi_session': valid_cookie_token,
       'tsi_trusted': trusted_token,
     })
@@ -712,7 +725,7 @@ class TestTrustedDeviceCookie:
     import auth_store
     uid = auth_store.add_trusted_device(label='F')
     token = _make_trusted_token(uid)
-    r = client_with_auth.get('/', cookies={'tsi_trusted': token})
+    r = _request_with_cookies(client_with_auth, 'GET', '/', cookies={'tsi_trusted': token})
     assert r.status_code in (200, 503), (
       f'tsi_trusted alone should grant (E-04), got {r.status_code}'
     )
@@ -730,7 +743,7 @@ class TestTrustedDeviceCookie:
 
     with freeze_time('2026-04-29T12:34:56+00:00'):
       token = _make_trusted_token(uid)
-      client_with_auth.get('/', cookies={'tsi_trusted': token})
+      _request_with_cookies(client_with_auth, 'GET', '/', cookies={'tsi_trusted': token})
 
     post_last_seen = auth_store.get_trusted_device(uid)['last_seen']
     assert post_last_seen != pre_last_seen, (
@@ -753,7 +766,7 @@ class TestTrustedDeviceCookie:
     pre_last_seen = auth_store.get_trusted_device(uid)['last_seen']
 
     # Request with tsi_session only (no tsi_trusted cookie)
-    client_with_auth.get('/', cookies={'tsi_session': valid_cookie_token})
+    _request_with_cookies(client_with_auth, 'GET', '/', cookies={'tsi_session': valid_cookie_token})
 
     post_last_seen = auth_store.get_trusted_device(uid)['last_seen']
     assert post_last_seen == pre_last_seen, (

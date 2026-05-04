@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version-file: '.python-version'   # reads 3.11.8
+          python-version-file: '.python-version'   # reads 3.13
           cache: 'pip'
           cache-dependency-path: requirements.txt  # invalidates on dep change
 

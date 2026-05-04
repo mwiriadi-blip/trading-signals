@@ -2,7 +2,7 @@
 name = 'trading-signals'
 version = '0.1.0'
 description = 'SPI 200 & AUD/USD mechanical daily signal system'
-requires-python = '>=3.11,<3.12'
+requires-python = '>=3.13,<3.14'
 
 [tool.pytest.ini_options]
 minversion = '8.0'
@@ -14,7 +14,7 @@ addopts = '-ra --strict-markers'
 
 [tool.ruff]
 line-length = 100
-target-version = 'py311'
+target-version = 'py313'
 extend-exclude = ['.venv', 'tests/fixtures', 'tests/oracle/goldens']
 
 [tool.ruff.lint]

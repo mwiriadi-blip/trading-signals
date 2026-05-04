@@ -19,6 +19,20 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
+
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
 
@@ -248,7 +262,7 @@ class TestEnrollTotpResetMode:
   ):
     '''GET /enroll-totp?reset=1 with valid tsi_session → 200 + 2 buttons.'''
     session_cookie = _make_session_cookie()
-    r = client.get(
+    r = _request_with_cookies(client, 'GET', 
       '/enroll-totp?reset=1',
       cookies={'tsi_session': session_cookie},
       follow_redirects=False,
@@ -277,7 +291,7 @@ class TestEnrollTotpResetMode:
     pre_secret = auth_store.get_totp_secret(path=fresh_auth_path)
 
     session_cookie = _make_session_cookie()
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/enroll-totp?reset=1',
       data={'action': 'keep'},
       cookies={'tsi_session': session_cookie},
@@ -298,7 +312,7 @@ class TestEnrollTotpResetMode:
     pre_secret = auth_store.get_totp_secret(path=fresh_auth_path)
 
     session_cookie = _make_session_cookie()
-    r = client.post(
+    r = _request_with_cookies(client, 'POST', 
       '/enroll-totp?reset=1',
       data={'action': 'new'},
       cookies={'tsi_session': session_cookie},

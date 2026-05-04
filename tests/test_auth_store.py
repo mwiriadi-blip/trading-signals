@@ -126,6 +126,25 @@ class TestSchemaV1Init:
     tmp_auth_path.write_text(json.dumps(payload))
     assert auth_store.load_auth(path=tmp_auth_path) == payload
 
+  def test_load_auth_corrupt_file_quarantines_and_returns_default(self, tmp_path):
+    import auth_store
+    path = tmp_path / 'auth.json'
+    path.write_text('{not-json', encoding='utf-8')
+
+    loaded = auth_store.load_auth(path=path)
+
+    assert loaded == {
+      'schema_version': 1,
+      'totp_secret': None,
+      'totp_enrolled': False,
+      'totp_enrolled_at': None,
+      'trusted_devices': [],
+      'pending_magic_links': [],
+    }
+    assert not path.exists()
+    quarantined = list(tmp_path.glob('auth.json.corrupt-*'))
+    assert len(quarantined) == 1
+
 
 class TestTotpSecretRoundTrip:
   '''F-01: set_totp_secret persists via atomic write; get_totp_secret reads it.'''

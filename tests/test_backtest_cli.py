@@ -6,7 +6,7 @@ import logging
 import pandas as pd
 import pytest
 
-from backtest.cli import RunArgs, _build_parser, main, run_backtest
+from backtest.cli import RunArgs, _build_parser, load_report, main, run_backtest
 
 
 def _bull_5y_df(start='2020-01-01', n_bars=1300, base=7000.0, drift=0.5) -> pd.DataFrame:
@@ -131,6 +131,18 @@ class TestJsonSchema:
     # allow_nan=False would raise on serialise; round-trip must succeed
     loaded = json.loads(out.read_text())
     assert isinstance(loaded, dict)
+
+  def test_load_report_returns_none_on_corrupt_json(self, tmp_path):
+    out = tmp_path / 'corrupt.json'
+    out.write_text('{"metadata":', encoding='utf-8')
+    assert load_report(out) is None
+
+  def test_load_report_adds_filename_metadata(self, tmp_path, patched_fetcher):
+    out = tmp_path / 'named.json'
+    run_backtest(RunArgs(output=out))
+    loaded = load_report(out)
+    assert loaded is not None
+    assert loaded['metadata']['filename'] == 'named.json'
 
 
 class TestExitCode:

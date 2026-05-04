@@ -223,10 +223,12 @@ def get_signal(
   adx_gate = ADX_GATE
   votes_required = 2
   mom_threshold = MOM_THRESHOLD
+  direction_mode = 'both'
   if settings is not None:
     adx_gate = float(settings.get('adx_gate', adx_gate))
     votes_required = int(settings.get('momentum_votes_required', votes_required))
     mom_threshold = float(settings.get('momentum_threshold', mom_threshold))
+    direction_mode = str(settings.get('direction_mode', direction_mode))
 
   adx = row['ADX']
   if pd.isna(adx) or adx < adx_gate:
@@ -236,8 +238,12 @@ def get_signal(
   votes_up = sum(1 for m in valid if m > mom_threshold)
   votes_dn = sum(1 for m in valid if m < -mom_threshold)
   if votes_up >= votes_required:
+    if direction_mode == 'short_only':
+      return FLAT
     return LONG
   if votes_dn >= votes_required:
+    if direction_mode == 'long_only':
+      return FLAT
     return SHORT
   return FLAT
 

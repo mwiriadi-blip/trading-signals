@@ -2173,18 +2173,17 @@ class TestRenderSignoutButton:
     assert 'hx-headers' not in match.group(0)
 
   def test_hx_headers_count_unchanged_from_phase_14_baseline(self, tmp_path) -> None:
-    '''D-13 belt-and-suspenders preserved: HTMX trade-form hx-headers count
-    must equal the Phase 14 baseline (2 occurrences — open-form +
-    position-table-section).
+    '''D-13 belt-and-suspenders: one Account-tab trade block (open-form + N
+    position tbodies) + settings/add-market/market-test. Helper state has one
+    open position → 2 trade + 4 other = 6.
     '''
     out = tmp_path / 'd.html'
     state = _make_render_state_with_position()
     render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
     rendered = out.read_text()
-    assert rendered.count('hx-headers') == 7, (
-      f'Phase 24: expected 7 hx-headers occurrences '
-      f'(trade forms + settings + add-market + market-test), '
-      f'got {rendered.count("hx-headers")}'
+    assert rendered.count('hx-headers') == 6, (
+      f'expected 6 hx-headers (1 open-form + 1 position tbody for SPI200 only + '
+      f'4 settings/market-test), got {rendered.count("hx-headers")}'
     )
 
 
@@ -3121,3 +3120,28 @@ class TestPhase24TabbedDashboard:
     assert html_out.count('hx-patch="/markets/settings"') >= 2
     assert 'name="adx_gate"' in html_out
     assert 'name="one_contract_floor"' in html_out
+
+
+class TestSinglePageRenderIsolation:
+  def test_account_page_render_does_not_evaluate_settings_or_market_test(
+    self, tmp_path, monkeypatch,
+  ) -> None:
+    state = _make_state()
+    out = tmp_path / 'dashboard-account.html'
+
+    def _explode_settings(*_args, **_kwargs):
+      raise AssertionError('settings tab must not be rendered for account page')
+
+    def _explode_market_test(*_args, **_kwargs):
+      raise AssertionError('market-test tab must not be rendered for account page')
+
+    monkeypatch.setattr(dashboard, '_render_settings_tab', _explode_settings)
+    monkeypatch.setattr(dashboard, '_render_market_test_tab', _explode_market_test)
+
+    dashboard.render_dashboard_page(state, page='account', out_path=out, now=FROZEN_NOW)
+    html_out = out.read_text()
+    assert 'Account Management' in html_out
+    assert 'hx-patch="/account/balance"' in html_out
+    assert 'id="account-management-region"' in html_out
+    assert 'name="initial_account"' in html_out
+    assert 'name="account"' in html_out

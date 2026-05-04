@@ -32,6 +32,7 @@ D-15 compute-then-email path — `run_daily_check` now returns a 4-tuple
 (rc, state, old_signals, run_date) consumed by the dispatch ladder.
 '''
 import argparse
+import copy
 import logging
 import os
 import sys
@@ -54,6 +55,7 @@ from system_params import (
   SPI_COST_AUD,
   SPI_MULT,
 )
+from services import DailyRunService, PostRunService, SignalEvaluationService
 
 # NOTE (C-2 reviews Phase 5 D-06): `import dashboard` DELIBERATELY does NOT
 # appear here at module top. The dashboard import lives INSIDE the helper
@@ -95,6 +97,17 @@ STALENESS_DAYS_THRESHOLD: int = 2
 _LAST_LOADED_STATE: 'dict | None' = None
 
 logger = logging.getLogger(__name__)
+
+_daily_run_service = DailyRunService(run_impl=lambda args: _run_daily_check_impl(args))
+_signal_eval_service = SignalEvaluationService(
+  evaluate_impl=lambda state, dashboard_url: _evaluate_paper_trade_alerts_impl(state, dashboard_url),
+)
+_post_run_service = PostRunService(
+  dispatch_impl=lambda state, old_signals, now, is_test, persist: _dispatch_email_and_maintain_warnings_impl(
+    state, old_signals, now, is_test, persist,
+  ),
+  push_impl=lambda state, now: _push_state_to_git_impl(state, now),
+)
 
 
 # =========================================================================
@@ -181,7 +194,7 @@ def _send_email_never_crash(
 # Phase 10 INFRA-02 / D-07..D-15 — nightly state.json deploy-key git push
 # =========================================================================
 
-def _push_state_to_git(state: dict, now: datetime) -> None:
+def _push_state_to_git_impl(state: dict, now: datetime) -> None:
   '''Phase 10 INFRA-02 / D-07..D-12 — nightly state.json commit + push via
   deploy-key-authenticated git remote. Never crashes the daily run.
 
@@ -489,7 +502,7 @@ def _maybe_set_stale_info(state: dict, run_date: datetime) -> None:
     }
 
 
-def _dispatch_email_and_maintain_warnings(
+def _dispatch_email_and_maintain_warnings_impl(
   state: dict,
   old_signals: dict,
   now: datetime,
@@ -1013,7 +1026,7 @@ def _is_email_worthy(old_state: str | None, new_state: str) -> bool:
   return False
 
 
-def _evaluate_paper_trade_alerts(state: dict, dashboard_url: str) -> dict:
+def _evaluate_paper_trade_alerts_impl(state: dict, dashboard_url: str) -> dict:
   '''Phase 20 D-12/D-18: two-phase stop-alert evaluator.
 
   Phase 1 (eval): iterate open paper_trades, compute new alert state via
@@ -1135,7 +1148,7 @@ def _evaluate_paper_trade_alerts(state: dict, dashboard_url: str) -> dict:
 # Orchestrator (Wave 2 fills body)
 # =========================================================================
 
-def run_daily_check(
+def _run_daily_check_impl(
   args: argparse.Namespace,
 ) -> tuple[int, dict | None, dict | None, datetime | None]:
   '''D-11 daily orchestration sequence (9 steps):
@@ -1228,6 +1241,7 @@ def run_daily_check(
 
   # Step 2: load state.
   state = state_manager.load_state()
+  baseline_state = copy.deepcopy(state)
   enabled_markets = dict(sorted(
     (
       (key, market)
@@ -1547,6 +1561,7 @@ def run_daily_check(
   # handlers (Plan 14-04). W3 invariant preserved: this counts as save #1
   # of the 2-saves-per-run contract.
   _accumulated = state
+  _baseline = baseline_state
   def _apply_daily_run(fresh_state: dict) -> None:
     '''Replay the daily run's accumulated mutations onto fresh_state.
     Daily-run mutated keys: positions, signals, account, trade_log,
@@ -1556,7 +1571,12 @@ def run_daily_check(
       'positions', 'signals', 'account', 'trade_log',
       'equity_history', 'last_run', 'warnings',
     ):
-      if key in _accumulated:
+      # Only replay keys that changed during this run. This avoids writing
+      # unchanged stale snapshots back over concurrently updated values.
+      if (
+        key in _accumulated
+        and _accumulated.get(key) != _baseline.get(key)
+      ):
         fresh_state[key] = _accumulated[key]
   state = state_manager.mutate_state(_apply_daily_run)
   # Phase 8 review-driven amendment: refresh module-level cache to the
@@ -1601,6 +1621,36 @@ def run_daily_check(
     state_saved=True,
   )
   return 0, state, old_signals, run_date
+
+
+def run_daily_check(
+  args: argparse.Namespace,
+) -> tuple[int, dict | None, dict | None, datetime | None]:
+  """Public entrypoint wrapper backed by the orchestration service."""
+  return _daily_run_service.run_daily_check(args)
+
+
+def _evaluate_paper_trade_alerts(state: dict, dashboard_url: str) -> dict:
+  """Public compatibility wrapper backed by the signal evaluation service."""
+  return _signal_eval_service.evaluate_paper_trade_alerts(state, dashboard_url)
+
+
+def _dispatch_email_and_maintain_warnings(
+  state: dict,
+  old_signals: dict,
+  now: datetime,
+  is_test: bool,
+  persist: bool,
+) -> None:
+  """Public compatibility wrapper backed by the post-run service."""
+  _post_run_service.dispatch_email_and_maintain_warnings(
+    state, old_signals, now, is_test, persist,
+  )
+
+
+def _push_state_to_git(state: dict, now: datetime) -> None:
+  """Public compatibility wrapper backed by the post-run service."""
+  _post_run_service.push_state_to_git(state, now)
 
 
 # =========================================================================
@@ -1769,7 +1819,7 @@ def _handle_reset(args: argparse.Namespace) -> int:
   print(f'    AUDUSD:  {audusd_contract}')
   try:
     current = state_manager.load_state()
-  except Exception as e:
+  except (OSError, ValueError, TypeError) as e:
     # Phase 8 IN-02: surface the swallowed error at DEBUG so an operator
     # running `--reset` because their state is already broken can see WHY
     # the preview block is empty when running with --log-level DEBUG.

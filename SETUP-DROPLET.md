@@ -59,7 +59,7 @@ openssl rand -hex 16
 Fallback if `openssl` is not on the droplet:
 
 ```bash
-python3 -c "import secrets; print(secrets.token_hex(16))"
+python3.13 -c "import secrets; print(secrets.token_hex(16))"
 ```
 
 Append the secret to `/home/trader/trading-signals/.env` (create the file if absent — `EnvironmentFile=-` makes it optional in Phase 11, but Phase 13 D-16 fail-closed requires it):
@@ -374,7 +374,7 @@ ss -tlnp | grep 8000
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | Phase 11-specific: no `.env` file, unit still starts | Expected — `EnvironmentFile=-` makes `.env` OPTIONAL in Phase 11 | No action needed. Phase 13 will require `.env`. |
-| `command not found: uvicorn` | `.venv` not populated | `cd /home/trader/trading-signals && python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt` |
+| `command not found: uvicorn` | `.venv` not populated | `cd /home/trader/trading-signals && python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt` |
 | `sudo -n systemctl restart` prompts for password | sudoers path mismatch / perms wrong | Re-run `which systemctl`, edit sudoers, verify `chmod 440` + `chown root:root`, run `sudo visudo -c -f /etc/sudoers.d/trading-signals-deploy` |
 | `curl 127.0.0.1:8000/healthz` returns connection refused | uvicorn not running | `systemctl status trading-signals-web`; `journalctl -u trading-signals-web -n 50` |
 | `ss -tlnp` shows `0.0.0.0:8000` | unit file `--host` wrong | Fix systemd unit, re-copy, daemon-reload, restart |

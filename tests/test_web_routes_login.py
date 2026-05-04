@@ -23,6 +23,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+def _request_with_cookies(client, method, url, **kwargs):
+  cookies = kwargs.pop('cookies', None)
+  if cookies:
+    headers = dict(kwargs.pop('headers', {}) or {})
+    cookie_parts = [f'{name}={value}' for name, value in cookies.items()]
+    existing_cookie = headers.get('cookie') or headers.get('Cookie')
+    if existing_cookie:
+      cookie_parts.insert(0, existing_cookie)
+    headers['cookie'] = '; '.join(cookie_parts)
+    kwargs['headers'] = headers
+  return client.request(method, url, **kwargs)
+
 def _stub_load_state(**overrides):
   '''Return a benign load_state stub matching test_web_auth_middleware.py.'''
   from state_manager import reset_state
@@ -302,7 +314,7 @@ class TestLogout:
   def test_post_logout_clears_cookie_with_matching_attrs(
     self, client, valid_cookie_token,
   ):
-    r = client.post('/logout', cookies={'tsi_session': valid_cookie_token})
+    r = _request_with_cookies(client, 'POST', '/logout', cookies={'tsi_session': valid_cookie_token})
     assert r.status_code == 200
     set_cookie = r.headers.get('set-cookie', '')
     # Cookie deletion attrs MUST match creation per global LEARNING.
@@ -330,9 +342,9 @@ def test_logout_does_NOT_invalidate_existing_cookie_value(
   the future re-evaluates the trade-off.
   '''
   # Logout
-  client.post('/logout', cookies={'tsi_session': valid_cookie_token})
+  _request_with_cookies(client, 'POST', '/logout', cookies={'tsi_session': valid_cookie_token})
   # Replay the cookie — should still grant access (stateless cookie)
-  r = client.get('/api/state', cookies={'tsi_session': valid_cookie_token})
+  r = _request_with_cookies(client, 'GET', '/api/state', cookies={'tsi_session': valid_cookie_token})
   assert r.status_code == 200, (
     f'Sampling pyramid 2 invariant changed: cookie replay after logout now '
     f'returns {r.status_code}. If Plan 02 added a revocation list, invert '

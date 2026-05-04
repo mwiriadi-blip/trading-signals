@@ -155,6 +155,7 @@ DEFAULT_STRATEGY_SETTINGS: dict[str, float | int | bool | None] = {
   'risk_pct_short': RISK_PCT_SHORT,
   'one_contract_floor': False,
   'contract_cap': None,
+  'direction_mode': 'both',
 }
 
 # =========================================================================

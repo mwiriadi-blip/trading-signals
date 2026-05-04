@@ -48,6 +48,7 @@ from web.routes import paper_trades as paper_trades_route
 from web.routes import trades as trades_route
 from web.routes import backtest as backtest_route
 from web.routes import markets as markets_route
+from web.services import DashboardService, PaperTradesService, TotpService, TradesService
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,11 @@ _EMAIL_RE = re.compile(r'^[^@]+@[^@]+\.[^@]+$')
 # (test_web_app_factory.py::TestRecoveryEmailValidation). Three places in
 # sync — change all three together.
 _DEFAULT_RECOVERY_EMAIL = 'mwiriadi@gmail.com'
+
+_dashboard_service = DashboardService()
+_trades_service = TradesService()
+_paper_trades_service = PaperTradesService()
+_totp_service = TotpService()
 
 
 def _read_auth_credentials() -> tuple[str, str, str]:
@@ -156,17 +162,17 @@ def create_app() -> FastAPI:
 
   # Register routes first (they become the inner-most layer of the dispatch).
   healthz_route.register(application)
-  dashboard_route.register(application)
+  _dashboard_service.register_routes(application)
   state_route.register(application)
-  trades_route.register(application)
-  paper_trades_route.register(application)  # Phase 19 D-12: paper-trade ledger routes
+  _trades_service.register_routes(application)
+  _paper_trades_service.register_routes(application)  # Phase 19 D-12: paper-trade ledger routes
   backtest_route.register(application)  # Phase 23 D-12: backtest validation gate
   markets_route.register(application)
   # Phase 16.1 — auth-bootstrap routes. Registered BEFORE add_middleware
   # per Phase 13 D-06; PUBLIC_PATHS in AuthMiddleware lets them through
   # without an active session.
   login_route.register(application)
-  totp_route.register(application)
+  _totp_service.register_routes(application)
   # Phase 16.1 Plan 02 — /devices (trusted-device management). NOT in
   # PUBLIC_PATHS — requires cookie session; route enforces 403 on header-only
   # callers (E-06).
