@@ -71,6 +71,39 @@ document.addEventListener('DOMContentLoaded', function() {
 '''
 
 
+# Phase 25 D-18: WAI-ARIA tabs roving tabindex + arrow-key navigation.
+# Binds on DOMContentLoaded and re-binds after HTMX swaps.
+_TABS_KEYBOARD_JS = '''<script>
+// Phase 25 D-18: WAI-ARIA tabs roving tabindex + arrow-key navigation.
+(function () {
+  function bindTablist(navEl) {
+    var tabs = Array.from(navEl.querySelectorAll('[role="tab"]'));
+    if (tabs.length === 0) return;
+    navEl.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+      var current = tabs.indexOf(document.activeElement);
+      if (current < 0) return;
+      var next = current;
+      if (e.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'ArrowRight') next = (current + 1) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      e.preventDefault();
+      tabs.forEach(function (t, i) { t.setAttribute('tabindex', i === next ? '0' : '-1'); });
+      tabs[next].focus();
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('nav[role="tablist"]').forEach(bindTablist);
+  });
+  document.body.addEventListener('htmx:afterSwap', function () {
+    document.querySelectorAll('nav[role="tablist"]').forEach(bindTablist);
+  });
+})();
+</script>
+'''
+
+
 def render_html_shell(ctx: RenderContext, body: str) -> str:
   '''Phase 25 D-02: emit shared <head> + style + scripts inline.
 
@@ -103,6 +136,7 @@ def render_html_shell(ctx: RenderContext, body: str) -> str:
     f'{body}'
     '  </div>\n'
     f'{_AWST_COUNTDOWN_JS}'
+    f'{_TABS_KEYBOARD_JS}'
     '</body>\n'
     '</html>\n'
   )
