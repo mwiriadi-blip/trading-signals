@@ -3232,12 +3232,10 @@ class TestPhase25Equity:
 class TestPhase25Settings:
   """D-12: 3 fieldsets — Entry rules / Risk / Direction."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-08: settings fieldset grouping pending")
   def test_settings_renders_three_fieldsets(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert html_out.count('<fieldset') >= 3
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-08: settings fieldset grouping pending")
   def test_settings_legends_match_spec(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert '<legend>Entry rules</legend>' in html_out
