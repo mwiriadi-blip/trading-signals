@@ -147,7 +147,7 @@ class TestDashboardResponse:
     '''Legacy /dashboard.html alias should continue to serve signals page.'''
     client, tmp, _ = client_with_dashboard
     (tmp / 'dashboard-signals.html').write_text('<html><body>signals-page</body></html>', encoding='utf-8')
-    (tmp / 'dashboard.html').write_text('<html><nav class="tabs">fresh</nav></html>', encoding='utf-8')
+    (tmp / 'dashboard.html').write_text('<html><nav class="tabs tabs-function">fresh</nav></html>', encoding='utf-8')
     (tmp / 'state.json').write_text('{}', encoding='utf-8')
     base_ns = 1_700_000_000_000_000_000
     _set_mtime_ns(tmp / 'state.json', base_ns)
@@ -175,7 +175,7 @@ class TestStaleness:
     html_path = tmp / 'dashboard.html'
 
     state_path.write_text('{}', encoding='utf-8')
-    html_path.write_text('<html><nav class="tabs">fresh</nav></html>', encoding='utf-8')
+    html_path.write_text('<html><nav class="tabs tabs-function">fresh</nav></html>', encoding='utf-8')
 
     # Set state mtime to T, dashboard mtime to T + 100ms (html is fresher).
     base_ns = 1_700_000_000_000_000_000  # arbitrary fixed nanosecond timestamp
@@ -258,7 +258,7 @@ class TestStaleness:
     state_path = tmp / 'state.json'
     html_path = tmp / 'dashboard.html'
 
-    html_path.write_text('<html><nav class="tabs">tied</nav></html>', encoding='utf-8')
+    html_path.write_text('<html><nav class="tabs tabs-function">tied</nav></html>', encoding='utf-8')
     state_path.write_text('{}', encoding='utf-8')
 
     same_ns = 1_700_000_000_000_000_000

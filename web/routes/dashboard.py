@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 
 _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py default
 _STATE_PATH = 'state.json'
-_REQUIRED_DASHBOARD_MARKER = b'<nav class="tabs"'
+_REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01: forces regen of all 5 sibling HTMLs post-deploy
 
 # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder with
 # env secret at request time so on-disk dashboard.html never carries the
