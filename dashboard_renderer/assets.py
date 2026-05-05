@@ -119,8 +119,15 @@ _INLINE_CSS = f'''
   --color-flat: {_COLOR_FLAT};
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-6: 24px; --space-8: 32px; --space-12: 48px;
-  --fs-body: 14px; --fs-label: 12px; --fs-heading: 20px; --fs-display: 28px;
+  --fs-label: 14px;       /* was 12 */
+  --fs-body: 16px;        /* was 14 — D-15 kills iOS auto-zoom */
+  --fs-heading: 23px;     /* was 20 (20 * 16/14 = 22.86 → 23) */
+  --fs-display: 32px;     /* was 28 (28 * 16/14 = 32 exactly) */
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --color-focus-ring: #e5e7eb;
+  --color-status-stale: #eab308;
+  --space-status-dot: 8px;
+  --touch-target-min: 44px;
 }}
 body {{
   background: var(--color-bg);
@@ -296,7 +303,7 @@ section h2 {{
 footer {{
   text-align: center;
   color: var(--color-text-dim);
-  font-size: 12px;
+  font-size: var(--fs-label);
   margin: 48px 0 24px;
 }}
 .visually-hidden {{
@@ -690,6 +697,127 @@ td.calc-cell.entry-target {{
 .market-test-result {{ margin-top: var(--space-4); }}
 @media (max-width: 600px) {{
   .stats-bar-item {{ min-width: calc(33% - var(--space-4)); }}
+}}
+/* =========================================================================
+ * Phase 25 Plan 09 — CSS tokens + responsive scaffolding (D-15, D-18, D-19, D-20)
+ * ========================================================================= */
+/* Signal color classes (D-19 #5) — 25-09b will replace inline style="color:…" */
+.signal-flat {{ color: var(--color-flat); }}
+.signal-long {{ color: var(--color-long); }}
+.signal-short {{ color: var(--color-short); }}
+/* Status-dot styles (D-06 status strip + D-19 #3 signal labels) */
+.status-dot {{
+  display: inline-block;
+  width: var(--space-status-dot);
+  height: var(--space-status-dot);
+  border-radius: 50%;
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}}
+.status-dot--success {{ background: var(--color-long); }}
+.status-dot--stale,
+.status-dot--flat {{ background: var(--color-flat); }}
+.status-dot--failure,
+.status-dot--short {{ background: var(--color-short); }}
+.status-dot--never {{ background: var(--color-text-dim); }}
+.status-dot--long {{ background: var(--color-long); }}
+.status-dot--neutral {{ background: var(--color-text-dim); }}
+/* Table-scroll wrapper + stacked-row mobile layout (D-20) */
+.table-scroll {{
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}}
+@media (max-width: 600px) {{
+  .table-scroll table {{ display: block; }}
+  .table-scroll thead {{ display: none; }}
+  .table-scroll tr {{
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+  }}
+  .table-scroll td {{ display: block; padding: var(--space-1) 0; }}
+  .table-scroll td::before {{
+    content: attr(data-label);
+    display: inline-block;
+    width: 50%;
+    color: var(--color-text-muted);
+    font-size: var(--fs-label);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }}
+}}
+/* Tab-strip active-tab styles (D-18) */
+nav[role="tablist"] [role="tab"] {{
+  padding: var(--space-2) var(--space-4);
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}}
+nav[role="tablist"] [role="tab"]:hover,
+nav[role="tablist"] [role="tab"]:focus {{
+  color: var(--color-text);
+  background: var(--color-surface);
+}}
+nav[role="tablist"] [role="tab"][aria-current="page"],
+nav[role="tablist"] [role="tab"].tab-active {{
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-long);
+}}
+/* Focus-visible rules (D-19 #2) */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[role="tab"]:focus-visible {{
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}}
+/* Status-strip / onboarding-card / add-market-chip styles (Plans 25-05/25-06/25-07) */
+.status-strip {{
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+}}
+.onboarding-card {{
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-6);
+  margin: var(--space-6) 0;
+}}
+.onboarding-card h3 {{ margin: 0 0 var(--space-2); }}
+.add-market-chip {{
+  display: inline-block;
+  margin-left: var(--space-2);
+}}
+.add-market-chip > summary {{
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-flat);
+  border-radius: 4px;
+  list-style: none;
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+}}
+.add-market-chip[open] > summary {{ border-style: solid; }}
+.add-market-chip form {{
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }}
 '''
 

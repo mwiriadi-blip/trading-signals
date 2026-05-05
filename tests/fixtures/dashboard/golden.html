@@ -73,8 +73,15 @@ document.addEventListener('DOMContentLoaded', function() {
   --color-flat: #eab308;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-6: 24px; --space-8: 32px; --space-12: 48px;
-  --fs-body: 14px; --fs-label: 12px; --fs-heading: 20px; --fs-display: 28px;
+  --fs-label: 14px;       /* was 12 */
+  --fs-body: 16px;        /* was 14 — D-15 kills iOS auto-zoom */
+  --fs-heading: 23px;     /* was 20 (20 * 16/14 = 22.86 → 23) */
+  --fs-display: 32px;     /* was 28 (28 * 16/14 = 32 exactly) */
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --color-focus-ring: #e5e7eb;
+  --color-status-stale: #eab308;
+  --space-status-dot: 8px;
+  --touch-target-min: 44px;
 }
 body {
   background: var(--color-bg);
@@ -250,7 +257,7 @@ section h2 {
 footer {
   text-align: center;
   color: var(--color-text-dim);
-  font-size: 12px;
+  font-size: var(--fs-label);
   margin: 48px 0 24px;
 }
 .visually-hidden {
@@ -645,6 +652,127 @@ td.calc-cell.entry-target {
 @media (max-width: 600px) {
   .stats-bar-item { min-width: calc(33% - var(--space-4)); }
 }
+/* =========================================================================
+ * Phase 25 Plan 09 — CSS tokens + responsive scaffolding (D-15, D-18, D-19, D-20)
+ * ========================================================================= */
+/* Signal color classes (D-19 #5) — 25-09b will replace inline style="color:…" */
+.signal-flat { color: var(--color-flat); }
+.signal-long { color: var(--color-long); }
+.signal-short { color: var(--color-short); }
+/* Status-dot styles (D-06 status strip + D-19 #3 signal labels) */
+.status-dot {
+  display: inline-block;
+  width: var(--space-status-dot);
+  height: var(--space-status-dot);
+  border-radius: 50%;
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}
+.status-dot--success { background: var(--color-long); }
+.status-dot--stale,
+.status-dot--flat { background: var(--color-flat); }
+.status-dot--failure,
+.status-dot--short { background: var(--color-short); }
+.status-dot--never { background: var(--color-text-dim); }
+.status-dot--long { background: var(--color-long); }
+.status-dot--neutral { background: var(--color-text-dim); }
+/* Table-scroll wrapper + stacked-row mobile layout (D-20) */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .table-scroll table { display: block; }
+  .table-scroll thead { display: none; }
+  .table-scroll tr {
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+  }
+  .table-scroll td { display: block; padding: var(--space-1) 0; }
+  .table-scroll td::before {
+    content: attr(data-label);
+    display: inline-block;
+    width: 50%;
+    color: var(--color-text-muted);
+    font-size: var(--fs-label);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+/* Tab-strip active-tab styles (D-18) */
+nav[role="tablist"] [role="tab"] {
+  padding: var(--space-2) var(--space-4);
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+nav[role="tablist"] [role="tab"]:hover,
+nav[role="tablist"] [role="tab"]:focus {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+nav[role="tablist"] [role="tab"][aria-current="page"],
+nav[role="tablist"] [role="tab"].tab-active {
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-long);
+}
+/* Focus-visible rules (D-19 #2) */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+/* Status-strip / onboarding-card / add-market-chip styles (Plans 25-05/25-06/25-07) */
+.status-strip {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+}
+.onboarding-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-6);
+  margin: var(--space-6) 0;
+}
+.onboarding-card h3 { margin: 0 0 var(--space-2); }
+.add-market-chip {
+  display: inline-block;
+  margin-left: var(--space-2);
+}
+.add-market-chip > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-flat);
+  border-radius: 4px;
+  list-style: none;
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+.add-market-chip[open] > summary { border-style: solid; }
+.add-market-chip form {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 </style>
 </head>
 <body>
@@ -792,14 +920,6 @@ td.calc-cell.entry-target {
   </div>
 </section>
 <div id="trades-region">
-<aside class="stats-bar" aria-labelledby="stats-bar-heading">
-  <h2 id="stats-bar-heading" class="visually-hidden">Aggregate paper-trade stats</h2>
-  <div class="stats-bar-item"><span class="label">Realised</span><span>+0.00</span></div>
-  <div class="stats-bar-item"><span class="label">Unrealised</span><span>+0.00</span></div>
-  <div class="stats-bar-item"><span class="label">Wins</span><span>0</span></div>
-  <div class="stats-bar-item"><span class="label">Losses</span><span>0</span></div>
-  <div class="stats-bar-item"><span class="label">Win rate</span><span>—</span></div>
-</aside>
 <section id="open-trade-form-section">
   <h2>Record New Paper Trade</h2>
   <form hx-post="/paper-trade/open"
@@ -933,35 +1053,127 @@ td.calc-cell.entry-target {
   <h2 id="settings-tab-heading">Settings</h2>
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">SPI 200 SETTINGS</p>
+  <h2>Settings</h2>
+  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
     <input type="hidden" name="market_id" value="SPI200">
-    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="25.0"></div>
-    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2"></div>
-    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0"></div>
-    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0"></div>
-    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
-    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
-    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
-    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
-    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
-    <button type="submit" class="btn-primary">Save Settings</button>
+    <fieldset>
+      <legend>Entry rules</legend>
+      <div class="field">
+        <label for="settings-SPI200-adx_gate">ADX gate</label>
+        <input id="settings-SPI200-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="25.0">
+        <small class="field-help">Skips trade days when trend strength is weak. Default 25.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-momentum_votes_required">Momentum votes</label>
+        <input id="settings-SPI200-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2">
+        <small class="field-help">Number of positive momentum windows required to enter. Default 2.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Risk</legend>
+      <div class="field">
+        <label for="settings-SPI200-trail_mult_long">Long ATR stop multiple</label>
+        <input id="settings-SPI200-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0">
+        <small class="field-help">Trailing-stop distance for long positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-trail_mult_short">Short ATR stop multiple</label>
+        <input id="settings-SPI200-trail_mult_short" name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0">
+        <small class="field-help">Trailing-stop distance for short positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-risk_pct_long">Long risk percent</label>
+        <input id="settings-SPI200-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00">
+        <small class="field-help">Account risk per long trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-risk_pct_short">Short risk percent</label>
+        <input id="settings-SPI200-risk_pct_short" name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50">
+        <small class="field-help">Account risk per short trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-contract_cap">Contract cap</label>
+        <input id="settings-SPI200-contract_cap" name="contract_cap" type="number" step="1" min="1" value="">
+        <small class="field-help">Maximum contracts per pyramid level. Default 3.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Direction</legend>
+      <div class="field">
+        <label for="settings-SPI200-direction_mode">Mode</label>
+        <select id="settings-SPI200-direction_mode" name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
+        <small class="field-help">Long-only, short-only, or both. Default both.</small>
+      </div>
+      <div class="field">
+        <label class="checkbox-field" for="settings-SPI200-one_contract_floor"><input id="settings-SPI200-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+        <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <button type="submit" class="btn-primary">Save settings</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
 </section>
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">AUD / USD SETTINGS</p>
+  <h2>Settings</h2>
+  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
     <input type="hidden" name="market_id" value="AUDUSD">
-    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="25.0"></div>
-    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2"></div>
-    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0"></div>
-    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0"></div>
-    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
-    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
-    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
-    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
-    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
-    <button type="submit" class="btn-primary">Save Settings</button>
+    <fieldset>
+      <legend>Entry rules</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-adx_gate">ADX gate</label>
+        <input id="settings-AUDUSD-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="25.0">
+        <small class="field-help">Skips trade days when trend strength is weak. Default 25.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-momentum_votes_required">Momentum votes</label>
+        <input id="settings-AUDUSD-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2">
+        <small class="field-help">Number of positive momentum windows required to enter. Default 2.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Risk</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-trail_mult_long">Long ATR stop multiple</label>
+        <input id="settings-AUDUSD-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0">
+        <small class="field-help">Trailing-stop distance for long positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-trail_mult_short">Short ATR stop multiple</label>
+        <input id="settings-AUDUSD-trail_mult_short" name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0">
+        <small class="field-help">Trailing-stop distance for short positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-risk_pct_long">Long risk percent</label>
+        <input id="settings-AUDUSD-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00">
+        <small class="field-help">Account risk per long trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-risk_pct_short">Short risk percent</label>
+        <input id="settings-AUDUSD-risk_pct_short" name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50">
+        <small class="field-help">Account risk per short trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-contract_cap">Contract cap</label>
+        <input id="settings-AUDUSD-contract_cap" name="contract_cap" type="number" step="1" min="1" value="">
+        <small class="field-help">Maximum contracts per pyramid level. Default 3.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Direction</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-direction_mode">Mode</label>
+        <select id="settings-AUDUSD-direction_mode" name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
+        <small class="field-help">Long-only, short-only, or both. Default both.</small>
+      </div>
+      <div class="field">
+        <label class="checkbox-field" for="settings-AUDUSD-one_contract_floor"><input id="settings-AUDUSD-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+        <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <button type="submit" class="btn-primary">Save settings</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
 </section>

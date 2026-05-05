@@ -3246,24 +3246,20 @@ class TestPhase25Settings:
 class TestPhase25Fonts:
   """D-15: --fs-body 14px → 16px; other tokens scale by 16/14."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
   def test_fs_body_is_16px(self):
     html_out = _render_to_str(_empty_state())
     assert '--fs-body: 16px' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
   def test_fs_label_is_14px(self):
     html_out = _render_to_str(_empty_state())
     # 12 * (16/14) = 13.71 → 14
     assert '--fs-label: 14px' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
   def test_fs_heading_is_23px(self):
     html_out = _render_to_str(_empty_state())
     # 20 * (16/14) = 22.86 → 23
     assert '--fs-heading: 23px' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
   def test_fs_display_is_32px(self):
     html_out = _render_to_str(_empty_state())
     # 28 * (16/14) = 32 exactly
