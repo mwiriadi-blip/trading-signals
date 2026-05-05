@@ -205,6 +205,105 @@ def register(app: FastAPI) -> None:
   def get_market_test_page_file_alias(request: Request, fragment: str | None = None):
     return _serve_dashboard_page(request, 'market-test', fragment=fragment)
 
+  # Phase 25 Plan 04 D-01..D-05: GET /markets/{market_id}/{function} routes.
+  # Two-segment paths (e.g. /markets/SPI200/signals) registered here; they do
+  # NOT shadow the existing one-segment PATCH /markets/{market_id} in
+  # markets.py because method differs (GET vs PATCH). Registration order:
+  # markets.py is registered BEFORE dashboard.py in web/app.py, preserving
+  # the 18ea2c5 literal-before-dynamic discipline.
+
+  # Phase 25 D-05: selected_market cookie attrs. NO HttpOnly (JS-readable).
+  # SameSite=Lax (UI-state cookie; not session). Secure required for HTTPS.
+  _MARKET_COOKIE_ATTRS = '; Max-Age=2592000; Path=/; Secure; SameSite=Lax'
+
+  def _is_htmx_request(request: Request) -> bool:
+    '''Phase 25 Pitfall 6: HTMX swap requests carry HX-Request: true header.'''
+    return request.headers.get('HX-Request', '').lower() == 'true'
+
+  def _set_market_cookie(response: Response, market_id: str) -> None:
+    '''Phase 25 D-05: set selected_market cookie on every market-scoped render.
+
+    Cookie is JS-readable (no HttpOnly) so /account can route to last-selected market.
+    '''
+    if not market_id or len(market_id) > 32:
+      return
+    # Belt-and-braces sanitiser; market_id origin is state.json (server-controlled)
+    # but T-25-04-02 requires defensive strip of cookie-header special chars.
+    safe = market_id.replace('"', '').replace(';', '')
+    response.headers['Set-Cookie'] = f'selected_market={safe}{_MARKET_COOKIE_ATTRS}'
+
+  async def _serve_market_scoped_page(request: Request, market_id: str, function: str):
+    '''Phase 25 D-01..D-05: serve a market-scoped page (signals/settings/market-test).
+
+    Validates market_id against state['markets']; 404 on miss.
+    Sets selected_market cookie on every successful response (D-05).
+    HX-Request → render_dashboard_as_str(htmx_panel_only=True equivalent) returns
+    panel-only HTML via render_panel_only; otherwise returns full document.
+    Cache-Control: no-store, private (T-25-04-03 cache poisoning mitigation).
+    '''
+    import state_manager
+
+    state = state_manager.load_state()
+    markets = state.get('markets', {}) or {}
+    if market_id not in markets:
+      return Response(
+        content=f'Market not found: {market_id}'.encode('utf-8'),
+        status_code=404,
+        media_type='text/plain; charset=utf-8',
+      )
+
+    htmx = _is_htmx_request(request)
+
+    if htmx:
+      # HTMX swap path — panel-only HTML (no shell, no nav)
+      from dashboard_renderer.api import render_dashboard
+      body = render_dashboard(
+        state,
+        now=None,
+        active_function=function,
+        active_market=market_id,
+        htmx_panel_only=True,
+      )
+    else:
+      # Full document path (browser navigation)
+      from dashboard_renderer.api import render_dashboard_as_str
+      body = render_dashboard_as_str(
+        state,
+        now=None,
+        active_function=function,
+        active_market=market_id,
+      )
+
+    response = Response(
+      content=body.encode('utf-8'),
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+    )
+    _set_market_cookie(response, market_id)
+    response.headers['Cache-Control'] = 'no-store, private'
+    return response
+
+  @app.get('/markets/{market_id}/signals', response_class=Response)
+  async def get_market_signals(request: Request, market_id: str):
+    return await _serve_market_scoped_page(request, market_id, 'signals')
+
+  @app.get('/markets/{market_id}/settings', response_class=Response)
+  async def get_market_settings(request: Request, market_id: str):
+    return await _serve_market_scoped_page(request, market_id, 'settings')
+
+  @app.get('/markets/{market_id}/market-test', response_class=Response)
+  async def get_market_market_test(request: Request, market_id: str):
+    return await _serve_market_scoped_page(request, market_id, 'market-test')
+
+  @app.get('/status-strip', response_class=Response)
+  async def get_status_strip_stub(request: Request):
+    '''Phase 25 Plan 04 stub. Plan 25-06 fills the body.'''
+    return Response(
+      content=b'<div id="status-strip"><!-- Phase 25 Plan 06 implements --></div>',
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+    )
+
   def _serve_dashboard_page(
     request: Request,
     page: str,

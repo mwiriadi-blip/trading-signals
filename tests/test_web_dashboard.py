@@ -1157,7 +1157,6 @@ class TestTraceCookieAllowlist:
 class TestPhase25StatusStripEndpoint:
   """D-06/D-07: GET /status-strip returns fragment HTML."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: /status-strip endpoint pending")
   def test_status_strip_endpoint_returns_200(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
@@ -1168,7 +1167,6 @@ class TestPhase25StatusStripEndpoint:
     resp = client.get('/status-strip', headers={AUTH_HEADER_NAME: VALID_SECRET})
     assert resp.status_code == 200
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: /status-strip endpoint pending")
   def test_status_strip_endpoint_returns_html_fragment(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)

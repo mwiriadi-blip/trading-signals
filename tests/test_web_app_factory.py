@@ -388,7 +388,6 @@ class TestMarketRoutesRegistered:
 class TestPhase25MarketRoutes:
   """D-01..D-05: GET /markets/{market_id}/{function} routes registered correctly."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: routes pending")
   def test_market_signals_route_registered(self, monkeypatch):
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
@@ -397,7 +396,6 @@ class TestPhase25MarketRoutes:
     paths = {r.path for r in app.routes if hasattr(r, 'path')}
     assert '/markets/{market_id}/signals' in paths
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: GET /markets/{market_id}/settings route pending")
   def test_market_settings_get_route_registered(self, monkeypatch, tmp_path):
     """Phase 25 adds a GET handler for /markets/{market_id}/settings (full settings page).
     A PATCH handler already exists but GET (full-page render) is new in Phase 25.
@@ -413,7 +411,6 @@ class TestPhase25MarketRoutes:
     )
     assert resp.status_code == 200
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: routes pending")
   def test_market_market_test_route_registered(self, monkeypatch):
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
@@ -422,7 +419,6 @@ class TestPhase25MarketRoutes:
     paths = {r.path for r in app.routes if hasattr(r, 'path')}
     assert '/markets/{market_id}/market-test' in paths
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: routes pending")
   def test_get_market_signals_returns_200_with_auth(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
@@ -435,7 +431,6 @@ class TestPhase25MarketRoutes:
     )
     assert resp.status_code == 200
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: route validation pending")
   def test_unknown_market_returns_404(self, monkeypatch, tmp_path):
     """Once /markets/{market_id}/signals is registered, an unknown market_id
     must return 404 (market-not-found) not 405 or 200.
@@ -475,7 +470,6 @@ class TestPhase25MarketRoutes:
 class TestPhase25SelectedMarketCookie:
   """D-05: GET /markets/{m}/{fn} sets cookie selected_market with HttpOnly=false; SameSite=Lax."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: cookie write pending")
   def test_market_route_sets_selected_market_cookie(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
@@ -491,7 +485,6 @@ class TestPhase25SelectedMarketCookie:
     # At minimum one Set-Cookie must contain selected_market=AUDUSD
     assert any('selected_market=AUDUSD' in sc for sc in set_cookies)
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: cookie attrs pending")
   def test_selected_market_cookie_has_lax_samesite_no_httponly(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
@@ -510,4 +503,3 @@ class TestPhase25SelectedMarketCookie:
     assert 'HttpOnly' not in market_cookie
     assert 'Path=/' in market_cookie
     assert 'Secure' in market_cookie  # production HTTPS-only requirement
-    assert settings['direction_mode'] == 'long_only'

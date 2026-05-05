@@ -113,6 +113,33 @@ def render_dashboard(
   d.logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
 
 
+def render_dashboard_as_str(
+  state: dict,
+  now=None,
+  active_function: str = 'signals',
+  active_market: str | None = None,
+) -> str:
+  '''Render full dashboard to a string without writing to disk.
+
+  Phase 25 Plan 04: used by _serve_market_scoped_page to serve full-page
+  HTML directly in the HTTP response (no intermediate file). Returns the
+  complete <!DOCTYPE html>…</html> string for the given market/function.
+  '''
+  ctx = _build_render_context(
+    state=state,
+    now=now,
+    trace_open_keys=None,
+    active_function=active_function,
+    active_market=active_market,
+  )
+  import dashboard as d
+  return _render_header_and_body(
+    ctx=ctx,
+    is_cookie_session=None,
+    body_html=d._render_single_page_dashboard(ctx, active_function, nav_mode='web'),
+  )
+
+
 def render_dashboard_page(
   state: dict,
   page: str,
