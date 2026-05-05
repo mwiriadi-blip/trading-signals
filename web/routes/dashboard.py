@@ -304,6 +304,37 @@ def register(app: FastAPI) -> None:
       status_code=200,
     )
 
+  @app.get('/markets-strip', response_class=Response)
+  async def get_markets_strip(request: Request):
+    '''Phase 25 Plan 05 D-16: return the market tab strip fragment for HTMX swap.
+
+    Called when HX-Trigger: markets-changed fires — refreshes the strip with the
+    latest markets list including newly added markets.
+    Cache-Control: no-store, private (T-25-04-03 pattern — user-specific content).
+    '''
+    import state_manager
+    from dashboard_renderer.components.nav import render_market_strip
+
+    state = state_manager.load_state()
+    active_market = request.cookies.get('selected_market', '')
+    markets = state.get('markets', {}) or {}
+    if not active_market or active_market not in markets:
+      active_market = next(iter(markets), '')
+    # Determine active function from Referer header fallback; default to 'signals'.
+    active_function = 'signals'
+    referer = request.headers.get('referer', '')
+    for fn in ('settings', 'market-test', 'signals', 'account'):
+      if f'/{fn}' in referer:
+        active_function = fn
+        break
+    body = render_market_strip(state, active_market, active_function)
+    return Response(
+      content=body.encode('utf-8'),
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+      headers={'Cache-Control': 'no-store, private'},
+    )
+
   def _serve_dashboard_page(
     request: Request,
     page: str,

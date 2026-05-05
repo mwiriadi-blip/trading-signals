@@ -55,17 +55,55 @@ def render_function_strip(active_function: str, active_market: str | None, state
     return ''.join(out)
 
 
+def render_add_market_chip() -> str:
+    '''Phase 25 D-16: + Add market chip beside the market tab strip.
+
+    <details> wrapping inline mini-form. Posts to existing POST /markets.
+    On 2xx, the existing handler emits HX-Trigger: markets-changed which refreshes the strip.
+    NOT inside role=tablist — chip is excluded from arrow-key tab traversal per UI-SPEC.
+    '''
+    return (
+        '  <details class="add-market-chip">\n'
+        '    <summary aria-label="Add market">+ Add market</summary>\n'
+        '    <form\n'
+        '        hx-post="/markets"\n'
+        '        hx-ext="json-enc"\n'
+        '        hx-target="this"\n'
+        '        hx-swap="outerHTML"\n'
+        '        hx-headers=\'{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}\'\n'
+        '        hx-on::after-request="handleTradesError(event)">\n'
+        '      <label for="add-market-id">Code</label>\n'
+        '      <input id="add-market-id" name="market_id" type="text" pattern="[A-Z0-9_]{2,20}" required>\n'
+        '      <label for="add-market-label">Label</label>\n'
+        '      <input id="add-market-label" name="display_name" type="text" required>\n'
+        '      <label for="add-market-symbol">Symbol</label>\n'
+        '      <input id="add-market-symbol" name="symbol" type="text" required>\n'
+        '      <label for="add-market-size">Multiplier</label>\n'
+        '      <input id="add-market-size" name="multiplier" type="number" step="any" required>\n'
+        '      <label for="add-market-cost">Cost (AUD)</label>\n'
+        '      <input id="add-market-cost" name="cost_aud" type="number" step="any" value="0" required>\n'
+        '      <button type="submit">Add market</button>\n'
+        '      <button type="reset" onclick="this.closest(\'details\').open=false;return false;">Cancel</button>\n'
+        '    </form>\n'
+        '  </details>\n'
+    )
+
+
 def render_market_strip(state: dict, active_market: str, active_function: str) -> str:
     '''Market tab strip — HTMX swap (D-01/D-03).
 
     Hidden entirely (zero DOM) when active_function == 'account' (D-04).
     Tabs in insertion order in state['markets'] (per OR-03).
-    The + Add market chip is appended in Plan 25-05; here we leave a placeholder comment.
+    The + Add market chip (D-16) is appended after the tab links.
+    The strip listens for markets-changed HX-Trigger to auto-refresh (Plan 25-05).
     '''
     if active_function == 'account':
         return ''  # D-04
     markets = state.get('markets', {}) or {}
-    out = ['<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip">\n']
+    out = [
+        '<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip"'
+        ' hx-trigger="markets-changed from:body" hx-get="/markets-strip" hx-swap="outerHTML">\n'
+    ]
     for market_id in markets.keys():
         market_esc = html.escape(market_id, quote=True)
         is_active = (market_id == active_market)
@@ -82,7 +120,7 @@ def render_market_strip(state: dict, active_market: str, active_function: str) -
             f'data-market-id="{market_esc}">'
             f'{market_esc}</a>\n'
         )
-    out.append('  <!-- Phase 25 Plan 05: + Add market chip injected here (D-16) -->\n')
+    out.append(render_add_market_chip())
     out.append('</nav>\n')
     return ''.join(out)
 

@@ -3279,7 +3279,6 @@ class TestPhase25Fonts:
 class TestPhase25AddMarket:
   """D-16/D-17: + Add market chip beside market tabs."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-04: add-market chip pending")
   def test_market_strip_contains_add_market_chip(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'class="add-market-chip"' in html_out
@@ -3289,7 +3288,6 @@ class TestPhase25AddMarket:
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'hx-post="/markets"' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-04: add-market chip pending")
   def test_buried_settings_link_removed(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'href="#settings-tab"' not in html_out

@@ -775,7 +775,6 @@ def _render_market_selector(state: dict) -> str:
     '  <select aria-label="Market selection">\n'
     f'{options}'
     '  </select>\n'
-    '  <a class="btn-row btn-modify" href="#settings-tab">Add market</a>\n'
     '</section>\n'
   )
 
