@@ -3186,12 +3186,10 @@ def _render_to_str(state, now=None):
 class TestPhase25FirstRun:
   """D-09: state['last_run'] is None hides 11 trace tables, shows 1 onboarding card."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: first-run collapse implementation pending")
   def test_last_run_none_renders_zero_trace_tables(self):
     html_out = _render_to_str(_empty_state(last_run=None))
     assert 'class="trace-indicators-table"' not in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: first-run collapse implementation pending")
   def test_last_run_none_renders_onboarding_card(self):
     html_out = _render_to_str(_empty_state(last_run=None))
     assert 'Awaiting first daily run' in html_out
@@ -3206,7 +3204,6 @@ class TestPhase25FirstRun:
 class TestPhase25StatsBar:
   """D-10: stats bar hidden until closed_paper + closed_live >= 1."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: stats-bar gate pending")
   def test_zero_trades_omits_stats_bar(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'class="stats-bar"' not in html_out

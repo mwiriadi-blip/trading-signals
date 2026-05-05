@@ -6,6 +6,18 @@ import html
 def render_signal_cards(state: dict) -> str:
   import dashboard as d
 
+  # Phase 25 D-09: hide trace tables on first run; show single onboarding card.
+  # last_run is None means the daemon has never completed a cycle — no signal
+  # data exists yet, so the full card+trace wall of "n/a" panels is replaced
+  # by a single oriented card. Once any run completes, full rendering resumes.
+  if state.get('last_run') is None:
+    return (
+      '<section class="onboarding-card" aria-labelledby="onboarding-heading">\n'
+      '  <h3 id="onboarding-heading">Awaiting first daily run</h3>\n'
+      '  <p>Calculations and equity curve will populate after the first cycle at 08:00 AWST.</p>\n'
+      '</section>\n'
+    )
+
   signals = state.get('signals', {})
   parts = [
     '<section aria-labelledby="heading-signals">\n',
