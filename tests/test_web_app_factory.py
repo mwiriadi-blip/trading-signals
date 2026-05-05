@@ -503,3 +503,34 @@ class TestPhase25SelectedMarketCookie:
     assert 'HttpOnly' not in market_cookie
     assert 'Path=/' in market_cookie
     assert 'Secure' in market_cookie  # production HTTPS-only requirement
+
+
+class TestPhase25AddMarketHXTrigger:
+  """Phase 25 P25-09: POST /markets must emit HX-Trigger: markets-changed so the strip refreshes."""
+
+  def test_post_markets_emits_hx_trigger_markets_changed(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.post(
+      '/markets',
+      json={
+        'market_id': 'TEST01',
+        'display_name': 'Test Market',
+        'symbol': 'TEST',
+        'multiplier': 1.0,
+        'cost_aud': 0.0,
+      },
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    # Must succeed (201 or 200).
+    assert 200 <= resp.status_code < 300, (
+      f'POST /markets returned {resp.status_code}: {resp.text}'
+    )
+    # Starlette lowercases header names.
+    hx_trigger = resp.headers.get('hx-trigger', '')
+    assert 'markets-changed' in hx_trigger, (
+      f'HX-Trigger missing or wrong: {hx_trigger!r}'
+    )

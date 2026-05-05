@@ -2181,9 +2181,9 @@ class TestRenderSignoutButton:
     state = _make_render_state_with_position()
     render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
     rendered = out.read_text()
-    assert rendered.count('hx-headers') == 6, (
-      f'expected 6 hx-headers (1 open-form + 1 position tbody for SPI200 only + '
-      f'4 settings/market-test), got {rendered.count("hx-headers")}'
+    assert rendered.count('hx-headers') == 7, (
+      f'expected 7 hx-headers (1 open-form + 1 position tbody for SPI200 only + '
+      f'4 settings/market-test + 1 add-market chip form), got {rendered.count("hx-headers")}'
     )
 
 
