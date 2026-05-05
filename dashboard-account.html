@@ -659,12 +659,18 @@ td.calc-cell.entry-target {
     {{SIGNOUT_BUTTON}}{{SESSION_NOTE}}
   </p>
 </header>
-<nav class="tabs" aria-label="Dashboard tabs">
-  <a href="dashboard-signals.html">Signals</a>
-  <a href="dashboard-account.html" class="active">Account Management</a>
-  <a href="dashboard-settings.html">Settings</a>
-  <a href="dashboard-market-test.html">Market Test</a>
+<nav role="tablist" aria-label="Function" class="tabs tabs-function">
+  <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/markets/SPI200/signals" data-tab-key="signals">Signals</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/account" data-tab-key="account">Account</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/settings" data-tab-key="settings">Settings</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/market-test" data-tab-key="market-test">Market Test</a>
 </nav>
+<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip">
+  <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/markets/SPI200/signals" hx-get="/markets/SPI200/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="SPI200">SPI200</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/AUDUSD/signals" hx-get="/markets/AUDUSD/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="AUDUSD">AUDUSD</a>
+  <!-- Phase 25 Plan 05: + Add market chip injected here (D-16) -->
+</nav>
+<section id="market-panel" aria-live="polite">
 <section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">
   <h2 id="account-tab-heading">Account Management</h2>
 <div id="account-management-region">
@@ -828,6 +834,7 @@ td.calc-cell.entry-target {
   </table>
 </section>
 </div>
+</section>
 </section>
 <footer>
   Signal-only system. Not financial advice.

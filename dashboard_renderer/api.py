@@ -24,6 +24,8 @@ def _build_render_context(
   state: dict,
   now: datetime | None,
   trace_open_keys: list | None,
+  active_function: str = 'signals',
+  active_market: str | None = None,
 ) -> RenderContext:
   import dashboard as d
 
@@ -34,6 +36,8 @@ def _build_render_context(
     now=resolved_now,
     strategy_version=strategy_version,
     trace_open_keys=trace_open_keys,
+    active_function=active_function,
+    active_market=active_market,
   )
   d._resolve_trace_open_keys(ctx.state, list(ctx.trace_open_keys))
   return ctx
@@ -57,14 +61,33 @@ def render_dashboard(
   now: datetime | None = None,
   is_cookie_session: bool | None = None,
   trace_open_keys: list | None = None,
+  *,
+  active_function: str = 'signals',
+  active_market: str | None = None,
+  htmx_panel_only: bool = False,
 ) -> None:
+  '''Render the full dashboard (or HTMX panel-only fragment).
+
+  Phase 25: accepts active_function and active_market kwargs. Existing callers
+  continue to work via defaults. htmx_panel_only=True returns the inner panel
+  HTML for HTMX swaps (Plan 25-04), without shell/nav.
+  '''
   import dashboard as d
 
   ctx = _build_render_context(
     state=state,
     now=now,
     trace_open_keys=trace_open_keys,
+    active_function=active_function,
+    active_market=active_market,
   )
+
+  if htmx_panel_only:
+    # Phase 25 Plan 04: HTMX swap path — return ONLY the inner panel HTML
+    # (no shell, no nav strips). Resolves Plan 25-04 WARNING 4.
+    from dashboard_renderer.pages import render_panel_only
+    return render_panel_only(ctx)
+
   d.logger.info('[Dashboard] rendering to %s', out_path)
   html_str = _render_header_and_body(
     ctx=ctx,

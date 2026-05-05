@@ -1979,24 +1979,24 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
 
 
 def _render_tabbed_dashboard(ctx: RenderContext) -> str:
+  from dashboard_renderer.components.nav import render_two_axis_nav
   _, _, _, _, render_signals = _render_page_body(ctx, 'signals')
   _, _, _, _, render_account = _render_page_body(ctx, 'account')
   _, _, _, _, render_settings = _render_page_body(ctx, 'settings')
   _, _, _, _, render_market_test = _render_page_body(ctx, 'market-test')
+  # Phase 25: two-axis nav replaces the flat single-nav. active_function defaults
+  # to 'signals' for the multi-tab dashboard.html composite; active_market from ctx.
+  active_function = getattr(ctx, 'active_function', 'signals')
+  active_market = getattr(ctx, 'active_market', None)
   return (
-    '<nav class="tabs" aria-label="Dashboard tabs">\n'
-    '  <a href="dashboard-signals.html">Signals</a>\n'
-    '  <a href="dashboard-account.html">Account Management</a>\n'
-    '  <a href="dashboard-settings.html">Settings</a>\n'
-    '  <a href="dashboard-market-test.html">Market Test</a>\n'
-    '</nav>\n'
+    render_two_axis_nav(ctx.state, active_function, active_market)
+    # Phase 25: market-panel wrapper for HTMX swap target. Encloses all
+    # market-scoped tabs (signals, settings, market-test). Account is
+    # market-agnostic and lives outside market-panel (D-04).
+    + '<section id="market-panel" aria-live="polite">\n'
     '<section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">\n'
     '  <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>\n'
     f'{render_signals()}'
-    '</section>\n'
-    '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
-    '  <h2 id="account-tab-heading">Account Management</h2>\n'
-    f'{render_account()}'
     '</section>\n'
     '<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">\n'
     '  <h2 id="settings-tab-heading">Settings</h2>\n'
@@ -2006,11 +2006,56 @@ def _render_tabbed_dashboard(ctx: RenderContext) -> str:
     '  <h2 id="market-test-tab-heading">Market Test</h2>\n'
     f'{render_market_test()}'
     '</section>\n'
+    '</section>\n'
+    '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
+    '  <h2 id="account-tab-heading">Account Management</h2>\n'
+    f'{render_account()}'
+    '</section>\n'
     + _render_footer(ctx.strategy_version)
   )
 
 
+def _render_single_page_dashboard(
+  ctx: RenderContext,
+  page: str,
+  nav_mode: str = 'web',
+) -> str:
+  from dashboard_renderer.components.nav import render_two_axis_nav, _first_market_id
+  selected = _render_page_body(ctx, page)
+  section_id, heading_id, heading_text, heading_cls, render_body = selected
+  body = render_body()
+  heading_class_attr = f' class="{heading_cls}"' if heading_cls else ''
+
+  # Phase 25: derive active_function/active_market from ctx (with fallbacks for
+  # callers that don't pass the new kwargs — nav_mode='file' sibling generation).
+  active_function = getattr(ctx, 'active_function', None) or page
+  if active_function not in ('signals', 'account', 'settings', 'market-test'):
+    active_function = 'signals'
+  active_market = getattr(ctx, 'active_market', None)
+  if active_market is None and active_function != 'account':
+    active_market = _first_market_id(ctx.state)
+
+  nav_html = render_two_axis_nav(ctx.state, active_function, active_market)
+
+  # Wrap per-market content in <section id="market-panel"> for HTMX swap target.
+  # Account is market-agnostic — no market-panel wrapper (D-04).
+  inner = (
+    f'<section id="{section_id}" class="tab-panel" aria-labelledby="{heading_id}">\n'
+    + f'  <h2 id="{heading_id}"{heading_class_attr}>{heading_text}</h2>\n'
+    + body
+    + '</section>\n'
+  )
+  if active_function != 'account':
+    inner = f'<section id="market-panel" aria-live="polite">\n{inner}</section>\n'
+
+  return nav_html + inner + _render_footer(ctx.strategy_version)
+
+
 def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
+  '''DEPRECATED — Phase 25 Plan 03. Use render_two_axis_nav from dashboard_renderer.components.nav.
+
+  Retained to avoid breaking any direct test calls. Plan 25-09 (final cleanup) deletes this.
+  '''
   if nav_mode == 'file':
     pages = (
       ('signals', 'dashboard-signals.html', 'Signals'),
@@ -2032,28 +2077,6 @@ def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
       f'  <a href="{href}"{cls}>{label}</a>\n',
     )
   return '<nav class="tabs" aria-label="Dashboard tabs">\n' + ''.join(links) + '</nav>\n'
-
-
-def _render_single_page_dashboard(
-  ctx: RenderContext,
-  page: str,
-  nav_mode: str = 'web',
-) -> str:
-  selected = _render_page_body(ctx, page)
-  section_id, heading_id, heading_text, heading_cls, render_body = selected
-  body = render_body()
-  heading_class_attr = f' class="{heading_cls}"' if heading_cls else ''
-  return (
-    _render_dashboard_page_nav(
-      page if page in ('signals', 'account', 'settings', 'market-test') else 'signals',
-      nav_mode=nav_mode,
-    )
-    + f'<section id="{section_id}" class="tab-panel" aria-labelledby="{heading_id}">\n'
-    + f'  <h2 id="{heading_id}"{heading_class_attr}>{heading_text}</h2>\n'
-    + body
-    + '</section>\n'
-    + _render_footer(ctx.strategy_version)
-  )
 
 
 def _render_html_shell(ctx: RenderContext, body: str) -> str:  # noqa: ARG001

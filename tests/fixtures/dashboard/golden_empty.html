@@ -659,12 +659,18 @@ td.calc-cell.entry-target {
     {{SIGNOUT_BUTTON}}{{SESSION_NOTE}}
   </p>
 </header>
-<nav class="tabs" aria-label="Dashboard tabs">
-  <a href="dashboard-signals.html">Signals</a>
-  <a href="dashboard-account.html">Account Management</a>
-  <a href="dashboard-settings.html">Settings</a>
-  <a href="dashboard-market-test.html">Market Test</a>
+<nav role="tablist" aria-label="Function" class="tabs tabs-function">
+  <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/markets/SPI200/signals" data-tab-key="signals">Signals</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/account" data-tab-key="account">Account</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/settings" data-tab-key="settings">Settings</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/market-test" data-tab-key="market-test">Market Test</a>
 </nav>
+<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip">
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/signals" hx-get="/markets/SPI200/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="SPI200">SPI200</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/AUDUSD/signals" hx-get="/markets/AUDUSD/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="AUDUSD">AUDUSD</a>
+  <!-- Phase 25 Plan 05: + Add market chip injected here (D-16) -->
+</nav>
+<section id="market-panel" aria-live="polite">
 <section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">
   <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>
 <section class="market-selector" aria-labelledby="heading-market-selector">
@@ -832,6 +838,79 @@ td.calc-cell.entry-target {
   <div class="chart-container empty-state">No equity history yet — first full run needed</div>
 </section>
 </section>
+<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">
+  <h2 id="settings-tab-heading">Settings</h2>
+<section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">SPI 200 SETTINGS</p>
+  <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
+    <input type="hidden" name="market_id" value="SPI200">
+    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="25.0"></div>
+    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2"></div>
+    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0"></div>
+    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0"></div>
+    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
+    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
+    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
+    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
+    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+    <button type="submit" class="btn-primary">Save Settings</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">AUD / USD SETTINGS</p>
+  <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
+    <input type="hidden" name="market_id" value="AUDUSD">
+    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="25.0"></div>
+    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2"></div>
+    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0"></div>
+    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0"></div>
+    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
+    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
+    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
+    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
+    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+    <button type="submit" class="btn-primary">Save Settings</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">ADD MARKET</p>
+  <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
+    <div class="field"><label>Market ID</label><input name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>
+    <div class="field"><label>Display name</label><input name="display_name" required></div>
+    <div class="field"><label>Symbol</label><input name="symbol" required></div>
+    <div class="field"><label>Currency</label><input name="currency" value="AUD" required></div>
+    <div class="field"><label>Multiplier</label><input name="multiplier" type="number" step="0.0001" min="0.0001" required></div>
+    <div class="field"><label>Cost AUD</label><input name="cost_aud" type="number" step="0.01" min="0" value="0"></div>
+    <button type="submit" class="btn-primary">Add Market</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+</section>
+<section id="market-test-tab" class="tab-panel" aria-labelledby="market-test-tab-heading">
+  <h2 id="market-test-tab-heading">Market Test</h2>
+<section class="open-form market-test-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">MARKET TEST</p>
+  <form hx-post="/market-test/run" hx-target="#market-test-result" hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">
+    <div class="field"><label>Market</label><select name="market_id" required>
+        <option value="SPI200">SPI 200</option>
+        <option value="AUDUSD">AUD / USD</option>
+    </select></div>
+    <div class="field"><label>Start date</label><input name="start_date" type="date" required></div>
+    <div class="field"><label>End date</label><input name="end_date" type="date" required></div>
+    <div class="field"><label>Initial balance</label><input name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>
+    <div class="field"><label>ADX override</label><input name="adx_gate" type="number" step="0.1" min="0"></div>
+    <div class="field"><label>Votes override</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>
+    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1"></div>
+    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1"></div>
+    <button type="submit" class="btn-primary">Run Test</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+  <div id="market-test-result" class="market-test-result"></div>
+</section>
+</section>
+</section>
 <section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">
   <h2 id="account-tab-heading">Account Management</h2>
 <div id="account-management-region">
@@ -995,78 +1074,6 @@ td.calc-cell.entry-target {
   </table>
 </section>
 </div>
-</section>
-<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">
-  <h2 id="settings-tab-heading">Settings</h2>
-<section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">SPI 200 SETTINGS</p>
-  <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
-    <input type="hidden" name="market_id" value="SPI200">
-    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="25.0"></div>
-    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2"></div>
-    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0"></div>
-    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0"></div>
-    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
-    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
-    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
-    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
-    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
-    <button type="submit" class="btn-primary">Save Settings</button>
-  </form>
-  <div class="error" role="alert" aria-live="polite" hidden></div>
-</section>
-<section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">AUD / USD SETTINGS</p>
-  <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
-    <input type="hidden" name="market_id" value="AUDUSD">
-    <div class="field"><label>ADX</label><input name="adx_gate" type="number" step="0.1" min="0" value="25.0"></div>
-    <div class="field"><label>Momentum votes</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2"></div>
-    <div class="field"><label>Long ATR stop</label><input name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0"></div>
-    <div class="field"><label>Short ATR stop</label><input name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0"></div>
-    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00"></div>
-    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50"></div>
-    <div class="field"><label>Contract cap</label><input name="contract_cap" type="number" step="1" min="1" value=""></div>
-    <div class="field"><label>Direction</label><select name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select></div>
-    <label class="checkbox-field"><input name="one_contract_floor" type="checkbox"> 1-contract floor</label>
-    <button type="submit" class="btn-primary">Save Settings</button>
-  </form>
-  <div class="error" role="alert" aria-live="polite" hidden></div>
-</section>
-<section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">ADD MARKET</p>
-  <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
-    <div class="field"><label>Market ID</label><input name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>
-    <div class="field"><label>Display name</label><input name="display_name" required></div>
-    <div class="field"><label>Symbol</label><input name="symbol" required></div>
-    <div class="field"><label>Currency</label><input name="currency" value="AUD" required></div>
-    <div class="field"><label>Multiplier</label><input name="multiplier" type="number" step="0.0001" min="0.0001" required></div>
-    <div class="field"><label>Cost AUD</label><input name="cost_aud" type="number" step="0.01" min="0" value="0"></div>
-    <button type="submit" class="btn-primary">Add Market</button>
-  </form>
-  <div class="error" role="alert" aria-live="polite" hidden></div>
-</section>
-</section>
-<section id="market-test-tab" class="tab-panel" aria-labelledby="market-test-tab-heading">
-  <h2 id="market-test-tab-heading">Market Test</h2>
-<section class="open-form market-test-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">MARKET TEST</p>
-  <form hx-post="/market-test/run" hx-target="#market-test-result" hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">
-    <div class="field"><label>Market</label><select name="market_id" required>
-        <option value="SPI200">SPI 200</option>
-        <option value="AUDUSD">AUD / USD</option>
-    </select></div>
-    <div class="field"><label>Start date</label><input name="start_date" type="date" required></div>
-    <div class="field"><label>End date</label><input name="end_date" type="date" required></div>
-    <div class="field"><label>Initial balance</label><input name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>
-    <div class="field"><label>ADX override</label><input name="adx_gate" type="number" step="0.1" min="0"></div>
-    <div class="field"><label>Votes override</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>
-    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1"></div>
-    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1"></div>
-    <button type="submit" class="btn-primary">Run Test</button>
-  </form>
-  <div class="error" role="alert" aria-live="polite" hidden></div>
-  <div id="market-test-result" class="market-test-result"></div>
-</section>
 </section>
 <footer>
   Signal-only system. Not financial advice.

@@ -3162,7 +3162,7 @@ def _empty_state(last_run=None, markets=None, warnings=None, equity_history=None
     'equity_history': equity_history or [],
     'signals': signals or {},
     'paper_trades': paper_trades or [],
-    'positions': [],
+    'positions': {},  # dict per dashboard.py:_render_trailing_stop_guidance (state.get('positions', {}).get(market_id))
     'closed_trades': [],
     'strategy_settings': {'SPI200': {}, 'AUDUSD': {}},
     'account_balance_paper': 100000.0,
@@ -3197,7 +3197,6 @@ class TestPhase25FirstRun:
     assert 'Awaiting first daily run' in html_out
     assert 'Calculations and equity curve will populate after the first cycle at 08:00 AWST.' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: first-run collapse implementation pending")
   def test_last_run_set_renders_trace_tables(self):
     state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
     html_out = _render_to_str(state)
@@ -3212,7 +3211,6 @@ class TestPhase25StatsBar:
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'class="stats-bar"' not in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: stats-bar gate pending")
   def test_one_closed_paper_trade_renders_stats_bar(self):
     state = _empty_state(last_run='2026-04-23', paper_trades=[{'status': 'closed', 'realised_pnl': 100.0}])
     html_out = _render_to_str(state)
@@ -3229,7 +3227,6 @@ class TestPhase25Equity:
     assert 'id="equityChart"' not in html_out
     assert 'Chart appears once 5 daily equity points have been recorded.' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: equity-chart gate pending")
   def test_five_distinct_points_renders_chart(self):
     eq = [{'date': f'2026-04-{20+i}', 'equity': 100000.0 + i} for i in range(5)]
     html_out = _render_to_str(_empty_state(last_run='2026-04-23', equity_history=eq))
@@ -3288,7 +3285,6 @@ class TestPhase25AddMarket:
     assert 'class="add-market-chip"' in html_out
     assert '+ Add market' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-04: add-market chip pending")
   def test_add_market_chip_form_posts_to_markets(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'hx-post="/markets"' in html_out
@@ -3302,19 +3298,16 @@ class TestPhase25AddMarket:
 class TestPhase25ActiveTab:
   """D-18: active tab gets aria-current=page + distinct CSS rule."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-03: two-axis nav pending")
   def test_active_function_tab_has_aria_current(self):
     # When rendering /signals page, the Signals function tab must have aria-current="page"
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     # Match: a tag containing both 'Signals' and aria-current="page"
     assert re.search(r'<a[^>]*aria-current="page"[^>]*>\s*Signals\s*</a>', html_out) is not None
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-03: two-axis nav pending")
   def test_function_tab_strip_has_aria_label(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'aria-label="Function"' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-03: two-axis nav pending")
   def test_market_tab_strip_has_aria_label(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'aria-label="Market"' in html_out
@@ -3381,7 +3374,6 @@ class TestPhase25ButtonRename:
 class TestPhase25StrategyVersion:
   """D-22: strategy version sourced from state.signals[*].strategy_version."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: footer regen pending")
   def test_footer_renders_v120_when_state_has_v120(self):
     state = _empty_state(
       last_run='2026-04-23',
@@ -3406,7 +3398,6 @@ class TestPhase25Countdown:
     html_out = _render_to_str(_empty_state(last_run=None))
     assert 'Awaiting first run' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: status strip pending")
   def test_status_strip_displays_awst_label(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     # Operator-locked: display literal must read AWST (not AEST)
