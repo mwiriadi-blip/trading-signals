@@ -3144,4 +3144,272 @@ class TestSinglePageRenderIsolation:
     assert 'hx-patch="/account/balance"' in html_out
     assert 'id="account-management-region"' in html_out
     assert 'name="initial_account"' in html_out
+
+
+# ---------------------------------------------------------------------------
+# Phase 25 — Dashboard UI/UX overhaul: True multi-tab market preferences
+# Wave 1 test scaffolding. Every test method is decorated with
+# @pytest.mark.xfail(strict=True) so tests fail today (no implementation)
+# and flip to PASS only once Phase 25 implementation lands.
+# ---------------------------------------------------------------------------
+
+def _empty_state(last_run=None, markets=None, warnings=None, equity_history=None, signals=None, paper_trades=None):
+  """Phase 25 fixture builder. Returns a minimal valid state dict."""
+  return {
+    'last_run': last_run,
+    'markets': markets or {'SPI200': {'sort_order': 10, 'contract_size': 5}, 'AUDUSD': {'sort_order': 20, 'contract_size': 100000}},
+    'warnings': warnings or [],
+    'equity_history': equity_history or [],
+    'signals': signals or {},
+    'paper_trades': paper_trades or [],
+    'positions': [],
+    'closed_trades': [],
+    'strategy_settings': {'SPI200': {}, 'AUDUSD': {}},
+    'account_balance_paper': 100000.0,
+    'account_balance_live': 100000.0,
+  }
+
+
+def _render_to_str(state, now=None):
+  """Render dashboard to an HTML string without writing to disk.
+
+  Uses dashboard_renderer internals directly so tests can assert against HTML
+  without tmp_path fixtures. Equivalent to what render_dashboard() produces
+  before the atomic file write.
+  """
+  from dashboard_renderer.api import _build_render_context, _render_header_and_body
+  import dashboard as d
+  ctx = _build_render_context(state=state, now=now, trace_open_keys=None)
+  return _render_header_and_body(ctx=ctx, is_cookie_session=None, body_html=d._render_tabbed_dashboard(ctx))
+
+
+class TestPhase25FirstRun:
+  """D-09: state['last_run'] is None hides 11 trace tables, shows 1 onboarding card."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: first-run collapse implementation pending")
+  def test_last_run_none_renders_zero_trace_tables(self):
+    html_out = _render_to_str(_empty_state(last_run=None))
+    assert 'class="trace-indicators-table"' not in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: first-run collapse implementation pending")
+  def test_last_run_none_renders_onboarding_card(self):
+    html_out = _render_to_str(_empty_state(last_run=None))
+    assert 'Awaiting first daily run' in html_out
+    assert 'Calculations and equity curve will populate after the first cycle at 08:00 AWST.' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: first-run collapse implementation pending")
+  def test_last_run_set_renders_trace_tables(self):
+    state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
+    html_out = _render_to_str(state)
+    assert 'class="trace-indicators-table"' in html_out
+
+
+class TestPhase25StatsBar:
+  """D-10: stats bar hidden until closed_paper + closed_live >= 1."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: stats-bar gate pending")
+  def test_zero_trades_omits_stats_bar(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'class="stats-bar"' not in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: stats-bar gate pending")
+  def test_one_closed_paper_trade_renders_stats_bar(self):
+    state = _empty_state(last_run='2026-04-23', paper_trades=[{'status': 'closed', 'realised_pnl': 100.0}])
+    html_out = _render_to_str(state)
+    assert 'class="stats-bar"' in html_out
+
+
+class TestPhase25Equity:
+  """D-11: equity chart hidden until ≥5 distinct (date, value) tuples."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: equity-chart gate pending")
+  def test_three_identical_points_hides_chart(self):
+    eq = [{'date': '2026-04-23', 'equity': 100000.0}] * 3
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23', equity_history=eq))
+    assert 'id="equityChart"' not in html_out
+    assert 'Chart appears once 5 daily equity points have been recorded.' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: equity-chart gate pending")
+  def test_five_distinct_points_renders_chart(self):
+    eq = [{'date': f'2026-04-{20+i}', 'equity': 100000.0 + i} for i in range(5)]
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23', equity_history=eq))
+    assert 'id="equityChart"' in html_out
+
+
+class TestPhase25Settings:
+  """D-12: 3 fieldsets — Entry rules / Risk / Direction."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-08: settings fieldset grouping pending")
+  def test_settings_renders_three_fieldsets(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert html_out.count('<fieldset') >= 3
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-08: settings fieldset grouping pending")
+  def test_settings_legends_match_spec(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert '<legend>Entry rules</legend>' in html_out
+    assert '<legend>Risk</legend>' in html_out
+    assert '<legend>Direction</legend>' in html_out
+
+
+class TestPhase25Fonts:
+  """D-15: --fs-body 14px → 16px; other tokens scale by 16/14."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
+  def test_fs_body_is_16px(self):
+    html_out = _render_to_str(_empty_state())
+    assert '--fs-body: 16px' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
+  def test_fs_label_is_14px(self):
+    html_out = _render_to_str(_empty_state())
+    # 12 * (16/14) = 13.71 → 14
+    assert '--fs-label: 14px' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
+  def test_fs_heading_is_23px(self):
+    html_out = _render_to_str(_empty_state())
+    # 20 * (16/14) = 22.86 → 23
+    assert '--fs-heading: 23px' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: font scale rebalance pending")
+  def test_fs_display_is_32px(self):
+    html_out = _render_to_str(_empty_state())
+    # 28 * (16/14) = 32 exactly
+    assert '--fs-display: 32px' in html_out
+
+
+class TestPhase25AddMarket:
+  """D-16/D-17: + Add market chip beside market tabs."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-04: add-market chip pending")
+  def test_market_strip_contains_add_market_chip(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'class="add-market-chip"' in html_out
+    assert '+ Add market' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-04: add-market chip pending")
+  def test_add_market_chip_form_posts_to_markets(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'hx-post="/markets"' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-04: add-market chip pending")
+  def test_buried_settings_link_removed(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'href="#settings-tab"' not in html_out
+
+
+class TestPhase25ActiveTab:
+  """D-18: active tab gets aria-current=page + distinct CSS rule."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-03: two-axis nav pending")
+  def test_active_function_tab_has_aria_current(self):
+    # When rendering /signals page, the Signals function tab must have aria-current="page"
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # Match: a tag containing both 'Signals' and aria-current="page"
+    assert re.search(r'<a[^>]*aria-current="page"[^>]*>\s*Signals\s*</a>', html_out) is not None
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-03: two-axis nav pending")
+  def test_function_tab_strip_has_aria_label(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'aria-label="Function"' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-03: two-axis nav pending")
+  def test_market_tab_strip_has_aria_label(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'aria-label="Market"' in html_out
+
+
+class TestPhase25NoInlineColor:
+  """D-19 #5: no inline style="color:..." anywhere."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: a11y inline-style cleanup pending")
+  def test_rendered_html_has_no_inline_color_styles(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 1}}))
+    assert 'style="color:' not in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: status-dot beside FLAT/LONG/SHORT pending")
+  def test_signal_label_has_status_dot(self):
+    state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
+    html_out = _render_to_str(state)
+    # Status dot glyph beside FLAT label per D-19 #3
+    assert 'class="status-dot status-dot--flat"' in html_out or 'class="status-dot status-dot--neutral"' in html_out
+
+
+class TestPhase25WideTable:
+  """D-20: wide tables wrapped in scrollable region."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: wide-table wrapper pending")
+  def test_open_positions_table_is_wrapped(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # The positions section should contain a div with table-scroll class
+    assert 'class="table-scroll"' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: wide-table wrapper pending")
+  def test_table_scroll_has_role_region(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'role="region"' in html_out
+
+
+class TestPhase25ButtonRename:
+  """D-21: paper Open position → Record paper trade; live Open Position → Open live position."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: button rename pending")
+  def test_paper_trade_button_renamed(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'Record paper trade' in html_out
+    # Old text should be gone — but check carefully because "Open position" might appear elsewhere
+    # The submit button specifically: scan for `<button type="submit"` containing "Open position" in paper section
+    # Easier check: count occurrences. After rename, "Open Position" (case-sensitive) should not appear.
+    assert 'Open Position</button>' not in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: button rename pending")
+  def test_live_trade_button_renamed(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'Open live position' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: terminology reconciliation pending")
+  def test_account_terminology_unified(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # "Account Management" tab label is replaced by "Account" (per UI-SPEC §Tab strips)
+    # And section heading is "Account" (per UI-SPEC §Account page)
+    # "Account Baseline" form heading should be gone
+    assert 'Account Baseline' not in html_out
+    assert 'Account Management' not in html_out
+
+
+class TestPhase25StrategyVersion:
+  """D-22: strategy version sourced from state.signals[*].strategy_version."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: footer regen pending")
+  def test_footer_renders_v120_when_state_has_v120(self):
+    state = _empty_state(
+      last_run='2026-04-23',
+      signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}, 'AUDUSD': {'strategy_version': 'v1.2.0', 'signal': 0}},
+    )
+    html_out = _render_to_str(state)
+    assert 'v1.2.0' in html_out
+    assert 'v1.0.0' not in html_out
+    assert 'v1.1.0' not in html_out
+
+
+class TestPhase25Countdown:
+  """D-06/D-07/OR-01/OR-02: System Status strip server-render."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: status strip pending")
+  def test_status_strip_present_in_header(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'id="status-strip"' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: status strip pending")
+  def test_status_strip_first_run_shows_awaiting(self):
+    html_out = _render_to_str(_empty_state(last_run=None))
+    assert 'Awaiting first run' in html_out
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: status strip pending")
+  def test_status_strip_displays_awst_label(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # Operator-locked: display literal must read AWST (not AEST)
+    assert 'AWST' in html_out
+    assert 'AEST' not in html_out
     assert 'name="account"' in html_out
