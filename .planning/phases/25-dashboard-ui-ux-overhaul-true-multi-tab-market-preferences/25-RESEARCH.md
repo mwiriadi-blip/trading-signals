@@ -1020,27 +1020,41 @@ def _resolve_strategy_version(state: dict) -> str:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED 2026-05-05)
 
 1. **What is the exact `last_run_status` derivation rule?** [HIGH PRIORITY]
    - What we know: there is no `last_run_status` field; only `state['last_run']` (date) and `state['warnings']` (list).
    - What's unclear: whether ANY warning makes it red, only specific warnings, or only "last run failed entirely" (which has no current persistence).
    - Recommendation: Plan-phase task: "operator confirms 3-state rule for status dot. Default proposal: red if `state['warnings']` has an entry written after `state['last_run']`; amber if `state['last_run'] < today_awst`; green otherwise."
+   - **RESOLVED 2026-05-05 — OR-01 (locked by operator during /gsd-plan-phase 25):**
+     - **Green:** `state['last_run']` is today's date (AWST) AND `state['warnings']` is empty.
+     - **Amber:** `state['last_run']` is today's date (AWST) AND `state['warnings']` is non-empty (today's run had warnings); OR `state['last_run']` is the previous weekday AND today is a weekday (one missed cycle, awaiting confirmation).
+     - **Red:** `state['last_run']` is None (fresh install) OR `state['last_run']` is older than 1 weekday (multiple missed cycles, daemon likely stopped).
+     - **Weekend treatment:** Saturday/Sunday inherit Friday's status (no run expected on weekends; do not show red on Sat/Sun if Fri was green/amber).
 
 2. **Should the `>24h` "in N h M m" format roll over to days?** [LOW PRIORITY]
    - What we know: UI-SPEC §System Status strip says `"08:00 AWST · in {N}h {M}m"`.
    - What's unclear: Friday afternoon AWST has 64+ hours until Monday 08:00 AWST.
    - Recommendation: Plan-phase task: lock format. Default proposal: `"Mon 08:00 AWST · in 2d 16h"` for >24h gaps; `"08:00 AWST · in {N}h {M}m"` otherwise.
+   - **RESOLVED 2026-05-05 — OR-02 (locked by operator during /gsd-plan-phase 25):**
+     - **>24h:** `"Mon 08:00 AWST · in 2d 16h"` — day-name + absolute time + relative duration.
+     - **<24h:** `"in 6h 23m"` (or `"in 14m"` for sub-hour). Strip the absolute-time prefix when the user can read it as "today/tomorrow morning".
+     - **Timezone label:** Always render as "AWST" (not "AEST") regardless of operator's casual terminology elsewhere — this is the canonical Perth UTC+8-no-DST timezone per CONTEXT.md D-08.
 
 3. **Is there a "first market" deterministic fallback for `selected_market` cookie miss?** [MEDIUM PRIORITY]
    - What we know: D-05 says "first market in `state.markets` ordering". The state.json has `sort_order` field on each market dict (SPI200=10, AUDUSD=20).
    - What's unclear: whether ordering means insertion order (Python 3.7+ dict guarantees) or `sort_order` field.
    - Recommendation: Use `min(state['markets'].items(), key=lambda kv: kv[1].get('sort_order', 0))[0]` — explicit `sort_order` ordering. Locks SPI200 as default since it has lower sort_order. **Lock with operator during plan-phase.**
+   - **RESOLVED 2026-05-05 — OR-03 (locked by operator during /gsd-plan-phase 25):**
+     - **Use insertion order** of `state['markets']` (Python 3.7+ dict ordering preserves insertion). The first key returned by `next(iter(state['markets']))` is the fallback.
+     - Deterministic per state.json content; no special-case for SPI200; survives market reorders the operator may make.
+     - This SUPERSEDES the researcher's `sort_order`-based recommendation above.
 
 4. **Does the equity chart `(date, value)` distinct-tuple rule (D-11) ignore intra-day equity recomputation?** [LOW PRIORITY]
    - What we know: state.json has 3 entries all `{date: '2026-04-23', equity: 100000.0}`.
    - What's unclear: whether the daemon is supposed to write only one row per date (de-dupe at write time) or whether multiple rows per date are valid (e.g., for intraday paper-trade unrealised P&L tracking).
    - Recommendation: Phase 25 should NOT touch the daemon's write logic. Render-side de-dupe per D-11 is the explicit decision. Note in PLAN: "if the operator later wants intraday entries, the de-dupe rule must change."
+   - **RESOLVED 2026-05-05 — accept recommendation (no operator round-trip needed; UI-only change with documented future-trigger condition).**
 
 ---
 

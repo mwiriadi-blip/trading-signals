@@ -29,6 +29,7 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 - [x] **Phase 22: Strategy versioning & audit trail** — `STRATEGY_VERSION` constant in `system_params.py`, every signal/trade row tagged so historical state stays interpretable across logic changes (completed 2026-04-29)
 - [x] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge (completed 2026-05-01)
 - [x] **Phase 24: v1.2 codemoot fix phase** — Fix 3 verified bugs + cleanup 7 code-quality items from post-milestone codemoot review (completed 2026-05-01)
+- [ ] **Phase 25: Dashboard UI/UX overhaul — true multi-tab market preferences and first-run polish** — Convert decorative market dropdown + stacked Settings forms into real two-axis nav (market × function); fix 10 priority items from /ui-ux-pro-max review 2026-05-05
 
 ## Phase Details
 
@@ -175,3 +176,47 @@ Plans:
 - **Hex-boundary architecture.** Pure-math modules cannot import adapters.
 - **Atomic state writes.** tempfile + fsync + os.replace, contention-guarded.
 - **Email never-crash.** Resend failures logged, never abort daily run.
+
+### Phase 25: Dashboard UI/UX overhaul — true multi-tab market preferences and first-run polish
+
+**Goal:** Trader switches market once and every panel (Signals, Settings, Market Test) reflects that selection across page navs and refreshes; first-run UX shows ~1 empty card, not 11 stacked "n/a" panels; Settings page is scannable, not a wall of inputs; system trust surface (next-run countdown + last-run health) visible above the fold.
+
+**Depends on:** Nothing (UI-only refactor; no signal/state/persistence changes).
+
+**Source:** `/ui-ux-pro-max` review 2026-05-05. All 10 priority items folded into this phase.
+
+**Scope — 10 priority items:**
+
+1. **Two-axis navigation (HEADLINE).** Convert the four anchor-link tabs (`dashboard-signals.html`, `dashboard-account.html`, `dashboard-settings.html`, `dashboard-market-test.html`) into a market-tab strip × function-tab strip. URL pattern: `/markets/<MARKET>/<signals|account|settings|market-test>`. Selected market persists in URL + cookie/localStorage so refresh and tab switch preserve context. `+ Add market` chip beside the market tabs (replaces buried `<a class="btn-row btn-modify" href="#settings-tab">Add market</a>` in `dashboard.html:676`). Account tab is the only market-agnostic function.
+
+2. **Active-tab affordance + a11y.** Style `.tabs a.active` distinctly (currently has no CSS rule — visually identical to inactive); add `aria-current="page"` on the active anchor for SR users; implement WAI-ARIA tabs ←/→ keyboard navigation pattern.
+
+3. **Consolidate the 4 dashboard HTML files.** Today: 4216 LOC across `dashboard.html` (1117), `dashboard-signals.html` (841), `dashboard-account.html` (838), `dashboard-settings.html` (724), `dashboard-market-test.html` (696) — duplicated `<style>`, scripts, header chrome. Target: single htmx-driven shell with `hx-get`+`hx-push-url` panel swaps OR multipage with shared `/static/dashboard.css` + `/static/dashboard.js`. Pick whichever the renderer in `dashboard_renderer/` supports more naturally.
+
+4. **Mobile body font ≥16px.** Current `--fs-body: 14px` (`dashboard.html:76`) triggers iOS auto-zoom on every input focus. Bump body to 16px; rebalance heading/label scale tokens.
+
+5. **First-run empty-state collapse.** Hide the per-instrument trace-indicators tables (`<table class="trace-indicators-table">` × 11 rows of `n/a (need N bars, have 0)`) when there's no data; show ONE onboarding card: "Awaiting first daily run at 08:00 AWST. Calculations and equity curve will populate after the first cycle." Hide the all-zeros stats bar (`dashboard.html:762-769`) until ≥1 trade exists. Hide equity chart until ≥5 distinct points (currently renders a misleading flat line from 3 identical data points at `dashboard.html:837`).
+
+6. **Settings page fieldset grouping + helper text.** Today: 18 numeric inputs in two stacked forms (`dashboard.html:1041-1074`) with no grouping or helper text. Group into `<fieldset>`s: **Entry rules** (ADX gate, momentum votes), **Risk** (long/short ATR stop, long/short risk %, contract cap), **Direction** (mode, 1-contract floor). Add `<small>` helper for each cryptic field (ADX, "Momentum votes", "ATR stop"). On Market Test page, show inherited Settings defaults as `placeholder` on the override fields (currently empty inputs give no hint).
+
+7. **System Status strip in header.** Replace the static `<span class="value">2026-05-04 18:49 AWST</span>` literal (`dashboard.html:658`) with a live status strip: green/amber dot + `<time datetime="…">` last-run timestamp + countdown to next 08:00 AWST cycle + run health (success/failure of latest run). This is the trust surface for a trading product.
+
+8. **Wide-table responsive handling.** Open Positions (9 cols), Closed Trades (7 cols), Trailing Stops (7 cols) overflow on mobile with no handling (single media query at `max-width:600px` in `dashboard.html:645` only adjusts `.stats-bar-item`). Wrap each table in `overflow-x:auto` container; add stacked-row layout under 600px.
+
+9. **Button / eyebrow / terminology consistency.** Add `class="btn-primary"` to paper-trade `<button type="submit">Open position</button>` (`dashboard.html:800`). Rename "Open position" (paper) vs "Open Position" (live) to disambiguate (e.g. "Record paper trade" vs "Open live position"). Pick one term across **Account Management** (tab) / **Account Baseline** (form) / **Account balance** (field) — three names for one concept. Reconcile strategy-version footer: `dashboard-signals.html:837` shows v1.0.0, `dashboard.html:1113` shows v1.1.0 — single source.
+
+10. **Accessibility hardening.** Sync `aria-expanded` with the cookie-driven `details[data-instrument]` toggle state (currently SR users miss state changes). Add visible focus rings to `<summary>` elements (currently only browser default). Add a status dot/glyph beside the FLAT/LONG/SHORT colour-only labels (`dashboard.html:683` etc.) so colourblind users have a non-colour cue. Fix `<select aria-label="Market selection">` (`dashboard.html:672`) — add `id`/`for` pairing to the visible "Market" `<h2>`. Replace inline `style="color:#eab308"` on signal big-labels with `--color-flat` / `--color-long` / `--color-short` tokens.
+
+**Plans:** 10 plans
+
+Plans:
+- [ ] 25-01-test-scaffolding-PLAN.md — Wave 1: Failing-by-design xfail test classes (14 classes across 3 test files) for every Phase 25 acceptance gate.
+- [ ] 25-02-renderer-consolidation-PLAN.md — Wave 1: Migrate inline shell constants into shared assets.py + shell.py; create nav.py stubs; bump _REQUIRED_DASHBOARD_MARKER to force regen.
+- [ ] 25-03-two-axis-nav-PLAN.md — Wave 2: Implement render_function_strip / render_market_strip with WAI-ARIA roving tabindex; thread active_function/active_market through RenderContext.
+- [ ] 25-04-routes-cookie-PLAN.md — Wave 2: Register GET /markets/{m}/{fn} routes; selected_market cookie write; HX-Request panel-vs-full sniff.
+- [ ] 25-05-add-market-chip-PLAN.md — Wave 3: Inline-expanding + Add market chip; HX-Trigger markets-changed wiring; remove buried settings-tab link.
+- [ ] 25-06-status-strip-PLAN.md — Wave 3: render_status_strip with OR-01 status-dot derivation + OR-02 countdown format; /status-strip endpoint; 08:01 AWST refresh timer.
+- [ ] 25-07-empty-state-collapse-PLAN.md — Wave 3: D-09 first-run onboarding card; D-10 stats-bar gate; D-11 equity chart distinct-tuple gate.
+- [ ] 25-08-settings-fieldsets-PLAN.md — Wave 3: 3 fieldsets (Entry rules / Risk / Direction) + helper text; Market Test inherited-defaults placeholders.
+- [ ] 25-09-mobile-a11y-PLAN.md — Wave 4: D-15 font token rebalance; D-19 a11y (signal classes, status dots, focus rings, aria-expanded sync); D-20 wide-table wrappers.
+- [ ] 25-10-terminology-version-PLAN.md — Wave 4: D-21 button copy renames + Account terminology unification; D-22 strategy version regen across 5 sibling HTMLs.
