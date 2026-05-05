@@ -658,6 +658,14 @@ td.calc-cell.entry-target {
     <span class="value">2026-04-22 09:00 AWST</span>
     {{SIGNOUT_BUTTON}}{{SESSION_NOTE}}
   </p>
+<div id="status-strip" class="status-strip" hx-get="/status-strip" hx-trigger="refresh, visibilitychange[document.visibilityState=='visible'] from:document" hx-swap="outerHTML" aria-live="polite">
+  <span class="status-dot status-dot--never" aria-hidden="true"></span>
+  <span class="status-label">Last run</span>
+  <span>Awaiting first run</span>
+  <span class="status-sep"> · </span>
+  <span class="status-label">Next run</span>
+  <span class="next-run">08:00 AWST · <span data-countdown="2026-04-23T08:00:00+08:00">in 23h 0m</span></span>
+</div>
 </header>
 <nav role="tablist" aria-label="Function" class="tabs tabs-function">
   <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/markets/SPI200/signals" data-tab-key="signals">Signals</a>

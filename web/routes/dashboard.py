@@ -296,12 +296,29 @@ def register(app: FastAPI) -> None:
     return await _serve_market_scoped_page(request, market_id, 'market-test')
 
   @app.get('/status-strip', response_class=Response)
-  async def get_status_strip_stub(request: Request):
-    '''Phase 25 Plan 04 stub. Plan 25-06 fills the body.'''
+  async def get_status_strip(request: Request):
+    '''Phase 25 D-06/D-07 Plan 06: status strip fragment endpoint.
+
+    Auth-gated by the existing AuthMiddleware (route NOT in PUBLIC_PATHS).
+    Returns the rendered strip fragment for HTMX outerHTML swap.
+    Cache-Control: no-store, private (T-25-06-03 cache poisoning mitigation).
+    Warning text is NOT rendered (T-25-06-01: only state derivation emitted).
+    '''
+    import state_manager as _sm
+    from dashboard_renderer.components.header import render_status_strip
+
+    from datetime import datetime
+    import pytz
+    perth = pytz.timezone('Australia/Perth')
+    now_awst = datetime.now(perth)
+
+    state = _sm.load_state()
+    body = render_status_strip(state, now_awst)
     return Response(
-      content=b'<div id="status-strip"><!-- Phase 25 Plan 06 implements --></div>',
+      content=body.encode('utf-8'),
       media_type='text/html; charset=utf-8',
       status_code=200,
+      headers={'Cache-Control': 'no-store, private'},
     )
 
   @app.get('/markets-strip', response_class=Response)

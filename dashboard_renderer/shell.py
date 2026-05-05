@@ -104,6 +104,37 @@ _TABS_KEYBOARD_JS = '''<script>
 '''
 
 
+# Phase 25 D-07 Plan 06: one-shot 08:01 AWST status-strip refresh.
+# 08:01 AWST = 00:01 UTC (AWST is UTC+8, no DST). Fixed offset — no browser TZ.
+# Fires htmx 'refresh' event on #status-strip, which hx-trigger="refresh" catches.
+# Re-arms for the next day after firing so the tab stays live indefinitely.
+_STATUS_STRIP_REFRESH_JS = '''<script>
+// Phase 25 D-07: schedule one-shot status-strip refresh at 08:01 AWST.
+// 08:01 AWST = 00:01 UTC. Fixed offset; ignores browser local TZ.
+(function () {
+  function msToNext0801Utc() {
+    var now = Date.now();
+    var d = new Date(now);
+    var target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 1, 0, 0);
+    if (target <= now) target += 86400000;
+    return target - now;
+  }
+  function fireStatusStripRefresh() {
+    var el = document.getElementById('status-strip');
+    if (el && window.htmx) {
+      window.htmx.trigger(el, 'refresh');
+    }
+    // Re-arm for next day.
+    setTimeout(fireStatusStripRefresh, msToNext0801Utc());
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(fireStatusStripRefresh, msToNext0801Utc());
+  });
+})();
+</script>
+'''
+
+
 def render_html_shell(ctx: RenderContext, body: str) -> str:
   '''Phase 25 D-02: emit shared <head> + style + scripts inline.
 
@@ -136,6 +167,7 @@ def render_html_shell(ctx: RenderContext, body: str) -> str:
     f'{body}'
     '  </div>\n'
     f'{_AWST_COUNTDOWN_JS}'
+    f'{_STATUS_STRIP_REFRESH_JS}'
     f'{_TABS_KEYBOARD_JS}'
     '</body>\n'
     '</html>\n'

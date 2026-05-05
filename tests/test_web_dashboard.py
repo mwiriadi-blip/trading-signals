@@ -1181,7 +1181,6 @@ class TestPhase25StatusStripEndpoint:
     assert 'id="status-strip"' in body
     assert '<html' not in body.lower()
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: /status-strip endpoint pending")
   def test_status_strip_unauthed_returns_401_or_403(self, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
@@ -1191,4 +1190,4 @@ class TestPhase25StatusStripEndpoint:
     client = TestClient(create_app())
     resp = client.get('/status-strip')
     assert resp.status_code in (401, 403)
-    assert '{{TRACE_OPEN_AUDUSD}}' not in r.text
+    assert '{{TRACE_OPEN_AUDUSD}}' not in resp.text

@@ -3386,12 +3386,10 @@ class TestPhase25StrategyVersion:
 class TestPhase25Countdown:
   """D-06/D-07/OR-01/OR-02: System Status strip server-render."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: status strip pending")
   def test_status_strip_present_in_header(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'id="status-strip"' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: status strip pending")
   def test_status_strip_first_run_shows_awaiting(self):
     html_out = _render_to_str(_empty_state(last_run=None))
     assert 'Awaiting first run' in html_out
@@ -3402,3 +3400,33 @@ class TestPhase25Countdown:
     assert 'AWST' in html_out
     assert 'AEST' not in html_out
     assert 'name="account"' in html_out
+
+
+class TestPhase25StatusDotDerivation:
+  """OR-01: 3-state status dot truth-table regression lock."""
+
+  @pytest.mark.parametrize('last_run,warnings,now_iso,expected_class', [
+    # Fresh install — never run
+    (None, [], '2026-05-05T14:30:00+08:00', 'status-dot--never'),
+    # Today + no warnings → green
+    ('2026-05-05', [], '2026-05-05T14:30:00+08:00', 'status-dot--success'),
+    # Today + recent warning → amber
+    ('2026-05-05', [{'date': '2026-05-05', 'message': 'x'}], '2026-05-05T14:30:00+08:00', 'status-dot--stale'),
+    # Yesterday weekday + today weekday → amber (one missed cycle)
+    ('2026-05-04', [], '2026-05-05T14:30:00+08:00', 'status-dot--stale'),
+    # Old run → red
+    ('2026-04-01', [], '2026-05-05T14:30:00+08:00', 'status-dot--failure'),
+    # Weekend Saturday: Friday's run is OK → green (2026-05-08 is Fri, 2026-05-09 is Sat)
+    ('2026-05-08', [], '2026-05-09T10:00:00+08:00', 'status-dot--success'),
+    # Weekend Sunday: Friday's run is OK → green (2026-05-10 is Sun)
+    ('2026-05-08', [], '2026-05-10T10:00:00+08:00', 'status-dot--success'),
+  ])
+  def test_or_01_derivation_truth_table(self, last_run, warnings, now_iso, expected_class):
+    from datetime import datetime
+    from dashboard_renderer.components.header import render_status_strip
+    now = datetime.fromisoformat(now_iso)
+    out = render_status_strip({'last_run': last_run, 'warnings': warnings}, now)
+    assert expected_class in out, (
+      f'Expected {expected_class!r} for last_run={last_run!r}, '
+      f'now_iso={now_iso!r}. Got fragment: {out[:300]}'
+    )
