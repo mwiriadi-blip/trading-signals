@@ -1850,30 +1850,51 @@ def _render_footer(strategy_version: str) -> str:
   return dr_render_footer(strategy_version)
 
 
+def _distinct_equity_tuples(equity_history: list) -> list:
+  '''Phase 25 D-11: dedupe (date, equity) tuples; chart hides until >=5 distinct.
+
+  Three identical {date: '2026-04-23', equity: 100000.0} entries produce ONE
+  distinct entry, not three. Only dicts with parseable date+equity are kept.
+  '''
+  seen: set = set()
+  distinct = []
+  for row in equity_history:
+    if not isinstance(row, dict):
+      continue
+    try:
+      key = (row['date'], float(row['equity']))
+    except (KeyError, TypeError, ValueError):
+      continue
+    if key not in seen:
+      seen.add(key)
+      distinct.append(row)
+  return distinct
+
+
 def _render_equity_chart_container(state: dict) -> str:
   '''DASH-04 / CONTEXT D-11 / UI-SPEC §Chart Component. Category x-axis.
 
   JSON payload injection defence (Pitfall 1): json.dumps + .replace('</', '<\\/').
 
-  D-13 empty state: if equity_history is empty, render a placeholder <div>
-  rather than an instantiated Chart.js canvas (avoids a blank chart band
-  with no indication of why).
+  D-11 empty state: chart hidden until >=5 distinct (date, equity) tuples.
+  Three identical points still count as one distinct point (D-11 spec).
   '''
-  equity_history = state.get('equity_history', [])
-  if not equity_history:
+  equity_history = state.get('equity_history', []) or []
+  distinct = _distinct_equity_tuples(equity_history)
+  if len(distinct) < 5:
     return (
       '<section aria-labelledby="heading-equity">\n'
-      '  <h2 id="heading-equity">Equity Curve</h2>\n'
-      '  <div class="chart-container empty-state">'
-      'No equity history yet — first full run needed'
+      '  <h2 id="heading-equity">Equity curve</h2>\n'
+      '  <div class="empty-state">'
+      'Chart appears once 5 daily equity points have been recorded.'
       '</div>\n'
       '</section>\n'
     )
-  # Build labels + data as plain lists, then JSON-serialise with
-  # <script>-close injection defence (Pitfall 1) and byte-stable dict
-  # ordering (Pitfall 2).
-  labels = [row['date'] for row in equity_history]
-  data = [float(row['equity']) for row in equity_history]
+  # Build labels + data from the deduped distinct list (NOT raw equity_history).
+  # JSON-serialise with <script>-close injection defence (Pitfall 1) and
+  # byte-stable dict ordering (Pitfall 2).
+  labels = [row['date'] for row in distinct]
+  data = [float(row['equity']) for row in distinct]
   payload = json.dumps(
     {'labels': labels, 'data': data},
     ensure_ascii=False,

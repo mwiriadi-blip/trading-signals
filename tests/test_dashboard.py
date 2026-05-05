@@ -3217,7 +3217,6 @@ class TestPhase25StatsBar:
 class TestPhase25Equity:
   """D-11: equity chart hidden until ≥5 distinct (date, value) tuples."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-07: equity-chart gate pending")
   def test_three_identical_points_hides_chart(self):
     eq = [{'date': '2026-04-23', 'equity': 100000.0}] * 3
     html_out = _render_to_str(_empty_state(last_run='2026-04-23', equity_history=eq))
