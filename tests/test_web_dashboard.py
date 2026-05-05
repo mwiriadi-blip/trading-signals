@@ -1147,4 +1147,50 @@ class TestTraceCookieAllowlist:
     assert 'javascript:alert(1)' not in r.text, 'D-16: XSS payload must not leak'
     # Placeholders must be gone.
     assert '{{TRACE_OPEN_SPI200}}' not in r.text
+
+
+# ---------------------------------------------------------------------------
+# Phase 25 — Wave 1 test scaffolding: /status-strip endpoint
+# xfail(strict=True) — fails today, turns green when Phase 25 P25-05 lands.
+# ---------------------------------------------------------------------------
+
+class TestPhase25StatusStripEndpoint:
+  """D-06/D-07: GET /status-strip returns fragment HTML."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: /status-strip endpoint pending")
+  def test_status_strip_endpoint_returns_200(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from fastapi.testclient import TestClient
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get('/status-strip', headers={AUTH_HEADER_NAME: VALID_SECRET})
+    assert resp.status_code == 200
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: /status-strip endpoint pending")
+  def test_status_strip_endpoint_returns_html_fragment(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from fastapi.testclient import TestClient
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get('/status-strip', headers={AUTH_HEADER_NAME: VALID_SECRET})
+    assert 'text/html' in resp.headers.get('content-type', '')
+    body = resp.text
+    # Fragment should contain the strip wrapper, NOT a full <html> document
+    assert 'id="status-strip"' in body
+    assert '<html' not in body.lower()
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-05: /status-strip endpoint pending")
+  def test_status_strip_unauthed_returns_401_or_403(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from fastapi.testclient import TestClient
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get('/status-strip')
+    assert resp.status_code in (401, 403)
     assert '{{TRACE_OPEN_AUDUSD}}' not in r.text

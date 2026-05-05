@@ -377,4 +377,137 @@ class TestMarketRoutesRegistered:
     assert settings['risk_pct_short'] == 0.005
     assert settings['one_contract_floor'] is True
     assert settings['contract_cap'] is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 25 — Wave 1 test scaffolding: routing, cookie, status-strip endpoint
+# Every xfail(strict=True) method fails today and turns green when the
+# corresponding implementation plan (Wave 2/3) lands.
+# ---------------------------------------------------------------------------
+
+class TestPhase25MarketRoutes:
+  """D-01..D-05: GET /markets/{market_id}/{function} routes registered correctly."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: routes pending")
+  def test_market_signals_route_registered(self, monkeypatch):
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    app = create_app()
+    paths = {r.path for r in app.routes if hasattr(r, 'path')}
+    assert '/markets/{market_id}/signals' in paths
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: GET /markets/{market_id}/settings route pending")
+  def test_market_settings_get_route_registered(self, monkeypatch, tmp_path):
+    """Phase 25 adds a GET handler for /markets/{market_id}/settings (full settings page).
+    A PATCH handler already exists but GET (full-page render) is new in Phase 25.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get(
+      '/markets/SPI200/settings',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: routes pending")
+  def test_market_market_test_route_registered(self, monkeypatch):
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    app = create_app()
+    paths = {r.path for r in app.routes if hasattr(r, 'path')}
+    assert '/markets/{market_id}/market-test' in paths
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: routes pending")
+  def test_get_market_signals_returns_200_with_auth(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get(
+      '/markets/SPI200/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: route validation pending")
+  def test_unknown_market_returns_404(self, monkeypatch, tmp_path):
+    """Once /markets/{market_id}/signals is registered, an unknown market_id
+    must return 404 (market-not-found) not 405 or 200.
+    Prerequisite: /markets/{market_id}/signals route must exist (Phase 25 P25-02).
+    Two-part assertion: route registered AND unknown market is 404.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    app = create_app()
+    paths = {r.path for r in app.routes if hasattr(r, 'path')}
+    # Gate: only meaningful once the route exists; if not registered, fail the xfail
+    assert '/markets/{market_id}/signals' in paths, 'Phase 25 route not yet registered'
+    client = TestClient(app)
+    resp = client.get(
+      '/markets/NOPE/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 404
+
+  def test_existing_route_shadowing_regression_still_passes(self, monkeypatch):
+    """REGRESSION GUARD — must remain green throughout Phase 25.
+    Asserts the literal /markets/settings PATCH path is registered
+    BEFORE /markets/{market_id} in the route list (registration-order check).
+    """
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    app = create_app()
+    ordered_patch_paths = [r.path for r in app.routes if hasattr(r, 'path') and 'PATCH' in getattr(r, 'methods', set())]
+    if '/markets/settings' in ordered_patch_paths and '/markets/{market_id}' in ordered_patch_paths:
+      assert ordered_patch_paths.index('/markets/settings') < ordered_patch_paths.index('/markets/{market_id}'), \
+        'Route shadowing regression — /markets/settings literal must come before /markets/{market_id}'
+
+
+class TestPhase25SelectedMarketCookie:
+  """D-05: GET /markets/{m}/{fn} sets cookie selected_market with HttpOnly=false; SameSite=Lax."""
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: cookie write pending")
+  def test_market_route_sets_selected_market_cookie(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get(
+      '/markets/AUDUSD/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    # Look for Set-Cookie header containing selected_market=AUDUSD
+    set_cookies = [v for k, v in resp.headers.items() if k.lower() == 'set-cookie']
+    # At minimum one Set-Cookie must contain selected_market=AUDUSD
+    assert any('selected_market=AUDUSD' in sc for sc in set_cookies)
+
+  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-02: cookie attrs pending")
+  def test_selected_market_cookie_has_lax_samesite_no_httponly(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get(
+      '/markets/SPI200/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    set_cookies = [v for k, v in resp.headers.items() if k.lower() == 'set-cookie']
+    market_cookie = next((sc for sc in set_cookies if 'selected_market=' in sc), None)
+    assert market_cookie is not None
+    assert 'SameSite=Lax' in market_cookie
+    # D-05: NOT HttpOnly — JS must be able to read the cookie
+    assert 'HttpOnly' not in market_cookie
+    assert 'Path=/' in market_cookie
+    assert 'Secure' in market_cookie  # production HTTPS-only requirement
     assert settings['direction_mode'] == 'long_only'
