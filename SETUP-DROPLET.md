@@ -200,13 +200,22 @@ If a browser visit returns 401 instead of 302: the request likely lacks `Sec-Fet
 
 ## Install sudoers entry for trader
 
-`deploy.sh` calls `sudo -n systemctl restart trading-signals` AND `sudo -n systemctl restart trading-signals-web` as two separate invocations (split form per Phase 11 REVIEWS HIGH #4 — sudo matches the full argv, so a combined invocation may NOT match either sudoers rule).
+`deploy.sh` calls four passwordless sudo invocations split across Phases 11 and 12. Each must be its own sudoers rule because sudo matches the full argv — a combined invocation may NOT match either rule (Phase 11 REVIEWS HIGH #4):
 
-First, verify the actual `systemctl` path:
+| Phase | Invocation | Purpose |
+|-------|------------|---------|
+| 11 | `sudo -n systemctl restart trading-signals` | Restart daily-run unit after pull |
+| 11 | `sudo -n systemctl restart trading-signals-web` | Restart FastAPI web unit after pull |
+| 12 | `sudo -n nginx -t` | Validate nginx config before reload |
+| 12 | `sudo -n systemctl reload nginx` | Reload nginx (gated on `nginx/signals.conf` + `command -v nginx`) |
+
+First, verify the actual binary paths:
 
 ```bash
 which systemctl
 # Expected: /usr/bin/systemctl
+which nginx
+# Expected: /usr/sbin/nginx (or /usr/bin/nginx on some distros)
 ```
 
 Create the sudoers file using visudo:
@@ -215,14 +224,13 @@ Create the sudoers file using visudo:
 sudo visudo -f /etc/sudoers.d/trading-signals-deploy
 ```
 
-Paste exactly (replace `/usr/bin/systemctl` if your `which systemctl` returned a different path). The line has TWO comma-separated rules — one per unit — matching deploy.sh's two split `sudo -n` calls:
+Paste exactly (replace `/usr/bin/systemctl` and `/usr/sbin/nginx` if your `which` output differs). Four comma-separated rules — one per invocation — matching deploy.sh's four split `sudo -n` calls:
 
 ```
-# Phase 11 D-21: trader may restart ONLY these two units.
-# Two comma-separated rules match deploy.sh's two split `sudo -n systemctl
-# restart <unit>` calls (REVIEWS HIGH #4 — combining both unit names into
-# one sudo invocation may NOT match either rule).
-trader ALL=(root) NOPASSWD: /usr/bin/systemctl restart trading-signals, /usr/bin/systemctl restart trading-signals-web
+# Phase 11 D-21 + Phase 12: trader may restart ONLY these units and reload nginx.
+# Comma-separated rules match deploy.sh's split `sudo -n` calls (REVIEWS HIGH #4 —
+# combining commands into one sudo invocation may NOT match any rule).
+trader ALL=(root) NOPASSWD: /usr/bin/systemctl restart trading-signals, /usr/bin/systemctl restart trading-signals-web, /usr/sbin/nginx -t, /usr/bin/systemctl reload nginx
 ```
 
 Save and exit. Set permissions:
@@ -255,9 +263,23 @@ sudo -n systemctl restart trading-signals
 # Expected: silent success OR 'Unit trading-signals.service not found'
 # (acceptable if Phase 10 hasn't installed the signal unit; sudoers rule
 # still matches — the `not found` error is from systemctl not sudo).
+
+# Test the Phase 12 nginx rules (only meaningful after HTTPS is set up):
+sudo -n nginx -t
+# Expected: 'syntax is ok' / 'test is successful'
+# If 'sudo: a password is required': the nginx -t rule is missing or
+# the path doesn't match `which nginx`.
+
+sudo -n systemctl reload nginx
+# Expected: silent success
+# If 'sudo: a password is required': the systemctl reload nginx rule is
+# missing. (Pre-Phase-12 droplets without nginx installed: skip this test;
+# deploy.sh's `command -v nginx` gate short-circuits before any sudo call.)
 ```
 
-If `sudo -n systemctl restart trading-signals-web` prompts or errors with an auth-related message, deploy.sh will fail on every run. Fix the sudoers rule before proceeding.
+If any of the four `sudo -n` checks prompts or errors with an auth-related message, deploy.sh will fail on every run. Fix the sudoers rule before proceeding.
+
+The nginx rules were originally added in Phase 12 (HTTPS + domain wiring) but documentation lagged — operators on droplets that completed Phase 11 before Phase 12 will hit `sudo: a password is required` at the nginx reload step. Re-run `sudo visudo -f /etc/sudoers.d/trading-signals-deploy` and add the two missing comma-separated rules to fix.
 
 Anti-pattern WARNING: NEVER grant `trader ALL=(root) NOPASSWD: ALL` or `trader ALL=(root) NOPASSWD: /usr/bin/systemctl *` — both create privilege escalation. The entry MUST list the two specific unit names per D-21. NEVER bind uvicorn with `--host 0.0.0.0` — external access goes through nginx in Phase 12.
 
