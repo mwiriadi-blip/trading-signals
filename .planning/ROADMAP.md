@@ -29,7 +29,7 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 - [x] **Phase 22: Strategy versioning & audit trail** — `STRATEGY_VERSION` constant in `system_params.py`, every signal/trade row tagged so historical state stays interpretable across logic changes (completed 2026-04-29)
 - [x] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge (completed 2026-05-01)
 - [x] **Phase 24: v1.2 codemoot fix phase** — Fix 3 verified bugs + cleanup 7 code-quality items from post-milestone codemoot review (completed 2026-05-01)
-- [ ] **Phase 25: Dashboard UI/UX overhaul — true multi-tab market preferences and first-run polish** — Convert decorative market dropdown + stacked Settings forms into real two-axis nav (market × function); fix 10 priority items from /ui-ux-pro-max review 2026-05-05
+- [x] **Phase 25: Dashboard UI/UX overhaul — true multi-tab market preferences and first-run polish** — Convert decorative market dropdown + stacked Settings forms into real two-axis nav (market × function); fix 10 priority items from /ui-ux-pro-max review 2026-05-05
 
 ## Phase Details
 
@@ -210,13 +210,15 @@ Plans:
 **Plans:** 10 plans
 
 Plans:
-- [ ] 25-01-test-scaffolding-PLAN.md — Wave 1: Failing-by-design xfail test classes (14 classes across 3 test files) for every Phase 25 acceptance gate.
-- [ ] 25-02-renderer-consolidation-PLAN.md — Wave 1: Migrate inline shell constants into shared assets.py + shell.py; create nav.py stubs; bump _REQUIRED_DASHBOARD_MARKER to force regen.
-- [ ] 25-03-two-axis-nav-PLAN.md — Wave 2: Implement render_function_strip / render_market_strip with WAI-ARIA roving tabindex; thread active_function/active_market through RenderContext.
-- [ ] 25-04-routes-cookie-PLAN.md — Wave 2: Register GET /markets/{m}/{fn} routes; selected_market cookie write; HX-Request panel-vs-full sniff.
-- [ ] 25-05-add-market-chip-PLAN.md — Wave 3: Inline-expanding + Add market chip; HX-Trigger markets-changed wiring; remove buried settings-tab link.
-- [ ] 25-06-status-strip-PLAN.md — Wave 3: render_status_strip with OR-01 status-dot derivation + OR-02 countdown format; /status-strip endpoint; 08:01 AWST refresh timer.
-- [ ] 25-07-empty-state-collapse-PLAN.md — Wave 3: D-09 first-run onboarding card; D-10 stats-bar gate; D-11 equity chart distinct-tuple gate.
-- [ ] 25-08-settings-fieldsets-PLAN.md — Wave 3: 3 fieldsets (Entry rules / Risk / Direction) + helper text; Market Test inherited-defaults placeholders.
-- [ ] 25-09-mobile-a11y-PLAN.md — Wave 4: D-15 font token rebalance; D-19 a11y (signal classes, status dots, focus rings, aria-expanded sync); D-20 wide-table wrappers.
-- [ ] 25-10-terminology-version-PLAN.md — Wave 4: D-21 button copy renames + Account terminology unification; D-22 strategy version regen across 5 sibling HTMLs.
+- [x] 25-01-test-scaffolding-PLAN.md — Wave 1: Failing-by-design xfail test classes (14 classes across 3 test files) for every Phase 25 acceptance gate.
+- [x] 25-02-renderer-consolidation-PLAN.md — Wave 1: Migrate inline shell constants into shared assets.py + shell.py; create nav.py stubs; bump _REQUIRED_DASHBOARD_MARKER to force regen.
+- [x] 25-03-two-axis-nav-PLAN.md — Wave 2: Implement render_function_strip / render_market_strip with WAI-ARIA roving tabindex; thread active_function/active_market through RenderContext.
+- [x] 25-04-routes-cookie-PLAN.md — Wave 2: Register GET /markets/{m}/{fn} routes; selected_market cookie write; HX-Request panel-vs-full sniff.
+- [x] 25-05-add-market-chip-PLAN.md — Wave 3: Inline-expanding + Add market chip; HX-Trigger markets-changed wiring; remove buried settings-tab link.
+- [x] 25-06-status-strip-PLAN.md — Wave 3: render_status_strip with OR-01 status-dot derivation + OR-02 countdown format; /status-strip endpoint; 08:01 AWST refresh timer.
+- [x] 25-07-empty-state-collapse-PLAN.md — Wave 3: D-09 first-run onboarding card; D-10 stats-bar gate; D-11 equity chart distinct-tuple gate.
+- [x] 25-08-settings-fieldsets-PLAN.md — Wave 3: 3 fieldsets (Entry rules / Risk / Direction) + helper text; Market Test inherited-defaults placeholders.
+- [x] 25-09-mobile-a11y-PLAN.md — Wave 4: D-15 font token rebalance; D-19 a11y (signal classes, status dots, focus rings, aria-expanded sync); D-20 wide-table wrappers.
+- [x] 25-09b-component-a11y-wiring-PLAN.md — Wave 4: D-19 component wiring — replace inline color styles with semantic classes, wrap wide tables, status-dot glyphs, aria-expanded sync JS, label-for audit.
+- [x] 25-10-terminology-version-PLAN.md — Wave 4: D-21 button copy renames + Account terminology unification; D-22 strategy version regen across 5 sibling HTMLs.
+- [x] 25-11-gap-closure-PLAN.md — Wave 5: Gap closure — wire D-14 Market Test placeholders + repair 3 D-11-broken tests (XSS defense, copy drift, golden snapshot). 313 pass / 0 fail.
