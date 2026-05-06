@@ -94,18 +94,19 @@ def render_settings_tab(state: dict) -> str:
 
 def render_add_market_form(state: dict) -> str:
   del state
+  # D-19 #6: every <input> must have a paired <label for="..."> (aria-label-for audit)
   return (
     '<section class="open-form" '
     '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
     '  <p class="eyebrow">ADD MARKET</p>\n'
     '  <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" '
     'hx-on::after-request="handleTradesError(event)">\n'
-    '    <div class="field"><label>Market ID</label><input name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>\n'
-    '    <div class="field"><label>Display name</label><input name="display_name" required></div>\n'
-    '    <div class="field"><label>Symbol</label><input name="symbol" required></div>\n'
-    '    <div class="field"><label>Currency</label><input name="currency" value="AUD" required></div>\n'
-    '    <div class="field"><label>Multiplier</label><input name="multiplier" type="number" step="0.0001" min="0.0001" required></div>\n'
-    '    <div class="field"><label>Cost AUD</label><input name="cost_aud" type="number" step="0.01" min="0" value="0"></div>\n'
+    '    <div class="field"><label for="add-market-form-id">Market ID</label><input id="add-market-form-id" name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>\n'
+    '    <div class="field"><label for="add-market-form-name">Display name</label><input id="add-market-form-name" name="display_name" required></div>\n'
+    '    <div class="field"><label for="add-market-form-symbol">Symbol</label><input id="add-market-form-symbol" name="symbol" required></div>\n'
+    '    <div class="field"><label for="add-market-form-currency">Currency</label><input id="add-market-form-currency" name="currency" value="AUD" required></div>\n'
+    '    <div class="field"><label for="add-market-form-multiplier">Multiplier</label><input id="add-market-form-multiplier" name="multiplier" type="number" step="0.0001" min="0.0001" required></div>\n'
+    '    <div class="field"><label for="add-market-form-cost">Cost AUD</label><input id="add-market-form-cost" name="cost_aud" type="number" step="0.01" min="0" value="0"></div>\n'
     '    <button type="submit" class="btn-primary">Add Market</button>\n'
     '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
@@ -120,22 +121,23 @@ def render_market_test_tab(state: dict) -> str:
     f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
     for key, display in d._display_names(state).items()
   )
+  # D-19 #6: every <input>/<select> must have a paired <label for="..."> (aria-label-for audit)
   return (
     '<section class="open-form market-test-form" '
     '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
     '  <p class="eyebrow">MARKET TEST</p>\n'
     '  <form hx-post="/market-test/run" hx-target="#market-test-result" '
     'hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">\n'
-    '    <div class="field"><label>Market</label><select name="market_id" required>\n'
+    '    <div class="field"><label for="market-test-market">Market</label><select id="market-test-market" name="market_id" required>\n'
     f'{options}'
     '    </select></div>\n'
-    '    <div class="field"><label>Start date</label><input name="start_date" type="date" required></div>\n'
-    '    <div class="field"><label>End date</label><input name="end_date" type="date" required></div>\n'
-    '    <div class="field"><label>Initial balance</label><input name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>\n'
-    '    <div class="field"><label>ADX override</label><input name="adx_gate" type="number" step="0.1" min="0"></div>\n'
-    '    <div class="field"><label>Votes override</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>\n'
-    '    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1"></div>\n'
-    '    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1"></div>\n'
+    '    <div class="field"><label for="market-test-start-date">Start date</label><input id="market-test-start-date" name="start_date" type="date" required></div>\n'
+    '    <div class="field"><label for="market-test-end-date">End date</label><input id="market-test-end-date" name="end_date" type="date" required></div>\n'
+    '    <div class="field"><label for="market-test-balance">Initial balance</label><input id="market-test-balance" name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>\n'
+    '    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0"></div>\n'
+    '    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>\n'
+    '    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1"></div>\n'
+    '    <div class="field"><label for="market-test-risk-short">Short risk %</label><input id="market-test-risk-short" name="risk_pct_short" type="number" step="0.1" min="0.1"></div>\n'
     '    <button type="submit" class="btn-primary">Run Test</button>\n'
     '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'

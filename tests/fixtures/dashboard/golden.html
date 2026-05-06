@@ -655,7 +655,7 @@ td.calc-cell.entry-target {
 /* =========================================================================
  * Phase 25 Plan 09 — CSS tokens + responsive scaffolding (D-15, D-18, D-19, D-20)
  * ========================================================================= */
-/* Signal color classes (D-19 #5) — 25-09b will replace inline style="color:…" */
+/* Signal color classes (D-19 #5) — implemented in 25-09b (no inline colors) */
 .signal-flat { color: var(--color-flat); }
 .signal-long { color: var(--color-long); }
 .signal-short { color: var(--color-short); }
@@ -829,19 +829,12 @@ input:focus-visible,
 <section id="market-panel" aria-live="polite">
 <section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">
   <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>
-<section class="market-selector" aria-labelledby="heading-market-selector">
-  <h2 id="heading-market-selector">Market</h2>
-  <select aria-label="Market selection">
-        <option value="SPI200">SPI 200</option>
-        <option value="AUDUSD">AUD / USD</option>
-  </select>
-</section>
 <section aria-labelledby="heading-signals">
   <h2 id="heading-signals">Signal Status</h2>
   <div class="cards-row">
     <article class="card">
       <p class="eyebrow">SPI 200</p>
-      <p class="big-label" style="color: #eab308">FLAT</p>
+      <p class="big-label signal-flat"><span class="status-dot status-dot--flat" aria-hidden="true"></span>FLAT</p>
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 18.3  ·  Mom<sub>1</sub> -0.5%  ·  Mom<sub>3</sub> +0.1%  ·  Mom<sub>12</sub> +1.4%  ·  RVol 0.95</p>
     </article>
@@ -880,7 +873,7 @@ input:focus-visible,
 </details>
     <article class="card">
       <p class="eyebrow">AUD / USD</p>
-      <p class="big-label" style="color: #22c55e">LONG</p>
+      <p class="big-label signal-long"><span class="status-dot status-dot--long" aria-hidden="true"></span>LONG</p>
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 27.3  ·  Mom<sub>1</sub> +1.5%  ·  Mom<sub>3</sub> +1.8%  ·  Mom<sub>12</sub> +2.2%  ·  RVol 0.95</p>
     </article>
@@ -926,49 +919,47 @@ input:focus-visible,
         hx-target="#trades-region"
         hx-swap="outerHTML"
         enctype="application/x-www-form-urlencoded">
-    <label>Instrument
-      <select name="instrument" required>
-        <option value="SPI200">SPI200</option>
-        <option value="AUDUSD">AUDUSD</option>
-      </select>
-    </label>
-    <label>Side
-      <select name="side" required>
-        <option value="LONG">LONG</option>
-        <option value="SHORT">SHORT</option>
-      </select>
-    </label>
-    <label>Entry date/time (AWST)
-      <input type="datetime-local" name="entry_dt" required>
-    </label>
-    <label>Entry price
-      <input type="number" name="entry_price" step="0.0001" min="0.0001" required>
-    </label>
-    <label>Contracts
-      <input type="number" name="contracts" step="0.01" min="0.01" required>
-    </label>
-    <label>Stop price (optional)
-      <input type="number" name="stop_price" step="0.0001" min="0">
-    </label>
+    <label for="paper-trade-instrument">Instrument</label>
+    <select id="paper-trade-instrument" name="instrument" required>
+      <option value="SPI200">SPI200</option>
+      <option value="AUDUSD">AUDUSD</option>
+    </select>
+    <label for="paper-trade-side">Side</label>
+    <select id="paper-trade-side" name="side" required>
+      <option value="LONG">LONG</option>
+      <option value="SHORT">SHORT</option>
+    </select>
+    <label for="paper-trade-entry-dt">Entry date/time (AWST)</label>
+    <input id="paper-trade-entry-dt" type="datetime-local" name="entry_dt" required>
+    <label for="paper-trade-entry-price">Entry price</label>
+    <input id="paper-trade-entry-price" type="number" name="entry_price" step="0.0001" min="0.0001" required>
+    <label for="paper-trade-contracts">Contracts</label>
+    <input id="paper-trade-contracts" type="number" name="contracts" step="0.01" min="0.01" required>
+    <label for="paper-trade-stop-price">Stop price (optional)</label>
+    <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">
     <button type="submit">Open position</button>
   </form>
 </section>
 <section id="open-trades-section">
   <h2>Open Paper Trades</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Open paper trades (scrollable)">
   <table class="paper-trades-table">
     <tbody>
       <tr><td colspan="10" class="empty-state">No open paper trades. Use the form above to record a new entry.</td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 <section id="close-form-section"></section>
 <section id="closed-trades-section">
   <h2>Closed Paper Trades</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed paper trades (scrollable)">
   <table class="paper-trades-table">
     <tbody>
       <tr><td colspan="7" class="empty-state">No closed trades yet. Trades will appear here after you close an open position.</td></tr>
     </tbody>
   </table>
+  </div>
 </section>
 </div>
 <section aria-labelledby="heading-trailing-stops">
@@ -1180,12 +1171,12 @@ input:focus-visible,
 <section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">ADD MARKET</p>
   <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
-    <div class="field"><label>Market ID</label><input name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>
-    <div class="field"><label>Display name</label><input name="display_name" required></div>
-    <div class="field"><label>Symbol</label><input name="symbol" required></div>
-    <div class="field"><label>Currency</label><input name="currency" value="AUD" required></div>
-    <div class="field"><label>Multiplier</label><input name="multiplier" type="number" step="0.0001" min="0.0001" required></div>
-    <div class="field"><label>Cost AUD</label><input name="cost_aud" type="number" step="0.01" min="0" value="0"></div>
+    <div class="field"><label for="add-market-form-id">Market ID</label><input id="add-market-form-id" name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>
+    <div class="field"><label for="add-market-form-name">Display name</label><input id="add-market-form-name" name="display_name" required></div>
+    <div class="field"><label for="add-market-form-symbol">Symbol</label><input id="add-market-form-symbol" name="symbol" required></div>
+    <div class="field"><label for="add-market-form-currency">Currency</label><input id="add-market-form-currency" name="currency" value="AUD" required></div>
+    <div class="field"><label for="add-market-form-multiplier">Multiplier</label><input id="add-market-form-multiplier" name="multiplier" type="number" step="0.0001" min="0.0001" required></div>
+    <div class="field"><label for="add-market-form-cost">Cost AUD</label><input id="add-market-form-cost" name="cost_aud" type="number" step="0.01" min="0" value="0"></div>
     <button type="submit" class="btn-primary">Add Market</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
@@ -1196,17 +1187,17 @@ input:focus-visible,
 <section class="open-form market-test-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">MARKET TEST</p>
   <form hx-post="/market-test/run" hx-target="#market-test-result" hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">
-    <div class="field"><label>Market</label><select name="market_id" required>
+    <div class="field"><label for="market-test-market">Market</label><select id="market-test-market" name="market_id" required>
         <option value="SPI200">SPI 200</option>
         <option value="AUDUSD">AUD / USD</option>
     </select></div>
-    <div class="field"><label>Start date</label><input name="start_date" type="date" required></div>
-    <div class="field"><label>End date</label><input name="end_date" type="date" required></div>
-    <div class="field"><label>Initial balance</label><input name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>
-    <div class="field"><label>ADX override</label><input name="adx_gate" type="number" step="0.1" min="0"></div>
-    <div class="field"><label>Votes override</label><input name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>
-    <div class="field"><label>Long risk %</label><input name="risk_pct_long" type="number" step="0.1" min="0.1"></div>
-    <div class="field"><label>Short risk %</label><input name="risk_pct_short" type="number" step="0.1" min="0.1"></div>
+    <div class="field"><label for="market-test-start-date">Start date</label><input id="market-test-start-date" name="start_date" type="date" required></div>
+    <div class="field"><label for="market-test-end-date">End date</label><input id="market-test-end-date" name="end_date" type="date" required></div>
+    <div class="field"><label for="market-test-balance">Initial balance</label><input id="market-test-balance" name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>
+    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0"></div>
+    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>
+    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1"></div>
+    <div class="field"><label for="market-test-risk-short">Short risk %</label><input id="market-test-risk-short" name="risk_pct_short" type="number" step="0.1" min="0.1"></div>
     <button type="submit" class="btn-primary">Run Test</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
@@ -1220,8 +1211,8 @@ input:focus-visible,
 <section class="open-form account-balance-form">
   <p class="eyebrow">ACCOUNT BASELINE</p>
   <form hx-patch="/account/balance" hx-ext="json-enc" hx-target="#account-management-region" hx-swap="outerHTML" hx-on::after-request="handleTradesError(event)">
-    <div class="field"><label>Starting balance</label><input name="initial_account" type="number" step="0.01" min="0.01" value="100000.00" required></div>
-    <div class="field"><label>Account balance</label><input name="account" type="number" step="0.01" min="0" value="104532.18" required></div>
+    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="100000.00" required></div>
+    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="104532.18" required></div>
     <button type="submit" class="btn-primary">Update Balances</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
@@ -1331,6 +1322,7 @@ input:focus-visible,
 </section>
 <section aria-labelledby="heading-positions">
   <h2 id="heading-positions">Open Positions</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Open positions (scrollable)">
   <table class="data-table">
     <caption class="visually-hidden">Open positions with current price, contracts, trail stop, and unrealised P&amp;L</caption>
     <thead>
@@ -1349,13 +1341,13 @@ input:focus-visible,
     <tbody id="position-group-SPI200" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' hx-trigger="positions-changed from:body" hx-get="/?fragment=position-group-SPI200" hx-swap="innerHTML">
       <tr id="position-row-SPI200">
         <td>SPI 200</td>
-        <td><span style="color: #22c55e">LONG</span></td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
         <td class="num">$8,000.00</td>
         <td class="num">$8,085.00</td>
         <td class="num">2</td>
         <td class="num">Lvl 0</td>
         <td class="num">$7,950.00</td>
-        <td class="num"><span style="color: #22c55e">+$844.00</span></td>
+        <td class="num"><span class="pnl-positive">+$844.00</span></td>
         <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Modify</button></td>
       </tr>
     <tr class="calc-row" aria-label="Calculator data for SPI200">
@@ -1388,13 +1380,13 @@ input:focus-visible,
     <tbody id="position-group-AUDUSD" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' hx-trigger="positions-changed from:body" hx-get="/?fragment=position-group-AUDUSD" hx-swap="innerHTML">
       <tr id="position-row-AUDUSD">
         <td>AUD / USD</td>
-        <td><span style="color: #ef4444">SHORT</span></td>
+        <td data-label="Direction"><span class="signal-short">SHORT</span></td>
         <td class="num">$0.67</td>
         <td class="num">$0.66</td>
         <td class="num">2</td>
         <td class="num">Lvl 0</td>
         <td class="num"><span class="trail-stop-split"><span class="manual-stop-val">manual: $0.66</span><span class="stop-sep"> | </span><span class="computed-stop-val">computed: $0.67 <em>(will close)</em></span></span></td>
-        <td class="num"><span style="color: #22c55e">+$135.00</span></td>
+        <td class="num"><span class="pnl-positive">+$135.00</span></td>
         <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=AUDUSD" hx-target="#position-group-AUDUSD" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=AUDUSD" hx-target="#position-group-AUDUSD" hx-swap="innerHTML">Modify</button></td>
       </tr>
     <tr class="calc-row" aria-label="Calculator data for AUDUSD">
@@ -1425,10 +1417,12 @@ input:focus-visible,
     </tr>
     </tbody>
   </table>
+  </div>
 </section>
 <section aria-labelledby="heading-trades">
   <h2 id="heading-trades">Closed Trades</h2>
   <p class="subtle">last 20</p>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed trades (scrollable)">
   <table class="data-table">
     <caption class="visually-hidden">Most recent 20 closed trades, newest first</caption>
     <thead>
@@ -1444,52 +1438,53 @@ input:focus-visible,
     </thead>
     <tbody>
       <tr>
-        <td>2026-04-09</td>
-        <td>SPI 200</td>
-        <td><span style="color: #22c55e">LONG</span></td>
-        <td class="num">$7,980.00 → $8,020.00</td>
-        <td class="num">1</td>
-        <td>Signal flat</td>
-        <td class="num"><span style="color: #22c55e">+$197.00</span></td>
+        <td data-label="Closed">2026-04-09</td>
+        <td data-label="Instrument">SPI 200</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td data-label="Entry → Exit" class="num">$7,980.00 → $8,020.00</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Signal flat</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$197.00</span></td>
       </tr>
       <tr>
-        <td>2026-04-04</td>
-        <td>AUD / USD</td>
-        <td><span style="color: #22c55e">LONG</span></td>
-        <td class="num">$0.65 → $0.66</td>
-        <td class="num">1</td>
-        <td>ADX drop</td>
-        <td class="num"><span style="color: #22c55e">+$347.50</span></td>
+        <td data-label="Closed">2026-04-04</td>
+        <td data-label="Instrument">AUD / USD</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td data-label="Entry → Exit" class="num">$0.65 → $0.66</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">ADX drop</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$347.50</span></td>
       </tr>
       <tr>
-        <td>2026-03-22</td>
-        <td>SPI 200</td>
-        <td><span style="color: #ef4444">SHORT</span></td>
-        <td class="num">$7,900.00 → $7,950.00</td>
-        <td class="num">1</td>
-        <td>Reversal</td>
-        <td class="num"><span style="color: #ef4444">-$253.00</span></td>
+        <td data-label="Closed">2026-03-22</td>
+        <td data-label="Instrument">SPI 200</td>
+        <td data-label="Direction"><span class="signal-short">SHORT</span></td>
+        <td data-label="Entry → Exit" class="num">$7,900.00 → $7,950.00</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Reversal</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-negative">-$253.00</span></td>
       </tr>
       <tr>
-        <td>2026-03-09</td>
-        <td>AUD / USD</td>
-        <td><span style="color: #ef4444">SHORT</span></td>
-        <td class="num">$0.66 → $0.66</td>
-        <td class="num">1</td>
-        <td>Signal flat</td>
-        <td class="num"><span style="color: #22c55e">+$197.50</span></td>
+        <td data-label="Closed">2026-03-09</td>
+        <td data-label="Instrument">AUD / USD</td>
+        <td data-label="Direction"><span class="signal-short">SHORT</span></td>
+        <td data-label="Entry → Exit" class="num">$0.66 → $0.66</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Signal flat</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$197.50</span></td>
       </tr>
       <tr>
-        <td>2026-02-22</td>
-        <td>SPI 200</td>
-        <td><span style="color: #22c55e">LONG</span></td>
-        <td class="num">$7,850.00 → $7,920.00</td>
-        <td class="num">1</td>
-        <td>Stop hit</td>
-        <td class="num"><span style="color: #22c55e">+$347.00</span></td>
+        <td data-label="Closed">2026-02-22</td>
+        <td data-label="Instrument">SPI 200</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td data-label="Entry → Exit" class="num">$7,850.00 → $7,920.00</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Stop hit</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$347.00</span></td>
       </tr>
     </tbody>
   </table>
+  </div>
 </section>
 </div>
 </section>
@@ -1498,5 +1493,25 @@ input:focus-visible,
   <div class="strategy-version">Strategy version: <code>v1.2.0</code></div>
 </footer>
   </div>
+<script>
+// Phase 25 D-19 #1: sync aria-expanded with <details> open state for SR users.
+(function () {
+  function syncAriaExpanded(el) {
+    el.setAttribute('aria-expanded', el.open ? 'true' : 'false');
+  }
+  function bindAll() {
+    document.querySelectorAll('details').forEach(function (d) {
+      syncAriaExpanded(d);
+      // Avoid duplicate toggle listeners after re-bind: store a marker.
+      if (!d.dataset.ariaSyncBound) {
+        d.addEventListener('toggle', function () { syncAriaExpanded(d); });
+        d.dataset.ariaSyncBound = '1';
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', bindAll);
+  document.body.addEventListener('htmx:afterSwap', bindAll);
+})();
+</script>
 </body>
 </html>

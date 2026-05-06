@@ -135,6 +135,32 @@ _STATUS_STRIP_REFRESH_JS = '''<script>
 '''
 
 
+# Phase 25 D-19 #1: sync aria-expanded with <details> open state for SR users.
+# Binds on DOMContentLoaded (initial load) and after every htmx:afterSwap (fragments).
+# Uses a data-ariaSyncBound marker to avoid duplicate toggle listeners after re-bind.
+_DETAILS_ARIA_SYNC_JS = """<script>
+// Phase 25 D-19 #1: sync aria-expanded with <details> open state for SR users.
+(function () {
+  function syncAriaExpanded(el) {
+    el.setAttribute('aria-expanded', el.open ? 'true' : 'false');
+  }
+  function bindAll() {
+    document.querySelectorAll('details').forEach(function (d) {
+      syncAriaExpanded(d);
+      // Avoid duplicate toggle listeners after re-bind: store a marker.
+      if (!d.dataset.ariaSyncBound) {
+        d.addEventListener('toggle', function () { syncAriaExpanded(d); });
+        d.dataset.ariaSyncBound = '1';
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', bindAll);
+  document.body.addEventListener('htmx:afterSwap', bindAll);
+})();
+</script>
+"""
+
+
 def render_html_shell(ctx: RenderContext, body: str) -> str:
   '''Phase 25 D-02: emit shared <head> + style + scripts inline.
 
@@ -169,6 +195,7 @@ def render_html_shell(ctx: RenderContext, body: str) -> str:
     f'{_AWST_COUNTDOWN_JS}'
     f'{_STATUS_STRIP_REFRESH_JS}'
     f'{_TABS_KEYBOARD_JS}'
+    f'{_DETAILS_ARIA_SYNC_JS}'
     '</body>\n'
     '</html>\n'
   )

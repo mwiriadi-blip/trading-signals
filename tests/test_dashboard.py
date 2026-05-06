@@ -555,21 +555,21 @@ class TestFormatters:
   # --- _fmt_pnl_with_colour ---
 
   def test_fmt_pnl_with_colour_positive(self) -> None:
-    '''Positive → LONG green, "+" prefix.'''
+    '''Positive → pnl-positive class (D-19 #5: no inline style="color:..."), "+" prefix.'''
     result = dashboard._fmt_pnl_with_colour(1234.56)
-    assert '#22c55e' in result
+    assert 'class="pnl-positive"' in result
     assert '+$1,234.56' in result
 
   def test_fmt_pnl_with_colour_negative(self) -> None:
-    '''Negative → SHORT red, leading -$.'''
+    '''Negative → pnl-negative class (D-19 #5), leading -$.'''
     result = dashboard._fmt_pnl_with_colour(-567.89)
-    assert '#ef4444' in result
+    assert 'class="pnl-negative"' in result
     assert '-$567.89' in result
 
   def test_fmt_pnl_with_colour_zero(self) -> None:
-    '''Zero → muted colour, no "+" or "-" prefix.'''
+    '''Zero → pnl-zero class (D-19 #5), no "+" or "-" prefix.'''
     result = dashboard._fmt_pnl_with_colour(0.0)
-    assert '#cbd5e1' in result
+    assert 'class="pnl-zero"' in result
     assert '$0.00' in result
     assert '+$0.00' not in result
     assert '-$0.00' not in result
@@ -630,26 +630,26 @@ class TestRenderBlocks:
   # --- Signal cards ---
 
   def test_signal_card_colours(self) -> None:
-    '''VALIDATION row 05-02-T3: LONG=green, SHORT=red, FLAT=gold.'''
+    '''VALIDATION row 05-02-T3: LONG=signal-long class, SHORT=signal-short, FLAT=signal-flat (D-19 #5).'''
     state = _make_state()
     state['signals']['SPI200']['signal'] = 1
     state['signals']['AUDUSD']['signal'] = -1
     output = dashboard._render_signal_cards(state)
-    assert '#22c55e' in output  # LONG chip
-    assert '#ef4444' in output  # SHORT chip
+    assert 'signal-long' in output  # LONG chip
+    assert 'signal-short' in output  # SHORT chip
 
     state['signals']['SPI200']['signal'] = 0
     state['signals']['AUDUSD']['signal'] = 0
     output = dashboard._render_signal_cards(state)
-    assert '#eab308' in output  # FLAT chip
+    assert 'signal-flat' in output  # FLAT chip
 
   def test_signal_card_empty_state(self) -> None:
-    '''Missing signal entry: "Signal as of never" + FLAT colour.'''
+    '''Missing signal entry: "Signal as of never" + signal-flat class (D-19 #5).'''
     state = _make_state()
     state['signals'] = {}
     output = dashboard._render_signal_cards(state)
     assert 'Signal as of never' in output
-    assert '#eab308' in output  # FLAT colour
+    assert 'signal-flat' in output  # FLAT class
 
   def test_signal_card_displays_instrument_names(self) -> None:
     '''Display names (not raw state keys).'''
@@ -870,22 +870,22 @@ class TestRenderBlocks:
     assert '80.0%' in output
 
   def test_key_stats_total_return_coloured(self) -> None:
-    '''Tile 1 (Total Return) coloured — positive green, negative red, zero muted.'''
+    '''Tile 1 (Total Return) coloured via CSS class — pnl-positive, pnl-negative, pnl-zero (D-19 #5).'''
     # Positive
     state = _make_state(with_equity=1, with_trades=0, with_positions=False, with_signals=False)
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 105_000.0}]
     output = dashboard._render_key_stats(state)
-    assert '#22c55e' in output
+    assert 'pnl-positive' in output
 
     # Negative
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 95_000.0}]
     output = dashboard._render_key_stats(state)
-    assert '#ef4444' in output
+    assert 'pnl-negative' in output
 
     # Zero
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 100_000.0}]
     output = dashboard._render_key_stats(state)
-    assert '#cbd5e1' in output
+    assert 'pnl-zero' in output
 
   # --- Footer ---
 
@@ -3416,3 +3416,88 @@ class TestPhase25StatusDotDerivation:
       f'Expected {expected_class!r} for last_run={last_run!r}, '
       f'now_iso={now_iso!r}. Got fragment: {out[:300]}'
     )
+
+
+class TestPhase25LabelForAudit:
+  """D-19 #6: every <input>/<select>/<textarea> in rendered HTML must have a
+  label/aria-label/aria-labelledby. Hidden inputs and submit/reset buttons exempt.
+  """
+
+  def test_no_orphan_inputs(self):
+    from html.parser import HTMLParser
+    state = {
+      'last_run': '2026-04-23',
+      'markets': {'SPI200': {'sort_order': 10, 'contract_size': 5}},
+      'warnings': [],
+      'equity_history': [],
+      'signals': {'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}},
+      'paper_trades': [],
+      'positions': {},
+      'closed_trades': [],
+      'strategy_settings': {'SPI200': {}},
+      'account_balance_paper': 100000.0,
+      'account_balance_live': 100000.0,
+    }
+    html_out = _render_to_str(state)
+
+    class Collector(HTMLParser):
+      def __init__(self):
+        super().__init__()
+        self.inputs = []  # list of (tag, attrs_dict)
+        self.label_fors = set()
+        self.ids = set()
+
+      def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        if tag in ('input', 'select', 'textarea'):
+          itype = d.get('type', 'text').lower()
+          # Exempt non-labelled-by-design types
+          if itype in ('hidden', 'submit', 'reset', 'button', 'image'):
+            return
+          self.inputs.append((tag, d))
+        if tag == 'label' and 'for' in d:
+          self.label_fors.add(d['for'])
+        if 'id' in d:
+          self.ids.add(d['id'])
+
+    c = Collector()
+    c.feed(html_out)
+
+    orphans = []
+    for tag, attrs in c.inputs:
+      input_id = attrs.get('id')
+      has_label_for = input_id in c.label_fors if input_id else False
+      has_aria_label = 'aria-label' in attrs
+      has_aria_labelledby = attrs.get('aria-labelledby') in c.ids if attrs.get('aria-labelledby') else False
+      if not (has_label_for or has_aria_label or has_aria_labelledby):
+        orphans.append((tag, attrs))
+    assert not orphans, (
+      f'D-19 #6 violation — {len(orphans)} orphan input(s) without label/aria pairing: {orphans[:5]}'
+    )
+
+  def test_market_select_surface_removed(self):
+    """D-19 #4 N/A confirmation — Plan 25-03 deleted the Market <select>."""
+    state = {
+      'last_run': '2026-04-23',
+      'markets': {'SPI200': {}, 'AUDUSD': {}},
+      'warnings': [],
+      'equity_history': [],
+      'signals': {},
+      'paper_trades': [],
+      'positions': {},
+      'closed_trades': [],
+      'strategy_settings': {'SPI200': {}, 'AUDUSD': {}},
+      'account_balance_paper': 100000.0,
+      'account_balance_live': 100000.0,
+    }
+    html_out = _render_to_str(state)
+    assert '<select aria-label="Market selection">' not in html_out, (
+      'D-19 #4 expected to be N/A because the <select> is removed by Plan 25-03 '
+      '— but the surface still exists.'
+    )
+
+  def test_details_aria_sync_js_in_shell(self):
+    """D-19 #1: shell.py emits _DETAILS_ARIA_SYNC_JS that syncs aria-expanded."""
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'aria-expanded' in html_out, 'D-19 #1: aria-expanded sync JS missing from shell'
+    assert 'htmx:afterSwap' in html_out, 'D-19 #1: htmx:afterSwap re-bind listener missing'

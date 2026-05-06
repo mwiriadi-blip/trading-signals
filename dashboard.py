@@ -148,6 +148,9 @@ from dashboard_renderer.assets import (
 # Phase 14 UI-SPEC §Decision 4: _HANDLE_TRADES_ERROR_JS re-exported from assets.py (Phase 25).
 from dashboard_renderer.assets import _HANDLE_TRADES_ERROR_JS  # noqa: F811
 
+# Phase 25 D-19 #1: aria-expanded sync JS (imported from shell.py constant).
+from dashboard_renderer.shell import _DETAILS_ARIA_SYNC_JS as _DETAILS_ARIA_SYNC_INLINE_JS  # noqa: E501
+
 
 
 # =========================================================================
@@ -1421,6 +1424,7 @@ def _render_paper_trades_open_form() -> str:
   Corrected to use application/x-www-form-urlencoded (the HTML default, explicit here
   for clarity) so browser + HTMX submissions match what the route handler expects.
   '''
+  # D-19 #6: use explicit for/id pairing (not implicit wrap) for SR discoverability
   return (
     '<section id="open-trade-form-section">\n'
     '  <h2>Record New Paper Trade</h2>\n'
@@ -1428,30 +1432,24 @@ def _render_paper_trades_open_form() -> str:
     '        hx-target="#trades-region"\n'
     '        hx-swap="outerHTML"\n'
     '        enctype="application/x-www-form-urlencoded">\n'
-    '    <label>Instrument\n'
-    '      <select name="instrument" required>\n'
-    '        <option value="SPI200">SPI200</option>\n'
-    '        <option value="AUDUSD">AUDUSD</option>\n'
-    '      </select>\n'
-    '    </label>\n'
-    '    <label>Side\n'
-    '      <select name="side" required>\n'
-    '        <option value="LONG">LONG</option>\n'
-    '        <option value="SHORT">SHORT</option>\n'
-    '      </select>\n'
-    '    </label>\n'
-    '    <label>Entry date/time (AWST)\n'
-    '      <input type="datetime-local" name="entry_dt" required>\n'
-    '    </label>\n'
-    '    <label>Entry price\n'
-    '      <input type="number" name="entry_price" step="0.0001" min="0.0001" required>\n'
-    '    </label>\n'
-    '    <label>Contracts\n'
-    '      <input type="number" name="contracts" step="0.01" min="0.01" required>\n'
-    '    </label>\n'
-    '    <label>Stop price (optional)\n'
-    '      <input type="number" name="stop_price" step="0.0001" min="0">\n'
-    '    </label>\n'
+    '    <label for="paper-trade-instrument">Instrument</label>\n'
+    '    <select id="paper-trade-instrument" name="instrument" required>\n'
+    '      <option value="SPI200">SPI200</option>\n'
+    '      <option value="AUDUSD">AUDUSD</option>\n'
+    '    </select>\n'
+    '    <label for="paper-trade-side">Side</label>\n'
+    '    <select id="paper-trade-side" name="side" required>\n'
+    '      <option value="LONG">LONG</option>\n'
+    '      <option value="SHORT">SHORT</option>\n'
+    '    </select>\n'
+    '    <label for="paper-trade-entry-dt">Entry date/time (AWST)</label>\n'
+    '    <input id="paper-trade-entry-dt" type="datetime-local" name="entry_dt" required>\n'
+    '    <label for="paper-trade-entry-price">Entry price</label>\n'
+    '    <input id="paper-trade-entry-price" type="number" name="entry_price" step="0.0001" min="0.0001" required>\n'
+    '    <label for="paper-trade-contracts">Contracts</label>\n'
+    '    <input id="paper-trade-contracts" type="number" name="contracts" step="0.01" min="0.01" required>\n'
+    '    <label for="paper-trade-stop-price">Stop price (optional)</label>\n'
+    '    <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">\n'
     '    <button type="submit">Open position</button>\n'
     '  </form>\n'
     '</section>\n'
@@ -1814,8 +1812,8 @@ def _render_account_balance_form(state: dict) -> str:
     '  <form hx-patch="/account/balance" hx-ext="json-enc" '
     'hx-target="#account-management-region" hx-swap="outerHTML" '
     'hx-on::after-request="handleTradesError(event)">\n'
-    f'    <div class="field"><label>Starting balance</label><input name="initial_account" type="number" step="0.01" min="0.01" value="{initial:.2f}" required></div>\n'
-    f'    <div class="field"><label>Account balance</label><input name="account" type="number" step="0.01" min="0" value="{account:.2f}" required></div>\n'
+    f'    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="{initial:.2f}" required></div>\n'
+    f'    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="{account:.2f}" required></div>\n'
     '    <button type="submit" class="btn-primary">Update Balances</button>\n'
     '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
@@ -1974,8 +1972,10 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
       'Signals',
       'visually-hidden',
       lambda: (
-        _render_market_selector(state)
-        + _render_signal_cards(state)
+        # D-19 #4: _render_market_selector removed — replaced by market tab strip
+        # in render_two_axis_nav (Plan 25-03). The old <select aria-label="Market selection">
+        # is N/A; market switching is done via the tab strip in the two-axis nav.
+        _render_signal_cards(state)
         + _render_paper_trades_region(state)
         + _render_trailing_stop_guidance(state)
         + _render_equity_chart_container(state)
@@ -2152,6 +2152,9 @@ def _render_html_shell(ctx: RenderContext, body: str) -> str:  # noqa: ARG001
     '    <div id="confirmation-banner"></div>\n'
     f'{body}'
     '  </div>\n'
+    # Phase 25 D-19 #1: sync aria-expanded with <details> open state for SR users.
+    # Appended at end of body per D-02 inline-script pattern.
+    + _DETAILS_ARIA_SYNC_INLINE_JS +
     '</body>\n'
     '</html>\n'
   )
