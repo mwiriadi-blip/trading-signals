@@ -945,31 +945,37 @@ class TestRenderBlocks:
           present in the chart payload body.
     '''
     state = _make_state(with_equity=0)
-    # Injected value with literal </script> + subsequent HTML — the classic
-    # break-out-of-script-block payload.
-    state['equity_history'] = [{
-      'date': '</script><img src=x onerror=alert(1)>',
-      'equity': 100.0,
-    }]
+    # Seed >=5 distinct (date, equity) tuples so D-11 chart gate renders the
+    # chart. The XSS payload is injected into one entry's date field — the
+    # defence replace('</', '<\\/') must fire when the chart IS rendered.
+    state['equity_history'] = [
+      {'date': '</script><img src=x onerror=alert(1)>', 'equity': 100.0},
+      {'date': '2026-01-02', 'equity': 101.0},
+      {'date': '2026-01-03', 'equity': 102.0},
+      {'date': '2026-01-04', 'equity': 103.0},
+      {'date': '2026-01-05', 'equity': 104.0},
+    ]
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
 
-    # Assertion (a): the rendered HTML must contain EXACTLY FIVE </script>
+    # Assertion (a): the rendered HTML must contain EXACTLY SIX </script>
     # close tags — one for the Chart.js CDN <script src="..."></script> in
     # <head>, one for the HTMX 1.9.12 CDN <script src="..."></script> in
     # <head> (Phase 14 TRADE-05), one for the HTMX json-enc extension CDN
     # <script src="..."></script> in <head> (REVIEW CR-01), one for the
     # inline handleTradesError JS block in <head> (Phase 14 UI-SPEC §Decision 4),
-    # and one that closes the Chart.js instantiation IIFE in <body>. If the
-    # injected </script> leaked through unescaped, this count would be 6 (or more);
+    # one that closes the Chart.js instantiation IIFE in <body>, and one
+    # for the Phase 25 DETAILS/tabs keyboard JS block in <body>. If the
+    # injected </script> leaked through unescaped, this count would be 7+;
     # that is the exact failure mode C-4 wants to catch.
-    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more in <head>; CR-01 fix adds 1.)
-    assert html_text.count('</script>') == 5, (
+    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more in <head>; CR-01 fix adds 1;
+    # Phase 25 adds 1 more for the keyboard/ARIA sync JS block.)
+    assert html_text.count('</script>') == 6, (
       f'unexpected </script> count {html_text.count("</script>")} — '
-      'injection defence failed. Expected exactly 5 (Chart.js CDN close + '
+      'injection defence failed. Expected exactly 6 (Chart.js CDN close + '
       'HTMX CDN close + HTMX json-enc CDN close + inline handleTradesError close + '
-      'Chart.js IIFE close).'
+      'Chart.js IIFE close + Phase 25 keyboard/ARIA JS close).'
     )
 
     # Assertion (b): the escaped form (json.dumps + .replace('</', '<\\/'))
@@ -1005,7 +1011,7 @@ class TestRenderBlocks:
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
-    assert 'No equity history yet — first full run needed' in html_text
+    assert 'Chart appears once 5 daily equity points have been recorded.' in html_text
     assert '<canvas id="equityChart"' not in html_text
 
   def test_equity_chart_uses_category_axis(self, tmp_path) -> None:
