@@ -3106,7 +3106,7 @@ class TestPhase24TabbedDashboard:
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
     assert 'Signals' in html_out
-    assert 'Account Management' in html_out
+    assert '>Account<' in html_out
     assert 'Settings' in html_out
     assert 'Market Test' in html_out
     assert 'hx-post="/market-test/run"' in html_out
@@ -3140,7 +3140,7 @@ class TestSinglePageRenderIsolation:
 
     dashboard.render_dashboard_page(state, page='account', out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
-    assert 'Account Management' in html_out
+    assert '>Account<' in html_out
     assert 'hx-patch="/account/balance"' in html_out
     assert 'id="account-management-region"' in html_out
     assert 'name="initial_account"' in html_out
@@ -3331,7 +3331,6 @@ class TestPhase25WideTable:
 class TestPhase25ButtonRename:
   """D-21: paper Open position → Record paper trade; live Open Position → Open live position."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: button rename pending")
   def test_paper_trade_button_renamed(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'Record paper trade' in html_out
@@ -3340,12 +3339,10 @@ class TestPhase25ButtonRename:
     # Easier check: count occurrences. After rename, "Open Position" (case-sensitive) should not appear.
     assert 'Open Position</button>' not in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: button rename pending")
   def test_live_trade_button_renamed(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'Open live position' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-10: terminology reconciliation pending")
   def test_account_terminology_unified(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     # "Account Management" tab label is replaced by "Account" (per UI-SPEC §Tab strips)

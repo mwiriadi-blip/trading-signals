@@ -937,7 +937,7 @@ input:focus-visible,
     <input id="paper-trade-contracts" type="number" name="contracts" step="0.01" min="0.01" required>
     <label for="paper-trade-stop-price">Stop price (optional)</label>
     <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">
-    <button type="submit">Open position</button>
+    <button type="submit" class="btn-primary">Record paper trade</button>
   </form>
 </section>
 <section id="open-trades-section">
@@ -1206,14 +1206,14 @@ input:focus-visible,
 </section>
 </section>
 <section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">
-  <h2 id="account-tab-heading">Account Management</h2>
+  <h2 id="account-tab-heading">Account</h2>
 <div id="account-management-region">
 <section class="open-form account-balance-form">
   <p class="eyebrow">ACCOUNT BASELINE</p>
   <form hx-patch="/account/balance" hx-ext="json-enc" hx-target="#account-management-region" hx-swap="outerHTML" hx-on::after-request="handleTradesError(event)">
     <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="100000.00" required></div>
     <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="104532.18" required></div>
-    <button type="submit" class="btn-primary">Update Balances</button>
+    <button type="submit" class="btn-primary">Update balances</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
 </section>
@@ -1316,7 +1316,7 @@ input:focus-visible,
         <small>Defaults to 0. Use only when back-dating a pyramided position.</small>
       </div>
     </details>
-    <button type="submit" class="btn-primary">Open Position</button>
+    <button type="submit" class="btn-primary">Open live position</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
 </section>

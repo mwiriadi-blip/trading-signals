@@ -866,8 +866,8 @@ def _render_open_form(state: dict | None = None) -> str:
     '        <small>Defaults to 0. Use only when back-dating a pyramided position.</small>\n'
     '      </div>\n'
     '    </details>\n'
-    '    <button type="submit" class="btn-primary">Open Position</button>\n'
-    '  </form>\n'
+    '    <button type="submit" class="btn-primary">Open live position</button>\n'
+  '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
     '</section>\n'
   )
@@ -1450,8 +1450,8 @@ def _render_paper_trades_open_form() -> str:
     '    <input id="paper-trade-contracts" type="number" name="contracts" step="0.01" min="0.01" required>\n'
     '    <label for="paper-trade-stop-price">Stop price (optional)</label>\n'
     '    <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">\n'
-    '    <button type="submit">Open position</button>\n'
-    '  </form>\n'
+    '    <button type="submit" class="btn-primary">Record paper trade</button>\n'
+  '  </form>\n'
     '</section>\n'
   )
 
@@ -1814,7 +1814,7 @@ def _render_account_balance_form(state: dict) -> str:
     'hx-on::after-request="handleTradesError(event)">\n'
     f'    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="{initial:.2f}" required></div>\n'
     f'    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="{account:.2f}" required></div>\n'
-    '    <button type="submit" class="btn-primary">Update Balances</button>\n'
+    '    <button type="submit" class="btn-primary">Update balances</button>\n'
     '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
     '</section>\n'
@@ -1985,7 +1985,7 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
     'account': (
       'account-tab',
       'account-tab-heading',
-      'Account Management',
+      'Account',
       '',
       lambda: _render_account_management_region(state),
     ),
@@ -2037,7 +2037,7 @@ def _render_tabbed_dashboard(ctx: RenderContext) -> str:
     '</section>\n'
     '</section>\n'
     '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
-    '  <h2 id="account-tab-heading">Account Management</h2>\n'
+    '  <h2 id="account-tab-heading">Account</h2>\n'
     f'{render_account()}'
     '</section>\n'
     + _render_footer(ctx.strategy_version)
@@ -2088,14 +2088,14 @@ def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
   if nav_mode == 'file':
     pages = (
       ('signals', 'dashboard-signals.html', 'Signals'),
-      ('account', 'dashboard-account.html', 'Account Management'),
+      ('account', 'dashboard-account.html', 'Account'),
       ('settings', 'dashboard-settings.html', 'Settings'),
       ('market-test', 'dashboard-market-test.html', 'Market Test'),
     )
   else:
     pages = (
       ('signals', '/signals', 'Signals'),
-      ('account', '/account', 'Account Management'),
+      ('account', '/account', 'Account'),
       ('settings', '/settings', 'Settings'),
       ('market-test', '/market-test', 'Market Test'),
     )
