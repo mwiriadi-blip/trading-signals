@@ -1,6 +1,14 @@
 state.json
 auth.json
+# Runtime-regenerated dashboard HTMLs (written by main.run_daily_check via dashboard_renderer/api.py).
+# Tracking them caused git pull --ff-only to abort on the droplet whenever a daily run had updated
+# the timestamps (Phase 25 deploy 2026-05-06). The web route serves 503 on missing dashboard.html
+# during first-run, which is the expected bootstrap behaviour.
 dashboard.html
+dashboard-signals.html
+dashboard-account.html
+dashboard-settings.html
+dashboard-market-test.html
 last_email.html
 .env
 .venv/
