@@ -1,16 +1,65 @@
 {
+  "schema_version": 8,
   "account": 100000.0,
-  "equity_history": [],
   "last_run": null,
   "positions": {
-    "AUDUSD": null,
-    "SPI200": null
+    "SPI200": null,
+    "AUDUSD": null
   },
-  "schema_version": 1,
   "signals": {
-    "AUDUSD": 0,
-    "SPI200": 0
+    "SPI200": 0,
+    "AUDUSD": 0
   },
   "trade_log": [],
-  "warnings": []
+  "equity_history": [],
+  "warnings": [],
+  "initial_account": 100000.0,
+  "contracts": {
+    "SPI200": "spi-mini",
+    "AUDUSD": "audusd-standard"
+  },
+  "markets": {
+    "SPI200": {
+      "display_name": "SPI 200",
+      "symbol": "^AXJO",
+      "currency": "AUD",
+      "multiplier": 5.0,
+      "cost_aud": 6.0,
+      "enabled": true,
+      "sort_order": 10
+    },
+    "AUDUSD": {
+      "display_name": "AUD / USD",
+      "symbol": "AUDUSD=X",
+      "currency": "AUD",
+      "multiplier": 10000.0,
+      "cost_aud": 5.0,
+      "enabled": true,
+      "sort_order": 20
+    }
+  },
+  "strategy_settings": {
+    "SPI200": {
+      "adx_gate": 25.0,
+      "momentum_votes_required": 2,
+      "trail_mult_long": 3.0,
+      "trail_mult_short": 2.0,
+      "risk_pct_long": 0.01,
+      "risk_pct_short": 0.005,
+      "one_contract_floor": false,
+      "contract_cap": null,
+      "direction_mode": "both"
+    },
+    "AUDUSD": {
+      "adx_gate": 25.0,
+      "momentum_votes_required": 2,
+      "trail_mult_long": 3.0,
+      "trail_mult_short": 2.0,
+      "risk_pct_long": 0.01,
+      "risk_pct_short": 0.005,
+      "one_contract_floor": false,
+      "contract_cap": null,
+      "direction_mode": "both"
+    }
+  }
 }
