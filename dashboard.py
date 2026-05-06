@@ -133,69 +133,24 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================================
-# Chart.js constants — RESEARCH §Version verification (verified 2026-04-21)
+# Shell constants — Phase 25: re-exported from dashboard_renderer/assets.py (D-02).
+# assets.py is now the single source of truth for CDN pins, JS helpers, and CSS.
 # =========================================================================
+from dashboard_renderer.assets import (
+  _CHARTJS_URL,
+  _CHARTJS_SRI,
+  _HTMX_URL,
+  _HTMX_SRI,
+  _HTMX_JSON_ENC_URL,
+  _HTMX_JSON_ENC_SRI,
+)
 
-# Chart.js 4.4.6 UMD — SRI verified 2026-04-21 via curl + openssl dgst.
-# Both jsdelivr + unpkg return byte-identical 205,615-byte file.
-_CHARTJS_URL = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js'
-_CHARTJS_SRI = 'sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN'
+# Phase 14 UI-SPEC §Decision 4: _HANDLE_TRADES_ERROR_JS re-exported from assets.py (Phase 25).
+from dashboard_renderer.assets import _HANDLE_TRADES_ERROR_JS  # noqa: F811
 
-# Phase 14 TRADE-05 / UI-SPEC §HTMX vendor pin: HTMX 1.9.12 UMD bundle.
-# SRI verified 2026-04-25 against unpkg + jsdelivr (byte-identical).
-# Mirrors the Chart.js vendor-pin precedent above. Loads in <head> AFTER
-# Chart.js, BEFORE inline <style> (UI-SPEC §HTMX vendor pin / load location).
-_HTMX_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js'
-_HTMX_SRI = 'sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2'
+# Phase 25 D-19 #1: aria-expanded sync JS (imported from shell.py constant).
+from dashboard_renderer.shell import _DETAILS_ARIA_SYNC_JS as _DETAILS_ARIA_SYNC_INLINE_JS  # noqa: E501
 
-# REVIEW CR-01: HTMX's default request encoding is application/x-www-form-urlencoded.
-# FastAPI handlers in web/routes/trades.py declare bodies as Pydantic model
-# parameters (no Form(...) annotation), so FastAPI parses the body as JSON.
-# Without an extension to convert form -> JSON, every browser POST 400s.
-# json-enc converts form fields to a JSON object via the `htmx:configRequest`
-# hook before submission, matching what FastAPI/Pydantic expects.
-# SRI verified 2026-04-25 via:
-#   curl -sL https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js \
-#     | openssl dgst -sha384 -binary | openssl base64 -A
-_HTMX_JSON_ENC_URL = 'https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js'
-_HTMX_JSON_ENC_SRI = 'sha384-nRnAvEUI7N/XvvowiMiq7oEI04gOXMCqD3Bidvedw+YNbj7zTQACPlRI3Jt3vYM4'
-
-# Phase 14 UI-SPEC §Decision 4: inline JS for hx-on::after-request 4xx surfacing.
-# The ONLY client-side script Phase 14 ships beyond HTMX itself.
-# innerHTML is used for layout speed; e.reason and 409 body text are server-controlled
-# prose (Pydantic validators + D-01 conflict messages — NOT user-controllable).
-# If a future REQ allows operator-supplied free-text in error reasons, switch
-# to textContent per CLAUDE.md "innerHTML with dynamic data requires escaping".
-_HANDLE_TRADES_ERROR_JS = '''
-function handleTradesError(evt) {
-  if (evt.detail.successful) return;
-  var section = evt.target.closest('section');
-  if (!section) return;
-  var errorBox = section.querySelector('.error');
-  if (!errorBox) return;
-  var status = evt.detail.xhr.status;
-  if (status === 401) {
-    errorBox.innerHTML = '<p class="error-heading">Auth header missing or wrong — refresh the page</p>';
-  } else if (status === 400) {
-    var body;
-    try { body = JSON.parse(evt.detail.xhr.responseText); } catch (e) {
-      errorBox.innerHTML = '<p class="error-heading">Server error — see journald</p>';
-      errorBox.hidden = false;
-      return;
-    }
-    var heading = '<p class="error-heading">Could not save trade:</p>';
-    var rows = (body.errors || []).map(function (e) {
-      return '<div class="error-row"><code>' + e.field + '</code>: ' + e.reason + '</div>';
-    }).join('');
-    errorBox.innerHTML = heading + '<div class="error-rows">' + rows + '</div>';
-  } else if (status === 409) {
-    errorBox.innerHTML = '<p class="error-heading">' + evt.detail.xhr.responseText + '</p>';
-  } else {
-    errorBox.innerHTML = '<p class="error-heading">Server error — see journald: journalctl -u trading-signals-web</p>';
-  }
-  errorBox.hidden = false;
-}
-'''
 
 
 # =========================================================================
@@ -251,596 +206,9 @@ def _strategy_settings_for(state: dict, market_id: str) -> dict:
 
 
 # =========================================================================
-# Inline CSS — UI-SPEC §Design System (Wave 2 fills full stylesheet)
+# Inline CSS — Phase 25: re-exported from dashboard_renderer/assets.py (D-02).
 # =========================================================================
-
-_INLINE_CSS = f'''
-:root {{
-  --color-bg: {_COLOR_BG};
-  --color-surface: {_COLOR_SURFACE};
-  --color-border: {_COLOR_BORDER};
-  --color-text: {_COLOR_TEXT};
-  --color-text-muted: {_COLOR_TEXT_MUTED};
-  --color-text-dim: {_COLOR_TEXT_DIM};
-  --color-long: {_COLOR_LONG};
-  --color-short: {_COLOR_SHORT};
-  --color-flat: {_COLOR_FLAT};
-  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
-  --space-6: 24px; --space-8: 32px; --space-12: 48px;
-  --fs-body: 14px; --fs-label: 12px; --fs-heading: 20px; --fs-display: 28px;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-}}
-body {{
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-               'Helvetica Neue', Arial, sans-serif;
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  margin: 0;
-  cursor: default;
-}}
-.container {{
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 32px 24px 48px;
-}}
-header h1 {{
-  font-size: var(--fs-display);
-  font-weight: 600;
-  margin: 0 0 8px;
-}}
-header .subtitle {{
-  font-size: var(--fs-body);
-  font-weight: 400;
-  color: var(--color-text-muted);
-  margin: 0 0 16px;
-}}
-header .meta {{
-  display: inline-flex;
-  gap: 16px;
-  align-items: baseline;
-  color: var(--color-text-muted);
-  margin: 0 0 var(--space-8);
-}}
-header .meta .label {{
-  font-size: var(--fs-label);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}}
-header .meta .value {{
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}}
-section {{
-  margin-bottom: var(--space-8);
-}}
-section h2 {{
-  font-size: var(--fs-heading);
-  font-weight: 600;
-  margin: 0 0 16px;
-}}
-.cards-row {{
-  display: flex;
-  gap: var(--space-6);
-  flex-wrap: wrap;
-}}
-.card {{
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: var(--space-6);
-  flex: 1;
-  min-width: 300px;
-}}
-.card .eyebrow {{
-  font-size: var(--fs-label);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 var(--space-2);
-}}
-.card .big-label {{
-  font-size: var(--fs-display);
-  font-weight: 600;
-  margin: 0 0 var(--space-2);
-}}
-.card .sub {{
-  font-size: var(--fs-label);
-  color: var(--color-text-muted);
-  margin: 0 0 var(--space-2);
-}}
-.card .scalars {{
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  color: var(--color-text-muted);
-  margin: 0;
-}}
-.chart-container {{
-  position: relative;
-  /* G-S2 reviews: Fixed height mandatory for Chart.js
-     maintainAspectRatio: false — do NOT optimise away. */
-  height: 320px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: var(--space-6);
-}}
-.chart-container.empty-state {{
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-dim);
-}}
-.data-table {{
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  overflow: hidden;
-}}
-.data-table thead th {{
-  text-align: left;
-  font-size: var(--fs-label);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-}}
-.data-table tbody td {{
-  font-size: var(--fs-body);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-}}
-.data-table tbody tr:last-child td {{
-  border-bottom: none;
-}}
-.data-table tbody td.num {{
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}}
-.data-table .empty-state {{
-  text-align: center;
-  color: var(--color-text-dim);
-}}
-.stats-grid {{
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-6);
-}}
-.stat-tile {{
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: var(--space-6);
-}}
-.stat-tile .label {{
-  font-size: var(--fs-label);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 12px;
-}}
-.stat-tile .value {{
-  font-size: var(--fs-display);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  margin: 0;
-}}
-.subtle {{
-  font-size: var(--fs-label);
-  font-weight: 400;
-  color: var(--color-text-muted);
-  margin: 0 0 var(--space-4);
-}}
-footer {{
-  text-align: center;
-  color: var(--color-text-dim);
-  font-size: 12px;
-  margin: 48px 0 24px;
-}}
-.visually-hidden {{
-  position: absolute !important;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}}
-@media (max-width: 720px) {{
-  .cards-row {{
-    flex-direction: column;
-  }}
-  .stats-grid {{
-    grid-template-columns: repeat(2, 1fr);
-  }}
-  .container {{
-    padding-left: 16px;
-    padding-right: 16px;
-  }}
-}}
-/* =========================================================================
- * Phase 14 — Trade Journal HTMX components
- * UI-SPEC §Decision 1 (open form), §Decision 2 (action buttons),
- * §Decision 4 (error region), §Decision 6 (manual badge), §Decision 7 (form layout)
- * All tokens inherited from :root above; no new design tokens.
- * ========================================================================= */
-.open-form {{ margin-bottom: var(--space-6); }}
-.open-form form {{
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  align-items: flex-end;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: var(--space-6);
-}}
-.open-form .field {{
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 140px;
-  flex: 1;
-}}
-.open-form label {{
-  font-size: var(--fs-label);
-  font-weight: 600;
-  color: var(--color-text-muted);
-}}
-.open-form input,
-.open-form select {{
-  background: var(--color-bg);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--fs-body);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}}
-.open-form select {{
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}}
-.open-form input:focus,
-.open-form select:focus {{
-  outline: none;
-  border-color: var(--color-text-muted);
-  box-shadow: 0 0 0 1px var(--color-text-muted);
-}}
-.open-form details {{
-  width: 100%;
-  margin-top: var(--space-2);
-}}
-.open-form summary {{
-  cursor: pointer;
-  font-size: var(--fs-label);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: var(--space-2) 0;
-}}
-.open-form .advanced-helper {{
-  font-size: var(--fs-label);
-  color: var(--color-text-dim);
-  margin: var(--space-2) 0;
-}}
-.open-form small {{
-  font-size: var(--fs-label);
-  color: var(--color-text-dim);
-}}
-.btn-primary {{
-  background: transparent;
-  color: var(--color-long);
-  border: 1px solid var(--color-long);
-  border-radius: 4px;
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  cursor: pointer;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}}
-.btn-primary:hover {{ background: rgba(34, 197, 94, 0.10); }}
-.btn-primary:disabled {{
-  color: var(--color-text-dim);
-  border-color: var(--color-text-dim);
-  cursor: not-allowed;
-  background: transparent;
-}}
-.btn-row {{
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 4px var(--space-3);
-  font-size: var(--fs-label);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}}
-.btn-row.btn-close {{ color: var(--color-short); border-color: var(--color-short); }}
-.btn-row.btn-close:hover {{ background: rgba(239, 68, 68, 0.10); }}
-.btn-row.btn-modify {{ color: var(--color-flat); border-color: var(--color-flat); }}
-.btn-row.btn-modify:hover {{ background: rgba(234, 179, 8, 0.10); }}
-.btn-row + .btn-row {{ margin-left: var(--space-2); }}
-.badge {{
-  display: inline-block;
-  padding: 2px 6px;
-  margin-left: var(--space-2);
-  font-size: var(--fs-label);
-  font-weight: 600;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  text-transform: lowercase;
-  border-radius: 4px;
-  letter-spacing: 0;
-}}
-.badge-manual {{
-  background: rgba(234, 179, 8, 0.10);
-  color: var(--color-flat);
-}}
-.error {{
-  border: 1px solid var(--color-border);
-  border-left: 4px solid var(--color-short);
-  background: var(--color-surface);
-  padding: var(--space-3);
-  margin-top: var(--space-4);
-  border-radius: 4px;
-}}
-.error-heading {{
-  font-size: var(--fs-body);
-  font-weight: 400;
-  color: var(--color-text);
-  margin: 0 0 var(--space-2);
-}}
-.error-row {{
-  font-size: var(--fs-label);
-  color: var(--color-text-muted);
-  margin: 0;
-  padding: 2px 0;
-}}
-.error-row code {{
-  font-family: var(--font-mono);
-  color: var(--color-text);
-}}
-#confirmation-banner {{
-  margin: var(--space-4) 0;
-}}
-.banner-success {{
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-left: 4px solid var(--color-long);
-  border-radius: 4px;
-  padding: var(--space-3);
-  color: var(--color-text);
-  margin: 0;
-}}
-@media (max-width: 720px) {{
-  .open-form .field {{ min-width: 100%; }}
-}}
-/* =========================================================================
- * Phase 15 — Calculator sub-rows + Sentinel banners
- * All tokens inherited from :root above; no new design tokens.
- * ========================================================================= */
-.calc-row td.calc-cell {{
-  background: var(--color-bg);
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--space-1) var(--space-3) var(--space-2);
-  font-size: var(--fs-label);
-  color: var(--color-text-muted);
-  line-height: 1.6;
-  white-space: nowrap;
-  overflow-x: auto;
-}}
-.calc-label {{
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted);
-}}
-.calc-value {{
-  font-size: var(--fs-body);
-  color: var(--color-text);
-}}
-.calc-value.num {{
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}}
-.calc-sep {{
-  color: var(--color-border);
-  margin: 0 var(--space-2);
-}}
-.calc-dim {{
-  color: var(--color-text-dim);
-}}
-.calc-input {{
-  background: var(--color-bg);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--fs-label);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  min-width: 80px;
-  max-width: 100px;
-}}
-.calc-input:focus {{
-  outline: none;
-  border-color: var(--color-text-muted);
-  box-shadow: 0 0 0 1px var(--color-text-muted);
-}}
-td.calc-cell.entry-target {{
-  background: var(--color-surface);
-}}
-.trail-stop-split {{
-  font-size: var(--fs-label);
-  line-height: 1.6;
-  white-space: nowrap;
-}}
-.manual-stop-val {{ color: var(--color-flat); }}
-.stop-sep {{ color: var(--color-text-dim); margin: 0 var(--space-1); }}
-.computed-stop-val {{ color: var(--color-text-dim); }}
-.computed-stop-val em {{ font-style: italic; }}
-/* Sentinel banners */
-.sentinel-banner {{
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-6);
-}}
-.sentinel-drift {{ border-left: 4px solid var(--color-flat); }}
-.sentinel-reversal {{ border-left: 4px solid var(--color-short); }}
-.sentinel-heading {{
-  font-size: var(--fs-body);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-text);
-  margin: 0 0 var(--space-2);
-}}
-.sentinel-body {{
-  margin: 0;
-  padding-left: var(--space-4);
-  color: var(--color-text-muted);
-  font-size: var(--fs-body);
-  line-height: 1.6;
-}}
-.sentinel-body li {{ margin: 0 0 var(--space-1); list-style: disc; }}
-.sentinel-body li:last-child {{ margin-bottom: 0; }}
-
-/* Phase 16.1 — Sign Out + session-note widgets in header .meta row */
-.signout-form {{ margin-left: auto; }}
-.btn-signout {{
-  background: transparent;
-  color: var(--color-text-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 4px var(--space-3);
-  font-size: var(--fs-label);
-  font-weight: 600;
-  cursor: pointer;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}}
-.btn-signout:hover {{
-  background: rgba(229, 231, 235, 0.06);
-  color: var(--color-text);
-}}
-.session-note {{
-  margin-left: auto;
-  font-size: var(--fs-label);
-  color: var(--color-text-dim);
-}}
-/* Phase 17 D-03/D-04: trace panels (inputs/indicators/vote) */
-.trace-disclosure {{ margin-top: var(--space-3); }}
-.trace-summary {{ cursor: pointer; font-weight: 600; color: var(--color-text-muted); }}
-.trace-panel {{ margin-top: var(--space-2); overflow-x: auto; }}
-.trace-panel table {{ width: 100%; border-collapse: collapse; font-size: var(--fs-label); }}
-.trace-panel td {{ padding: 2px 6px; border-bottom: 1px solid var(--color-border); }}
-.trace-panel td.num {{
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Courier New', monospace;
-}}
-.trace-panel td.date {{ color: var(--color-text-muted); }}
-.trace-indicator-name {{ cursor: pointer; }}  /* D-15 — Mobile Safari click fix */
-.formula-row td {{ font-size: 0.8em; color: var(--color-text-muted); font-style: italic; padding-left: 12px; }}
-.trace-badge {{ display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 700; }}
-.trace-badge.plus  {{ background: #166534; color: #dcfce7; }}
-.trace-badge.minus {{ background: #7f1d1d; color: #fee2e2; }}
-.trace-badge.zero  {{ background: #713f12; color: #fef9c3; }}
-.trace-badge.pass  {{ background: #166534; color: #dcfce7; }}
-.trace-badge.fail  {{ background: #7f1d1d; color: #fee2e2; }}
-.alert-badge {{ display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: var(--fs-label); font-weight: 700; white-space: nowrap; }}
-.alert-clear     {{ background: #d4edda; color: #155724; }}
-.alert-approaching {{ background: #fff3cd; color: #856404; }}
-.alert-hit       {{ background: #f8d7da; color: #721c24; }}
-.alert-none      {{ background: #e9ecef; color: #6c757d; }}
-@media (max-width: 640px) {{
-  .alert-badge {{ font-size: 10px; padding: 1px 4px; }}
-}}
-.trace-outcome {{ margin-top: var(--space-2); font-weight: 700; }}
-.stats-bar {{
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--space-3) var(--space-6);
-}}
-.stats-bar-item {{
-  display: flex;
-  flex-direction: column;
-  min-width: 120px;
-}}
-.paper-trades-table {{ width: 100%; border-collapse: collapse; }}
-.paper-trades-table th, .paper-trades-table td {{ padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); text-align: left; }}
-.row-clickable {{ cursor: pointer; }}
-.row-clickable:hover {{ background: var(--color-bg); }}
-.pnl-positive {{ color: var(--color-long); }}
-.pnl-negative {{ color: var(--color-short); }}
-.pnl-zero {{ color: var(--color-text-dim); }}
-.tabs {{
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-8);
-  border-bottom: 1px solid var(--color-border);
-}}
-.tabs a {{
-  color: var(--color-text-muted);
-  text-decoration: none;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-bottom: none;
-  border-radius: 4px 4px 0 0;
-}}
-.tabs a:hover, .tabs a:focus {{ color: var(--color-text); background: var(--color-surface); }}
-.tab-panel {{
-  scroll-margin-top: var(--space-8);
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: var(--space-8);
-}}
-.market-selector {{
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}}
-.market-selector h2 {{ margin: 0; }}
-.market-selector select {{
-  background: var(--color-bg);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: var(--space-2) var(--space-3);
-}}
-.checkbox-field {{
-  align-self: center;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}}
-.account-stats-grid {{ grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }}
-.market-test-result {{ margin-top: var(--space-4); }}
-@media (max-width: 600px) {{
-  .stats-bar-item {{ min-width: calc(33% - var(--space-4)); }}
-}}
-'''
-
+from dashboard_renderer.assets import _INLINE_CSS  # noqa: F811
 
 # =========================================================================
 # Formatters — UI-SPEC §Format Helper Contracts + CONTEXT D-16
@@ -1048,33 +416,8 @@ _TRACE_OPEN_PLACEHOLDER: dict[str, str] = {
   'AUDUSD': '{{TRACE_OPEN_AUDUSD}}',
 }
 
-# D-03 + D-12: cookie-persisted <details open> + per-indicator tap-to-toggle
-# formula reveal. Vanilla ES5; no library; wrapped in DOMContentLoaded per
-# RESEARCH §Pitfall 8. Cookie attrs include Secure per RESEARCH A4 (HTTPS droplet).
-_TRACE_TOGGLE_JS = '''
-document.addEventListener('DOMContentLoaded', function() {
-  document.querySelectorAll('details[data-instrument]').forEach(function(el) {
-    el.addEventListener('toggle', function() {
-      var openKeys = Array.from(
-        document.querySelectorAll('details[data-instrument][open]')
-      ).map(function(d) { return d.getAttribute('data-instrument'); }).join(',');
-      document.cookie = 'tsi_trace_open=' + openKeys
-        + '; Path=/; SameSite=Lax; Max-Age=7776000; Secure';
-    });
-  });
-  document.querySelectorAll('.trace-indicator-name').forEach(function(cell) {
-    cell.addEventListener('click', function() {
-      var isOpen = this.getAttribute('data-formula-open') === 'true';
-      var next = this.closest('tr').nextElementSibling;
-      if (next && next.classList.contains('formula-row')) {
-        next.hidden = isOpen;
-        this.setAttribute('data-formula-open', isOpen ? 'false' : 'true');
-      }
-    });
-  });
-});
-'''
-
+# D-03 + D-12: _TRACE_TOGGLE_JS re-exported from assets.py (Phase 25).
+from dashboard_renderer.assets import _TRACE_TOGGLE_JS  # noqa: F811
 
 def _resolve_strategy_version(state: dict) -> str:
   '''Phase 22: extract the active strategy version from state.signals.
@@ -1435,7 +778,6 @@ def _render_market_selector(state: dict) -> str:
     '  <select aria-label="Market selection">\n'
     f'{options}'
     '  </select>\n'
-    '  <a class="btn-row btn-modify" href="#settings-tab">Add market</a>\n'
     '</section>\n'
   )
 
@@ -1524,8 +866,8 @@ def _render_open_form(state: dict | None = None) -> str:
     '        <small>Defaults to 0. Use only when back-dating a pyramided position.</small>\n'
     '      </div>\n'
     '    </details>\n'
-    '    <button type="submit" class="btn-primary">Open Position</button>\n'
-    '  </form>\n'
+    '    <button type="submit" class="btn-primary">Open live position</button>\n'
+  '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
     '</section>\n'
   )
@@ -1546,7 +888,9 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
   instrument_cell = html.escape(display, quote=True)
   direction_int = 1 if pos['direction'] == 'LONG' else -1
   dir_label = html.escape(pos['direction'], quote=True)
-  dir_colour = html.escape(_SIGNAL_COLOUR[direction_int], quote=True)
+  # D-19 #5: use semantic class instead of inline style="color:..."
+  _DIR_CLASS = {1: 'signal-long', -1: 'signal-short'}
+  dir_class = _DIR_CLASS.get(direction_int, 'signal-flat')
   entry_cell = html.escape(_fmt_currency(pos['entry_price']), quote=True)
   sig_entry = signals.get(state_key) or {}
   last_close = sig_entry.get('last_close')
@@ -1597,7 +941,7 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
   return (
     f'      <tr id="position-row-{state_key_esc}">\n'
     f'        <td>{instrument_cell}</td>\n'
-    f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
+    f'        <td data-label="Direction"><span class="{dir_class}">{dir_label}</span></td>\n'
     f'        <td class="num">{entry_cell}</td>\n'
     f'        <td class="num">{current_cell}</td>\n'
     f'        <td class="num">{contracts_cell}</td>\n'
@@ -1831,7 +1175,8 @@ def _render_entry_target_row(state: dict, state_key: str) -> str:
   if sig_val not in (1, -1):
     return ''
   direction_label = 'LONG' if sig_val == 1 else 'SHORT'
-  direction_color = '#22c55e' if sig_val == 1 else '#ef4444'
+  # D-19 #5: use semantic class instead of inline style="color:..."
+  direction_class = 'signal-long' if sig_val == 1 else 'signal-short'
   state_key_esc = html.escape(state_key, quote=True)
 
   # Threshold = today's last_close (RESEARCH §Open Question 2)
@@ -1875,7 +1220,7 @@ def _render_entry_target_row(state: dict, state_key: str) -> str:
     f'        <span class="calc-label">Entry target</span>\n'
     f'        <span class="calc-sep"> | </span>\n'
     f'        <span class="calc-dim">Signal:</span>\n'
-    f'        <span style="color: {direction_color}">{direction_label}</span>\n'
+    f'        <span class="{direction_class}">{direction_label}</span>\n'
     f'        <span class="calc-dim"> — enter on next close ≥ </span>\n'
     f'        <span class="calc-value num">{threshold_html}</span>\n'
     f'        <span class="calc-sep"> | </span>\n'
@@ -2079,6 +1424,7 @@ def _render_paper_trades_open_form() -> str:
   Corrected to use application/x-www-form-urlencoded (the HTML default, explicit here
   for clarity) so browser + HTMX submissions match what the route handler expects.
   '''
+  # D-19 #6: use explicit for/id pairing (not implicit wrap) for SR discoverability
   return (
     '<section id="open-trade-form-section">\n'
     '  <h2>Record New Paper Trade</h2>\n'
@@ -2086,32 +1432,26 @@ def _render_paper_trades_open_form() -> str:
     '        hx-target="#trades-region"\n'
     '        hx-swap="outerHTML"\n'
     '        enctype="application/x-www-form-urlencoded">\n'
-    '    <label>Instrument\n'
-    '      <select name="instrument" required>\n'
-    '        <option value="SPI200">SPI200</option>\n'
-    '        <option value="AUDUSD">AUDUSD</option>\n'
-    '      </select>\n'
-    '    </label>\n'
-    '    <label>Side\n'
-    '      <select name="side" required>\n'
-    '        <option value="LONG">LONG</option>\n'
-    '        <option value="SHORT">SHORT</option>\n'
-    '      </select>\n'
-    '    </label>\n'
-    '    <label>Entry date/time (AWST)\n'
-    '      <input type="datetime-local" name="entry_dt" required>\n'
-    '    </label>\n'
-    '    <label>Entry price\n'
-    '      <input type="number" name="entry_price" step="0.0001" min="0.0001" required>\n'
-    '    </label>\n'
-    '    <label>Contracts\n'
-    '      <input type="number" name="contracts" step="0.01" min="0.01" required>\n'
-    '    </label>\n'
-    '    <label>Stop price (optional)\n'
-    '      <input type="number" name="stop_price" step="0.0001" min="0">\n'
-    '    </label>\n'
-    '    <button type="submit">Open position</button>\n'
-    '  </form>\n'
+    '    <label for="paper-trade-instrument">Instrument</label>\n'
+    '    <select id="paper-trade-instrument" name="instrument" required>\n'
+    '      <option value="SPI200">SPI200</option>\n'
+    '      <option value="AUDUSD">AUDUSD</option>\n'
+    '    </select>\n'
+    '    <label for="paper-trade-side">Side</label>\n'
+    '    <select id="paper-trade-side" name="side" required>\n'
+    '      <option value="LONG">LONG</option>\n'
+    '      <option value="SHORT">SHORT</option>\n'
+    '    </select>\n'
+    '    <label for="paper-trade-entry-dt">Entry date/time (AWST)</label>\n'
+    '    <input id="paper-trade-entry-dt" type="datetime-local" name="entry_dt" required>\n'
+    '    <label for="paper-trade-entry-price">Entry price</label>\n'
+    '    <input id="paper-trade-entry-price" type="number" name="entry_price" step="0.0001" min="0.0001" required>\n'
+    '    <label for="paper-trade-contracts">Contracts</label>\n'
+    '    <input id="paper-trade-contracts" type="number" name="contracts" step="0.01" min="0.01" required>\n'
+    '    <label for="paper-trade-stop-price">Stop price (optional)</label>\n'
+    '    <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">\n'
+    '    <button type="submit" class="btn-primary">Record paper trade</button>\n'
+  '  </form>\n'
     '</section>\n'
   )
 
@@ -2164,6 +1504,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
     return (
       '<section id="open-trades-section">\n'
       '  <h2>Open Paper Trades</h2>\n'
+      '  <div class="table-scroll" tabindex="0" role="region" aria-label="Open paper trades (scrollable)">\n'
       '  <table class="paper-trades-table">\n'
       '    <tbody>\n'
       '      <tr><td colspan="10" class="empty-state">'
@@ -2171,6 +1512,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
       '</td></tr>\n'
       '    </tbody>\n'
       '  </table>\n'
+      '  </div>\n'
       '</section>\n'
     )
 
@@ -2235,6 +1577,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
   return (
     '<section id="open-trades-section">\n'
     '  <h2>Open Paper Trades</h2>\n'
+    '  <div class="table-scroll" tabindex="0" role="region" aria-label="Open paper trades (scrollable)">\n'
     '  <table class="paper-trades-table">\n'
     '    <thead>\n'
     '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
@@ -2245,6 +1588,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
     f'{rows_html}'
     '    </tbody>\n'
     '  </table>\n'
+    '  </div>\n'
     '</section>\n'
   )
 
@@ -2268,6 +1612,7 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     return (
       '<section id="closed-trades-section">\n'
       '  <h2>Closed Paper Trades</h2>\n'
+      '  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed paper trades (scrollable)">\n'
       '  <table class="paper-trades-table">\n'
       '    <tbody>\n'
       '      <tr><td colspan="7" class="empty-state">'
@@ -2275,6 +1620,7 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
       '</td></tr>\n'
       '    </tbody>\n'
       '  </table>\n'
+      '  </div>\n'
       '</section>\n'
     )
 
@@ -2289,19 +1635,20 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     )
     rows_html += (
       f'  <tr>\n'
-      f'    <td>{esc_id}</td>\n'
-      f'    <td>{html.escape(row.get("instrument", ""))}</td>\n'
-      f'    <td>{html.escape(row.get("side", ""))}</td>\n'
-      f'    <td>{html.escape(str(row.get("entry_price", "")))}</td>\n'
-      f'    <td>{html.escape(str(row.get("exit_price", "")))}</td>\n'
-      f'    <td>{html.escape(str(row.get("exit_dt", "—")))}</td>\n'
-      f'    <td class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'    <td data-label="ID">{esc_id}</td>\n'
+      f'    <td data-label="Instrument">{html.escape(row.get("instrument", ""))}</td>\n'
+      f'    <td data-label="Side">{html.escape(row.get("side", ""))}</td>\n'
+      f'    <td data-label="Entry">{html.escape(str(row.get("entry_price", "")))}</td>\n'
+      f'    <td data-label="Exit">{html.escape(str(row.get("exit_price", "")))}</td>\n'
+      f'    <td data-label="Exit Date">{html.escape(str(row.get("exit_dt", "—")))}</td>\n'
+      f'    <td data-label="Realised P&L" class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
       f'  </tr>\n'
     )
 
   return (
     '<section id="closed-trades-section">\n'
     '  <h2>Closed Paper Trades</h2>\n'
+    '  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed paper trades (scrollable)">\n'
     '  <table class="paper-trades-table">\n'
     '    <thead>\n'
     '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
@@ -2311,6 +1658,7 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     f'{rows_html}'
     '    </tbody>\n'
     '  </table>\n'
+    '  </div>\n'
     '</section>\n'
   )
 
@@ -2347,18 +1695,16 @@ def _render_key_stats(state: dict) -> str:
   max_dd = _compute_max_drawdown(state)
   win_rate = _compute_win_rate(state)
 
-  # Total Return colour — parse the signed percent to pick the accent.
-  # '+0.0%' is zero → muted. Negative starts with '-'. Positive starts with '+'
-  # but may be exactly zero (+0.0%).
+  # D-19 #5: Total Return CSS class — no inline style="color:..."
+  # .pnl-positive/.pnl-negative/.pnl-zero defined in _INLINE_CSS (Plan 25-09)
   if total_return == _fmt_em_dash():
-    tr_colour = _COLOR_TEXT_MUTED
+    tr_class = 'pnl-zero'
   elif total_return.startswith('-'):
-    tr_colour = _COLOR_SHORT
+    tr_class = 'pnl-negative'
   elif total_return in ('+0.0%', '-0.0%'):
-    tr_colour = _COLOR_TEXT_MUTED
+    tr_class = 'pnl-zero'
   else:
-    tr_colour = _COLOR_LONG
-  tr_colour_esc = html.escape(tr_colour, quote=True)
+    tr_class = 'pnl-positive'
   tr_value_esc = html.escape(total_return, quote=True)
   sharpe_esc = html.escape(sharpe, quote=True)
   max_dd_esc = html.escape(max_dd, quote=True)
@@ -2370,7 +1716,7 @@ def _render_key_stats(state: dict) -> str:
     '  <div class="stats-grid">\n'
     '    <div class="stat-tile">\n'
     '      <p class="label">Total Return</p>\n'
-    f'      <p class="value" style="color: {tr_colour_esc}">{tr_value_esc}</p>\n'
+    f'      <p class="value {tr_class}">{tr_value_esc}</p>\n'
     '    </div>\n'
     '    <div class="stat-tile">\n'
     '      <p class="label">Sharpe</p>\n'
@@ -2466,9 +1812,9 @@ def _render_account_balance_form(state: dict) -> str:
     '  <form hx-patch="/account/balance" hx-ext="json-enc" '
     'hx-target="#account-management-region" hx-swap="outerHTML" '
     'hx-on::after-request="handleTradesError(event)">\n'
-    f'    <div class="field"><label>Starting balance</label><input name="initial_account" type="number" step="0.01" min="0.01" value="{initial:.2f}" required></div>\n'
-    f'    <div class="field"><label>Account balance</label><input name="account" type="number" step="0.01" min="0" value="{account:.2f}" required></div>\n'
-    '    <button type="submit" class="btn-primary">Update Balances</button>\n'
+    f'    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="{initial:.2f}" required></div>\n'
+    f'    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="{account:.2f}" required></div>\n'
+    '    <button type="submit" class="btn-primary">Update balances</button>\n'
     '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
     '</section>\n'
@@ -2511,30 +1857,51 @@ def _render_footer(strategy_version: str) -> str:
   return dr_render_footer(strategy_version)
 
 
+def _distinct_equity_tuples(equity_history: list) -> list:
+  '''Phase 25 D-11: dedupe (date, equity) tuples; chart hides until >=5 distinct.
+
+  Three identical {date: '2026-04-23', equity: 100000.0} entries produce ONE
+  distinct entry, not three. Only dicts with parseable date+equity are kept.
+  '''
+  seen: set = set()
+  distinct = []
+  for row in equity_history:
+    if not isinstance(row, dict):
+      continue
+    try:
+      key = (row['date'], float(row['equity']))
+    except (KeyError, TypeError, ValueError):
+      continue
+    if key not in seen:
+      seen.add(key)
+      distinct.append(row)
+  return distinct
+
+
 def _render_equity_chart_container(state: dict) -> str:
   '''DASH-04 / CONTEXT D-11 / UI-SPEC §Chart Component. Category x-axis.
 
   JSON payload injection defence (Pitfall 1): json.dumps + .replace('</', '<\\/').
 
-  D-13 empty state: if equity_history is empty, render a placeholder <div>
-  rather than an instantiated Chart.js canvas (avoids a blank chart band
-  with no indication of why).
+  D-11 empty state: chart hidden until >=5 distinct (date, equity) tuples.
+  Three identical points still count as one distinct point (D-11 spec).
   '''
-  equity_history = state.get('equity_history', [])
-  if not equity_history:
+  equity_history = state.get('equity_history', []) or []
+  distinct = _distinct_equity_tuples(equity_history)
+  if len(distinct) < 5:
     return (
       '<section aria-labelledby="heading-equity">\n'
-      '  <h2 id="heading-equity">Equity Curve</h2>\n'
-      '  <div class="chart-container empty-state">'
-      'No equity history yet — first full run needed'
+      '  <h2 id="heading-equity">Equity curve</h2>\n'
+      '  <div class="empty-state">'
+      'Chart appears once 5 daily equity points have been recorded.'
       '</div>\n'
       '</section>\n'
     )
-  # Build labels + data as plain lists, then JSON-serialise with
-  # <script>-close injection defence (Pitfall 1) and byte-stable dict
-  # ordering (Pitfall 2).
-  labels = [row['date'] for row in equity_history]
-  data = [float(row['equity']) for row in equity_history]
+  # Build labels + data from the deduped distinct list (NOT raw equity_history).
+  # JSON-serialise with <script>-close injection defence (Pitfall 1) and
+  # byte-stable dict ordering (Pitfall 2).
+  labels = [row['date'] for row in distinct]
+  data = [float(row['equity']) for row in distinct]
   payload = json.dumps(
     {'labels': labels, 'data': data},
     ensure_ascii=False,
@@ -2605,8 +1972,10 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
       'Signals',
       'visually-hidden',
       lambda: (
-        _render_market_selector(state)
-        + _render_signal_cards(state)
+        # D-19 #4: _render_market_selector removed — replaced by market tab strip
+        # in render_two_axis_nav (Plan 25-03). The old <select aria-label="Market selection">
+        # is N/A; market switching is done via the tab strip in the two-axis nav.
+        _render_signal_cards(state)
         + _render_paper_trades_region(state)
         + _render_trailing_stop_guidance(state)
         + _render_equity_chart_container(state)
@@ -2616,7 +1985,7 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
     'account': (
       'account-tab',
       'account-tab-heading',
-      'Account Management',
+      'Account',
       '',
       lambda: _render_account_management_region(state),
     ),
@@ -2639,24 +2008,24 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
 
 
 def _render_tabbed_dashboard(ctx: RenderContext) -> str:
+  from dashboard_renderer.components.nav import render_two_axis_nav
   _, _, _, _, render_signals = _render_page_body(ctx, 'signals')
   _, _, _, _, render_account = _render_page_body(ctx, 'account')
   _, _, _, _, render_settings = _render_page_body(ctx, 'settings')
   _, _, _, _, render_market_test = _render_page_body(ctx, 'market-test')
+  # Phase 25: two-axis nav replaces the flat single-nav. active_function defaults
+  # to 'signals' for the multi-tab dashboard.html composite; active_market from ctx.
+  active_function = getattr(ctx, 'active_function', 'signals')
+  active_market = getattr(ctx, 'active_market', None)
   return (
-    '<nav class="tabs" aria-label="Dashboard tabs">\n'
-    '  <a href="dashboard-signals.html">Signals</a>\n'
-    '  <a href="dashboard-account.html">Account Management</a>\n'
-    '  <a href="dashboard-settings.html">Settings</a>\n'
-    '  <a href="dashboard-market-test.html">Market Test</a>\n'
-    '</nav>\n'
+    render_two_axis_nav(ctx.state, active_function, active_market)
+    # Phase 25: market-panel wrapper for HTMX swap target. Encloses all
+    # market-scoped tabs (signals, settings, market-test). Account is
+    # market-agnostic and lives outside market-panel (D-04).
+    + '<section id="market-panel" aria-live="polite">\n'
     '<section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">\n'
     '  <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>\n'
     f'{render_signals()}'
-    '</section>\n'
-    '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
-    '  <h2 id="account-tab-heading">Account Management</h2>\n'
-    f'{render_account()}'
     '</section>\n'
     '<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">\n'
     '  <h2 id="settings-tab-heading">Settings</h2>\n'
@@ -2666,22 +2035,67 @@ def _render_tabbed_dashboard(ctx: RenderContext) -> str:
     '  <h2 id="market-test-tab-heading">Market Test</h2>\n'
     f'{render_market_test()}'
     '</section>\n'
+    '</section>\n'
+    '<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">\n'
+    '  <h2 id="account-tab-heading">Account</h2>\n'
+    f'{render_account()}'
+    '</section>\n'
     + _render_footer(ctx.strategy_version)
   )
 
 
+def _render_single_page_dashboard(
+  ctx: RenderContext,
+  page: str,
+  nav_mode: str = 'web',
+) -> str:
+  from dashboard_renderer.components.nav import render_two_axis_nav, _first_market_id
+  selected = _render_page_body(ctx, page)
+  section_id, heading_id, heading_text, heading_cls, render_body = selected
+  body = render_body()
+  heading_class_attr = f' class="{heading_cls}"' if heading_cls else ''
+
+  # Phase 25: derive active_function/active_market from ctx (with fallbacks for
+  # callers that don't pass the new kwargs — nav_mode='file' sibling generation).
+  active_function = getattr(ctx, 'active_function', None) or page
+  if active_function not in ('signals', 'account', 'settings', 'market-test'):
+    active_function = 'signals'
+  active_market = getattr(ctx, 'active_market', None)
+  if active_market is None and active_function != 'account':
+    active_market = _first_market_id(ctx.state)
+
+  nav_html = render_two_axis_nav(ctx.state, active_function, active_market)
+
+  # Wrap per-market content in <section id="market-panel"> for HTMX swap target.
+  # Account is market-agnostic — no market-panel wrapper (D-04).
+  inner = (
+    f'<section id="{section_id}" class="tab-panel" aria-labelledby="{heading_id}">\n'
+    + f'  <h2 id="{heading_id}"{heading_class_attr}>{heading_text}</h2>\n'
+    + body
+    + '</section>\n'
+  )
+  if active_function != 'account':
+    inner = f'<section id="market-panel" aria-live="polite">\n{inner}</section>\n'
+
+  return nav_html + inner + _render_footer(ctx.strategy_version)
+
+
 def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
+  '''DEPRECATED — Phase 25 Plan 03. Use render_two_axis_nav from dashboard_renderer.components.nav.
+
+  Retained to avoid breaking any direct test calls. Plan 25-09 (final cleanup) deletes this.
+  '''
   if nav_mode == 'file':
     pages = (
       ('signals', 'dashboard-signals.html', 'Signals'),
-      ('account', 'dashboard-account.html', 'Account Management'),
+      ('account', 'dashboard-account.html', 'Account'),
       ('settings', 'dashboard-settings.html', 'Settings'),
       ('market-test', 'dashboard-market-test.html', 'Market Test'),
     )
   else:
     pages = (
       ('signals', '/signals', 'Signals'),
-      ('account', '/account', 'Account Management'),
+      ('account', '/account', 'Account'),
       ('settings', '/settings', 'Settings'),
       ('market-test', '/market-test', 'Market Test'),
     )
@@ -2692,28 +2106,6 @@ def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
       f'  <a href="{href}"{cls}>{label}</a>\n',
     )
   return '<nav class="tabs" aria-label="Dashboard tabs">\n' + ''.join(links) + '</nav>\n'
-
-
-def _render_single_page_dashboard(
-  ctx: RenderContext,
-  page: str,
-  nav_mode: str = 'web',
-) -> str:
-  selected = _render_page_body(ctx, page)
-  section_id, heading_id, heading_text, heading_cls, render_body = selected
-  body = render_body()
-  heading_class_attr = f' class="{heading_cls}"' if heading_cls else ''
-  return (
-    _render_dashboard_page_nav(
-      page if page in ('signals', 'account', 'settings', 'market-test') else 'signals',
-      nav_mode=nav_mode,
-    )
-    + f'<section id="{section_id}" class="tab-panel" aria-labelledby="{heading_id}">\n'
-    + f'  <h2 id="{heading_id}"{heading_class_attr}>{heading_text}</h2>\n'
-    + body
-    + '</section>\n'
-    + _render_footer(ctx.strategy_version)
-  )
 
 
 def _render_html_shell(ctx: RenderContext, body: str) -> str:  # noqa: ARG001
@@ -2760,6 +2152,9 @@ def _render_html_shell(ctx: RenderContext, body: str) -> str:  # noqa: ARG001
     '    <div id="confirmation-banner"></div>\n'
     f'{body}'
     '  </div>\n'
+    # Phase 25 D-19 #1: sync aria-expanded with <details> open state for SR users.
+    # Appended at end of body per D-02 inline-script pattern.
+    + _DETAILS_ARIA_SYNC_INLINE_JS +
     '</body>\n'
     '</html>\n'
   )

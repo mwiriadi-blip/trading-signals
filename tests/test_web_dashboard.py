@@ -147,7 +147,7 @@ class TestDashboardResponse:
     '''Legacy /dashboard.html alias should continue to serve signals page.'''
     client, tmp, _ = client_with_dashboard
     (tmp / 'dashboard-signals.html').write_text('<html><body>signals-page</body></html>', encoding='utf-8')
-    (tmp / 'dashboard.html').write_text('<html><nav class="tabs">fresh</nav></html>', encoding='utf-8')
+    (tmp / 'dashboard.html').write_text('<html><nav class="tabs tabs-function">fresh</nav></html>', encoding='utf-8')
     (tmp / 'state.json').write_text('{}', encoding='utf-8')
     base_ns = 1_700_000_000_000_000_000
     _set_mtime_ns(tmp / 'state.json', base_ns)
@@ -175,7 +175,7 @@ class TestStaleness:
     html_path = tmp / 'dashboard.html'
 
     state_path.write_text('{}', encoding='utf-8')
-    html_path.write_text('<html><nav class="tabs">fresh</nav></html>', encoding='utf-8')
+    html_path.write_text('<html><nav class="tabs tabs-function">fresh</nav></html>', encoding='utf-8')
 
     # Set state mtime to T, dashboard mtime to T + 100ms (html is fresher).
     base_ns = 1_700_000_000_000_000_000  # arbitrary fixed nanosecond timestamp
@@ -258,7 +258,7 @@ class TestStaleness:
     state_path = tmp / 'state.json'
     html_path = tmp / 'dashboard.html'
 
-    html_path.write_text('<html><nav class="tabs">tied</nav></html>', encoding='utf-8')
+    html_path.write_text('<html><nav class="tabs tabs-function">tied</nav></html>', encoding='utf-8')
     state_path.write_text('{}', encoding='utf-8')
 
     same_ns = 1_700_000_000_000_000_000
@@ -1147,4 +1147,47 @@ class TestTraceCookieAllowlist:
     assert 'javascript:alert(1)' not in r.text, 'D-16: XSS payload must not leak'
     # Placeholders must be gone.
     assert '{{TRACE_OPEN_SPI200}}' not in r.text
-    assert '{{TRACE_OPEN_AUDUSD}}' not in r.text
+
+
+# ---------------------------------------------------------------------------
+# Phase 25 — Wave 1 test scaffolding: /status-strip endpoint
+# xfail(strict=True) — fails today, turns green when Phase 25 P25-05 lands.
+# ---------------------------------------------------------------------------
+
+class TestPhase25StatusStripEndpoint:
+  """D-06/D-07: GET /status-strip returns fragment HTML."""
+
+  def test_status_strip_endpoint_returns_200(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from fastapi.testclient import TestClient
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get('/status-strip', headers={AUTH_HEADER_NAME: VALID_SECRET})
+    assert resp.status_code == 200
+
+  def test_status_strip_endpoint_returns_html_fragment(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from fastapi.testclient import TestClient
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get('/status-strip', headers={AUTH_HEADER_NAME: VALID_SECRET})
+    assert 'text/html' in resp.headers.get('content-type', '')
+    body = resp.text
+    # Fragment should contain the strip wrapper, NOT a full <html> document
+    assert 'id="status-strip"' in body
+    assert '<html' not in body.lower()
+
+  def test_status_strip_unauthed_returns_401_or_403(self, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+    monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+    from fastapi.testclient import TestClient
+    from web.app import create_app
+    client = TestClient(create_app())
+    resp = client.get('/status-strip')
+    assert resp.status_code in (401, 403)
+    assert '{{TRACE_OPEN_AUDUSD}}' not in resp.text

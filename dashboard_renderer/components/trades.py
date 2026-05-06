@@ -17,7 +17,9 @@ def render_trades_table(state: dict) -> str:
     direction_raw = trade.get('direction', '')
     direction_int = 1 if direction_raw == 'LONG' else -1 if direction_raw == 'SHORT' else 0
     dir_label = html.escape(direction_raw, quote=True)
-    dir_colour = html.escape(d._SIGNAL_COLOUR.get(direction_int, d._COLOR_FLAT), quote=True)
+    # D-19 #5: use semantic class instead of inline style="color:..."
+    _DIR_CLASS = {1: 'signal-long', -1: 'signal-short', 0: 'signal-flat'}
+    dir_class = _DIR_CLASS.get(direction_int, 'signal-flat')
     entry_price = html.escape(d._fmt_currency(trade.get('entry_price', 0.0)), quote=True)
     exit_price = html.escape(d._fmt_currency(trade.get('exit_price', 0.0)), quote=True)
     contracts = html.escape(str(trade.get('n_contracts', 0)), quote=True)
@@ -27,13 +29,13 @@ def render_trades_table(state: dict) -> str:
     pnl_cell = d._fmt_pnl_with_colour(trade.get('net_pnl', 0.0))
     rendered_rows.append(
       '      <tr>\n'
-      f'        <td>{closed}</td>\n'
-      f'        <td>{instrument}</td>\n'
-      f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
-      f'        <td class="num">{entry_price} → {exit_price}</td>\n'
-      f'        <td class="num">{contracts}</td>\n'
-      f'        <td>{reason}</td>\n'
-      f'        <td class="num">{pnl_cell}</td>\n'
+      f'        <td data-label="Closed">{closed}</td>\n'
+      f'        <td data-label="Instrument">{instrument}</td>\n'
+      f'        <td data-label="Direction"><span class="{dir_class}">{dir_label}</span></td>\n'
+      f'        <td data-label="Entry → Exit" class="num">{entry_price} → {exit_price}</td>\n'
+      f'        <td data-label="Contracts" class="num">{contracts}</td>\n'
+      f'        <td data-label="Reason">{reason}</td>\n'
+      f'        <td data-label="P&amp;L" class="num">{pnl_cell}</td>\n'
       '      </tr>\n'
     )
   if not rendered_rows:
@@ -47,6 +49,7 @@ def render_trades_table(state: dict) -> str:
     '<section aria-labelledby="heading-trades">\n'
     '  <h2 id="heading-trades">Closed Trades</h2>\n'
     '  <p class="subtle">last 20</p>\n'
+    '  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed trades (scrollable)">\n'
     '  <table class="data-table">\n'
     '    <caption class="visually-hidden">Most recent 20 closed trades, '
     'newest first</caption>\n'
@@ -65,5 +68,6 @@ def render_trades_table(state: dict) -> str:
     f'{body}'
     '    </tbody>\n'
     '  </table>\n'
+    '  </div>\n'
     '</section>\n'
   )

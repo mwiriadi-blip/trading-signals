@@ -555,21 +555,21 @@ class TestFormatters:
   # --- _fmt_pnl_with_colour ---
 
   def test_fmt_pnl_with_colour_positive(self) -> None:
-    '''Positive → LONG green, "+" prefix.'''
+    '''Positive → pnl-positive class (D-19 #5: no inline style="color:..."), "+" prefix.'''
     result = dashboard._fmt_pnl_with_colour(1234.56)
-    assert '#22c55e' in result
+    assert 'class="pnl-positive"' in result
     assert '+$1,234.56' in result
 
   def test_fmt_pnl_with_colour_negative(self) -> None:
-    '''Negative → SHORT red, leading -$.'''
+    '''Negative → pnl-negative class (D-19 #5), leading -$.'''
     result = dashboard._fmt_pnl_with_colour(-567.89)
-    assert '#ef4444' in result
+    assert 'class="pnl-negative"' in result
     assert '-$567.89' in result
 
   def test_fmt_pnl_with_colour_zero(self) -> None:
-    '''Zero → muted colour, no "+" or "-" prefix.'''
+    '''Zero → pnl-zero class (D-19 #5), no "+" or "-" prefix.'''
     result = dashboard._fmt_pnl_with_colour(0.0)
-    assert '#cbd5e1' in result
+    assert 'class="pnl-zero"' in result
     assert '$0.00' in result
     assert '+$0.00' not in result
     assert '-$0.00' not in result
@@ -630,26 +630,26 @@ class TestRenderBlocks:
   # --- Signal cards ---
 
   def test_signal_card_colours(self) -> None:
-    '''VALIDATION row 05-02-T3: LONG=green, SHORT=red, FLAT=gold.'''
+    '''VALIDATION row 05-02-T3: LONG=signal-long class, SHORT=signal-short, FLAT=signal-flat (D-19 #5).'''
     state = _make_state()
     state['signals']['SPI200']['signal'] = 1
     state['signals']['AUDUSD']['signal'] = -1
     output = dashboard._render_signal_cards(state)
-    assert '#22c55e' in output  # LONG chip
-    assert '#ef4444' in output  # SHORT chip
+    assert 'signal-long' in output  # LONG chip
+    assert 'signal-short' in output  # SHORT chip
 
     state['signals']['SPI200']['signal'] = 0
     state['signals']['AUDUSD']['signal'] = 0
     output = dashboard._render_signal_cards(state)
-    assert '#eab308' in output  # FLAT chip
+    assert 'signal-flat' in output  # FLAT chip
 
   def test_signal_card_empty_state(self) -> None:
-    '''Missing signal entry: "Signal as of never" + FLAT colour.'''
+    '''Missing signal entry: "Signal as of never" + signal-flat class (D-19 #5).'''
     state = _make_state()
     state['signals'] = {}
     output = dashboard._render_signal_cards(state)
     assert 'Signal as of never' in output
-    assert '#eab308' in output  # FLAT colour
+    assert 'signal-flat' in output  # FLAT class
 
   def test_signal_card_displays_instrument_names(self) -> None:
     '''Display names (not raw state keys).'''
@@ -870,22 +870,22 @@ class TestRenderBlocks:
     assert '80.0%' in output
 
   def test_key_stats_total_return_coloured(self) -> None:
-    '''Tile 1 (Total Return) coloured — positive green, negative red, zero muted.'''
+    '''Tile 1 (Total Return) coloured via CSS class — pnl-positive, pnl-negative, pnl-zero (D-19 #5).'''
     # Positive
     state = _make_state(with_equity=1, with_trades=0, with_positions=False, with_signals=False)
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 105_000.0}]
     output = dashboard._render_key_stats(state)
-    assert '#22c55e' in output
+    assert 'pnl-positive' in output
 
     # Negative
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 95_000.0}]
     output = dashboard._render_key_stats(state)
-    assert '#ef4444' in output
+    assert 'pnl-negative' in output
 
     # Zero
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 100_000.0}]
     output = dashboard._render_key_stats(state)
-    assert '#cbd5e1' in output
+    assert 'pnl-zero' in output
 
   # --- Footer ---
 
@@ -945,31 +945,37 @@ class TestRenderBlocks:
           present in the chart payload body.
     '''
     state = _make_state(with_equity=0)
-    # Injected value with literal </script> + subsequent HTML — the classic
-    # break-out-of-script-block payload.
-    state['equity_history'] = [{
-      'date': '</script><img src=x onerror=alert(1)>',
-      'equity': 100.0,
-    }]
+    # Seed >=5 distinct (date, equity) tuples so D-11 chart gate renders the
+    # chart. The XSS payload is injected into one entry's date field — the
+    # defence replace('</', '<\\/') must fire when the chart IS rendered.
+    state['equity_history'] = [
+      {'date': '</script><img src=x onerror=alert(1)>', 'equity': 100.0},
+      {'date': '2026-01-02', 'equity': 101.0},
+      {'date': '2026-01-03', 'equity': 102.0},
+      {'date': '2026-01-04', 'equity': 103.0},
+      {'date': '2026-01-05', 'equity': 104.0},
+    ]
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
 
-    # Assertion (a): the rendered HTML must contain EXACTLY FIVE </script>
+    # Assertion (a): the rendered HTML must contain EXACTLY SIX </script>
     # close tags — one for the Chart.js CDN <script src="..."></script> in
     # <head>, one for the HTMX 1.9.12 CDN <script src="..."></script> in
     # <head> (Phase 14 TRADE-05), one for the HTMX json-enc extension CDN
     # <script src="..."></script> in <head> (REVIEW CR-01), one for the
     # inline handleTradesError JS block in <head> (Phase 14 UI-SPEC §Decision 4),
-    # and one that closes the Chart.js instantiation IIFE in <body>. If the
-    # injected </script> leaked through unescaped, this count would be 6 (or more);
+    # one that closes the Chart.js instantiation IIFE in <body>, and one
+    # for the Phase 25 DETAILS/tabs keyboard JS block in <body>. If the
+    # injected </script> leaked through unescaped, this count would be 7+;
     # that is the exact failure mode C-4 wants to catch.
-    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more in <head>; CR-01 fix adds 1.)
-    assert html_text.count('</script>') == 5, (
+    # (Pre-Phase-14 count was 2; Phase 14 adds 2 more in <head>; CR-01 fix adds 1;
+    # Phase 25 adds 1 more for the keyboard/ARIA sync JS block.)
+    assert html_text.count('</script>') == 6, (
       f'unexpected </script> count {html_text.count("</script>")} — '
-      'injection defence failed. Expected exactly 5 (Chart.js CDN close + '
+      'injection defence failed. Expected exactly 6 (Chart.js CDN close + '
       'HTMX CDN close + HTMX json-enc CDN close + inline handleTradesError close + '
-      'Chart.js IIFE close).'
+      'Chart.js IIFE close + Phase 25 keyboard/ARIA JS close).'
     )
 
     # Assertion (b): the escaped form (json.dumps + .replace('</', '<\\/'))
@@ -1005,7 +1011,7 @@ class TestRenderBlocks:
     out = tmp_path / 'd.html'
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
-    assert 'No equity history yet — first full run needed' in html_text
+    assert 'Chart appears once 5 daily equity points have been recorded.' in html_text
     assert '<canvas id="equityChart"' not in html_text
 
   def test_equity_chart_uses_category_axis(self, tmp_path) -> None:
@@ -2181,9 +2187,9 @@ class TestRenderSignoutButton:
     state = _make_render_state_with_position()
     render_dashboard(state, out_path=out, now=FROZEN_NOW, is_cookie_session=True)
     rendered = out.read_text()
-    assert rendered.count('hx-headers') == 6, (
-      f'expected 6 hx-headers (1 open-form + 1 position tbody for SPI200 only + '
-      f'4 settings/market-test), got {rendered.count("hx-headers")}'
+    assert rendered.count('hx-headers') == 7, (
+      f'expected 7 hx-headers (1 open-form + 1 position tbody for SPI200 only + '
+      f'4 settings/market-test + 1 add-market chip form), got {rendered.count("hx-headers")}'
     )
 
 
@@ -3106,7 +3112,7 @@ class TestPhase24TabbedDashboard:
     dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
     assert 'Signals' in html_out
-    assert 'Account Management' in html_out
+    assert '>Account<' in html_out
     assert 'Settings' in html_out
     assert 'Market Test' in html_out
     assert 'hx-post="/market-test/run"' in html_out
@@ -3140,8 +3146,430 @@ class TestSinglePageRenderIsolation:
 
     dashboard.render_dashboard_page(state, page='account', out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
-    assert 'Account Management' in html_out
+    assert '>Account<' in html_out
     assert 'hx-patch="/account/balance"' in html_out
     assert 'id="account-management-region"' in html_out
     assert 'name="initial_account"' in html_out
+
+
+# ---------------------------------------------------------------------------
+# Phase 25 — Dashboard UI/UX overhaul: True multi-tab market preferences
+# Wave 1 test scaffolding. Every test method is decorated with
+# @pytest.mark.xfail(strict=True) so tests fail today (no implementation)
+# and flip to PASS only once Phase 25 implementation lands.
+# ---------------------------------------------------------------------------
+
+def _empty_state(last_run=None, markets=None, warnings=None, equity_history=None, signals=None, paper_trades=None):
+  """Phase 25 fixture builder. Returns a minimal valid state dict."""
+  return {
+    'last_run': last_run,
+    'markets': markets or {'SPI200': {'sort_order': 10, 'contract_size': 5}, 'AUDUSD': {'sort_order': 20, 'contract_size': 100000}},
+    'warnings': warnings or [],
+    'equity_history': equity_history or [],
+    'signals': signals or {},
+    'paper_trades': paper_trades or [],
+    'positions': {},  # dict per dashboard.py:_render_trailing_stop_guidance (state.get('positions', {}).get(market_id))
+    'closed_trades': [],
+    'strategy_settings': {'SPI200': {}, 'AUDUSD': {}},
+    'account_balance_paper': 100000.0,
+    'account_balance_live': 100000.0,
+  }
+
+
+def _render_to_str(state, now=None):
+  """Render dashboard to an HTML string without writing to disk.
+
+  Uses dashboard_renderer internals directly so tests can assert against HTML
+  without tmp_path fixtures. Equivalent to what render_dashboard() produces
+  before the atomic file write.
+  """
+  from dashboard_renderer.api import _build_render_context, _render_header_and_body
+  import dashboard as d
+  ctx = _build_render_context(state=state, now=now, trace_open_keys=None)
+  return _render_header_and_body(ctx=ctx, is_cookie_session=None, body_html=d._render_tabbed_dashboard(ctx))
+
+
+class TestPhase25FirstRun:
+  """D-09: state['last_run'] is None hides 11 trace tables, shows 1 onboarding card."""
+
+  def test_last_run_none_renders_zero_trace_tables(self):
+    html_out = _render_to_str(_empty_state(last_run=None))
+    assert 'class="trace-indicators-table"' not in html_out
+
+  def test_last_run_none_renders_onboarding_card(self):
+    html_out = _render_to_str(_empty_state(last_run=None))
+    assert 'Awaiting first daily run' in html_out
+    assert 'Calculations and equity curve will populate after the first cycle at 08:00 AWST.' in html_out
+
+  def test_last_run_set_renders_trace_tables(self):
+    state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
+    html_out = _render_to_str(state)
+    assert 'class="trace-indicators-table"' in html_out
+
+
+class TestPhase25StatsBar:
+  """D-10: stats bar hidden until closed_paper + closed_live >= 1."""
+
+  def test_zero_trades_omits_stats_bar(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'class="stats-bar"' not in html_out
+
+  def test_one_closed_paper_trade_renders_stats_bar(self):
+    state = _empty_state(last_run='2026-04-23', paper_trades=[{'status': 'closed', 'realised_pnl': 100.0}])
+    html_out = _render_to_str(state)
+    assert 'class="stats-bar"' in html_out
+
+
+class TestPhase25Equity:
+  """D-11: equity chart hidden until ≥5 distinct (date, value) tuples."""
+
+  def test_three_identical_points_hides_chart(self):
+    eq = [{'date': '2026-04-23', 'equity': 100000.0}] * 3
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23', equity_history=eq))
+    assert 'id="equityChart"' not in html_out
+    assert 'Chart appears once 5 daily equity points have been recorded.' in html_out
+
+  def test_five_distinct_points_renders_chart(self):
+    eq = [{'date': f'2026-04-{20+i}', 'equity': 100000.0 + i} for i in range(5)]
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23', equity_history=eq))
+    assert 'id="equityChart"' in html_out
+
+
+class TestPhase25Settings:
+  """D-12: 3 fieldsets — Entry rules / Risk / Direction."""
+
+  def test_settings_renders_three_fieldsets(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert html_out.count('<fieldset') >= 3
+
+  def test_settings_legends_match_spec(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert '<legend>Entry rules</legend>' in html_out
+    assert '<legend>Risk</legend>' in html_out
+    assert '<legend>Direction</legend>' in html_out
+
+
+class TestPhase25Fonts:
+  """D-15: --fs-body 14px → 16px; other tokens scale by 16/14."""
+
+  def test_fs_body_is_16px(self):
+    html_out = _render_to_str(_empty_state())
+    assert '--fs-body: 16px' in html_out
+
+  def test_fs_label_is_14px(self):
+    html_out = _render_to_str(_empty_state())
+    # 12 * (16/14) = 13.71 → 14
+    assert '--fs-label: 14px' in html_out
+
+  def test_fs_heading_is_23px(self):
+    html_out = _render_to_str(_empty_state())
+    # 20 * (16/14) = 22.86 → 23
+    assert '--fs-heading: 23px' in html_out
+
+  def test_fs_display_is_32px(self):
+    html_out = _render_to_str(_empty_state())
+    # 28 * (16/14) = 32 exactly
+    assert '--fs-display: 32px' in html_out
+
+
+class TestPhase25AddMarket:
+  """D-16/D-17: + Add market chip beside market tabs."""
+
+  def test_market_strip_contains_add_market_chip(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'class="add-market-chip"' in html_out
+    assert '+ Add market' in html_out
+
+  def test_add_market_chip_form_posts_to_markets(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'hx-post="/markets"' in html_out
+
+  def test_buried_settings_link_removed(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'href="#settings-tab"' not in html_out
+
+
+class TestPhase25ActiveTab:
+  """D-18: active tab gets aria-current=page + distinct CSS rule."""
+
+  def test_active_function_tab_has_aria_current(self):
+    # When rendering /signals page, the Signals function tab must have aria-current="page"
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # Match: a tag containing both 'Signals' and aria-current="page"
+    assert re.search(r'<a[^>]*aria-current="page"[^>]*>\s*Signals\s*</a>', html_out) is not None
+
+  def test_function_tab_strip_has_aria_label(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'aria-label="Function"' in html_out
+
+  def test_market_tab_strip_has_aria_label(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'aria-label="Market"' in html_out
+
+
+class TestPhase25NoInlineColor:
+  """D-19 #5: no inline style="color:..." anywhere."""
+
+  def test_rendered_html_has_no_inline_color_styles(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 1}}))
+    assert 'style="color:' not in html_out
+
+  def test_signal_label_has_status_dot(self):
+    state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
+    html_out = _render_to_str(state)
+    # Status dot glyph beside FLAT label per D-19 #3
+    assert 'class="status-dot status-dot--flat"' in html_out or 'class="status-dot status-dot--neutral"' in html_out
+
+
+class TestPhase25WideTable:
+  """D-20: wide tables wrapped in scrollable region."""
+
+  def test_open_positions_table_is_wrapped(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # The positions section should contain a div with table-scroll class
+    assert 'class="table-scroll"' in html_out
+
+  def test_table_scroll_has_role_region(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'role="region"' in html_out
+
+
+class TestPhase25ButtonRename:
+  """D-21: paper Open position → Record paper trade; live Open Position → Open live position."""
+
+  def test_paper_trade_button_renamed(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'Record paper trade' in html_out
+    # Old text should be gone — but check carefully because "Open position" might appear elsewhere
+    # The submit button specifically: scan for `<button type="submit"` containing "Open position" in paper section
+    # Easier check: count occurrences. After rename, "Open Position" (case-sensitive) should not appear.
+    assert 'Open Position</button>' not in html_out
+
+  def test_live_trade_button_renamed(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'Open live position' in html_out
+
+  def test_account_terminology_unified(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # "Account Management" tab label is replaced by "Account" (per UI-SPEC §Tab strips)
+    # And section heading is "Account" (per UI-SPEC §Account page)
+    # "Account Baseline" form heading should be gone
+    assert 'Account Baseline' not in html_out
+    assert 'Account Management' not in html_out
+
+
+class TestPhase25StrategyVersion:
+  """D-22: strategy version sourced from state.signals[*].strategy_version."""
+
+  def test_footer_renders_v120_when_state_has_v120(self):
+    state = _empty_state(
+      last_run='2026-04-23',
+      signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}, 'AUDUSD': {'strategy_version': 'v1.2.0', 'signal': 0}},
+    )
+    html_out = _render_to_str(state)
+    assert 'v1.2.0' in html_out
+    assert 'v1.0.0' not in html_out
+    assert 'v1.1.0' not in html_out
+
+
+class TestPhase25Countdown:
+  """D-06/D-07/OR-01/OR-02: System Status strip server-render."""
+
+  def test_status_strip_present_in_header(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'id="status-strip"' in html_out
+
+  def test_status_strip_first_run_shows_awaiting(self):
+    html_out = _render_to_str(_empty_state(last_run=None))
+    assert 'Awaiting first run' in html_out
+
+  def test_status_strip_displays_awst_label(self):
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    # Operator-locked: display literal must read AWST (not AEST)
+    assert 'AWST' in html_out
+    assert 'AEST' not in html_out
     assert 'name="account"' in html_out
+
+
+class TestPhase25StatusDotDerivation:
+  """OR-01: 3-state status dot truth-table regression lock."""
+
+  @pytest.mark.parametrize('last_run,warnings,now_iso,expected_class', [
+    # Fresh install — never run
+    (None, [], '2026-05-05T14:30:00+08:00', 'status-dot--never'),
+    # Today + no warnings → green
+    ('2026-05-05', [], '2026-05-05T14:30:00+08:00', 'status-dot--success'),
+    # Today + recent warning → amber
+    ('2026-05-05', [{'date': '2026-05-05', 'message': 'x'}], '2026-05-05T14:30:00+08:00', 'status-dot--stale'),
+    # Yesterday weekday + today weekday → amber (one missed cycle)
+    ('2026-05-04', [], '2026-05-05T14:30:00+08:00', 'status-dot--stale'),
+    # Old run → red
+    ('2026-04-01', [], '2026-05-05T14:30:00+08:00', 'status-dot--failure'),
+    # Weekend Saturday: Friday's run is OK → green (2026-05-08 is Fri, 2026-05-09 is Sat)
+    ('2026-05-08', [], '2026-05-09T10:00:00+08:00', 'status-dot--success'),
+    # Weekend Sunday: Friday's run is OK → green (2026-05-10 is Sun)
+    ('2026-05-08', [], '2026-05-10T10:00:00+08:00', 'status-dot--success'),
+  ])
+  def test_or_01_derivation_truth_table(self, last_run, warnings, now_iso, expected_class):
+    from datetime import datetime
+    from dashboard_renderer.components.header import render_status_strip
+    now = datetime.fromisoformat(now_iso)
+    out = render_status_strip({'last_run': last_run, 'warnings': warnings}, now)
+    assert expected_class in out, (
+      f'Expected {expected_class!r} for last_run={last_run!r}, '
+      f'now_iso={now_iso!r}. Got fragment: {out[:300]}'
+    )
+
+
+class TestPhase25LabelForAudit:
+  """D-19 #6: every <input>/<select>/<textarea> in rendered HTML must have a
+  label/aria-label/aria-labelledby. Hidden inputs and submit/reset buttons exempt.
+  """
+
+  def test_no_orphan_inputs(self):
+    from html.parser import HTMLParser
+    state = {
+      'last_run': '2026-04-23',
+      'markets': {'SPI200': {'sort_order': 10, 'contract_size': 5}},
+      'warnings': [],
+      'equity_history': [],
+      'signals': {'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}},
+      'paper_trades': [],
+      'positions': {},
+      'closed_trades': [],
+      'strategy_settings': {'SPI200': {}},
+      'account_balance_paper': 100000.0,
+      'account_balance_live': 100000.0,
+    }
+    html_out = _render_to_str(state)
+
+    class Collector(HTMLParser):
+      def __init__(self):
+        super().__init__()
+        self.inputs = []  # list of (tag, attrs_dict)
+        self.label_fors = set()
+        self.ids = set()
+
+      def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        if tag in ('input', 'select', 'textarea'):
+          itype = d.get('type', 'text').lower()
+          # Exempt non-labelled-by-design types
+          if itype in ('hidden', 'submit', 'reset', 'button', 'image'):
+            return
+          self.inputs.append((tag, d))
+        if tag == 'label' and 'for' in d:
+          self.label_fors.add(d['for'])
+        if 'id' in d:
+          self.ids.add(d['id'])
+
+    c = Collector()
+    c.feed(html_out)
+
+    orphans = []
+    for tag, attrs in c.inputs:
+      input_id = attrs.get('id')
+      has_label_for = input_id in c.label_fors if input_id else False
+      has_aria_label = 'aria-label' in attrs
+      has_aria_labelledby = attrs.get('aria-labelledby') in c.ids if attrs.get('aria-labelledby') else False
+      if not (has_label_for or has_aria_label or has_aria_labelledby):
+        orphans.append((tag, attrs))
+    assert not orphans, (
+      f'D-19 #6 violation — {len(orphans)} orphan input(s) without label/aria pairing: {orphans[:5]}'
+    )
+
+  def test_market_select_surface_removed(self):
+    """D-19 #4 N/A confirmation — Plan 25-03 deleted the Market <select>."""
+    state = {
+      'last_run': '2026-04-23',
+      'markets': {'SPI200': {}, 'AUDUSD': {}},
+      'warnings': [],
+      'equity_history': [],
+      'signals': {},
+      'paper_trades': [],
+      'positions': {},
+      'closed_trades': [],
+      'strategy_settings': {'SPI200': {}, 'AUDUSD': {}},
+      'account_balance_paper': 100000.0,
+      'account_balance_live': 100000.0,
+    }
+    html_out = _render_to_str(state)
+    assert '<select aria-label="Market selection">' not in html_out, (
+      'D-19 #4 expected to be N/A because the <select> is removed by Plan 25-03 '
+      '— but the surface still exists.'
+    )
+
+  def test_details_aria_sync_js_in_shell(self):
+    """D-19 #1: shell.py emits _DETAILS_ARIA_SYNC_JS that syncs aria-expanded."""
+    html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
+    assert 'aria-expanded' in html_out, 'D-19 #1: aria-expanded sync JS missing from shell'
+    assert 'htmx:afterSwap' in html_out, 'D-19 #1: htmx:afterSwap re-bind listener missing'
+
+
+class TestPhase25MarketTestPlaceholders:
+  """D-14: Market Test override fields render inherited Settings defaults as
+  placeholder='...' so blanks fall back to the defaulted value on submit.
+  """
+
+  def _make_market_test_html(self, settings_overrides: dict | None = None) -> str:
+    """Render Market Test tab with a single SPI200 market."""
+    import dashboard as d
+    state = {
+      'markets': {'SPI200': {'display_name': 'SPI 200', 'enabled': True, 'sort_order': 10}},
+      'strategy_settings': {'SPI200': settings_overrides or {}},
+      'equity_history': [],
+      'signals': {},
+      'paper_trades': [],
+      'positions': {},
+      'closed_trades': [],
+      'last_run': None,
+      'warnings': [],
+    }
+    from dashboard_renderer.components.settings import render_market_test_tab
+    return render_market_test_tab(state)
+
+  def test_market_test_renders_inherited_placeholders(self) -> None:
+    """Placeholder attrs reflect current Settings values (uses defaults when
+    strategy_settings is empty — merges with DEFAULT_STRATEGY_SETTINGS).
+    """
+    from system_params import DEFAULT_STRATEGY_SETTINGS
+    html_out = self._make_market_test_html()
+
+    expected_adx = str(DEFAULT_STRATEGY_SETTINGS['adx_gate'])
+    expected_votes = str(DEFAULT_STRATEGY_SETTINGS['momentum_votes_required'])
+    expected_risk_long = f"{float(DEFAULT_STRATEGY_SETTINGS['risk_pct_long']) * 100:.2f}"
+    expected_risk_short = f"{float(DEFAULT_STRATEGY_SETTINGS['risk_pct_short']) * 100:.2f}"
+    expected_atr_long = str(DEFAULT_STRATEGY_SETTINGS['trail_mult_long'])
+    expected_atr_short = str(DEFAULT_STRATEGY_SETTINGS['trail_mult_short'])
+
+    assert f'placeholder="{expected_adx}"' in html_out, (
+      f'ADX gate placeholder missing or wrong; expected placeholder="{expected_adx}"'
+    )
+    assert f'placeholder="{expected_votes}"' in html_out, (
+      f'Momentum votes placeholder missing or wrong; expected placeholder="{expected_votes}"'
+    )
+    assert f'placeholder="{expected_risk_long}"' in html_out, (
+      f'Long risk % placeholder missing or wrong; expected placeholder="{expected_risk_long}"'
+    )
+    assert f'placeholder="{expected_risk_short}"' in html_out, (
+      f'Short risk % placeholder missing or wrong; expected placeholder="{expected_risk_short}"'
+    )
+    assert f'placeholder="{expected_atr_long}"' in html_out, (
+      f'Long ATR multiple placeholder missing or wrong; expected placeholder="{expected_atr_long}"'
+    )
+    assert f'placeholder="{expected_atr_short}"' in html_out, (
+      f'Short ATR multiple placeholder missing or wrong; expected placeholder="{expected_atr_short}"'
+    )
+
+  def test_market_test_custom_settings_reflected_in_placeholders(self) -> None:
+    """When market has custom Settings, placeholder reflects the custom value."""
+    html_out = self._make_market_test_html(settings_overrides={
+      'adx_gate': 30.0,
+      'momentum_votes_required': 3,
+      'risk_pct_long': 0.02,
+      'risk_pct_short': 0.01,
+    })
+    assert 'placeholder="30.0"' in html_out, 'Custom ADX gate not reflected in placeholder'
+    assert 'placeholder="3"' in html_out, 'Custom votes not reflected in placeholder'
+    assert 'placeholder="2.00"' in html_out, 'Custom long risk % not reflected in placeholder'
+    assert 'placeholder="1.00"' in html_out, 'Custom short risk % not reflected in placeholder'

@@ -658,13 +658,49 @@ td.calc-cell.entry-target {
     <span class="value">2026-04-22 09:00 AWST</span>
     {{SIGNOUT_BUTTON}}{{SESSION_NOTE}}
   </p>
+<div id="status-strip" class="status-strip" hx-get="/status-strip" hx-trigger="refresh, visibilitychange[document.visibilityState=='visible'] from:document" hx-swap="outerHTML" aria-live="polite">
+  <span class="status-dot status-dot--never" aria-hidden="true"></span>
+  <span class="status-label">Last run</span>
+  <span>Awaiting first run</span>
+  <span class="status-sep"> · </span>
+  <span class="status-label">Next run</span>
+  <span class="next-run">08:00 AWST · <span data-countdown="2026-04-23T08:00:00+08:00">in 23h 0m</span></span>
+</div>
 </header>
-<nav class="tabs" aria-label="Dashboard tabs">
-  <a href="dashboard-signals.html" class="active">Signals</a>
-  <a href="dashboard-account.html">Account Management</a>
-  <a href="dashboard-settings.html">Settings</a>
-  <a href="dashboard-market-test.html">Market Test</a>
+<nav role="tablist" aria-label="Function" class="tabs tabs-function">
+  <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/markets/SPI200/signals" data-tab-key="signals">Signals</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/account" data-tab-key="account">Account</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/settings" data-tab-key="settings">Settings</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/market-test" data-tab-key="market-test">Market Test</a>
 </nav>
+<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip" hx-trigger="markets-changed from:body" hx-get="/markets-strip" hx-swap="outerHTML">
+  <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/markets/SPI200/signals" hx-get="/markets/SPI200/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="SPI200">SPI200</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/AUDUSD/signals" hx-get="/markets/AUDUSD/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="AUDUSD">AUDUSD</a>
+  <details class="add-market-chip">
+    <summary aria-label="Add market">+ Add market</summary>
+    <form
+        hx-post="/markets"
+        hx-ext="json-enc"
+        hx-target="this"
+        hx-swap="outerHTML"
+        hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'
+        hx-on::after-request="handleTradesError(event)">
+      <label for="add-market-id">Code</label>
+      <input id="add-market-id" name="market_id" type="text" pattern="[A-Z0-9_]{2,20}" required>
+      <label for="add-market-label">Label</label>
+      <input id="add-market-label" name="display_name" type="text" required>
+      <label for="add-market-symbol">Symbol</label>
+      <input id="add-market-symbol" name="symbol" type="text" required>
+      <label for="add-market-size">Multiplier</label>
+      <input id="add-market-size" name="multiplier" type="number" step="any" required>
+      <label for="add-market-cost">Cost (AUD)</label>
+      <input id="add-market-cost" name="cost_aud" type="number" step="any" value="0" required>
+      <button type="submit">Add market</button>
+      <button type="reset" onclick="this.closest('details').open=false;return false;">Cancel</button>
+    </form>
+  </details>
+</nav>
+<section id="market-panel" aria-live="polite">
 <section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">
   <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>
 <section class="market-selector" aria-labelledby="heading-market-selector">
@@ -673,7 +709,6 @@ td.calc-cell.entry-target {
         <option value="SPI200">SPI 200</option>
         <option value="AUDUSD">AUD / USD</option>
   </select>
-  <a class="btn-row btn-modify" href="#settings-tab">Add market</a>
 </section>
 <section aria-labelledby="heading-signals">
   <h2 id="heading-signals">Signal Status</h2>
@@ -830,6 +865,7 @@ td.calc-cell.entry-target {
 <section aria-labelledby="heading-equity">
   <h2 id="heading-equity">Equity Curve</h2>
   <div class="chart-container empty-state">No equity history yet — first full run needed</div>
+</section>
 </section>
 </section>
 <footer>

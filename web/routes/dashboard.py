@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 
 _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py default
 _STATE_PATH = 'state.json'
-_REQUIRED_DASHBOARD_MARKER = b'<nav class="tabs"'
+_REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01: forces regen of all 5 sibling HTMLs post-deploy
 
 # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder with
 # env secret at request time so on-disk dashboard.html never carries the
@@ -204,6 +204,153 @@ def register(app: FastAPI) -> None:
   @app.get('/dashboard-market-test.html')
   def get_market_test_page_file_alias(request: Request, fragment: str | None = None):
     return _serve_dashboard_page(request, 'market-test', fragment=fragment)
+
+  # Phase 25 Plan 04 D-01..D-05: GET /markets/{market_id}/{function} routes.
+  # Two-segment paths (e.g. /markets/SPI200/signals) registered here; they do
+  # NOT shadow the existing one-segment PATCH /markets/{market_id} in
+  # markets.py because method differs (GET vs PATCH). Registration order:
+  # markets.py is registered BEFORE dashboard.py in web/app.py, preserving
+  # the 18ea2c5 literal-before-dynamic discipline.
+
+  # Phase 25 D-05: selected_market cookie attrs. NO HttpOnly (JS-readable).
+  # SameSite=Lax (UI-state cookie; not session). Secure required for HTTPS.
+  _MARKET_COOKIE_ATTRS = '; Max-Age=2592000; Path=/; Secure; SameSite=Lax'
+
+  def _is_htmx_request(request: Request) -> bool:
+    '''Phase 25 Pitfall 6: HTMX swap requests carry HX-Request: true header.'''
+    return request.headers.get('HX-Request', '').lower() == 'true'
+
+  def _set_market_cookie(response: Response, market_id: str) -> None:
+    '''Phase 25 D-05: set selected_market cookie on every market-scoped render.
+
+    Cookie is JS-readable (no HttpOnly) so /account can route to last-selected market.
+    '''
+    if not market_id or len(market_id) > 32:
+      return
+    # Belt-and-braces sanitiser; market_id origin is state.json (server-controlled)
+    # but T-25-04-02 requires defensive strip of cookie-header special chars.
+    safe = market_id.replace('"', '').replace(';', '')
+    response.headers['Set-Cookie'] = f'selected_market={safe}{_MARKET_COOKIE_ATTRS}'
+
+  async def _serve_market_scoped_page(request: Request, market_id: str, function: str):
+    '''Phase 25 D-01..D-05: serve a market-scoped page (signals/settings/market-test).
+
+    Validates market_id against state['markets']; 404 on miss.
+    Sets selected_market cookie on every successful response (D-05).
+    HX-Request → render_dashboard_as_str(htmx_panel_only=True equivalent) returns
+    panel-only HTML via render_panel_only; otherwise returns full document.
+    Cache-Control: no-store, private (T-25-04-03 cache poisoning mitigation).
+    '''
+    import state_manager
+
+    state = state_manager.load_state()
+    markets = state.get('markets', {}) or {}
+    if market_id not in markets:
+      return Response(
+        content=f'Market not found: {market_id}'.encode('utf-8'),
+        status_code=404,
+        media_type='text/plain; charset=utf-8',
+      )
+
+    htmx = _is_htmx_request(request)
+
+    if htmx:
+      # HTMX swap path — panel-only HTML (no shell, no nav)
+      from dashboard_renderer.api import render_dashboard
+      body = render_dashboard(
+        state,
+        now=None,
+        active_function=function,
+        active_market=market_id,
+        htmx_panel_only=True,
+      )
+    else:
+      # Full document path (browser navigation)
+      from dashboard_renderer.api import render_dashboard_as_str
+      body = render_dashboard_as_str(
+        state,
+        now=None,
+        active_function=function,
+        active_market=market_id,
+      )
+
+    response = Response(
+      content=body.encode('utf-8'),
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+    )
+    _set_market_cookie(response, market_id)
+    response.headers['Cache-Control'] = 'no-store, private'
+    return response
+
+  @app.get('/markets/{market_id}/signals', response_class=Response)
+  async def get_market_signals(request: Request, market_id: str):
+    return await _serve_market_scoped_page(request, market_id, 'signals')
+
+  @app.get('/markets/{market_id}/settings', response_class=Response)
+  async def get_market_settings(request: Request, market_id: str):
+    return await _serve_market_scoped_page(request, market_id, 'settings')
+
+  @app.get('/markets/{market_id}/market-test', response_class=Response)
+  async def get_market_market_test(request: Request, market_id: str):
+    return await _serve_market_scoped_page(request, market_id, 'market-test')
+
+  @app.get('/status-strip', response_class=Response)
+  async def get_status_strip(request: Request):
+    '''Phase 25 D-06/D-07 Plan 06: status strip fragment endpoint.
+
+    Auth-gated by the existing AuthMiddleware (route NOT in PUBLIC_PATHS).
+    Returns the rendered strip fragment for HTMX outerHTML swap.
+    Cache-Control: no-store, private (T-25-06-03 cache poisoning mitigation).
+    Warning text is NOT rendered (T-25-06-01: only state derivation emitted).
+    '''
+    import state_manager as _sm
+    from dashboard_renderer.components.header import render_status_strip
+
+    from datetime import datetime
+    import pytz
+    perth = pytz.timezone('Australia/Perth')
+    now_awst = datetime.now(perth)
+
+    state = _sm.load_state()
+    body = render_status_strip(state, now_awst)
+    return Response(
+      content=body.encode('utf-8'),
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+      headers={'Cache-Control': 'no-store, private'},
+    )
+
+  @app.get('/markets-strip', response_class=Response)
+  async def get_markets_strip(request: Request):
+    '''Phase 25 Plan 05 D-16: return the market tab strip fragment for HTMX swap.
+
+    Called when HX-Trigger: markets-changed fires — refreshes the strip with the
+    latest markets list including newly added markets.
+    Cache-Control: no-store, private (T-25-04-03 pattern — user-specific content).
+    '''
+    import state_manager
+    from dashboard_renderer.components.nav import render_market_strip
+
+    state = state_manager.load_state()
+    active_market = request.cookies.get('selected_market', '')
+    markets = state.get('markets', {}) or {}
+    if not active_market or active_market not in markets:
+      active_market = next(iter(markets), '')
+    # Determine active function from Referer header fallback; default to 'signals'.
+    active_function = 'signals'
+    referer = request.headers.get('referer', '')
+    for fn in ('settings', 'market-test', 'signals', 'account'):
+      if f'/{fn}' in referer:
+        active_function = fn
+        break
+    body = render_market_strip(state, active_market, active_function)
+    return Response(
+      content=body.encode('utf-8'),
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+      headers={'Cache-Control': 'no-store, private'},
+    )
 
   def _serve_dashboard_page(
     request: Request,

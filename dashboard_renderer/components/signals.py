@@ -6,6 +6,18 @@ import html
 def render_signal_cards(state: dict) -> str:
   import dashboard as d
 
+  # Phase 25 D-09: hide trace tables on first run; show single onboarding card.
+  # last_run is None means the daemon has never completed a cycle — no signal
+  # data exists yet, so the full card+trace wall of "n/a" panels is replaced
+  # by a single oriented card. Once any run completes, full rendering resumes.
+  if state.get('last_run') is None:
+    return (
+      '<section class="onboarding-card" aria-labelledby="onboarding-heading">\n'
+      '  <h3 id="onboarding-heading">Awaiting first daily run</h3>\n'
+      '  <p>Calculations and equity curve will populate after the first cycle at 08:00 AWST.</p>\n'
+      '</section>\n'
+    )
+
   signals = state.get('signals', {})
   parts = [
     '<section aria-labelledby="heading-signals">\n',
@@ -17,18 +29,17 @@ def render_signal_cards(state: dict) -> str:
     sig_entry = signals.get(state_key)
     if sig_entry is None:
       label = html.escape(d._fmt_em_dash(), quote=True)
-      colour = html.escape(d._COLOR_FLAT, quote=True)
+      signal_int = 0
       signal_as_of_line = 'Signal as of never'
       scalars_line = html.escape(d._fmt_em_dash(), quote=True)
     elif isinstance(sig_entry, int):
+      signal_int = sig_entry
       label = html.escape(d._SIGNAL_LABEL.get(sig_entry, d._fmt_em_dash()), quote=True)
-      colour = html.escape(d._SIGNAL_COLOUR.get(sig_entry, d._COLOR_FLAT), quote=True)
       signal_as_of_line = 'Signal as of never'
       scalars_line = html.escape(d._fmt_em_dash(), quote=True)
     else:
       signal_int = sig_entry.get('signal', 0)
       label = html.escape(d._SIGNAL_LABEL.get(signal_int, d._fmt_em_dash()), quote=True)
-      colour = html.escape(d._SIGNAL_COLOUR.get(signal_int, d._COLOR_FLAT), quote=True)
       signal_as_of = html.escape(sig_entry.get('signal_as_of', 'never'), quote=True)
       signal_as_of_line = f'Signal as of {signal_as_of}'
       scalars = sig_entry.get('last_scalars') or {}
@@ -47,10 +58,18 @@ def render_signal_cards(state: dict) -> str:
         )
       else:
         scalars_line = html.escape(d._fmt_em_dash(), quote=True)
+    # D-19 #5: semantic class from signal int — no inline style="color:..."
+    # D-19 #3: status-dot glyph beside FLAT/LONG/SHORT label
+    # Map signal int → class suffix: 1→long, -1→short, 0→flat (fallback flat)
+    _STATE_CLASS = {1: 'long', -1: 'short', 0: 'flat'}
+    state_class = _STATE_CLASS.get(signal_int, 'flat')
     parts.append(
       '    <article class="card">\n'
       f'      <p class="eyebrow">{eyebrow}</p>\n'
-      f'      <p class="big-label" style="color: {colour}">{label}</p>\n'
+      f'      <p class="big-label signal-{state_class}">'
+      f'<span class="status-dot status-dot--{state_class}" aria-hidden="true"></span>'
+      f'{label}'
+      f'</p>\n'
       f'      <p class="sub">{signal_as_of_line}</p>\n'
       f'      <p class="scalars">{scalars_line}</p>\n'
       '    </article>\n'
