@@ -3304,12 +3304,10 @@ class TestPhase25ActiveTab:
 class TestPhase25NoInlineColor:
   """D-19 #5: no inline style="color:..." anywhere."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: a11y inline-style cleanup pending")
   def test_rendered_html_has_no_inline_color_styles(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 1}}))
     assert 'style="color:' not in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: status-dot beside FLAT/LONG/SHORT pending")
   def test_signal_label_has_status_dot(self):
     state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
     html_out = _render_to_str(state)
@@ -3320,13 +3318,11 @@ class TestPhase25NoInlineColor:
 class TestPhase25WideTable:
   """D-20: wide tables wrapped in scrollable region."""
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: wide-table wrapper pending")
   def test_open_positions_table_is_wrapped(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     # The positions section should contain a div with table-scroll class
     assert 'class="table-scroll"' in html_out
 
-  @pytest.mark.xfail(strict=True, reason="Phase 25 P25-09: wide-table wrapper pending")
   def test_table_scroll_has_role_region(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'role="region"' in html_out

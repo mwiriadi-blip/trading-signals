@@ -885,7 +885,9 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
   instrument_cell = html.escape(display, quote=True)
   direction_int = 1 if pos['direction'] == 'LONG' else -1
   dir_label = html.escape(pos['direction'], quote=True)
-  dir_colour = html.escape(_SIGNAL_COLOUR[direction_int], quote=True)
+  # D-19 #5: use semantic class instead of inline style="color:..."
+  _DIR_CLASS = {1: 'signal-long', -1: 'signal-short'}
+  dir_class = _DIR_CLASS.get(direction_int, 'signal-flat')
   entry_cell = html.escape(_fmt_currency(pos['entry_price']), quote=True)
   sig_entry = signals.get(state_key) or {}
   last_close = sig_entry.get('last_close')
@@ -936,7 +938,7 @@ def _render_single_position_row(state: dict, state_key: str, pos: dict) -> str:
   return (
     f'      <tr id="position-row-{state_key_esc}">\n'
     f'        <td>{instrument_cell}</td>\n'
-    f'        <td><span style="color: {dir_colour}">{dir_label}</span></td>\n'
+    f'        <td data-label="Direction"><span class="{dir_class}">{dir_label}</span></td>\n'
     f'        <td class="num">{entry_cell}</td>\n'
     f'        <td class="num">{current_cell}</td>\n'
     f'        <td class="num">{contracts_cell}</td>\n'
@@ -1170,7 +1172,8 @@ def _render_entry_target_row(state: dict, state_key: str) -> str:
   if sig_val not in (1, -1):
     return ''
   direction_label = 'LONG' if sig_val == 1 else 'SHORT'
-  direction_color = '#22c55e' if sig_val == 1 else '#ef4444'
+  # D-19 #5: use semantic class instead of inline style="color:..."
+  direction_class = 'signal-long' if sig_val == 1 else 'signal-short'
   state_key_esc = html.escape(state_key, quote=True)
 
   # Threshold = today's last_close (RESEARCH §Open Question 2)
@@ -1214,7 +1217,7 @@ def _render_entry_target_row(state: dict, state_key: str) -> str:
     f'        <span class="calc-label">Entry target</span>\n'
     f'        <span class="calc-sep"> | </span>\n'
     f'        <span class="calc-dim">Signal:</span>\n'
-    f'        <span style="color: {direction_color}">{direction_label}</span>\n'
+    f'        <span class="{direction_class}">{direction_label}</span>\n'
     f'        <span class="calc-dim"> — enter on next close ≥ </span>\n'
     f'        <span class="calc-value num">{threshold_html}</span>\n'
     f'        <span class="calc-sep"> | </span>\n'
@@ -1503,6 +1506,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
     return (
       '<section id="open-trades-section">\n'
       '  <h2>Open Paper Trades</h2>\n'
+      '  <div class="table-scroll" tabindex="0" role="region" aria-label="Open paper trades (scrollable)">\n'
       '  <table class="paper-trades-table">\n'
       '    <tbody>\n'
       '      <tr><td colspan="10" class="empty-state">'
@@ -1510,6 +1514,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
       '</td></tr>\n'
       '    </tbody>\n'
       '  </table>\n'
+      '  </div>\n'
       '</section>\n'
     )
 
@@ -1574,6 +1579,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
   return (
     '<section id="open-trades-section">\n'
     '  <h2>Open Paper Trades</h2>\n'
+    '  <div class="table-scroll" tabindex="0" role="region" aria-label="Open paper trades (scrollable)">\n'
     '  <table class="paper-trades-table">\n'
     '    <thead>\n'
     '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
@@ -1584,6 +1590,7 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
     f'{rows_html}'
     '    </tbody>\n'
     '  </table>\n'
+    '  </div>\n'
     '</section>\n'
   )
 
@@ -1607,6 +1614,7 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     return (
       '<section id="closed-trades-section">\n'
       '  <h2>Closed Paper Trades</h2>\n'
+      '  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed paper trades (scrollable)">\n'
       '  <table class="paper-trades-table">\n'
       '    <tbody>\n'
       '      <tr><td colspan="7" class="empty-state">'
@@ -1614,6 +1622,7 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
       '</td></tr>\n'
       '    </tbody>\n'
       '  </table>\n'
+      '  </div>\n'
       '</section>\n'
     )
 
@@ -1628,19 +1637,20 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     )
     rows_html += (
       f'  <tr>\n'
-      f'    <td>{esc_id}</td>\n'
-      f'    <td>{html.escape(row.get("instrument", ""))}</td>\n'
-      f'    <td>{html.escape(row.get("side", ""))}</td>\n'
-      f'    <td>{html.escape(str(row.get("entry_price", "")))}</td>\n'
-      f'    <td>{html.escape(str(row.get("exit_price", "")))}</td>\n'
-      f'    <td>{html.escape(str(row.get("exit_dt", "—")))}</td>\n'
-      f'    <td class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'    <td data-label="ID">{esc_id}</td>\n'
+      f'    <td data-label="Instrument">{html.escape(row.get("instrument", ""))}</td>\n'
+      f'    <td data-label="Side">{html.escape(row.get("side", ""))}</td>\n'
+      f'    <td data-label="Entry">{html.escape(str(row.get("entry_price", "")))}</td>\n'
+      f'    <td data-label="Exit">{html.escape(str(row.get("exit_price", "")))}</td>\n'
+      f'    <td data-label="Exit Date">{html.escape(str(row.get("exit_dt", "—")))}</td>\n'
+      f'    <td data-label="Realised P&L" class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
       f'  </tr>\n'
     )
 
   return (
     '<section id="closed-trades-section">\n'
     '  <h2>Closed Paper Trades</h2>\n'
+    '  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed paper trades (scrollable)">\n'
     '  <table class="paper-trades-table">\n'
     '    <thead>\n'
     '      <tr><th>ID</th><th>Instrument</th><th>Side</th><th>Entry</th>'
@@ -1650,6 +1660,7 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     f'{rows_html}'
     '    </tbody>\n'
     '  </table>\n'
+    '  </div>\n'
     '</section>\n'
   )
 
@@ -1686,18 +1697,16 @@ def _render_key_stats(state: dict) -> str:
   max_dd = _compute_max_drawdown(state)
   win_rate = _compute_win_rate(state)
 
-  # Total Return colour — parse the signed percent to pick the accent.
-  # '+0.0%' is zero → muted. Negative starts with '-'. Positive starts with '+'
-  # but may be exactly zero (+0.0%).
+  # D-19 #5: Total Return CSS class — no inline style="color:..."
+  # .pnl-positive/.pnl-negative/.pnl-zero defined in _INLINE_CSS (Plan 25-09)
   if total_return == _fmt_em_dash():
-    tr_colour = _COLOR_TEXT_MUTED
+    tr_class = 'pnl-zero'
   elif total_return.startswith('-'):
-    tr_colour = _COLOR_SHORT
+    tr_class = 'pnl-negative'
   elif total_return in ('+0.0%', '-0.0%'):
-    tr_colour = _COLOR_TEXT_MUTED
+    tr_class = 'pnl-zero'
   else:
-    tr_colour = _COLOR_LONG
-  tr_colour_esc = html.escape(tr_colour, quote=True)
+    tr_class = 'pnl-positive'
   tr_value_esc = html.escape(total_return, quote=True)
   sharpe_esc = html.escape(sharpe, quote=True)
   max_dd_esc = html.escape(max_dd, quote=True)
@@ -1709,7 +1718,7 @@ def _render_key_stats(state: dict) -> str:
     '  <div class="stats-grid">\n'
     '    <div class="stat-tile">\n'
     '      <p class="label">Total Return</p>\n'
-    f'      <p class="value" style="color: {tr_colour_esc}">{tr_value_esc}</p>\n'
+    f'      <p class="value {tr_class}">{tr_value_esc}</p>\n'
     '    </div>\n'
     '    <div class="stat-tile">\n'
     '      <p class="label">Sharpe</p>\n'

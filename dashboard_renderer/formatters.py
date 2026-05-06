@@ -6,7 +6,6 @@ from datetime import date, datetime, timedelta
 
 import pytz
 
-from system_params import _COLOR_LONG, _COLOR_SHORT, _COLOR_TEXT_MUTED
 
 
 def fmt_em_dash() -> str:
@@ -28,19 +27,18 @@ def fmt_percent_unsigned(fraction: float) -> str:
 
 
 def fmt_pnl_with_colour(value: float) -> str:
+  # D-19 #5: use CSS classes instead of inline style="color:..."
+  # .pnl-positive / .pnl-negative / .pnl-zero defined in _INLINE_CSS (Plan 25-09)
   if value > 0:
-    colour = _COLOR_LONG
+    css_class = 'pnl-positive'
     body = f'+{fmt_currency(value)}'
   elif value < 0:
-    colour = _COLOR_SHORT
+    css_class = 'pnl-negative'
     body = fmt_currency(value)
   else:
-    colour = _COLOR_TEXT_MUTED
+    css_class = 'pnl-zero'
     body = '$0.00'
-  return (
-    f'<span style="color: {html.escape(colour, quote=True)}">'
-    f'{html.escape(body, quote=True)}</span>'
-  )
+  return f'<span class="{css_class}">{html.escape(body, quote=True)}</span>'
 
 
 def fmt_last_updated(now: datetime) -> str:

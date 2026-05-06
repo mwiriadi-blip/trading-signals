@@ -701,7 +701,7 @@ td.calc-cell.entry-target {{
 /* =========================================================================
  * Phase 25 Plan 09 — CSS tokens + responsive scaffolding (D-15, D-18, D-19, D-20)
  * ========================================================================= */
-/* Signal color classes (D-19 #5) — 25-09b will replace inline style="color:…" */
+/* Signal color classes (D-19 #5) — implemented in 25-09b (no inline colors) */
 .signal-flat {{ color: var(--color-flat); }}
 .signal-long {{ color: var(--color-long); }}
 .signal-short {{ color: var(--color-short); }}
