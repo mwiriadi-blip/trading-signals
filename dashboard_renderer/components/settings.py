@@ -117,10 +117,31 @@ def render_add_market_form(state: dict) -> str:
 def render_market_test_tab(state: dict) -> str:
   import dashboard as d
 
+  display_names = d._display_names(state)
   options = ''.join(
     f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
-    for key, display in d._display_names(state).items()
+    for key, display in display_names.items()
   )
+
+  # D-14: override fields show the first market's inherited Settings as
+  # placeholder="<inherited default>" so blanks fall back server-side.
+  first_market_id = next(iter(display_names), None)
+  settings = d._strategy_settings_for(state, first_market_id) if first_market_id else {}
+  adx_placeholder = html.escape(str(settings.get('adx_gate', '')), quote=True)
+  votes_placeholder = html.escape(str(settings.get('momentum_votes_required', '')), quote=True)
+  risk_long_placeholder = html.escape(
+    f"{float(settings['risk_pct_long']) * 100:.2f}" if 'risk_pct_long' in settings else '',
+    quote=True,
+  )
+  risk_short_placeholder = html.escape(
+    f"{float(settings['risk_pct_short']) * 100:.2f}" if 'risk_pct_short' in settings else '',
+    quote=True,
+  )
+  atr_long_placeholder = html.escape(str(settings.get('trail_mult_long', '')), quote=True)
+  atr_short_placeholder = html.escape(str(settings.get('trail_mult_short', '')), quote=True)
+  cap_value = settings.get('contract_cap')
+  cap_placeholder = html.escape(str(cap_value) if cap_value is not None else '', quote=True)
+
   # D-19 #6: every <input>/<select> must have a paired <label for="..."> (aria-label-for audit)
   return (
     '<section class="open-form market-test-form" '
@@ -134,10 +155,13 @@ def render_market_test_tab(state: dict) -> str:
     '    <div class="field"><label for="market-test-start-date">Start date</label><input id="market-test-start-date" name="start_date" type="date" required></div>\n'
     '    <div class="field"><label for="market-test-end-date">End date</label><input id="market-test-end-date" name="end_date" type="date" required></div>\n'
     '    <div class="field"><label for="market-test-balance">Initial balance</label><input id="market-test-balance" name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>\n'
-    '    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0"></div>\n'
-    '    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3"></div>\n'
-    '    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1"></div>\n'
-    '    <div class="field"><label for="market-test-risk-short">Short risk %</label><input id="market-test-risk-short" name="risk_pct_short" type="number" step="0.1" min="0.1"></div>\n'
+    f'    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0" placeholder="{adx_placeholder}"></div>\n'
+    f'    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3" placeholder="{votes_placeholder}"></div>\n'
+    f'    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1" placeholder="{risk_long_placeholder}"></div>\n'
+    f'    <div class="field"><label for="market-test-risk-short">Short risk %</label><input id="market-test-risk-short" name="risk_pct_short" type="number" step="0.1" min="0.1" placeholder="{risk_short_placeholder}"></div>\n'
+    f'    <div class="field"><label for="market-test-atr-long">Long ATR multiple</label><input id="market-test-atr-long" name="trail_mult_long" type="number" step="0.1" min="0.1" placeholder="{atr_long_placeholder}"></div>\n'
+    f'    <div class="field"><label for="market-test-atr-short">Short ATR multiple</label><input id="market-test-atr-short" name="trail_mult_short" type="number" step="0.1" min="0.1" placeholder="{atr_short_placeholder}"></div>\n'
+    f'    <div class="field"><label for="market-test-cap">Contract cap</label><input id="market-test-cap" name="contract_cap" type="number" step="1" min="1" placeholder="{cap_placeholder}"></div>\n'
     '    <button type="submit" class="btn-primary">Run Test</button>\n'
     '  </form>\n'
     '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'

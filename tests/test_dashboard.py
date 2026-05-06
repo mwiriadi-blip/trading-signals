@@ -3504,3 +3504,72 @@ class TestPhase25LabelForAudit:
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
     assert 'aria-expanded' in html_out, 'D-19 #1: aria-expanded sync JS missing from shell'
     assert 'htmx:afterSwap' in html_out, 'D-19 #1: htmx:afterSwap re-bind listener missing'
+
+
+class TestPhase25MarketTestPlaceholders:
+  """D-14: Market Test override fields render inherited Settings defaults as
+  placeholder='...' so blanks fall back to the defaulted value on submit.
+  """
+
+  def _make_market_test_html(self, settings_overrides: dict | None = None) -> str:
+    """Render Market Test tab with a single SPI200 market."""
+    import dashboard as d
+    state = {
+      'markets': {'SPI200': {'display_name': 'SPI 200', 'enabled': True, 'sort_order': 10}},
+      'strategy_settings': {'SPI200': settings_overrides or {}},
+      'equity_history': [],
+      'signals': {},
+      'paper_trades': [],
+      'positions': {},
+      'closed_trades': [],
+      'last_run': None,
+      'warnings': [],
+    }
+    from dashboard_renderer.components.settings import render_market_test_tab
+    return render_market_test_tab(state)
+
+  def test_market_test_renders_inherited_placeholders(self) -> None:
+    """Placeholder attrs reflect current Settings values (uses defaults when
+    strategy_settings is empty — merges with DEFAULT_STRATEGY_SETTINGS).
+    """
+    from system_params import DEFAULT_STRATEGY_SETTINGS
+    html_out = self._make_market_test_html()
+
+    expected_adx = str(DEFAULT_STRATEGY_SETTINGS['adx_gate'])
+    expected_votes = str(DEFAULT_STRATEGY_SETTINGS['momentum_votes_required'])
+    expected_risk_long = f"{float(DEFAULT_STRATEGY_SETTINGS['risk_pct_long']) * 100:.2f}"
+    expected_risk_short = f"{float(DEFAULT_STRATEGY_SETTINGS['risk_pct_short']) * 100:.2f}"
+    expected_atr_long = str(DEFAULT_STRATEGY_SETTINGS['trail_mult_long'])
+    expected_atr_short = str(DEFAULT_STRATEGY_SETTINGS['trail_mult_short'])
+
+    assert f'placeholder="{expected_adx}"' in html_out, (
+      f'ADX gate placeholder missing or wrong; expected placeholder="{expected_adx}"'
+    )
+    assert f'placeholder="{expected_votes}"' in html_out, (
+      f'Momentum votes placeholder missing or wrong; expected placeholder="{expected_votes}"'
+    )
+    assert f'placeholder="{expected_risk_long}"' in html_out, (
+      f'Long risk % placeholder missing or wrong; expected placeholder="{expected_risk_long}"'
+    )
+    assert f'placeholder="{expected_risk_short}"' in html_out, (
+      f'Short risk % placeholder missing or wrong; expected placeholder="{expected_risk_short}"'
+    )
+    assert f'placeholder="{expected_atr_long}"' in html_out, (
+      f'Long ATR multiple placeholder missing or wrong; expected placeholder="{expected_atr_long}"'
+    )
+    assert f'placeholder="{expected_atr_short}"' in html_out, (
+      f'Short ATR multiple placeholder missing or wrong; expected placeholder="{expected_atr_short}"'
+    )
+
+  def test_market_test_custom_settings_reflected_in_placeholders(self) -> None:
+    """When market has custom Settings, placeholder reflects the custom value."""
+    html_out = self._make_market_test_html(settings_overrides={
+      'adx_gate': 30.0,
+      'momentum_votes_required': 3,
+      'risk_pct_long': 0.02,
+      'risk_pct_short': 0.01,
+    })
+    assert 'placeholder="30.0"' in html_out, 'Custom ADX gate not reflected in placeholder'
+    assert 'placeholder="3"' in html_out, 'Custom votes not reflected in placeholder'
+    assert 'placeholder="2.00"' in html_out, 'Custom long risk % not reflected in placeholder'
+    assert 'placeholder="1.00"' in html_out, 'Custom short risk % not reflected in placeholder'
