@@ -187,9 +187,13 @@ class TestStateSchemaVersionV7:
   '''
 
   def test_state_schema_version_is_8(self) -> None:
-    '''Phase 24: STATE_SCHEMA_VERSION bumped 7->8 for markets/settings.'''
-    assert system_params.STATE_SCHEMA_VERSION == 8, (
-      f'Phase 24: STATE_SCHEMA_VERSION must be 8; '
+    '''Phase 27 #1 (Plan 27-01): STATE_SCHEMA_VERSION bumped 8->9 for
+    Decimal-quantized money fields. Test name retained for git-history
+    continuity; value asserts the current schema version.
+    '''
+    assert system_params.STATE_SCHEMA_VERSION == 9, (
+      f'Phase 27 #1: STATE_SCHEMA_VERSION must be 9 '
+      f'(Decimal money-math migration); '
       f'got {system_params.STATE_SCHEMA_VERSION!r}'
     )
 

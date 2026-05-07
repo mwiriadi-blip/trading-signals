@@ -74,7 +74,13 @@ def compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
   for row in paper_trades:
     status = row.get('status')
     if status == 'closed':
-      pnl = row.get('realised_pnl') or 0.0
+      raw_pnl = row.get('realised_pnl') or 0.0
+      # Phase 27 #1: row['realised_pnl'] may be Decimal (set by
+      # compute_realised_pnl in web/routes/paper_trades.close_paper_trade
+      # before the v8→v9 quantize migrator coerces it on save). Float()
+      # at the display boundary so accumulator + comparisons work
+      # uniformly regardless of in-flight type.
+      pnl = float(raw_pnl)
       realised += pnl
       if pnl > 0:
         wins += 1

@@ -428,7 +428,12 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
         row['side'], row['entry_price'], req.exit_price,
         row['contracts'], mult, rt_cost,
       )
-      row['realised_pnl'] = realised
+      # Phase 27 #1: pnl_engine returns Decimal AUD-quantized; coerce to float
+      # at the persistence boundary so state['paper_trades'] rows stay
+      # float-typed (downstream readers — dashboard rendering, accumulators,
+      # state_manager v8→v9 quantize-on-save — all consume float). The
+      # AUD-cent precision is preserved by the v9 quantize-on-save migrator.
+      row['realised_pnl'] = float(realised)
       row['exit_price'] = req.exit_price
       row['exit_dt'] = req.exit_dt.isoformat()
       row['status'] = 'closed'
