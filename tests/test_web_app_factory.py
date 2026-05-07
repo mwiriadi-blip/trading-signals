@@ -534,3 +534,177 @@ class TestPhase25AddMarketHXTrigger:
     assert 'markets-changed' in hx_trigger, (
       f'HX-Trigger missing or wrong: {hx_trigger!r}'
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 26 — Wave 1 test scaffolding: B1 (per-market eyebrow scoping)
+# Every xfail(strict=True) method fails today and turns green when Plan 26-05
+# threads ctx.active_market into _render_signal_cards / render_settings_tab /
+# render_market_test_tab so each market-scoped GET only renders that market's
+# panels.
+# ---------------------------------------------------------------------------
+
+
+def _phase26_three_market_state() -> dict:
+  '''Three-market state fixture (SPI200, AUDUSD, ESM) for Phase 26 B1 tests.
+
+  Display names mirror system_params.DEFAULT_MARKETS exactly:
+    - SPI200 -> 'SPI 200'
+    - AUDUSD -> 'AUD / USD'
+  ESM is a synthetic third market with display_name 'ES Mini' that
+  Phase 25 added via /markets POST in production.
+  '''
+  return {
+    'schema_version': 7,
+    'account': 100_000.0,
+    'last_run': '2026-04-23',
+    'markets': {
+      'SPI200': {
+        'display_name': 'SPI 200', 'symbol': '^AXJO', 'currency': 'AUD',
+        'multiplier': 5.0, 'cost_aud': 6.0, 'enabled': True, 'sort_order': 10,
+      },
+      'AUDUSD': {
+        'display_name': 'AUD / USD', 'symbol': 'AUDUSD=X', 'currency': 'AUD',
+        'multiplier': 10000.0, 'cost_aud': 5.0, 'enabled': True, 'sort_order': 20,
+      },
+      'ESM': {
+        'display_name': 'ES Mini', 'symbol': 'ES=F', 'currency': 'USD',
+        'multiplier': 50.0, 'cost_aud': 4.0, 'enabled': True, 'sort_order': 30,
+      },
+    },
+    'positions': {'SPI200': None, 'AUDUSD': None, 'ESM': None},
+    'signals': {
+      'SPI200': {'last_close': 7820.0, 'last_scalars': {'atr': 50.0}},
+      'AUDUSD': {'last_close': 0.6520, 'last_scalars': {'atr': 0.005}},
+      'ESM': {'last_close': 5200.0, 'last_scalars': {'atr': 30.0}},
+    },
+    'strategy_settings': {'SPI200': {}, 'AUDUSD': {}, 'ESM': {}},
+    'trade_log': [], 'equity_history': [], 'warnings': [],
+    'paper_trades': [], 'closed_trades': [],
+    'initial_account': 100_000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini', 'ESM': 'es-mini'},
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+      'ESM': {'multiplier': 50.0, 'cost_aud': 4.0},
+    },
+  }
+
+
+def _phase26_setup(monkeypatch, tmp_path):
+  '''Common Phase 26 setup: chdir tmp_path, set env, stub state_manager.load_state,
+  write minimal dashboard.html shell so the route doesn't 503.
+  '''
+  monkeypatch.chdir(tmp_path)
+  monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+  monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+  import state_manager
+  state = _phase26_three_market_state()
+  monkeypatch.setattr(state_manager, 'load_state', lambda *_a, **_kw: state)
+  # Minimal shell so any code path that reads dashboard.html succeeds.
+  (tmp_path / 'dashboard.html').write_text(
+    '<html><body data-auth="{{WEB_AUTH_SECRET}}">shell</body></html>',
+    encoding='utf-8',
+  )
+  import sys
+  sys.modules.pop('web.app', None)
+  from web.app import create_app
+  return TestClient(create_app())
+
+
+class TestPhase26MarketScoping:
+  '''B1: each /markets/{M}/{fn} GET must render only M's panels.
+
+  Phase 25 shipped multi-tab market URLs but _render_page_body ignores
+  ctx.active_market — every market URL renders every market's panels stacked.
+  Reviewer Playwright pass on 2026-05-07 confirmed eyebrows like
+  ['SPI 200 SETTINGS', 'AUD / USD SETTINGS', 'ES Mini SETTINGS'] all appear
+  on /markets/ESM/settings.
+
+  Eyebrow text format from settings.py:24 is f'{display.upper()} SETTINGS':
+    SPI 200 -> 'SPI 200 SETTINGS'
+    AUD / USD -> 'AUD / USD SETTINGS'
+    ES Mini -> 'ES MINI SETTINGS'
+
+  Tests fail today (Plan 26-05 implementation pending) and flip green
+  when active_market threading lands.
+  '''
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
+    '_render_page_body ignores ctx.active_market',
+  )
+  def test_spi200_settings_eyebrow_only_active_market(self, monkeypatch, tmp_path):
+    client = _phase26_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/settings',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    assert 'SPI 200 SETTINGS' in resp.text, 'active-market eyebrow missing'
+    assert 'AUD / USD SETTINGS' not in resp.text, 'leak: AUDUSD eyebrow on SPI200 page'
+    assert 'ES MINI SETTINGS' not in resp.text, 'leak: ESM eyebrow on SPI200 page'
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
+    '_render_page_body ignores ctx.active_market',
+  )
+  def test_audusd_settings_eyebrow_only_active_market(self, monkeypatch, tmp_path):
+    client = _phase26_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/AUDUSD/settings',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    assert 'AUD / USD SETTINGS' in resp.text, 'active-market eyebrow missing'
+    assert 'SPI 200 SETTINGS' not in resp.text, 'leak: SPI200 eyebrow on AUDUSD page'
+    assert 'ES MINI SETTINGS' not in resp.text, 'leak: ESM eyebrow on AUDUSD page'
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
+    'render_market_test_tab does not include active market in eyebrow',
+  )
+  def test_esm_market_test_eyebrow_only_active_market(self, monkeypatch, tmp_path):
+    '''Plan 26-05 must thread active_market into render_market_test_tab so the
+    eyebrow names the active market (e.g. 'ES MINI MARKET TEST'). Today the
+    eyebrow is the market-agnostic literal 'MARKET TEST'.
+
+    Lock the contract: active-market display name appears in the page, and
+    other markets' display names do not.
+    '''
+    client = _phase26_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/ESM/market-test',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    # Active market name appears in the rendered market-test panel.
+    assert 'ES Mini' in resp.text or 'ES MINI' in resp.text, (
+      'active-market display name missing from /markets/ESM/market-test'
+    )
+    # Other markets' display names must not appear (B1: scoping).
+    assert 'SPI 200' not in resp.text, 'leak: SPI200 display on ESM market-test page'
+    assert 'AUD / USD' not in resp.text, 'leak: AUDUSD display on ESM market-test page'
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
+    '_render_signal_cards iterates every market regardless of active_market',
+  )
+  def test_spi200_signals_card_only_active_market(self, monkeypatch, tmp_path):
+    '''Signal-card region on /markets/SPI200/signals must render the SPI 200
+    eyebrow once and not contain other markets' display names.
+    '''
+    client = _phase26_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    assert 'SPI 200' in resp.text, 'active-market eyebrow missing on signals page'
+    # Other-market display names must not leak into the signal-card region.
+    assert 'AUD / USD' not in resp.text, 'leak: AUDUSD display on SPI200 signals page'
+    assert 'ES Mini' not in resp.text, 'leak: ESM display on SPI200 signals page'

@@ -1191,3 +1191,294 @@ class TestPhase25StatusStripEndpoint:
     resp = client.get('/status-strip')
     assert resp.status_code in (401, 403)
     assert '{{TRACE_OPEN_AUDUSD}}' not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Phase 26 — Wave 1 test scaffolding: B2 (placeholder leak) + B3 (header
+# session widget) + PATCH-from-panel-swap survives.
+#
+# Every xfail(strict=True) method fails today and turns green when Plan 26-04
+# extracts a shared `_substitute(content, request) -> bytes` helper out of
+# `_serve_dashboard_content` (web/routes/dashboard.py:500-562) and calls it
+# from `_serve_market_scoped_page` (web/routes/dashboard.py:235-284) — at
+# which point all 5 placeholder kinds resolve and B3 dissolves into B2.
+# ---------------------------------------------------------------------------
+
+
+def _phase26_three_market_state_dashboard() -> dict:
+  '''Three-market state for Phase 26 dashboard tests.
+
+  Mirrors the SPI200 / AUDUSD / ESM shape used by
+  tests/test_web_app_factory.py::_phase26_three_market_state but defined
+  locally because tests/conftest auto-discovery does not put tests/ on
+  sys.path (mirror pattern from tests/test_web_app_factory.py:21-22).
+  '''
+  return {
+    'schema_version': 7,
+    'account': 100_000.0,
+    'last_run': '2026-04-23',
+    'markets': {
+      'SPI200': {
+        'display_name': 'SPI 200', 'symbol': '^AXJO', 'currency': 'AUD',
+        'multiplier': 5.0, 'cost_aud': 6.0, 'enabled': True, 'sort_order': 10,
+      },
+      'AUDUSD': {
+        'display_name': 'AUD / USD', 'symbol': 'AUDUSD=X', 'currency': 'AUD',
+        'multiplier': 10000.0, 'cost_aud': 5.0, 'enabled': True, 'sort_order': 20,
+      },
+      'ESM': {
+        'display_name': 'ES Mini', 'symbol': 'ES=F', 'currency': 'USD',
+        'multiplier': 50.0, 'cost_aud': 4.0, 'enabled': True, 'sort_order': 30,
+      },
+    },
+    'positions': {'SPI200': None, 'AUDUSD': None, 'ESM': None},
+    'signals': {
+      'SPI200': {'last_close': 7820.0, 'last_scalars': {'atr': 50.0}},
+      'AUDUSD': {'last_close': 0.6520, 'last_scalars': {'atr': 0.005}},
+      'ESM': {'last_close': 5200.0, 'last_scalars': {'atr': 30.0}},
+    },
+    'strategy_settings': {'SPI200': {}, 'AUDUSD': {}, 'ESM': {}},
+    'trade_log': [], 'equity_history': [], 'warnings': [],
+    'paper_trades': [], 'closed_trades': [],
+    'initial_account': 100_000.0,
+    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini', 'ESM': 'es-mini'},
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+      'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+      'ESM': {'multiplier': 50.0, 'cost_aud': 4.0},
+    },
+  }
+
+
+def _phase26_dashboard_setup(monkeypatch, tmp_path):
+  '''Common Phase 26 dashboard setup: chdir tmp_path, env vars, stub
+  state_manager.load_state to return 3-market state, write minimal
+  dashboard.html shell that contains all 5 placeholder kinds.
+
+  Returns the bound TestClient.
+  '''
+  monkeypatch.chdir(tmp_path)
+  monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+  monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
+  import state_manager
+  state = _phase26_three_market_state_dashboard()
+  monkeypatch.setattr(state_manager, 'load_state', lambda *_a, **_kw: state)
+  # Synthetic dashboard.html with all 5 placeholder kinds — Plan 26-04
+  # `_substitute` helper must resolve every one before the body reaches
+  # the response.
+  (tmp_path / 'dashboard.html').write_text(
+    '<html><head></head><body>'
+    '<header>{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}</header>'
+    '<div data-auth="{{WEB_AUTH_SECRET}}">a</div>'
+    '<tbody id="position-group-SPI200" {{TRACE_OPEN_SPI200}}></tbody>'
+    '<tbody id="position-group-AUDUSD" {{TRACE_OPEN_AUDUSD}}></tbody>'
+    '</body></html>',
+    encoding='utf-8',
+  )
+  import sys
+  sys.modules.pop('web.app', None)
+  from fastapi.testclient import TestClient
+  from web.app import create_app
+  return TestClient(create_app())
+
+
+class TestPhase26PlaceholderLeak:
+  '''B2: every market-scoped GET response contains zero `{{[A-Z_]+}}` markers.
+
+  Cause: `_serve_market_scoped_page` (web/routes/dashboard.py:235-284) builds
+  `body` via `render_dashboard_as_str` and does `body.encode()` with NO
+  substitution of `{{WEB_AUTH_SECRET}}`, `{{SIGNOUT_BUTTON}}`,
+  `{{SESSION_NOTE}}`, `{{TRACE_OPEN_*}}`. Plan 26-04 extracts
+  `_substitute(content, request) -> bytes` and calls it on the market-scoped
+  path; once that lands, the placeholder regex returns no matches.
+
+  Acceptance: re.search(r'\\{\\{[A-Z_]+\\}\\}', resp.text) is None.
+  '''
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-04 (B2): _substitute helper for '
+    '_serve_market_scoped_page pending',
+  )
+  def test_market_signals_has_no_placeholder_markers(self, monkeypatch, tmp_path):
+    import re
+    client = _phase26_dashboard_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    leaks = re.findall(r'\{\{[A-Z_]+\}\}', resp.text)
+    assert not leaks, f'placeholder leak on /markets/SPI200/signals: {leaks!r}'
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-04 (B2): _substitute helper for '
+    '_serve_market_scoped_page pending',
+  )
+  def test_market_settings_has_no_placeholder_markers(self, monkeypatch, tmp_path):
+    import re
+    client = _phase26_dashboard_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/settings',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    leaks = re.findall(r'\{\{[A-Z_]+\}\}', resp.text)
+    assert not leaks, f'placeholder leak on /markets/SPI200/settings: {leaks!r}'
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-04 (B2): _substitute helper for '
+    '_serve_market_scoped_page pending',
+  )
+  def test_market_market_test_has_no_placeholder_markers(self, monkeypatch, tmp_path):
+    import re
+    client = _phase26_dashboard_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/market-test',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    leaks = re.findall(r'\{\{[A-Z_]+\}\}', resp.text)
+    assert not leaks, f'placeholder leak on /markets/SPI200/market-test: {leaks!r}'
+
+
+class TestPhase26HeaderSessionWidget:
+  '''B3: header shows exactly one of {sign-out button, session note}, never the
+  literal placeholder strings.
+
+  Today header.py emits both `{{SIGNOUT_BUTTON}}` and `{{SESSION_NOTE}}` when
+  is_cookie_session is None (let-the-web-layer-substitute branch). The
+  market-scoped route doesn't substitute, so both placeholder strings render
+  raw. After Plan 26-04 (B2 fix shape A) extracts `_substitute(content,
+  request) -> bytes`, the route resolves them via `_is_cookie_session(request)`
+  branching:
+    - cookie present + valid -> signout button HTML (`class="btn-signout"`,
+      action="/logout")
+    - cookie absent or invalid -> session note HTML (`class="session-note"`)
+  '''
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-04 (B2/B3): header session-widget substitution '
+    'on market-scoped path pending',
+  )
+  def test_no_cookie_session_renders_session_note(self, monkeypatch, tmp_path):
+    '''Header request with header-only auth (no tsi_session cookie):
+    `_is_cookie_session(request)` returns False -> session-note HTML rendered.
+    Both placeholder strings absent.'''
+    client = _phase26_dashboard_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/signals',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    # Either the signout button HTML or the session note HTML must be present.
+    has_signout = 'class="btn-signout"' in resp.text
+    has_session_note = 'class="session-note"' in resp.text
+    assert has_signout or has_session_note, (
+      'B3: neither signout button nor session note rendered'
+    )
+    # Placeholder strings must be substituted, not leaked.
+    assert '{{SIGNOUT_BUTTON}}' not in resp.text, 'B3: SIGNOUT_BUTTON placeholder leaked'
+    assert '{{SESSION_NOTE}}' not in resp.text, 'B3: SESSION_NOTE placeholder leaked'
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-04 (B2/B3): header session-widget substitution '
+    'on market-scoped path pending',
+  )
+  def test_with_valid_cookie_session_renders_signout_button(
+    self, monkeypatch, tmp_path, valid_cookie_token,
+  ):
+    '''Header request carrying a valid tsi_session cookie:
+    `_is_cookie_session(request)` returns True -> signout button HTML rendered.
+    Session-note HTML and both placeholder strings absent.'''
+    client = _phase26_dashboard_setup(monkeypatch, tmp_path)
+    resp = _request_with_cookies(
+      client, 'GET', '/markets/AUDUSD/settings',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+      cookies={'tsi_session': valid_cookie_token},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+    # Cookie-session branch -> signout button rendered.
+    assert 'class="btn-signout"' in resp.text, (
+      'B3: cookie-session must render signout button'
+    )
+    assert 'class="session-note"' not in resp.text, (
+      'B3: cookie-session must NOT render session note'
+    )
+    # Placeholder strings must be substituted, not leaked.
+    assert '{{SIGNOUT_BUTTON}}' not in resp.text, 'B3: SIGNOUT_BUTTON placeholder leaked'
+    assert '{{SESSION_NOTE}}' not in resp.text, 'B3: SESSION_NOTE placeholder leaked'
+
+
+class TestPhase26PanelPatchSurvives:
+  '''PATCH-from-panel-swap survives: extracting the WEB_AUTH_SECRET from a
+  market-scoped GET response and replaying it on a real PATCH must not 401
+  due to placeholder leak.
+
+  Today: the GET response contains `hx-headers='{"X-Trading-Signals-Auth":
+  "{{WEB_AUTH_SECRET}}"}'` literally; an HTMX PATCH replays that placeholder
+  as the auth header value, which the auth middleware rejects with 401.
+
+  Plan 26-04 substitutes the placeholder before the body reaches the
+  response, so the extracted secret is the real 32-char value and the PATCH
+  passes auth (status either 200 / 4xx-validation, NEVER 401-from-placeholder).
+
+  Endpoint note: settings forms POST to PATCH /markets/settings (see
+  dashboard_renderer/components/settings.py:27 `hx-patch="/markets/settings"`),
+  not /strategy. Plan text says "/strategy" — using the actual endpoint.
+  '''
+
+  @pytest.mark.xfail(
+    strict=True,
+    reason='Phase 26 Plan 26-04 (B2): WEB_AUTH_SECRET substitution on '
+    '_serve_market_scoped_page pending — PATCH replays placeholder and 401s',
+  )
+  def test_patch_with_extracted_secret_does_not_401(self, monkeypatch, tmp_path):
+    import re
+    client = _phase26_dashboard_setup(monkeypatch, tmp_path)
+    resp = client.get(
+      '/markets/SPI200/settings',
+      headers={AUTH_HEADER_NAME: VALID_SECRET},
+    )
+    assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
+
+    # Settings form embeds the auth header in hx-headers='{"X-Trading-Signals-Auth": "<secret>"}'
+    # (settings.py:23). Extract whatever the response embedded — placeholder
+    # today, real secret post-Plan-26-04.
+    m = re.search(
+      r'X-Trading-Signals-Auth"\s*:\s*"([^"]+)"',
+      resp.text,
+    )
+    assert m is not None, (
+      'expected hx-headers JSON with X-Trading-Signals-Auth in market-scoped '
+      'settings response (lock contract for HTMX PATCH chain)'
+    )
+    extracted = m.group(1)
+
+    # Replay PATCH /markets/settings with whatever secret value was embedded.
+    # Today extracted == '{{WEB_AUTH_SECRET}}' -> middleware rejects -> 401.
+    # Post-Plan-26-04 extracted == VALID_SECRET -> middleware accepts.
+    patch_resp = client.patch(
+      '/markets/settings',
+      headers={AUTH_HEADER_NAME: extracted, 'Content-Type': 'application/json'},
+      json={
+        'market_id': 'SPI200',
+        'adx_gate': 25.0,
+        'momentum_votes_required': 2,
+        'trail_mult_long': 1.5,
+        'trail_mult_short': 1.5,
+        'risk_pct_long': 0.01,
+        'risk_pct_short': 0.01,
+        'one_contract_floor': False,
+        'contract_cap': None,
+        'direction_mode': 'both',
+      },
+    )
+    assert patch_resp.status_code != 401, (
+      f'PATCH 401-due-to-placeholder: extracted secret was {extracted!r} '
+      f'(B2 placeholder leak); response: {patch_resp.text[:200]}'
+    )
