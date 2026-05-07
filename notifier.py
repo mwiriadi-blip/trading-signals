@@ -57,6 +57,7 @@ from typing import NamedTuple
 import pytz
 import requests
 
+from pnl_engine import entry_side_cost  # Phase 27 #7: half-cost helper
 from state_manager import load_state
 from system_params import (
   _COLOR_BG,
@@ -491,7 +492,11 @@ def _compute_unrealised_pnl_email(
       'module-level _CONTRACT_SPECS_EMAIL default tier', state_key,
     )
     multiplier, cost_aud_round_trip = _CONTRACT_SPECS_EMAIL[state_key]
-  cost_open = cost_aud_round_trip / 2
+  # Phase 27 #7: entry-side cost via canonical helper (half of round-trip,
+  # AUD-cent quantized HALF_UP). Float() at the consumption boundary so the
+  # downstream gross/open_cost arithmetic stays in float (this is a display
+  # path; pnl_engine is the Decimal authority).
+  cost_open = float(entry_side_cost(cost_aud_round_trip))
   direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
   price_diff = current_close - position['entry_price']
   gross = direction_mult * price_diff * position['n_contracts'] * multiplier

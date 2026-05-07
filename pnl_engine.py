@@ -25,6 +25,8 @@ Functions:
                          entry_cost_aud) -> Decimal (AUD-quantized HALF_UP)
   compute_realised_pnl(side, entry_price, exit_price, contracts, multiplier,
                        round_trip_cost_aud) -> Decimal (AUD-quantized HALF_UP)
+  entry_side_cost(rt_cost) -> Decimal (Phase 27 #7 — half of round-trip,
+                                       symmetric-broker assumption)
 '''
 import math  # noqa: F401 — used for NaN propagation detection by callers
 from decimal import ROUND_HALF_UP, Decimal
@@ -46,6 +48,31 @@ def _to_dec(x) -> Decimal:
   if isinstance(x, Decimal):
     return x
   return Decimal(str(x))
+
+
+def entry_side_cost(rt_cost) -> Decimal:
+  '''Phase 27 #7: allocate the entry-side share of a round-trip cost.
+
+  ASSUMPTION: entry-side commission ≈ exit-side commission (symmetric
+  brokers — true for both SPI mini and AUDUSD on the operator's broker
+  per CLAUDE.md / SPEC). The half-split is the canonical allocation
+  used by sizing_engine D-13, paper-ledger unrealised-PnL display, and
+  notifier email-body cost rendering.
+
+  Inputs may be int/float/str/Decimal — coerced via Decimal(str(x)) at
+  the boundary (same policy as compute_*_pnl). Returns AUD-quantized
+  Decimal under HALF_UP rounding (matches Plan 27-01 AUD_ROUND).
+
+  Examples:
+    entry_side_cost(Decimal('6.00')) -> Decimal('3.00')   # SPI mini
+    entry_side_cost(Decimal('5.01')) -> Decimal('2.51')   # HALF_UP
+    entry_side_cost(0)               -> Decimal('0.00')
+  '''
+  rt = _to_dec(rt_cost)
+  half = rt / Decimal(2)
+  if half.is_nan():
+    return half
+  return half.quantize(_AUD_QUANTIZE, rounding=_AUD_ROUND)
 
 
 def compute_unrealised_pnl(

@@ -59,6 +59,7 @@ import state_manager
 import system_params
 from alert_engine import compute_alert_state, compute_atr_distance
 from data_fetcher import DataFetchError, ShortFrameError
+from pnl_engine import entry_side_cost  # Phase 27 #7: half-cost helper
 from sizing_engine import ClosedTrade
 from system_params import (
   AUDUSD_COST_AUD,
@@ -1321,7 +1322,10 @@ def _run_daily_check_impl(
     resolved = state['_resolved_contracts'][state_key]
     multiplier = resolved['multiplier']
     cost_aud_round_trip = resolved['cost_aud']
-    cost_aud_open = cost_aud_round_trip / 2
+    # Phase 27 #7: entry-side cost via canonical helper. Float() at the
+    # boundary because sizing_engine.step() expects float cost_aud_open;
+    # pnl_engine remains the Decimal authority via compute_*_pnl returns.
+    cost_aud_open = float(entry_side_cost(cost_aud_round_trip))
 
     # 3.a: fetch — DataFetchError propagates (Wave 3 catches at top level).
     fetch_start = time.perf_counter()
@@ -1421,7 +1425,9 @@ def _run_daily_check_impl(
       )
       # D-13: close-half cost is deducted by record_trade; compute display
       # net here so the log line reflects what record_trade will credit.
-      closed_pnl_display = gross - (cost_aud_round_trip * ct.n_contracts / 2)
+      # Phase 27 #7: close-side share via canonical helper (symmetric with
+      # entry-side under the symmetric-broker assumption).
+      closed_pnl_display = gross - float(entry_side_cost(cost_aud_round_trip)) * ct.n_contracts
 
     # D-14 per-instrument log block (G-4: warnings emitted inside).
     _format_per_instrument_log_block(
@@ -1532,7 +1538,9 @@ def _run_daily_check_impl(
         pos,
         last_close_by_state_key[sk],
         resolved['multiplier'],
-        resolved['cost_aud'] / 2,
+        # Phase 27 #7: entry-side cost via canonical helper. Float() at
+        # the sizing_engine boundary (per-contract cost_aud_open).
+        float(entry_side_cost(resolved['cost_aud'])),
       )
 
   # Step 5: update equity history (STATE-06).
