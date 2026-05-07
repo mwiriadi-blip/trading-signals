@@ -103,11 +103,24 @@ def render_dashboard(
     ('settings', Path('dashboard-settings.html')),
     ('market-test', Path('dashboard-market-test.html')),
   )
+  # Phase 26 R3: on-disk siblings serve unscoped /signals, /settings, /market-test
+  # routes — the cache is single-key per page, so document the first-market
+  # fallback explicitly. Per-market scoping uses the in-memory render path
+  # (_serve_market_scoped_page → render_dashboard_as_str) with Cache-Control: no-store.
+  from dashboard_renderer.components.nav import _first_market_id
+  sibling_market = _first_market_id(state)
   for sibling_page, sibling_out in sibling_targets:
+    sibling_ctx = _build_render_context(
+      state=state,
+      now=now,
+      trace_open_keys=trace_open_keys,
+      active_function=sibling_page,
+      active_market=sibling_market or None,
+    )
     sibling_html_str = _render_header_and_body(
-      ctx=ctx,
+      ctx=sibling_ctx,
       is_cookie_session=is_cookie_session,
-      body_html=d._render_single_page_dashboard(ctx, sibling_page, nav_mode='file'),
+      body_html=d._render_single_page_dashboard(sibling_ctx, sibling_page, nav_mode='file'),
     )
     d._atomic_write_html(sibling_html_str, sibling_out)
   d.logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
@@ -147,6 +160,8 @@ def render_dashboard_page(
   now: datetime | None = None,
   is_cookie_session: bool | None = None,
   trace_open_keys: list | None = None,
+  *,
+  active_market: str | None = None,
 ) -> None:
   import dashboard as d
 
@@ -154,6 +169,8 @@ def render_dashboard_page(
     state=state,
     now=now,
     trace_open_keys=trace_open_keys,
+    active_function=page,
+    active_market=active_market,
   )
   d.logger.info('[Dashboard] rendering page=%s to %s', page, out_path)
   html_str = _render_header_and_body(

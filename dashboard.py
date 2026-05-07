@@ -757,14 +757,15 @@ def _render_trace_panels(
   )
 
 
-def _render_signal_cards(state: dict) -> str:
+def _render_signal_cards(state: dict, *, active_market: str | None = None) -> str:
   '''UI-SPEC §Signal cards — 2 cards SPI200 + AUDUSD (D-02, DASH-03).
 
   Per-instrument state['signals'][key] has {signal, signal_as_of, as_of_run,
   last_scalars, last_close}. Empty state (missing key): big "—" chip in
   _COLOR_FLAT + "Signal as of never" + single em-dash scalars line.
+  Phase 26 B1: when active_market is set, only that market's card is rendered.
   '''
-  return dr_render_signal_cards(state)
+  return dr_render_signal_cards(state, active_market=active_market)
 
 
 def _render_market_selector(state: dict) -> str:
@@ -1832,16 +1833,16 @@ def _render_account_management_region(state: dict) -> str:
   )
 
 
-def _render_settings_tab(state: dict) -> str:
-  return dr_render_settings_tab(state)
+def _render_settings_tab(state: dict, *, active_market: str | None = None) -> str:
+  return dr_render_settings_tab(state, active_market=active_market)
 
 
 def _render_add_market_form(state: dict) -> str:
   return dr_render_add_market_form(state)
 
 
-def _render_market_test_tab(state: dict) -> str:
-  return dr_render_market_test_tab(state)
+def _render_market_test_tab(state: dict, *, active_market: str | None = None) -> str:
+  return dr_render_market_test_tab(state, active_market=active_market)
 
 
 def _render_footer(strategy_version: str) -> str:
@@ -1963,8 +1964,11 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
 
   Phase 3: page composition consumes RenderContext across boundaries so callers
   no longer thread state/strategy_version primitives independently.
+  Phase 26 B1: forwards ctx.active_market to per-market renderers so each
+  /markets/{M}/{fn} GET only renders M's panels.
   '''
   state = ctx.state
+  active_market = getattr(ctx, 'active_market', None)
   page_map = {
     'signals': (
       'signals-tab',
@@ -1975,7 +1979,7 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
         # D-19 #4: _render_market_selector removed — replaced by market tab strip
         # in render_two_axis_nav (Plan 25-03). The old <select aria-label="Market selection">
         # is N/A; market switching is done via the tab strip in the two-axis nav.
-        _render_signal_cards(state)
+        _render_signal_cards(state, active_market=active_market)
         + _render_paper_trades_region(state)
         + _render_trailing_stop_guidance(state)
         + _render_equity_chart_container(state)
@@ -1994,14 +1998,14 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
       'settings-tab-heading',
       'Settings',
       '',
-      lambda: _render_settings_tab(state) + _render_add_market_form(state),
+      lambda: _render_settings_tab(state, active_market=active_market) + _render_add_market_form(state),
     ),
     'market-test': (
       'market-test-tab',
       'market-test-tab-heading',
       'Market Test',
       '',
-      lambda: _render_market_test_tab(state),
+      lambda: _render_market_test_tab(state, active_market=active_market),
     ),
   }
   return page_map.get(page, page_map['signals'])
