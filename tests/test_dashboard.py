@@ -613,12 +613,15 @@ class TestRenderBlocks:
   # --- Header ---
 
   def test_header_contains_title_and_awst_timestamp(self) -> None:
-    '''UI-SPEC §Header: H1, subtitle (escaped &), Last-updated AWST.'''
+    '''UI-SPEC §Header: H1, market-agnostic subtitle, Last-updated AWST.
+
+    Phase 26 B1: subtitle no longer hardcodes per-market names so market-scoped
+    pages don't leak other markets' display names.
+    '''
     state = _make_state()
     output = dashboard._render_header(state, FROZEN_NOW)
     assert '<h1>Trading Signals</h1>' in output
-    # The '&' in 'SPI 200 & AUD/USD mechanical system' must be escaped to &amp;
-    assert 'SPI 200 &amp; AUD/USD mechanical system' in output
+    assert 'Mechanical multi-market trading system' in output
     assert '2026-04-22 09:00 AWST' in output
 
   def test_header_uses_render_header_signature(self) -> None:

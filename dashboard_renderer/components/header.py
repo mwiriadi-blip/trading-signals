@@ -59,7 +59,10 @@ def render_status_strip(state: dict, now_awst: datetime) -> str:
 def render_header(state: dict, now: datetime, is_cookie_session: bool | None = None) -> str:
   import dashboard as d
 
-  subtitle = html.escape('SPI 200 & AUD/USD mechanical system', quote=True)
+  # Phase 26 B1: market-agnostic subtitle. Hardcoded market names ('SPI 200',
+  # 'AUD/USD') leaked into market-scoped pages and violated the per-market
+  # scoping contract enforced by TestPhase26MarketScoping.
+  subtitle = html.escape('Mechanical multi-market trading system', quote=True)
   last_updated = html.escape(d._fmt_last_updated(now), quote=True)
   if is_cookie_session is None:
     auth_widget = '{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}'
