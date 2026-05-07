@@ -30,7 +30,12 @@ import pandas as pd
 import requests
 import requests.exceptions
 
-from system_params import HTTP_TIMEOUT_S
+# Phase 27 #13: redact_secret imported as a future-proof anchor. yfinance
+# does not consume an API key today, so no call site exercises this import
+# yet. If a vendor-key fetcher (e.g. Alpha Vantage, Polygon) is added later,
+# any logger.* / raise that would interpolate the key MUST flow through
+# redact_secret first — see system_params.redact_secret docstring.
+from system_params import HTTP_TIMEOUT_S, redact_secret  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

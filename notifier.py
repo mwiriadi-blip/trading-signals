@@ -73,6 +73,7 @@ from system_params import (
   INITIAL_ACCOUNT,
   TRAIL_MULT_LONG,
   TRAIL_MULT_SHORT,
+  redact_secret,
 )
 
 logger = logging.getLogger(__name__)
@@ -1385,12 +1386,16 @@ def _post_to_resend(
         # chars of the key would survive the .replace() call). Redact
         # on the full body first so any occurrence — whole or partial
         # if echoed multiple times — is scrubbed before truncation.
+        # Phase 27 #13 (T-27-03-01): also surface redact_secret(api_key)
+        # prefix so operator triage can correlate which key without
+        # exposing the full token. Defense-in-depth body.replace stays.
         safe_body = resp.text
         if api_key:
           safe_body = safe_body.replace(api_key, '[REDACTED]')
         safe_body = safe_body[:200]
         raise ResendError(
-          f'4xx from Resend: {resp.status_code} {safe_body}',
+          f'4xx from Resend (key={redact_secret(api_key)}): '
+          f'{resp.status_code} {safe_body}',
         )
       resp.raise_for_status()  # 5xx → HTTPError → retry branch
       return
@@ -1404,11 +1409,14 @@ def _post_to_resend(
         time.sleep(backoff_s)
   # Fix 1 (T-06-02): redact api_key from exhausted-retries message too —
   # last_err.__str__ may include response bodies or header echoes.
+  # Phase 27 #13 (T-27-03-01): surface redact_secret(api_key) prefix so
+  # operator can correlate which key blew up without exposing full token.
   err_repr = f'{type(last_err).__name__}: {last_err}'
   if api_key:
     err_repr = err_repr.replace(api_key, '[REDACTED]')
   raise ResendError(
-    f'retries exhausted after {retries} attempts; last error: {err_repr[:200]}',
+    f'retries exhausted after {retries} attempts (key={redact_secret(api_key)}); '
+    f'last error: {err_repr[:200]}',
   ) from last_err
 
 

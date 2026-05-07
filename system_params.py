@@ -42,6 +42,35 @@ STRATEGY_VERSION: str = 'v1.2.0'
 HTTP_TIMEOUT_S: int = 30
 
 # =========================================================================
+# Phase 27 #13: secret redaction helper (single source of truth)
+# =========================================================================
+# Any secret variable (RESEND_API_KEY, TOTP secret, session secret,
+# magic-link token) bound for a log line, exception message, or echoed
+# response body MUST flow through redact_secret() FIRST. Returns a 6-char
+# prefix + ellipsis so operator triage works ('was that THIS key?')
+# without exposing the full token to journalctl / log archives.
+#
+# T-27-03-01 (RESEND_API_KEY in journalctl) + T-27-03-02 (TOTP secret in
+# auth_store logs) — both mitigated. Regression: tests/test_secret_redaction.py.
+#
+# Hex-boundary: stdlib-only — safe to live in system_params (FORBIDDEN_MODULES_STDLIB_ONLY).
+
+
+def redact_secret(s: str | None) -> str:
+  '''Redact any secret to first 6 chars + ellipsis.
+
+  Returns:
+    '[empty]' if s is None or '' (empty string).
+    '[short]' if len(s) <= 6 (too short to safely show 6 chars).
+    s[:6] + '...' otherwise.
+  '''
+  if not s:
+    return '[empty]'
+  if len(s) <= 6:
+    return '[short]'
+  return s[:6] + '...'
+
+# =========================================================================
 # Phase 1 constants — migrated from signal_engine.py (D-01)
 # =========================================================================
 

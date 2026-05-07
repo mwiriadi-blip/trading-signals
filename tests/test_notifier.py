@@ -23,6 +23,7 @@ Use PERTH.localize(...) — always.
 import html  # noqa: F401 — Wave 1 TestComposeBody escape assertions
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import (
@@ -892,7 +893,11 @@ class TestResendPost:
       return _FakeResp(status, f'{status} body')
 
     monkeypatch.setattr('notifier.requests.post', _fake_post)
-    with pytest.raises(notifier.ResendError, match=f'4xx from Resend: {status}'):
+    # Phase 27 #13: error format now '4xx from Resend (key=<prefix>...): <status> ...'.
+    with pytest.raises(
+      notifier.ResendError,
+      match=rf'4xx from Resend \(key=[^\)]+\): {status}',
+    ):
       notifier._post_to_resend(
         'k', 'a@b.c', 'c@d.e', 'subj', '<html/>',
         timeout_s=1, retries=3, backoff_s=0,
@@ -1015,7 +1020,7 @@ class TestResendPost:
     Craft a fake 4xx response whose .text contains the literal api_key
     (simulating Resend echoing the Authorization header back in its error
     body). Assert the raised ResendError message:
-      - contains '4xx from Resend: 401'
+      - contains '4xx from Resend (key=...): 401' (Phase 27 #13 prefix)
       - contains '[REDACTED]'
       - does NOT contain the raw key
     '''
@@ -1031,7 +1036,10 @@ class TestResendPost:
         timeout_s=1, retries=3, backoff_s=0,
       )
     msg = str(exc_info.value)
-    assert '4xx from Resend: 401' in msg
+    # Phase 27 #13: format now '4xx from Resend (key=<prefix>...): 401 ...'.
+    assert re.search(r'4xx from Resend \(key=[^\)]+\): 401', msg), (
+      f'expected key-prefix + 401 in error msg; got: {msg!r}'
+    )
     assert '[REDACTED]' in msg, f'Fix 1: expected [REDACTED] in 4xx body; got: {msg!r}'
     assert api_key not in msg, f'Fix 1 leak: api_key in 4xx body: {msg!r}'
 
@@ -1154,7 +1162,10 @@ class TestSendDispatch:
     assert result.ok is False
     assert result.reason is not None
     assert '[Email] WARN send failed' in caplog.text
-    assert '4xx from Resend: 400' in caplog.text
+    # Phase 27 #13: format now '4xx from Resend (key=<prefix>...): 400 ...'.
+    assert re.search(r'4xx from Resend \(key=[^\)]+\): 400', caplog.text), (
+      f'expected key-prefix + 400 in caplog; got: {caplog.text!r}'
+    )
 
   def test_unexpected_exception_swallowed(
       self, tmp_path, monkeypatch, caplog) -> None:
