@@ -269,3 +269,34 @@ Plans:
 - [ ] 26-06-renderer-api-cleanup-PLAN.md - Wave 3 (depends on 04 + 05): Split render_dashboard into render_dashboard_files (None) + render_panel_html (str); drop nav_mode dead param; delete DEPRECATED _render_dashboard_page_nav. Closes R2 + R4 + C2.
 - [ ] 26-07-cache-and-cookie-hardening-PLAN.md - Wave 3 (parallel with 06): _is_stale_for per-file (R1); add_market writes dict-shape signal (R5); markets-strip reads active_function from query param (R6); selected_market cookie regex tighten (R7).
 - [ ] 26-08-dead-code-and-doc-cleanup-PLAN.md - Wave 4 (depends on 06 + 07): Delete _render_market_selector (C3); resolve 25-VERIFICATION.md staleness (C4); document C5 lazy-regen as v1.3 debt.
+
+### Phase 27: Code quality & correctness sweep — apply 2026-05-07 code-review findings: float→Decimal money math, file-size splits (notifier.py, main.py, dashboard.py >500 LOC), HTTP timeout standardization, naive-datetime fail-closed, magic /2 cost helper, instrument regex tightening, hardcoded fallback email constant, HTML escape audit, signal-shape unification (drop bare-int back-compat), schema-migration contiguity assert, API-key partial-prefix redaction, deferred yfinance import, crash-email fallback, warnings-FIFO test, --version flag, run-date logging assertion, look-ahead-bias backtest test
+
+**Goal:** Apply 17 + 2 = 19 deliverables from the 2026-05-07 code-review pass: tighten correctness (Decimal money math, naive-datetime fail-closed, schema-migration contiguity assert, signal-shape unification, look-ahead-bias proof), harden security (HTTP timeouts, API-key redaction, HTML-escape audit, crash-email fallback), and reduce maintenance debt (file-size splits of notifier.py, main.py, dashboard.py — each <500 LOC; magic /2 cost helper; instrument regex tightening; deferred yfinance import; --version flag; warnings-FIFO bound; run-date INFO log; hardcoded fallback email removal). Existing 1319-test suite stays green; new tests added for every regression-relevant change.
+
+**Requirements**: None mapped (follow-up cleanup phase; no formal REQ-IDs).
+
+**Depends on:** Phase 26
+
+**Plans:** 14 plans across 3 waves (Wave 1 = 7 parallel functional changes; Wave 2 = 4 cross-cutting changes that depend on Wave 1; Wave 3 = 3 file-splits sequenced last so they inherit all functional patches).
+
+Plans:
+**Wave 1**
+- [ ] 27-01-decimal-money-math-PLAN.md — Wave 1: AUD_QUANTIZE Decimal constant; pnl_engine + state_manager money fields → Decimal; round-trip preserves cents; indicator math stays float64.
+- [ ] 27-02-http-timeout-standardization-PLAN.md — Wave 1: HTTP_TIMEOUT_S=30 constant; every requests.* call passes timeout=; AST regression test.
+- [ ] 27-03-api-key-redaction-PLAN.md — Wave 1: redact_secret(s) helper (prefix[:6]+'...'); audit notifier + auth_store + data_fetcher; 5-test regression.
+- [ ] 27-04-instrument-regex-tightening-PLAN.md — Wave 1: INSTRUMENT_ID_RE = ^[A-Z0-9_]{2,20}$ canonical pattern; AST walker + false-positive rejection tests.
+- [ ] 27-05-magic-cost-helper-and-fallback-email-PLAN.md — Wave 1 (depends on 27-01 for Decimal): entry_side_cost helper replaces cost_aud/2 literals; _EMAIL_TO_FALLBACK constant deleted (SIGNALS_EMAIL_TO required).
+- [ ] 27-06-deferred-yfinance-and-version-flag-PLAN.md — Wave 1: lazy yfinance import in data_fetcher; python main.py --version → STRATEGY_VERSION → exit 0.
+- [ ] 27-07-naive-datetime-and-migration-contiguity-PLAN.md — Wave 1: _assert_tz_aware fail-closed on write paths; _assert_migration_chain_contiguous fail-fast at module load.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 27-08-html-escape-audit-PLAN.md — Wave 2 (depends on 27-01 for Decimal cost interpolation): every dynamic HTML interpolation in dashboard + dashboard_renderer wrapped via _e alias; XSS injection regression tests.
+- [ ] 27-09-signal-shape-unification-PLAN.md — Wave 2 (depends on 27-01 + 27-07): drop bare-int signal back-compat; schema bump + migrator; 38 test sites refactored; renderer isinstance(int) branch deleted.
+- [ ] 27-10-warnings-fifo-rundate-lookahead-tests-PLAN.md — Wave 2: WARNINGS_FIFO_MAX_LEN=50 bound + eviction test; daily-run-date INFO log assertion; backtest look-ahead-bias proof.
+- [ ] 27-11-crash-email-fallback-PLAN.md — Wave 2: _write_last_crash atomic helper; send_email failure writes last_crash.json; dashboard banner surfaces it on next visit.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 27-12-notifier-split-PLAN.md — Wave 3 (depends on Wave 1+2 notifier touches): notifier.py (1974 LOC) → notifier/ package (templates / transport / warnings_fifo / crash_path / __init__); each <500 LOC; public API preserved.
+- [ ] 27-13-main-split-PLAN.md — Wave 3 (depends on Wave 1+2 main.py touches): main.py (1996 LOC) → cli_parser + daily_loop + interactive + scheduler_driver; main.py <150 LOC entry+shim; CLI surface unchanged.
+- [ ] 27-14-dashboard-split-PLAN.md — Wave 3 (depends on Wave 2 dashboard touches): dashboard.py (2212 LOC) → either migrate-into-dashboard_renderer (Strategy A) or dashboard_legacy/ package (Strategy B); each file <500 LOC; HTML output byte-identical.
