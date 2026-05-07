@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: - **Signal-only.** No broker API, ever
-status: executing
-last_updated: "2026-05-08T00:00:00.000Z"
-last_activity: 2026-05-08
+status: verifying
+last_updated: "2026-05-07T20:32:02.857Z"
+last_activity: 2026-05-07
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 45
-  completed_plans: 35
-  percent: 75
+  completed_plans: 36
+  percent: 80
 ---
 
 # STATE — Trading Signals
@@ -32,9 +32,9 @@ Plan: 27-03 (Wave 1A) complete — 4 of 14 plans landed (27-07, 27-06, 27-02, 27
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Executing Phase 27
+- **Status:** Phase complete — ready for verification
 - **Last activity:** 2026-05-07
-- **Progress:** [██████████] 100%
+- **Progress:** [████████░░] 80%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
 
 ### Resume instructions for cloud Claude / fresh clone
@@ -123,6 +123,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 27 P06 | ~25min | 2 tasks | 4 files |
 | Phase 27 P02 | ~9min | 1 tasks | 5 files |
 | Phase 27 P03 | ~25min | 1 tasks | 5 files |
+| Phase 27 P04 | 7min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
