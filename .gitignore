@@ -1,4 +1,5 @@
 state.json
+state.json.corrupt.*
 auth.json
 # Runtime-regenerated dashboard HTMLs (written by main.run_daily_check via dashboard_renderer/api.py).
 # Tracking them caused git pull --ff-only to abort on the droplet whenever a daily run had updated
