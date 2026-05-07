@@ -186,9 +186,10 @@ def _is_suspicious_pattern(pat: str) -> bool:
 
   Whitelist exclusions:
     - Substitution placeholders like `{{...}}` (different domain — those
-      are server-controlled bytes, not untrusted inputs).
+      are server-controlled bytes, not untrusted inputs). Both literal
+      double-braces and regex-escaped backslash-brace forms are recognised.
   '''
-  if '{{' in pat:
+  if '{{' in pat or r'\{\{' in pat:
     return False
   has_az_class = '[A-Z' in pat
   if not has_az_class:

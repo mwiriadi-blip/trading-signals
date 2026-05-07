@@ -14,6 +14,7 @@ D-08: Position TypedDict lives here so Phase 3 state.json round-trips directly.
 D-11: SPI mini $5/pt, $6 AUD RT (operator confirmed at /gsd-discuss-phase 2).
 D-XX (Phase 3): INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE added.
 '''
+import re
 from typing import Literal, TypedDict
 
 # =========================================================================
@@ -69,6 +70,61 @@ def redact_secret(s: str | None) -> str:
   if len(s) <= 6:
     return '[short]'
   return s[:6] + '...'
+
+# =========================================================================
+# Phase 27 #8: instrument-id syntax + membership (review-fix agreed-8)
+# =========================================================================
+# Two-layer policy for "is this a valid market id?":
+#
+#   Layer 1 — INSTRUMENT_ID_RE (^[A-Z0-9_]{2,20}$): syntax validation.
+#     Rejects lowercase, special chars, unbounded length, empty inputs.
+#     Cannot reject 'SPI200X' — that string IS syntactically valid; the
+#     regex is generic by design so we don't have to edit the pattern
+#     every time a market is added.
+#
+#   Layer 2 — KNOWN_MARKET_IDS (frozenset): semantic membership.
+#     Pins the actual supported markets. is_known_market(id) is the
+#     public API for "should I let this id reach state['signals'][id]?".
+#
+# T-27-04-01 (tampering — `/markets/SPI200X/signals` triggers a state
+# lookup with a too-loose regex): mitigated by both layers together.
+# Pydantic Field(pattern=r'^[A-Z0-9_]{2,20}$') on the request side
+# enforces Layer 1 at parse time; route handlers + state lookups gate
+# on is_known_market for Layer 2.
+#
+# Hex-boundary: stdlib re only — safe under FORBIDDEN_MODULES_STDLIB_ONLY.
+
+INSTRUMENT_ID_RE: re.Pattern[str] = re.compile(r'^[A-Z0-9_]{2,20}$')
+
+# Canonical default markets. Mirrors DEFAULT_MARKETS keys (below) but
+# is owned separately so KNOWN_MARKET_IDS can be imported by adapter
+# layers (web/routes, validators) without dragging the full registry.
+# Operator-added markets via POST /markets are validated against
+# state['markets'] at the adapter boundary; this set is the static
+# fallback / route-time default.
+KNOWN_MARKET_IDS: frozenset[str] = frozenset({'SPI200', 'AUDUSD'})
+
+
+def is_known_market(market_id: object) -> bool:
+  '''Two-layer check: syntactically valid id AND in KNOWN_MARKET_IDS.
+
+  Returns False for non-string inputs, ids that fail INSTRUMENT_ID_RE,
+  or ids that pass syntax but are not in the canonical default set.
+  Never raises — defensive at the trust boundary. Operator-added
+  markets must be validated against state['markets'] separately.
+
+  Examples:
+    is_known_market('SPI200')   -> True
+    is_known_market('AUDUSD')   -> True
+    is_known_market('SPI200X')  -> False  (passes regex, fails membership)
+    is_known_market('spi200')   -> False  (fails regex)
+    is_known_market(None)       -> False  (defensive)
+  '''
+  if not isinstance(market_id, str):
+    return False
+  if not INSTRUMENT_ID_RE.fullmatch(market_id):
+    return False
+  return market_id in KNOWN_MARKET_IDS
 
 # =========================================================================
 # Phase 1 constants — migrated from signal_engine.py (D-01)

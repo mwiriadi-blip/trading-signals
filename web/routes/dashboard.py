@@ -47,8 +47,10 @@ Architecture (CLAUDE.md hex-lite + Phase 10 D-15 + Phase 13 D-07 extension):
   web/routes/ is an adapter hex.
   Allowed: fastapi, starlette, stdlib, dashboard (Phase 13 D-07 promotion —
            render_dashboard is now an allowed adapter-to-adapter import),
-           state_manager (Phase 11 D-15 read-only).
-  Forbidden: signal_engine, sizing_engine, system_params, notifier, main.
+           state_manager (Phase 11 D-15 read-only),
+           sizing_engine + system_params (Phase 14 D-02 promotion — needed
+           for MAX_PYRAMID_LEVEL + INSTRUMENT_ID_RE single-source-of-truth).
+  Forbidden: signal_engine, data_fetcher, main, notifier.
   Enforced by tests/test_web_healthz.py::TestWebHexBoundary.
 
   Both state_manager AND dashboard imports are LOCAL (inside the handler)
@@ -75,7 +77,10 @@ _REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01: for
 
 # Phase 26 Plan 26-07 (R7): mirror Pydantic write-side regex (web/routes/markets.py:20)
 # on the cookie read+write paths for defense-in-depth. Bounded length, ASCII only.
-_MARKET_ID_RE = re.compile(r'^[A-Z0-9_]{2,20}$')
+# Phase 27 #8: now sourced from system_params.INSTRUMENT_ID_RE — single source of
+# truth (review-fix agreed-8). The literal r'^[A-Z0-9_]{2,20}$' below documents
+# the canonical pattern in-place so reviewers can grep it without import-chasing.
+from system_params import INSTRUMENT_ID_RE as _MARKET_ID_RE  # r'^[A-Z0-9_]{2,20}$'
 
 # Phase 26 Plan 26-07 (R6): allowlist for active_function query param.
 _ALLOWED_FUNCTIONS = {'signals', 'account', 'settings', 'market-test'}
