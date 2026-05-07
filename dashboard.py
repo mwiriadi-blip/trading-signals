@@ -2193,23 +2193,35 @@ def _atomic_write_html(data: str, path: Path) -> None:
 # Public API — D-01
 # =========================================================================
 
-def render_dashboard(
+def render_dashboard_files(
   state: dict,
   out_path: Path = Path('dashboard.html'),
   now: datetime | None = None,
   is_cookie_session: bool | None = None,
   trace_open_keys: list | None = None,  # Phase 17 D-04 — None=all-collapsed default
 ) -> None:
-  '''Compatibility wrapper; primary orchestration now lives in dashboard_renderer.api.'''
-  from dashboard_renderer.api import render_dashboard as dr_render_dashboard
+  '''Compatibility wrapper; primary orchestration now lives in dashboard_renderer.api.
 
-  dr_render_dashboard(
+  Phase 26 Plan 06 (R2): renamed from render_dashboard → render_dashboard_files
+  to match the split entrypoint in dashboard_renderer.api. Pure file-write,
+  returns None per annotation. The deprecated `render_dashboard` alias below
+  preserves test/legacy callers.
+  '''
+  from dashboard_renderer.api import render_dashboard_files as dr_render_dashboard_files
+
+  dr_render_dashboard_files(
     state,
     out_path=out_path,
     now=now,
     is_cookie_session=is_cookie_session,
     trace_open_keys=trace_open_keys,
   )
+
+
+# Phase 26 Plan 06 back-compat: legacy callers (tests/regenerate_dashboard_golden.py,
+# tests/test_dashboard.py *) still call dashboard.render_dashboard(). Alias is an
+# assignment (not a `def`) so `grep 'render_dashboard('` finds only call sites.
+render_dashboard = render_dashboard_files
 
 
 def render_dashboard_page(

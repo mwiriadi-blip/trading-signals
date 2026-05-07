@@ -130,7 +130,7 @@ def _render_dashboard_never_crash(state: dict, out_path: Path, now: datetime) ->
   '''
   try:
     import dashboard  # local import — C-2 isolates import-time failures
-    dashboard.render_dashboard(state, out_path, now=now)
+    dashboard.render_dashboard_files(state, out_path, now=now)
   except Exception as e:
     logger.warning('[Dashboard] render failed: %s: %s', type(e).__name__, e)
 

@@ -243,8 +243,8 @@ def register(app: FastAPI) -> None:
 
     Validates market_id against state['markets']; 404 on miss.
     Sets selected_market cookie on every successful response (D-05).
-    HX-Request → render_dashboard_as_str(htmx_panel_only=True equivalent) returns
-    panel-only HTML via render_panel_only; otherwise returns full document.
+    HX-Request → render_panel_html() returns panel-only HTML (no shell, no nav);
+    otherwise render_dashboard_as_str() returns the full document.
     Cache-Control: no-store, private (T-25-04-03 cache poisoning mitigation).
     '''
     import state_manager
@@ -261,14 +261,15 @@ def register(app: FastAPI) -> None:
     htmx = _is_htmx_request(request)
 
     if htmx:
-      # HTMX swap path — panel-only HTML (no shell, no nav)
-      from dashboard_renderer.api import render_dashboard
-      body = render_dashboard(
+      # HTMX swap path — panel-only HTML (no shell, no nav).
+      # Phase 26 Plan 06 (R2): render_panel_html replaces the mixed-return
+      # render_dashboard(htmx_panel_only=True) form.
+      from dashboard_renderer.api import render_panel_html
+      body = render_panel_html(
         state,
         now=None,
         active_function=function,
         active_market=market_id,
-        htmx_panel_only=True,
       )
     else:
       # Full document path (browser navigation)
@@ -431,7 +432,7 @@ def register(app: FastAPI) -> None:
 
     try:
       if _is_stale():
-        dashboard.render_dashboard(load_state())
+        dashboard.render_dashboard_files(load_state())
     except Exception as exc:  # noqa: BLE001 — D-10 never-crash
       logger.warning(
         '[Web] dashboard regen failed, serving stale: %s: %s',

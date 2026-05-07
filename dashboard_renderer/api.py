@@ -55,7 +55,7 @@ def _render_header_and_body(
   return d._render_html_shell(ctx, body)
 
 
-def render_dashboard(
+def render_dashboard_files(
   state: dict,
   out_path: Path = Path('dashboard.html'),
   now: datetime | None = None,
@@ -64,13 +64,13 @@ def render_dashboard(
   *,
   active_function: str = 'signals',
   active_market: str | None = None,
-  htmx_panel_only: bool = False,
 ) -> None:
-  '''Render the full dashboard (or HTMX panel-only fragment).
+  '''Render the full dashboard plus on-disk per-page siblings.
 
-  Phase 25: accepts active_function and active_market kwargs. Existing callers
-  continue to work via defaults. htmx_panel_only=True returns the inner panel
-  HTML for HTMX swaps (Plan 25-04), without shell/nav.
+  Phase 26 Plan 06 (R2): pure file-write entrypoint. Returns None per
+  annotation. The HTMX panel-only path moved to render_panel_html; the
+  mixed-return-type render_dashboard() that returned str when
+  htmx_panel_only=True is gone (eliminated annotation lie).
   '''
   import dashboard as d
 
@@ -81,12 +81,6 @@ def render_dashboard(
     active_function=active_function,
     active_market=active_market,
   )
-
-  if htmx_panel_only:
-    # Phase 25 Plan 04: HTMX swap path — return ONLY the inner panel HTML
-    # (no shell, no nav strips). Resolves Plan 25-04 WARNING 4.
-    from dashboard_renderer.pages import render_panel_only
-    return render_panel_only(ctx)
 
   d.logger.info('[Dashboard] rendering to %s', out_path)
   html_str = _render_header_and_body(
@@ -120,10 +114,36 @@ def render_dashboard(
     sibling_html_str = _render_header_and_body(
       ctx=sibling_ctx,
       is_cookie_session=is_cookie_session,
-      body_html=d._render_single_page_dashboard(sibling_ctx, sibling_page, nav_mode='file'),
+      body_html=d._render_single_page_dashboard(sibling_ctx, sibling_page),
     )
     d._atomic_write_html(sibling_html_str, sibling_out)
   d.logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
+
+
+def render_panel_html(
+  state: dict,
+  *,
+  active_function: str = 'signals',
+  active_market: str | None = None,
+  now: datetime | None = None,
+  trace_open_keys: list | None = None,
+) -> str:
+  '''Return ONLY the inner panel HTML for HTMX swaps (Plan 25-04).
+
+  Phase 26 Plan 06 (R2): public wrapper around dashboard_renderer.pages.render_panel_only.
+  No shell, no nav strips, no <head>/<body> — the raw content that would
+  appear inside <section id="market-panel">. Used by _serve_market_scoped_page
+  on HX-Request branches.
+  '''
+  ctx = _build_render_context(
+    state=state,
+    now=now,
+    trace_open_keys=trace_open_keys,
+    active_function=active_function,
+    active_market=active_market,
+  )
+  from dashboard_renderer.pages import render_panel_only
+  return render_panel_only(ctx)
 
 
 def render_dashboard_as_str(
@@ -149,7 +169,7 @@ def render_dashboard_as_str(
   return _render_header_and_body(
     ctx=ctx,
     is_cookie_session=None,
-    body_html=d._render_single_page_dashboard(ctx, active_function, nav_mode='web'),
+    body_html=d._render_single_page_dashboard(ctx, active_function),
   )
 
 
@@ -176,7 +196,7 @@ def render_dashboard_page(
   html_str = _render_header_and_body(
     ctx=ctx,
     is_cookie_session=is_cookie_session,
-    body_html=d._render_single_page_dashboard(ctx, page, nav_mode='web'),
+    body_html=d._render_single_page_dashboard(ctx, page),
   )
   d._atomic_write_html(html_str, out_path)
   d.logger.info('[Dashboard] wrote page=%s (%d bytes) to %s', page, len(html_str), out_path)
