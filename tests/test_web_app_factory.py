@@ -630,11 +630,6 @@ class TestPhase26MarketScoping:
   when active_market threading lands.
   '''
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
-    '_render_page_body ignores ctx.active_market',
-  )
   def test_spi200_settings_eyebrow_only_active_market(self, monkeypatch, tmp_path):
     client = _phase26_setup(monkeypatch, tmp_path)
     resp = client.get(
@@ -646,11 +641,6 @@ class TestPhase26MarketScoping:
     assert 'AUD / USD SETTINGS' not in resp.text, 'leak: AUDUSD eyebrow on SPI200 page'
     assert 'ES MINI SETTINGS' not in resp.text, 'leak: ESM eyebrow on SPI200 page'
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
-    '_render_page_body ignores ctx.active_market',
-  )
   def test_audusd_settings_eyebrow_only_active_market(self, monkeypatch, tmp_path):
     client = _phase26_setup(monkeypatch, tmp_path)
     resp = client.get(
@@ -662,11 +652,6 @@ class TestPhase26MarketScoping:
     assert 'SPI 200 SETTINGS' not in resp.text, 'leak: SPI200 eyebrow on AUDUSD page'
     assert 'ES MINI SETTINGS' not in resp.text, 'leak: ESM eyebrow on AUDUSD page'
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
-    'render_market_test_tab does not include active market in eyebrow',
-  )
   def test_esm_market_test_eyebrow_only_active_market(self, monkeypatch, tmp_path):
     '''Plan 26-05 must thread active_market into render_market_test_tab so the
     eyebrow names the active market (e.g. 'ES MINI MARKET TEST'). Today the
@@ -689,11 +674,6 @@ class TestPhase26MarketScoping:
     assert 'SPI 200' not in resp.text, 'leak: SPI200 display on ESM market-test page'
     assert 'AUD / USD' not in resp.text, 'leak: AUDUSD display on ESM market-test page'
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-05 (B1) implementation pending — '
-    '_render_signal_cards iterates every market regardless of active_market',
-  )
   def test_spi200_signals_card_only_active_market(self, monkeypatch, tmp_path):
     '''Signal-card region on /markets/SPI200/signals must render the SPI 200
     eyebrow once and not contain other markets' display names.
