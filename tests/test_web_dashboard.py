@@ -1295,11 +1295,6 @@ class TestPhase26PlaceholderLeak:
   Acceptance: re.search(r'\\{\\{[A-Z_]+\\}\\}', resp.text) is None.
   '''
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-04 (B2): _substitute helper for '
-    '_serve_market_scoped_page pending',
-  )
   def test_market_signals_has_no_placeholder_markers(self, monkeypatch, tmp_path):
     import re
     client = _phase26_dashboard_setup(monkeypatch, tmp_path)
@@ -1311,11 +1306,6 @@ class TestPhase26PlaceholderLeak:
     leaks = re.findall(r'\{\{[A-Z_]+\}\}', resp.text)
     assert not leaks, f'placeholder leak on /markets/SPI200/signals: {leaks!r}'
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-04 (B2): _substitute helper for '
-    '_serve_market_scoped_page pending',
-  )
   def test_market_settings_has_no_placeholder_markers(self, monkeypatch, tmp_path):
     import re
     client = _phase26_dashboard_setup(monkeypatch, tmp_path)
@@ -1327,11 +1317,6 @@ class TestPhase26PlaceholderLeak:
     leaks = re.findall(r'\{\{[A-Z_]+\}\}', resp.text)
     assert not leaks, f'placeholder leak on /markets/SPI200/settings: {leaks!r}'
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-04 (B2): _substitute helper for '
-    '_serve_market_scoped_page pending',
-  )
   def test_market_market_test_has_no_placeholder_markers(self, monkeypatch, tmp_path):
     import re
     client = _phase26_dashboard_setup(monkeypatch, tmp_path)
@@ -1359,11 +1344,6 @@ class TestPhase26HeaderSessionWidget:
     - cookie absent or invalid -> session note HTML (`class="session-note"`)
   '''
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-04 (B2/B3): header session-widget substitution '
-    'on market-scoped path pending',
-  )
   def test_no_cookie_session_renders_session_note(self, monkeypatch, tmp_path):
     '''Header request with header-only auth (no tsi_session cookie):
     `_is_cookie_session(request)` returns False -> session-note HTML rendered.
@@ -1384,11 +1364,6 @@ class TestPhase26HeaderSessionWidget:
     assert '{{SIGNOUT_BUTTON}}' not in resp.text, 'B3: SIGNOUT_BUTTON placeholder leaked'
     assert '{{SESSION_NOTE}}' not in resp.text, 'B3: SESSION_NOTE placeholder leaked'
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-04 (B2/B3): header session-widget substitution '
-    'on market-scoped path pending',
-  )
   def test_with_valid_cookie_session_renders_signout_button(
     self, monkeypatch, tmp_path, valid_cookie_token,
   ):
@@ -1432,11 +1407,6 @@ class TestPhase26PanelPatchSurvives:
   not /strategy. Plan text says "/strategy" — using the actual endpoint.
   '''
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason='Phase 26 Plan 26-04 (B2): WEB_AUTH_SECRET substitution on '
-    '_serve_market_scoped_page pending — PATCH replays placeholder and 401s',
-  )
   def test_patch_with_extracted_secret_does_not_401(self, monkeypatch, tmp_path):
     import re
     client = _phase26_dashboard_setup(monkeypatch, tmp_path)

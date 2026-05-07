@@ -90,6 +90,12 @@ _SESSION_NOTE_PLACEHOLDER = b'{{SESSION_NOTE}}'
 _VALID_TRACE_INSTRUMENT_KEYS: frozenset = frozenset({'SPI200', 'AUDUSD'})
 _TRACE_OPEN_PLACEHOLDER_SPI200 = b'{{TRACE_OPEN_SPI200}}'
 _TRACE_OPEN_PLACEHOLDER_AUDUSD = b'{{TRACE_OPEN_AUDUSD}}'
+
+# Phase 26 Plan 26-04 (B2/B3): generalised TRACE_OPEN placeholder regex matches
+# `{{TRACE_OPEN_<MARKET>}}` for any market id satisfying ^[A-Z0-9_]{2,20}$.
+# Mirrors the canonical market_id regex in web/routes/markets.py:20 (Pydantic
+# Field pattern). Bytes regex is used because _substitute operates on bytes.
+_TRACE_OPEN_RE = re.compile(rb'\{\{TRACE_OPEN_([A-Z0-9_]{2,20})\}\}')
 _PAGE_OUTPUTS = {
   'signals': 'dashboard-signals.html',
   'account': 'dashboard-account.html',
@@ -274,8 +280,16 @@ def register(app: FastAPI) -> None:
         active_market=market_id,
       )
 
+    # Phase 26 Plan 26-04 (B2/B3): apply the same placeholder-substitution
+    # discipline used by the canonical dashboard.html serve path
+    # (_serve_dashboard_content). Without this, market-scoped pages leak
+    # {{WEB_AUTH_SECRET}}, {{SIGNOUT_BUTTON}}, {{SESSION_NOTE}}, and
+    # {{TRACE_OPEN_<MARKET>}} placeholders, causing PATCH 401s on form submit
+    # and visible placeholder text in the header. The helper is shared with
+    # _serve_dashboard_content; locality of substitution rule lives there.
+    body_bytes = _substitute(body.encode('utf-8'), request)
     response = Response(
-      content=body.encode('utf-8'),
+      content=body_bytes,
       media_type='text/html; charset=utf-8',
       status_code=200,
     )
@@ -497,7 +511,32 @@ def register(app: FastAPI) -> None:
     body = f'<span id="forward-stop-{span_id_suffix}-w">{w_html}</span>'
     return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
 
-  def _serve_dashboard_content(request: Request, content: bytes, fragment: str | None):
+  def _substitute(content: bytes, request: Request) -> bytes:
+    '''Phase 26 Plan 26-04 (B2/B3): single substitution helper resolving every
+    placeholder kind that flows through the web layer.
+
+    Called from BOTH `_serve_dashboard_content` (file-on-disk dashboard.html
+    path) and `_serve_market_scoped_page` (in-memory render_dashboard_as_str
+    path). Locality of substitution discipline lives here so the market-scoped
+    path cannot diverge from the canonical dashboard path.
+
+    Resolves:
+      `{{WEB_AUTH_SECRET}}`  -> os.environ.get('WEB_AUTH_SECRET', '')
+                                 (Phase 14 Plan 14-04 Task 5; T-14-15)
+      `{{SIGNOUT_BUTTON}}`   -> dashboard._render_signout_button() if cookie
+                                 session is valid, else empty
+                                 (Phase 16.1)
+      `{{SESSION_NOTE}}`     -> dashboard._render_session_note() if no cookie
+                                 session, else empty (Phase 16.1)
+      `{{TRACE_OPEN_<M>}}`   -> ' open' if <M> is in the tsi_trace_open
+                                 cookie's allowlisted set, else empty.
+                                 Generalised over any market id matching
+                                 ^[A-Z0-9_]{2,20}$ (Phase 17 + Plan 26-04).
+
+    Hex-boundary: imports stay LOCAL inside this function (Phase 11 C-2;
+    enforced by tests/test_web_healthz.py::TestWebHexBoundary). Pure
+    bytes -> bytes, no Response coupling.
+    '''
     # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder
     # with env secret at request time so on-disk dashboard.html never
     # carries the real value.
@@ -523,18 +562,26 @@ def register(app: FastAPI) -> None:
         _render_session_note().encode('utf-8'),
       )
 
-    # Phase 17 Plan 17-01: substitute tsi_trace_open cookie into
-    # <details data-instrument="X"{{TRACE_OPEN_X}}> placeholders.
-    # ' open' pre-expands the <details> element; empty string leaves it closed.
+    # Phase 17 Plan 17-01 + Phase 26 Plan 26-04: substitute every
+    # {{TRACE_OPEN_<MARKET>}} placeholder for any market id matching the
+    # canonical ^[A-Z0-9_]{2,20}$ regex. Allowlist via _resolve_trace_open
+    # (which itself filters cookie values against _VALID_TRACE_INSTRUMENT_KEYS),
+    # so unknown market ids resolve to '' (closed <details>).
     trace_open = _resolve_trace_open(request)
-    content = content.replace(
-      _TRACE_OPEN_PLACEHOLDER_SPI200,
-      b' open' if 'SPI200' in trace_open else b'',
-    )
-    content = content.replace(
-      _TRACE_OPEN_PLACEHOLDER_AUDUSD,
-      b' open' if 'AUDUSD' in trace_open else b'',
-    )
+
+    def _trace_open_repl(match: re.Match) -> bytes:
+      market_id = match.group(1).decode('ascii')
+      return b' open' if market_id in trace_open else b''
+
+    content = _TRACE_OPEN_RE.sub(_trace_open_repl, content)
+    return content
+
+  def _serve_dashboard_content(request: Request, content: bytes, fragment: str | None):
+    # Phase 26 Plan 26-04: substitution discipline lives in _substitute helper
+    # which is shared with _serve_market_scoped_page (B2/B3). Resolves
+    # {{WEB_AUTH_SECRET}}, {{SIGNOUT_BUTTON}}, {{SESSION_NOTE}}, and any
+    # {{TRACE_OPEN_<MARKET>}} placeholders before the body reaches the response.
+    content = _substitute(content, request)
 
     if fragment is not None:
       # Extract the tbody whose id matches `fragment`. Returns inner HTML only.
