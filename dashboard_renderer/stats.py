@@ -97,7 +97,10 @@ def compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
         row['side'], row['entry_price'], lc_float,
         row['contracts'], mult, row['entry_cost_aud'],
       )
-      unrealised += upnl
+      # Phase 27 #1: pnl_engine returns Decimal; coerce to float for the
+      # downstream `unrealised` accumulator (display-side, no precision-
+      # critical math past this point).
+      unrealised += float(upnl)
   denom = wins + losses
   win_rate = f'{wins * 100 // denom}%' if denom > 0 else '—'
   return {

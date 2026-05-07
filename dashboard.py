@@ -1522,11 +1522,13 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
         pnl_str = 'n/a (no close price yet)'
         pnl_class = 'pnl-zero'
       else:
-        upnl = compute_unrealised_pnl(
+        # Phase 27 #1: pnl_engine returns Decimal; coerce to float at the
+        # display boundary so f-string formatting + comparisons work uniformly.
+        upnl = float(compute_unrealised_pnl(
           row['side'], row['entry_price'], lc_float,
           row['contracts'], _MULT.get(instrument, 1.0),
           row['entry_cost_aud'],
-        )
+        ))
         pnl_str = f'{upnl:+.2f}'
         pnl_class = (
           'pnl-positive' if upnl > 0 else ('pnl-negative' if upnl < 0 else 'pnl-zero')
@@ -1887,13 +1889,20 @@ def _render_equity_chart_container(state: dict) -> str:
   # JSON-serialise with <script>-close injection defence (Pitfall 1) and
   # byte-stable dict ordering (Pitfall 2).
   labels = [row['date'] for row in distinct]
+  # Phase 27 #1: equity values may be Decimal post-Plan-27-01 (state_manager
+  # round-trip path). float(...) at the boundary is the canonical coercion
+  # before json.dumps; the default=_decimal_default kwarg below is a
+  # belt-and-suspenders fallback for any nested Decimal that survived
+  # this point (e.g., a future row shape with Decimal sub-fields).
   data = [float(row['equity']) for row in distinct]
+  from system_params import _decimal_default
   payload = json.dumps(
     {'labels': labels, 'data': data},
     ensure_ascii=False,
     sort_keys=True,    # Pitfall 2: byte-stable dict order
     allow_nan=False,   # G-1 reviews: stray NaN must fail loudly rather than
                        # emit invalid JSON that Chart.js renders as a blank line
+    default=_decimal_default,  # Phase 27 #1 (truth #7): Decimal-safe encoder
   ).replace('</', '<\\/')
   return (
     '<section aria-labelledby="heading-equity">\n'
