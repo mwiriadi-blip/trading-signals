@@ -3,11 +3,15 @@
 import html
 
 
-def render_settings_tab(state: dict) -> str:
+def render_settings_tab(state: dict, *, active_market: str | None = None) -> str:
   import dashboard as d
 
   sections = []
-  for market_id, display in d._display_names(state).items():
+  # Phase 26 B1: when active_market is set and present, render only that market.
+  display_names = d._display_names(state)
+  if active_market and active_market in display_names:
+    display_names = {active_market: display_names[active_market]}
+  for market_id, display in display_names.items():
     settings = d._strategy_settings_for(state, market_id)
     cap_value = '' if settings.get('contract_cap') is None else str(settings.get('contract_cap'))
     checked = ' checked' if settings.get('one_contract_floor') else ''
@@ -114,19 +118,23 @@ def render_add_market_form(state: dict) -> str:
   )
 
 
-def render_market_test_tab(state: dict) -> str:
+def render_market_test_tab(state: dict, *, active_market: str | None = None) -> str:
   import dashboard as d
 
   display_names = d._display_names(state)
+  # Phase 26 B1: when active_market is set and present, render only that market.
+  if active_market and active_market in display_names:
+    display_names = {active_market: display_names[active_market]}
   options = ''.join(
     f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
     for key, display in display_names.items()
   )
 
-  # D-14: override fields show the first market's inherited Settings as
-  # placeholder="<inherited default>" so blanks fall back server-side.
-  first_market_id = next(iter(display_names), None)
-  settings = d._strategy_settings_for(state, first_market_id) if first_market_id else {}
+  # D-14: override fields show the (active or first) market's inherited Settings
+  # as placeholder="<inherited default>" so blanks fall back server-side.
+  # Phase 26 B1: prefer active_market when set+present; else first-market fallback.
+  target_market = active_market if (active_market and active_market in display_names) else next(iter(display_names), None)
+  settings = d._strategy_settings_for(state, target_market) if target_market else {}
   adx_placeholder = html.escape(str(settings.get('adx_gate', '')), quote=True)
   votes_placeholder = html.escape(str(settings.get('momentum_votes_required', '')), quote=True)
   risk_long_placeholder = html.escape(

@@ -3,7 +3,7 @@
 import html
 
 
-def render_signal_cards(state: dict) -> str:
+def render_signal_cards(state: dict, *, active_market: str | None = None) -> str:
   import dashboard as d
 
   # Phase 25 D-09: hide trace tables on first run; show single onboarding card.
@@ -24,7 +24,11 @@ def render_signal_cards(state: dict) -> str:
     '  <h2 id="heading-signals">Signal Status</h2>\n',
     '  <div class="cards-row">\n',
   ]
-  for state_key, display in d._display_names(state).items():
+  # Phase 26 B1: when active_market is set and present, render only that market.
+  display_names = d._display_names(state)
+  if active_market and active_market in display_names:
+    display_names = {active_market: display_names[active_market]}
+  for state_key, display in display_names.items():
     eyebrow = html.escape(display, quote=True)
     sig_entry = signals.get(state_key)
     if sig_entry is None:
