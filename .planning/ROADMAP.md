@@ -287,7 +287,7 @@ Plans:
 - [ ] 27-03-api-key-redaction-PLAN.md — Wave 1: redact_secret(s) helper (prefix[:6]+'...'); audit notifier + auth_store + data_fetcher; 5-test regression.
 - [ ] 27-04-instrument-regex-tightening-PLAN.md — Wave 1: INSTRUMENT_ID_RE = ^[A-Z0-9_]{2,20}$ canonical pattern; AST walker + false-positive rejection tests.
 - [ ] 27-05-magic-cost-helper-and-fallback-email-PLAN.md — Wave 1 (depends on 27-01 for Decimal): entry_side_cost helper replaces cost_aud/2 literals; _EMAIL_TO_FALLBACK constant deleted (SIGNALS_EMAIL_TO required).
-- [ ] 27-06-deferred-yfinance-and-version-flag-PLAN.md — Wave 1: lazy yfinance import in data_fetcher; python main.py --version → STRATEGY_VERSION → exit 0.
+- [x] 27-06-deferred-yfinance-and-version-flag-PLAN.md — Wave 1: lazy yfinance import in data_fetcher; python main.py --version → STRATEGY_VERSION → exit 0. (completed 2026-05-08; 8 behavioral tests; SUMMARY at .planning/phases/27-…/27-06-SUMMARY.md)
 - [x] 27-07-naive-datetime-and-migration-contiguity-PLAN.md — Wave 1: _assert_tz_aware fail-closed on write paths; _assert_migration_chain_contiguous fail-fast at module load. (completed 2026-05-07; 9 behavioral tests; SUMMARY at .planning/phases/27-…/27-07-SUMMARY.md)
 
 **Wave 2** *(blocked on Wave 1 completion)*

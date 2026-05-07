@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: - **Signal-only.** No broker API, ever
 status: executing
-last_updated: "2026-05-07T19:38:00.000Z"
-last_activity: 2026-05-07
+last_updated: "2026-05-08T00:00:00.000Z"
+last_activity: 2026-05-08
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 45
-  completed_plans: 32
-  percent: 71
+  completed_plans: 33
+  percent: 73
 ---
 
 # STATE — Trading Signals
@@ -28,7 +28,7 @@ progress:
 ## Current Position
 
 Phase: 27 (code-quality-correctness-sweep) — EXECUTING
-Plan: 27-07 (Wave 1A) complete — 1 of 14 plans landed
+Plan: 27-06 (Wave 1A) complete — 2 of 14 plans landed (27-07, 27-06)
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
@@ -120,6 +120,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 19 P01 | 180 | 6 tasks | 18 files |
 | Phase 20 P01 | 180 | 7 tasks | 16 files |
 | Phase 27 P07 | 8m24s | 2 tasks | 2 files |
+| Phase 27 P06 | ~25min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -330,3 +331,5 @@ Operator-driven UAT scenarios that require live droplet + browser/phone hands-on
 **v1.1 roadmap created:** 2026-04-24 — `/gsd-roadmapper` produced 7-phase v1.1 plan (Phases 10..16) with 100% coverage on 31 REQs. Phase 10 (Foundation — v1.0 Cleanup & Deploy Key) is the entry point — no infrastructure prerequisites. Phase 11 is parallelizable with Phase 10. Phases 12+ gated on operator purchasing a domain and verifying Resend. Files written: `.planning/ROADMAP.md` (new v1.1 version) + `.planning/REQUIREMENTS.md` (traceability table populated). Ready for `/gsd-discuss-phase 10`.
 
 **Plan 27-07 completed:** 2026-05-07T19:38Z — 2 tasks, 2 files (state_manager.py +112/-1; tests/test_naive_datetime_fail_closed.py +122 NEW; tests/test_migration_contiguity.py +113 NEW). Task 1 (RED→GREEN): `_assert_tz_aware(dt, *, context)` raises `ValueError('naive datetime forbidden — must be tz-aware (context: …)')` at the head of `append_warning` (the sole state-write helper that takes a caller-supplied `now=` datetime); read-path `_coerce_legacy_naive_iso(state)` shim walks `equity_history` and emits one DeprecationWarning per load if any row carries a naive ISO datetime (legacy state files keep loading without nuking). Task 2 (RED→GREEN): `_assert_migration_chain_contiguous()` walks `range(2, STATE_SCHEMA_VERSION+1)` against MIGRATIONS and raises RuntimeError listing every missing key; called at module bottom (defensive — fails at import) AND at `load_state()` entry (review-fix M1 behavioral — fails on every load even if module-load was bypassed). 9/9 plan-tests green; 1803/1803 full suite green; one Rule-1 deviation (test fixture used wrong contract labels — fixed inline using `state_manager._DEFAULT_*_LABEL`). Commits: 1927992 (test RED Task 1), 46f7235 (feat GREEN Task 1), 1a04da0 (test RED Task 2), d2bd771 (feat GREEN Task 2). Plan blocks 27-01 (Wave 1B) — contiguity check will validate the v8→v9 schema bump on first import after 27-01 lands.
+
+**Plan 27-06 completed:** 2026-05-08 — 2 tasks, 4 files (data_fetcher.py +108/-4; main.py +31/-1; tests/test_deferred_yfinance_import.py +119 NEW; tests/test_version_flag.py +111 NEW). Task 1 (RED→GREEN, Phase 27 #14): removed module-top `import yfinance as yf` + `from yfinance.exceptions import YFRateLimitError` from data_fetcher.py; added `_get_yf()` memoized accessor + `_get_yf_rate_limit_error()` lazy resolver + PEP 562 module `__getattr__('yf')` that lazily binds the yfinance module on first attribute access (preserves `monkeypatch.setattr('data_fetcher.yf.Ticker', ...)` test contract); module-level `class YFRateLimitError(Exception)` proxy keeps `from data_fetcher import YFRateLimitError` working without forcing yfinance import (review-fix M4); `fetch_ohlcv` extends except tuple at call time with the real yfinance YFRateLimitError so production rate-limit errors stay retry-eligible. Task 2 (RED→GREEN, Phase 27 #17): added `--version` argparse flag + post-parse handler in `main(argv)` + early sys.argv hook at very top of `main.py` (before any heavy app-module imports — `import data_fetcher` etc. moved below the hook) so `python main.py --version` prints `STRATEGY_VERSION` and exits 0 with ONLY system_params imported (yfinance NOT in sys.modules — verified via subprocess assertion). 8 new tests (4 deferred-import + 4 version-flag, all subprocess-based for clean sys.modules); 1811/1811 full suite green (+8 from 1803). One Rule-3 adaptation: PEP 562 `__getattr__` was added beyond plan text to preserve existing test monkeypatch contract — plan's literal "delete `import yfinance as yf`" would have broken ~10 fetch tests without this. Plan 27-02 HTTP_TIMEOUT_S session config deferred to that plan (system_params.HTTP_TIMEOUT_S doesn't exist yet); `_get_yf()` is the documented hook point. Commits: 8003a68 (test RED Task 1), 5c72050 (feat GREEN Task 1), 3f6bb7e (test RED Task 2), 25cd522 (feat GREEN Task 2). SUMMARY at .planning/phases/27-…/27-06-SUMMARY.md.
