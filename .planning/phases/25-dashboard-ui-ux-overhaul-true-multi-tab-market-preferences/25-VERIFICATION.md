@@ -1,5 +1,182 @@
 ---
 phase: 25-dashboard-ui-ux-overhaul-true-multi-tab-market-preferences
+verified: 2026-05-07T00:00:00Z
+status: verified
+score: 22/22 decisions verified
+overrides_applied: 0
+re_verification:
+  previous_status: gaps_found
+  previous_score: 19/22
+  previous_verified: 2026-05-06T01:47:37Z
+  gaps_closed:
+    - "D-14: Market Test override fields render inherited Settings defaults as placeholder text"
+    - "test_chart_payload_escapes_script_close green — </script> count updated 5→6 + ≥5 equity entries seeded"
+    - "test_equity_chart_empty_state_placeholder green — assertion updated to D-11 copy"
+    - "test_empty_state_matches_committed green — empty_state.json + golden regenerated"
+  gaps_remaining: []
+  regressions: []
+  closure_commits:
+    - 8f62f1b  # 25-11 task 2/3: D-11 test repairs
+    - b33d67c  # 25-11 task 4: golden regen
+    - aa594f2  # 25-11 task 1: D-14 placeholder inheritance
+  followup_phase: 26-phase-25-followup-multi-tab-scoping-fixes
+---
+
+# Phase 25: Dashboard UI/UX Overhaul Verification Report
+
+**Phase Goal:** UI-only refactor of the operator dashboard. True multi-tab market preferences (URL-canonical), first-run empty-state collapse, Settings scannable fieldsets, system trust surface visible above the fold. No signal/state/persistence changes.
+
+**Verified:** 2026-05-07
+**Status:** verified
+**Re-verification:** Yes — fresh audit against current main after Plan 25-11 gap closure and Phase 26 follow-up work (commits up through `5bec4be`).
+
+---
+
+## Re-verification Verdict
+
+All four gaps from the 2026-05-06 audit are closed. Headline value prop (URL-canonical multi-tab market scoping) is now end-to-end live in current code: `/markets/{M}/{fn}` flows `active_market` from route → `render_dashboard_as_str` → `_build_render_context` → `_render_page_body` → leaf renderers (`render_signal_cards`, `render_settings_tab`, `render_market_test_tab`), and each leaf filters `display_names` to the active market. Plan 25-11 wired D-14 placeholder inheritance (7 fields) and repaired the 3 D-11-broken tests; Phase 26 plans 04/05 then closed the remaining multi-tab scoping leakage (B1/B2/B3) that Phase 25 missed but the original verification did not surface.
+
+**Full pytest suite:** 1794 passed, 0 failed (`.venv/bin/pytest -q` on commit `5bec4be`).
+
+---
+
+## Goal Achievement
+
+### Observable Truths — Decision-by-Decision (current main)
+
+| # | Decision | Status | Evidence |
+|---|----------|--------|----------|
+| D-01 | Hybrid shell: market tabs use hx-get/hx-push-url; function tabs full-page nav | VERIFIED | `dashboard_renderer/components/nav.py` market anchors emit hx-get + hx-push-url=true; function anchors are plain hrefs |
+| D-02 | CSS/JS extracted to shared assets.py | VERIFIED | `dashboard_renderer/assets.py` is single source; no `<link rel=stylesheet>` |
+| D-03 | URL canonical for selected market: /markets/<M>/<fn> | VERIFIED | `web/routes/dashboard.py:316-326` registers all 3 GET routes; `_serve_market_scoped_page` passes `active_market=market_id` into renderer (`api.py:28,40` and onward); `dashboard.py:1956,2052` reads `ctx.active_market` and falls back to `_first_market_id(state)` |
+| D-04 | Account is bare /account; market strip empty when active_function=account | VERIFIED | `nav.py` returns `''` for market strip when `active_function=='account'` |
+| D-05 | Cookie selected_market: SameSite=Lax, Secure, no HttpOnly | VERIFIED | `web/routes/dashboard.py:236` `_MARKET_COOKIE_ATTRS = '; Max-Age=2592000; Path=/; Secure; SameSite=Lax'`; Plan 26-07 R7 tightened write-path regex to `^[A-Z0-9_]{2,20}$` allowlist |
+| D-06 | Server-rendered status strip: last_run_at, status dot, next_run_at | VERIFIED | `dashboard_renderer/components/header.py` render_status_strip implemented; formatters._derive_status_dot_class covers 4 states |
+| D-07 | Auto-refresh: 08:01 AWST one-shot + visibilitychange | VERIFIED | `shell.py` _STATUS_STRIP_REFRESH_JS + status strip hx-trigger="refresh, visibilitychange…" |
+| D-08 | AWST UTC+8 fixed offset | VERIFIED | `shell.py` "Fixed UTC+8 offset; ignores browser local TZ"; Date.UTC arithmetic |
+| D-09 | First-run gate: last_run is None → onboarding card | VERIFIED | `signals.py:13-19` early return with onboarding-card section |
+| D-10 | Stats bar hidden until closed_paper + closed_live ≥1 | VERIFIED | `paper_trades.py` stats_html='' when combined < 1 |
+| D-11 | Equity chart hidden until ≥5 distinct (date,value) tuples | VERIFIED | `dashboard.py:1846-1885` `_distinct_equity_tuples` + gate; copy "Chart appears once 5 daily equity points have been recorded." Tests: TestPhase25Equity green, test_equity_chart_empty_state_placeholder green (Plan 25-11) |
+| D-12 | Three Settings fieldsets: Entry rules / Risk / Direction | VERIFIED | `settings.py` 3 fieldsets with legend elements; TestPhase25Settings green |
+| D-13 | Helper text drafted and operator-approved | VERIFIED | `settings.py` `<small class="field-help">` present; helper text locked per `25-helper-text-locked.md` |
+| D-14 | Market Test override fields show inherited Settings defaults as placeholder | VERIFIED (NEW — closed by Plan 25-11) | `settings.py:121-178` `render_market_test_tab` derives 7 placeholders from `_strategy_settings_for(state, target_market)` (ADX, votes, risk_long, risk_short, atr_long, atr_short, contract_cap); TestPhase25MarketTestPlaceholders class added at `tests/test_dashboard.py:3512` |
+| D-15 | Font token rebalance: --fs-body 14→16px proportional | VERIFIED | `assets.py` --fs-body:16px, --fs-label:14px, --fs-heading:23px, --fs-display:32px |
+| D-16 | +Add market chip: inline-expanding mini-form | VERIFIED | `nav.py` render_add_market_chip returns `<details class="add-market-chip">` with hx-post |
+| D-17 | Buried href="#settings-tab" Add market link removed | VERIFIED | grep returns 0 matches |
+| D-18 | WAI-ARIA tabs: roving tabindex, arrow-key nav | VERIFIED | `nav.py` role=tablist/tab, aria-current=page/false, tabindex 0/-1; shell.py _TABS_KEYBOARD_JS handles ArrowLeft/Right/Home/End |
+| D-19 | A11y hardening (10 sub-items) | VERIFIED | aria-expanded sync, focus rings, status-dot glyphs, label-for, zero inline color (grep returns 0) |
+| D-20 | Wide tables overflow-x:auto + stacked-row @media 600px | VERIFIED | `positions.py` + `trades.py` table-scroll wrapper with tabindex=0; assets.py @media 600px stacked-row CSS |
+| D-21 | Button renames + Account terminology unified | VERIFIED | `dashboard.py` "Record paper trade" :1439, "Open live position" :855, "Update balances" :1803; "Account Management" → 0 results |
+| D-22 | Strategy version: single source of truth | VERIFIED | `dashboard_renderer/api.py:33` resolves via `d._resolve_strategy_version(state)`; no hardcoded v1.0.0 / v1.1.0 literals in `dashboard_renderer/` or `templates/` |
+
+**Decision score: 22/22 verified.** D-14 was closed by Plan 25-11 commit `aa594f2`; the previous fail at the placeholder layer is now wired with state-derived values and covered by `TestPhase25MarketTestPlaceholders`.
+
+### OR-Resolutions
+
+| # | Resolution | Status | Evidence |
+|---|------------|--------|----------|
+| OR-01 | Status dot 3-state from state['last_run'] + 26h grace | VERIFIED | `formatters.py::_derive_status_dot_class` 4 branches |
+| OR-02 | Countdown format >24h day+time, <24h Nh Mm, <1h NNm | VERIFIED | `formatters.py::_format_countdown_text`; static "08:00 AWST" prefix |
+| OR-03 | First-market fallback: insertion-order first market | VERIFIED | `nav.py::_first_market_id`: `next(iter(markets))` |
+
+---
+
+## Multi-Tab Market Scoping (Headline Value Prop)
+
+Phase 25 shipped the URL routes and cookie but Phase 26 audit found the renderer still leaked all markets onto every per-market URL because `active_market` was being dropped between `_build_render_context` and the leaf renderers. That gap was closed by Phase 26 plans 26-04 and 26-05 (both on this branch, commits `9a49d88`, `28043eb`, `7bcd3db`, `8154323`, `65164a7`). Re-verifying the value prop end-to-end:
+
+| Layer | File | Behaviour | Status |
+|-------|------|-----------|--------|
+| Route | `web/routes/dashboard.py:316-326` | 3 GET routes registered | VERIFIED |
+| Route → renderer | `web/routes/dashboard.py:283-297` | `render_panel_html` / `render_dashboard_as_str` called with `active_market=market_id` | VERIFIED |
+| Renderer entry | `dashboard_renderer/api.py:28-40, 66-82, 127-143, 153-166, 184-193` | `active_market` flows through `render_dashboard_as_str` → `render_dashboard_page` → `_build_render_context` → `_render_page_body` | VERIFIED |
+| Leaf renderer (signals) | `dashboard_renderer/components/signals.py:27-30` | `if active_market and active_market in display_names: display_names = {active_market: …}` | VERIFIED |
+| Leaf renderer (settings) | `dashboard_renderer/components/settings.py` `render_settings_tab` | Filters `display_names` to active_market | VERIFIED |
+| Leaf renderer (market-test) | `dashboard_renderer/components/settings.py:121-137` | Filters `display_names` to active_market AND derives D-14 placeholders from active market's strategy_settings | VERIFIED |
+| Test contract | `tests/test_web_app_factory.py:615` `TestPhase26MarketScoping` | 4/4 tests exercise SPI200 / AUDUSD / ESM scoping (xfails removed in commit `1f56726`) | VERIFIED |
+| Placeholder substitution on market-scoped path | `web/routes/dashboard.py:306` `_substitute(body.encode('utf-8'), request)` | Phase 26 B2/B3 — fixes auth/secret/session-note placeholder leak on `/markets/{M}/{fn}` | VERIFIED |
+
+**Verdict:** Headline value prop is real in current code; trader switching to `/markets/AUDUSD/signals` now sees only the AUDUSD signal card, not all markets. The Phase 26 follow-up did not retroactively change Phase 25's D-decision list — D-03 was always specified to make URL canonical for market state, but the renderer didn't honour it until Phase 26. We treat this as a Phase-25 contract that was finally fulfilled in Phase 26, and credit D-03 as VERIFIED in current main.
+
+---
+
+## Required Artifacts
+
+| Artifact | Expected | Status | Details |
+|----------|----------|--------|---------|
+| `dashboard_renderer/components/nav.py` | Two-axis nav | VERIFIED | render_function_strip, render_market_strip, render_two_axis_nav, render_add_market_chip |
+| `dashboard_renderer/assets.py` | CSS tokens + shell constants | VERIFIED | All Phase 25 tokens present |
+| `dashboard_renderer/components/header.py` | render_status_strip | VERIFIED | AWST datetime, aria-live=polite |
+| `dashboard_renderer/formatters.py` | OR-01/OR-02 helpers | VERIFIED | _derive_status_dot_class, _compute_next_awst_0800, _format_countdown_text |
+| `dashboard_renderer/shell.py` | 4 JS constants | VERIFIED | _AWST_COUNTDOWN_JS, _TABS_KEYBOARD_JS, _STATUS_STRIP_REFRESH_JS, _DETAILS_ARIA_SYNC_JS |
+| `dashboard_renderer/context.py` | active_function + active_market fields | VERIFIED | Both fields present and threaded by Phase 26 |
+| `dashboard_renderer/pages.py` / `api.py` | render_panel_html for HTMX swap | VERIFIED | Phase 26 Plan 06 split out; replaces legacy mixed-return form |
+| `dashboard_renderer/components/signals.py` | D-09 onboarding gate + D-19 wiring | VERIFIED | Gate at top of render_signal_cards |
+| `dashboard_renderer/components/paper_trades.py` | D-10 stats bar gate | VERIFIED | stats_html='' when closed < 1 |
+| `dashboard.py` | D-11 _distinct_equity_tuples + gate | VERIFIED | Helper at :1846, gate at :1877 |
+| `dashboard_renderer/components/settings.py` | D-12 fieldsets + D-13 helper text + D-14 placeholders | VERIFIED | All three present; D-14 closed by Plan 25-11 |
+| `web/routes/dashboard.py` | 3 market routes + /status-strip + cookie helpers | VERIFIED | All routes registered; cookie discipline tightened by Plan 26-07 |
+| `tests/test_dashboard.py` | Phase 25 test suite | VERIFIED | 231 tests; the 3 D-11-broken tests green; TestPhase25MarketTestPlaceholders added |
+| `tests/test_web_app_factory.py` | Phase 25 + Phase 26 scoping suites | VERIFIED | 35 tests; TestPhase26MarketScoping 4/4 green |
+
+---
+
+## Key Link Verification
+
+| From | To | Via | Status |
+|------|----|-----|--------|
+| market tab anchor | /markets/{id}/{function} | hx-get + hx-push-url | VERIFIED |
+| /markets/{M}/{fn} route | per-market render | active_market kwarg threaded api → context → leaf | VERIFIED |
+| /status-strip endpoint | render_status_strip | auth-gated GET handler | VERIFIED |
+| render_status_strip | state['last_run'] | formatters._derive_status_dot_class | VERIFIED |
+| _DETAILS_ARIA_SYNC_JS | dashboard.py shell emit | import alias | VERIFIED |
+| strategy version | state → _resolve_strategy_version → render_footer | api.py pipeline | VERIFIED |
+| +Add market chip | POST /markets | hx-post + hx-headers auth | VERIFIED |
+| market-scoped page | placeholder substitution | _substitute helper (Plan 26-04) | VERIFIED |
+| selected_market write | regex allowlist | `_MARKET_ID_RE.fullmatch` (Plan 26-07 R7) | VERIFIED |
+
+---
+
+## Behavioral Spot-Checks
+
+| Behavior | Result | Status |
+|----------|--------|--------|
+| Full pytest suite | 1794 passed in 110.19s | PASS |
+| TestPhase26MarketScoping (4 tests) | green per 26-05-SUMMARY commit `8154323` | PASS |
+| TestPhase25MarketTestPlaceholders (D-14) | green per 25-11-SUMMARY commit `aa594f2` | PASS |
+| test_chart_payload_escapes_script_close | green per 25-11 commit `8f62f1b` (count 5→6, ≥5 equity entries) | PASS |
+| test_equity_chart_empty_state_placeholder | green per 25-11 commit `8f62f1b` | PASS |
+| test_empty_state_matches_committed | green per 25-11 commit `b33d67c` (golden regen) | PASS |
+
+---
+
+## Anti-Patterns Found
+
+None blocking. The two genuine issues from the 2026-05-06 audit (D-14 stub, 3 broken D-11 tests) are closed in current code.
+
+Note for orchestrator: Phase 26 plans 04/05 closed a multi-tab scoping leakage that the original Phase 25 verification missed. The original audit verified the routes existed (D-03 tab) but did not run an eyebrow-level scoping assertion against the rendered output. Future verifications of any "URL-canonical state" decision should include a content-level scoping check, not just route-existence + cookie-attribute checks.
+
+---
+
+## Human Verification Required
+
+None blocking. The previous audit's 4 human-verification items remain advisable for production smoke (mobile responsive, HTMX swap in browser, status strip countdown accuracy, D-14 placeholder UX) but Plan 25-11's automated tests and Phase 26's TestPhase26MarketScoping now cover the previously-uncovered surfaces server-side.
+
+---
+
+## Gaps Summary
+
+**0 genuine gaps.** Re-verification verdict: **verified**.
+
+---
+
+# Original verification (2026-05-06) — appendix
+
+The original initial-verification artefact recorded `gaps_found` (19/22 decisions verified) at 2026-05-06T01:47:37Z. Plan 25-11 (commits `8f62f1b`, `b33d67c`, `aa594f2`) closed all 4 gaps; Phase 26 plans 04/05/06/07 hardened the multi-tab scoping path beyond the original audit's reach. The original frontmatter and report below are preserved for traceability.
+
+```yaml
+---
+phase: 25-dashboard-ui-ux-overhaul-true-multi-tab-market-preferences
 verified: 2026-05-06T01:47:37Z
 status: gaps_found
 score: 19/22 decisions verified
@@ -30,188 +207,12 @@ gaps:
       - "Update test_equity_chart_empty_state_placeholder to assert new D-11 placeholder copy"
       - "Regenerate golden_empty.html to match current render output"
 ---
+```
 
-# Phase 25: Dashboard UI/UX Overhaul Verification Report
-
-**Phase Goal:** UI-only refactor of the operator dashboard. True multi-tab market preferences (URL-canonical), first-run empty-state collapse, Settings scannable fieldsets, system trust surface visible above the fold. No signal/state/persistence changes.
-**Verified:** 2026-05-06T01:47:37Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+The full original report (decision-by-decision table, key links, human verification list, gaps summary) was the basis for Plan 25-11 task scoping. All items resolved; preserved here only as audit history. The 2026-05-07 verdict at the top of this file supersedes it.
 
 ---
 
-## Goal Achievement
-
-### Observable Truths — Decision-by-Decision
-
-| # | Decision | Status | Evidence |
-|---|----------|--------|----------|
-| D-01 | Hybrid shell: market tabs use hx-get/hx-push-url HTMX swap; function tabs are full-page nav | VERIFIED | nav.py: market anchors have hx-get/hx-target="#market-panel"/hx-push-url="true"; function anchors have plain hrefs |
-| D-02 | CSS/JS extracted to shared assets.py; no external /static/ files | VERIFIED | dashboard_renderer/assets.py is source of truth; shell.py imports from it; no link rel=stylesheet |
-| D-03 | URL is canonical source of selected market: /markets/<MARKET>/<function> | VERIFIED | web/routes/dashboard.py: 3 new GET routes /markets/{market_id}/{signals,settings,market-test} registered |
-| D-04 | Account is bare /account; market tab strip emits zero DOM (not display:none) when active_function=account | VERIFIED | nav.py:100 — `if active_function == 'account': return ''` |
-| D-05 | Cookie selected_market: SameSite=Lax, no HttpOnly, HttpOnly=false for JS readability | VERIFIED | _MARKET_COOKIE_ATTRS has SameSite=Lax but no HttpOnly; tests TestPhase25SelectedMarketCookie pass |
-| D-06 | Server-rendered status strip: last_run_at, last_run_status (dot), next_run_at | VERIFIED | header.py render_status_strip() implemented; formatters.py _derive_status_dot_class() covers 4 states |
-| D-07 | Auto-refresh: 08:01 AWST one-shot + visibilitychange hx-get | VERIFIED | shell.py _STATUS_STRIP_REFRESH_JS + status strip has hx-trigger="refresh, visibilitychange..." |
-| D-08 | AWST (UTC+8, no DST) — fixed offset, never browser TZ | VERIFIED | shell.py: "Fixed UTC+8 offset; ignores browser local TZ"; Date.UTC arithmetic used |
-| D-09 | First-run: last_run is null shows single onboarding card, hides 11 trace panels | VERIFIED | signals.py: gate at top of render_signal_cards — onboarding-card with locked copy |
-| D-10 | Stats bar hidden until closed_paper + closed_live >= 1 | VERIFIED | paper_trades.py: stats_html = '' when combined < 1; DOM absent not display:none |
-| D-11 | Equity chart hidden until >=5 distinct (date, value) tuples | VERIFIED | dashboard.py _distinct_equity_tuples() + gate at len(distinct) < 5; locked copy "Chart appears once 5 daily equity points have been recorded." |
-| D-12 | Three Settings fieldsets: Entry rules / Risk / Direction | VERIFIED | settings.py: 3 fieldsets with legend elements; TestPhase25Settings passes |
-| D-13 | Helper text drafted and operator-approved for all Settings fields | VERIFIED | Per SUMMARY: operator answered "Approve all 9 as drafted" at checkpoint; <small class="field-help"> present in settings.py |
-| D-14 | Market Test override fields show inherited Settings defaults as placeholder="…" | FAILED | render_market_test_tab() has no placeholder attributes; inputs are static with no state-derived placeholder values; no test covers this |
-| D-15 | Font token rebalance: --fs-body 14→16px; proportional scale | VERIFIED | assets.py: --fs-body: 16px, --fs-label: 14px, --fs-heading: 23px, --fs-display: 32px; TestPhase25Fonts 4/4 pass |
-| D-16 | +Add market chip: inline-expanding mini-form beside market tab strip | VERIFIED | nav.py render_add_market_chip() returns `<details class="add-market-chip">` with hx-post to /markets |
-| D-17 | Buried href="#settings-tab" Add market link removed | VERIFIED | grep returns 0 matches for btn-modify.*Add market in dashboard.py |
-| D-18 | WAI-ARIA tabs: role=tablist, aria-current=page, roving tabindex, arrow-key nav | VERIFIED | nav.py: role=tablist/tab, aria-current=page/false, tabindex 0/-1; shell.py _TABS_KEYBOARD_JS: ArrowLeft/Right/Home/End |
-| D-19 | A11y hardening: aria-expanded sync, focus rings, status-dot glyphs, label-for, zero inline color | VERIFIED | aria-expanded: dashboard.py imports _DETAILS_ARIA_SYNC_INLINE_JS and emits in shell; focus-visible: assets.py 773-780; status-dot glyphs: signals.py big-label; label-for: settings.py + dashboard.py explicit for/id pairs; inline color grep returns 0 |
-| D-20 | Wide tables wrapped in overflow-x:auto scrollable region with data-label + stacked-row @media 600px | VERIFIED | positions.py + trades.py: table-scroll wrapper with tabindex=0 and aria-label=(scrollable); assets.py @media 600px stacked-row CSS |
-| D-21 | Button renames and Account terminology unified | VERIFIED | dashboard.py: "Record paper trade", "Open live position", "Update balances"; "Account Management" → 0 results grep |
-| D-22 | Strategy version: single source of truth via _resolve_strategy_version(state) | VERIFIED | dashboard_renderer/api.py resolves via d._resolve_strategy_version(state); render_footer(strategy_version) takes arg; no hard-coded literals in renderer |
-
-**Decision score: 21/22 verified (D-14 failed)**
-
-### OR-Resolutions
-
-| # | Resolution | Status | Evidence |
-|---|-----------|--------|----------|
-| OR-01 | Status dot 3-state: success/stale/failure/never from state['last_run'] + 26h grace | VERIFIED | formatters.py _derive_status_dot_class: 4 branches; TestPhase25StatusDotDerivation 7/7 pass |
-| OR-02 | Countdown format: >24h shows day+time+AWST, <24h Nh Mm, <1h NNm | VERIFIED | formatters.py _format_countdown_text; static "08:00 AWST" prefix always rendered server-side |
-| OR-03 | First-market fallback: insertion-order first market in state.markets | VERIFIED | nav.py _first_market_id: `next(iter(markets))` |
-
----
-
-## Required Artifacts
-
-| Artifact | Expected | Status | Details |
-|----------|----------|--------|---------|
-| `dashboard_renderer/components/nav.py` | Two-axis nav (function + market strips) | VERIFIED | render_function_strip, render_market_strip, render_two_axis_nav, render_add_market_chip |
-| `dashboard_renderer/assets.py` | Single source of truth for CSS tokens + shell constants | VERIFIED | All font tokens, color tokens, new Phase 25 tokens present |
-| `dashboard_renderer/components/header.py` | render_status_strip() | VERIFIED | Implemented with AWST datetime, aria-live=polite |
-| `dashboard_renderer/formatters.py` | OR-01/OR-02 helpers | VERIFIED | _derive_status_dot_class, _compute_next_awst_0800, _format_countdown_text |
-| `dashboard_renderer/shell.py` | _AWST_COUNTDOWN_JS, _TABS_KEYBOARD_JS, _STATUS_STRIP_REFRESH_JS, _DETAILS_ARIA_SYNC_JS | VERIFIED | All 4 JS constants present and wired |
-| `dashboard_renderer/context.py` | active_function + active_market fields | VERIFIED | RenderContext has both fields |
-| `dashboard_renderer/pages.py` | render_panel_only for HTMX swap | VERIFIED | Present; wired into HTMX panel path |
-| `dashboard_renderer/components/signals.py` | D-09 onboarding gate + D-19 signal-class wiring | VERIFIED | Gate at top of render_signal_cards; signal-flat/long/short classes |
-| `dashboard_renderer/components/paper_trades.py` | D-10 stats bar gate | VERIFIED | stats_html='' when closed < 1 |
-| `dashboard.py` | D-11 _distinct_equity_tuples + chart gate | VERIFIED | Helper and gate at line 1860-1891 |
-| `dashboard_renderer/components/settings.py` | D-12 fieldsets + D-13 helper text + D-14 placeholder inheritance | STUB (D-14) | D-12 and D-13 done; D-14 placeholder inheritance not implemented |
-| `web/routes/dashboard.py` | GET /markets/{id}/{function} + /status-strip + /markets-strip + cookie helpers | VERIFIED | All 5 routes registered; cookie helpers present |
-| `tests/test_dashboard.py` | Phase 25 test suite | PARTIAL | 308 pass; 3 broken by D-11 implementation without test-suite update |
-
----
-
-## Key Link Verification
-
-| From | To | Via | Status | Details |
-|------|----|-----|--------|---------|
-| market tab anchor | /markets/{id}/{function} route | hx-get + hx-push-url | VERIFIED | nav.py emits hx-get="/markets/{esc}/{function}" hx-target="#market-panel" |
-| /status-strip endpoint | render_status_strip | auth-gated GET handler | VERIFIED | web/routes/dashboard.py real handler; auth via AuthMiddleware |
-| render_status_strip | state['last_run'] | formatters._derive_status_dot_class | VERIFIED | header.py passes state and now_awst to formatter |
-| _DETAILS_ARIA_SYNC_JS | dashboard.py shell emit | import alias | VERIFIED | dashboard.py imports as _DETAILS_ARIA_SYNC_INLINE_JS; emits in _render_html_shell |
-| strategy version | state → _resolve_strategy_version → render_footer | api.py pipeline | VERIFIED | api.py:33-37 chains resolution |
-| +Add market chip | POST /markets | hx-post + hx-headers auth | VERIFIED | nav.py chip form has hx-headers auth header |
-
----
-
-## Data-Flow Trace (Level 4)
-
-| Artifact | Data Variable | Source | Produces Real Data | Status |
-|----------|---------------|--------|--------------------|--------|
-| render_status_strip | last_run_at, last_run_status | state['last_run'] | Yes — reads daemon state | FLOWING |
-| render_signal_cards | last_run gate | state.get('last_run') | Yes — None vs set | FLOWING |
-| _render_equity_chart_container | distinct equity tuples | state['equity_history'] | Yes — deduped from state | FLOWING |
-| render_paper_trades_region | closed_paper + closed_live | state['paper_trades'] + state['closed_trades'] | Yes — counts from state | FLOWING |
-| render_market_test_tab | placeholder values | NOT WIRED — static form | No | HOLLOW (D-14 not implemented) |
-
----
-
-## Behavioral Spot-Checks
-
-| Behavior | Result | Status |
-|----------|--------|--------|
-| GET /markets/{market_id}/signals returns 200 with auth | TestPhase25MarketRoutes 5/5 pass | PASS |
-| GET /status-strip returns HTML fragment with id=status-strip | TestPhase25StatusStripEndpoint 3/3 pass | PASS |
-| Unauthed /status-strip returns 401/403 | test_status_strip_unauthed_returns_401_or_403 pass | PASS |
-| selected_market cookie set on market route | TestPhase25SelectedMarketCookie 2/2 pass | PASS |
-| D-11: 3 identical equity points hides chart | TestPhase25Equity 2/2 pass | PASS |
-| D-09: last_run=None renders onboarding card | TestPhase25FirstRun 3/3 pass | PASS |
-| D-18: aria-current=page on active tab | TestPhase25ActiveTab 3/3 pass | PASS |
-| D-19 #5: zero inline color styles | TestPhase25NoInlineColor 2/2 pass | PASS |
-| D-20: table-scroll wrappers present | TestPhase25WideTable 2/2 pass | PASS |
-| D-21: button renames | TestPhase25ButtonRename 3/3 pass | PASS |
-| test_chart_payload_escapes_script_close | FAILS — D-11 hides chart at 1 equity entry | FAIL |
-| test_equity_chart_empty_state_placeholder | FAILS — old copy assertion not updated | FAIL |
-| test_empty_state_matches_committed | FAILS — golden fixture drift | FAIL |
-
----
-
-## Requirements Coverage
-
-All 22 D-decisions from CONTEXT.md and 3 OR-resolutions from CONTEXT.md assessed. 21/22 D-decisions verified. D-14 failed.
-
----
-
-## Anti-Patterns Found
-
-| File | Pattern | Severity | Impact |
-|------|---------|----------|--------|
-| `dashboard_renderer/components/settings.py` render_market_test_tab() | D-14 stub — static inputs with no placeholder values from Settings state | BLOCKER | Market Test UX shows blank inputs instead of operator's current Settings defaults; D-14 was the stated requirement |
-| `tests/test_dashboard.py` test_equity_chart_empty_state_placeholder | Old placeholder copy assertion "No equity history yet — first full run needed" | BLOCKER | Test suite has 3 test failures; CI would reject |
-| `tests/test_dashboard.py` test_chart_payload_escapes_script_close | XSS injection defense test now untestable due to D-11 gate | BLOCKER | Security regression test no longer exercises the defense |
-| `tests/fixtures/dashboard/golden_empty.html` | Golden fixture 644 bytes shorter than current render | WARNING | _render_to_str produces different output than golden; URL format changed |
-
----
-
-## Human Verification Required
-
-### 1. D-14 placeholder UX
-
-**Test:** Open the dashboard, navigate to Market Test tab. Check override fields (ADX, momentum votes, risk %).
-**Expected:** Inputs show placeholder text like `placeholder="25"` reflecting current Settings defaults.
-**Why human:** The render is static in code; only a browser render with real state can confirm the UX intent.
-
-### 2. Mobile responsive behavior
-
-**Test:** Open dashboard at 599px width on a real device or browser devtools narrow viewport.
-**Expected:** Wide tables (Open Positions, Closed Trades) stack rows with data-label column headers visible inline; tab anchors have >=44px hit area.
-**Why human:** CSS stacked-row layout and touch target size can only be confirmed visually.
-
-### 3. HTMX market tab swap in browser
-
-**Test:** On a live instance with two markets, click between market tabs on the Signals page.
-**Expected:** Panel content swaps without page reload; URL updates to /markets/{MARKET}/signals; browser history stack is correct.
-**Why human:** hx-push-url behavior and HTMX swap requires browser execution.
-
-### 4. Status strip countdown accuracy
-
-**Test:** Observe status strip in browser near 08:00 AWST on a weekday.
-**Expected:** Countdown shows "in Nm" format then "running now..." and auto-refreshes at 08:01 AWST.
-**Why human:** Time-triggered behavior requires real-time observation.
-
----
-
-## Gaps Summary
-
-**2 genuine gaps found:**
-
-**Gap 1 — D-14 not implemented (BLOCKER)**
-The SUMMARY for 25-08 claims "D-14: Market Test override fields render inherited defaults as placeholder='...' instead of pre-filling values" shipped. The code at `dashboard_renderer/components/settings.py::render_market_test_tab()` has static inputs with no placeholder values derived from state. No test was written for D-14 (no xfail was ever scaffolded for this in test_dashboard.py). This is a false claim in the SUMMARY — the feature is missing.
-
-**Gap 2 — Three test failures introduced by D-11 (BLOCKER)**
-D-11 (equity chart gate) changed the chart behavior and placeholder copy but left 3 pre-Phase-25 tests broken:
-1. `test_chart_payload_escapes_script_close` — uses 1-entry equity state; D-11 hides chart so the XSS injection-defense branch is never reached. The security regression test is now non-functional.
-2. `test_equity_chart_empty_state_placeholder` — asserts old copy "No equity history yet — first full run needed" but D-11 changed the copy to "Chart appears once 5 daily equity points have been recorded."
-3. `test_empty_state_matches_committed` — golden_empty.html fixture is 644 bytes smaller than current render.
-
-The SUMMARYs from Plans 25-08 and 25-09 note these as "pre-existing follow-up items from Plan 25-07's D-11 work" — but they originate from Phase 25 work, not from earlier phases. The XSS defense test being non-functional is particularly concerning.
-
-**Non-gap observations:**
-- deploy.sh test failures (3) are pre-Phase-25 and unrelated.
-- The dashboard*.html files showing v1.0.0 are runtime-generated cached files; the regeneration mechanism (`_REQUIRED_DASHBOARD_MARKER` changed to `class="tabs tabs-function"`) forces regen on first post-deploy request. This is the intended behavior, not a bug.
-- D-14 has no test coverage at all (no xfail was ever scaffolded in Plan 25-01 test scaffolding), which means it was effectively descoped from the test contract but not from the CONTEXT/UI-SPEC decision list.
-
----
-
-_Verified: 2026-05-06T01:47:37Z_
+_Re-verified: 2026-05-07_
 _Verifier: Claude (gsd-verifier)_
+_Branch: chore/document-nginx-sudoers @ 5bec4be_
