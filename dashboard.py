@@ -768,21 +768,6 @@ def _render_signal_cards(state: dict, *, active_market: str | None = None) -> st
   return dr_render_signal_cards(state, active_market=active_market)
 
 
-def _render_market_selector(state: dict) -> str:
-  options = ''.join(
-    f'        <option value="{html.escape(key, quote=True)}">{html.escape(display, quote=True)}</option>\n'
-    for key, display in _display_names(state).items()
-  )
-  return (
-    '<section class="market-selector" aria-labelledby="heading-market-selector">\n'
-    '  <h2 id="heading-market-selector">Market</h2>\n'
-    '  <select aria-label="Market selection">\n'
-    f'{options}'
-    '  </select>\n'
-    '</section>\n'
-  )
-
-
 def _render_open_form(state: dict | None = None) -> str:
   '''UI-SPEC §Decision 1 + §Decision 7: Open New Position form, ABOVE the
   Open Positions table. 4 required fields inline; 4 optional in collapsed
@@ -1976,9 +1961,9 @@ def _render_page_body(ctx: RenderContext, page: str) -> str:
       'Signals',
       'visually-hidden',
       lambda: (
-        # D-19 #4: _render_market_selector removed — replaced by market tab strip
-        # in render_two_axis_nav (Plan 25-03). The old <select aria-label="Market selection">
-        # is N/A; market switching is done via the tab strip in the two-axis nav.
+        # Market switching is done via the tab strip in render_two_axis_nav
+        # (Plan 25-03); the old <select> picker was removed in Phase 25 D-19 #4
+        # and the helper deleted in Phase 26 Plan 26-08.
         _render_signal_cards(state, active_market=active_market)
         + _render_paper_trades_region(state)
         + _render_trailing_stop_guidance(state)
