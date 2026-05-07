@@ -1391,7 +1391,7 @@ def _render_paper_trades_stats(stats: dict | None = None) -> str:
     f'  <div class="stats-bar-item"><span class="label">Unrealised</span><span>{stats["unrealised"]:+.2f}</span></div>\n'
     f'  <div class="stats-bar-item"><span class="label">Wins</span><span>{stats["wins"]}</span></div>\n'
     f'  <div class="stats-bar-item"><span class="label">Losses</span><span>{stats["losses"]}</span></div>\n'
-    f'  <div class="stats-bar-item"><span class="label">Win rate</span><span>{html.escape(str(stats["win_rate"]))}</span></div>\n'
+    f'  <div class="stats-bar-item"><span class="label">Win rate</span><span>{html.escape(str(stats["win_rate"]), quote=True)}</span></div>\n'
     '</aside>\n'
   )
 
@@ -1541,12 +1541,12 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
     rows_html += (
       f'  <tr class="row-clickable" data-trade-id="{esc_id}">\n'
       f'    <td>{esc_id}</td>\n'
-      f'    <td>{html.escape(instrument)}</td>\n'
-      f'    <td>{html.escape(row.get("side", ""))}</td>\n'
-      f'    <td>{html.escape(str(row.get("entry_price", "")))}</td>\n'
-      f'    <td>{html.escape(str(row.get("contracts", "")))}</td>\n'
-      f'    <td>{html.escape(str(row.get("stop_price") or "—"))}</td>\n'
-      f'    <td class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'    <td>{html.escape(instrument, quote=True)}</td>\n'
+      f'    <td>{html.escape(row.get("side", ""), quote=True)}</td>\n'
+      f'    <td>{html.escape(str(row.get("entry_price", "")), quote=True)}</td>\n'
+      f'    <td>{html.escape(str(row.get("contracts", "")), quote=True)}</td>\n'
+      f'    <td>{html.escape(str(row.get("stop_price") or "—"), quote=True)}</td>\n'
+      f'    <td class="{pnl_class}">{html.escape(pnl_str, quote=True)}</td>\n'
       f'    <td>{alert_badge_html}</td>\n'
       f'    <td>\n'
       f'      <button hx-get="/paper-trade/{esc_id}/close-form"\n'
@@ -1624,12 +1624,12 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
     rows_html += (
       f'  <tr>\n'
       f'    <td data-label="ID">{esc_id}</td>\n'
-      f'    <td data-label="Instrument">{html.escape(row.get("instrument", ""))}</td>\n'
-      f'    <td data-label="Side">{html.escape(row.get("side", ""))}</td>\n'
-      f'    <td data-label="Entry">{html.escape(str(row.get("entry_price", "")))}</td>\n'
-      f'    <td data-label="Exit">{html.escape(str(row.get("exit_price", "")))}</td>\n'
-      f'    <td data-label="Exit Date">{html.escape(str(row.get("exit_dt", "—")))}</td>\n'
-      f'    <td data-label="Realised P&L" class="{pnl_class}">{html.escape(pnl_str)}</td>\n'
+      f'    <td data-label="Instrument">{html.escape(row.get("instrument", ""), quote=True)}</td>\n'
+      f'    <td data-label="Side">{html.escape(row.get("side", ""), quote=True)}</td>\n'
+      f'    <td data-label="Entry">{html.escape(str(row.get("entry_price", "")), quote=True)}</td>\n'
+      f'    <td data-label="Exit">{html.escape(str(row.get("exit_price", "")), quote=True)}</td>\n'
+      f'    <td data-label="Exit Date">{html.escape(str(row.get("exit_dt", "—")), quote=True)}</td>\n'
+      f'    <td data-label="Realised P&L" class="{pnl_class}">{html.escape(pnl_str, quote=True)}</td>\n'
       f'  </tr>\n'
     )
 
