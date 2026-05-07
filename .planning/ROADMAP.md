@@ -278,7 +278,7 @@ Plans:
 
 **Depends on:** Phase 26
 
-**Plans:** 6/14 plans executed
+**Plans:** 7/14 plans executed
 
 Plans:
 **Wave 1**
@@ -286,7 +286,7 @@ Plans:
 - [x] 27-02-http-timeout-standardization-PLAN.md — Wave 1: HTTP_TIMEOUT_S=30 constant; every requests.* call passes timeout=; AST regression test. (completed 2026-05-07; 5 behavioral tests; _RESEND_TIMEOUT_S deleted; yfinance session injection via _get_yf_session(); SUMMARY at .planning/phases/27-…/27-02-SUMMARY.md)
 - [x] 27-03-api-key-redaction-PLAN.md — Wave 1: redact_secret(s) helper (prefix[:6]+'...'); audit notifier + auth_store + data_fetcher; 5-test regression. (completed 2026-05-08; 7 behavioral tests; system_params.redact_secret + notifier (key=<prefix>...) wired into both ResendError emission paths; auth_store audit confirmed clean; SUMMARY at .planning/phases/27-…/27-03-SUMMARY.md)
 - [x] 27-04-instrument-regex-tightening-PLAN.md — Wave 1: INSTRUMENT_ID_RE = ^[A-Z0-9_]{2,20}$ canonical pattern; AST walker + false-positive rejection tests.
-- [ ] 27-05-magic-cost-helper-and-fallback-email-PLAN.md — Wave 1 (depends on 27-01 for Decimal): entry_side_cost helper replaces cost_aud/2 literals; _EMAIL_TO_FALLBACK constant deleted (SIGNALS_EMAIL_TO required).
+- [x] 27-05-magic-cost-helper-and-fallback-email-PLAN.md — Wave 1C (depends on 27-01 for Decimal): pnl_engine.entry_side_cost(rt_cost) -> Decimal helper replaces 4 cost/2 literals (notifier:494, main:1324, main:1428 close-half, main:1535); _EMAIL_TO_FALLBACK constant deleted; SIGNALS_EMAIL_TO required across send_daily_email + send_crash_email + send_stop_alert_email; missing → log ERROR + state-health warning marker + fail-soft skip. (completed 2026-05-08; 17 behavioral tests; 1880/1880 full suite green; SUMMARY at .planning/phases/27-…/27-05-SUMMARY.md)
 - [x] 27-06-deferred-yfinance-and-version-flag-PLAN.md — Wave 1: lazy yfinance import in data_fetcher; python main.py --version → STRATEGY_VERSION → exit 0. (completed 2026-05-08; 8 behavioral tests; SUMMARY at .planning/phases/27-…/27-06-SUMMARY.md)
 - [x] 27-07-naive-datetime-and-migration-contiguity-PLAN.md — Wave 1: _assert_tz_aware fail-closed on write paths; _assert_migration_chain_contiguous fail-fast at module load. (completed 2026-05-07; 9 behavioral tests; SUMMARY at .planning/phases/27-…/27-07-SUMMARY.md)
 
