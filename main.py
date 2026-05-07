@@ -1257,6 +1257,9 @@ def _run_daily_check_impl(
   run_date_iso = run_date.strftime('%Y-%m-%d')
   run_date_display = run_date.strftime('%Y-%m-%d %H:%M:%S AWST')
   run_start_monotonic = time.perf_counter()
+  # Phase 27 Plan 27-10 Task 2: canonical run-date marker for journalctl
+  # grep — locked-in shape `[Daily] run-date YYYY-MM-DD` (AWST) at INFO.
+  logger.info('[Daily] run-date %s', run_date_iso)
   logger.info(
     '[Sched] Run %s mode=%s', run_date_display, _mode_label(args),
   )
