@@ -147,7 +147,12 @@ class TestDashboardResponse:
   def test_dashboard_html_alias_serves_signals_page(self, client_with_dashboard, auth_headers):
     '''Legacy /dashboard.html alias should continue to serve signals page.'''
     client, tmp, _ = client_with_dashboard
-    (tmp / 'dashboard-signals.html').write_text('<html><body>signals-page</body></html>', encoding='utf-8')
+    # Phase 26 Plan 26-07 (R1): each sibling now requires the tabs-function
+    # marker to be considered fresh. Inject it into the sibling fixture.
+    (tmp / 'dashboard-signals.html').write_text(
+      '<html><nav class="tabs tabs-function"></nav><body>signals-page</body></html>',
+      encoding='utf-8',
+    )
     (tmp / 'dashboard.html').write_text('<html><nav class="tabs tabs-function">fresh</nav></html>', encoding='utf-8')
     (tmp / 'state.json').write_text('{}', encoding='utf-8')
     base_ns = 1_700_000_000_000_000_000

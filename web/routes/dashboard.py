@@ -104,25 +104,31 @@ _PAGE_OUTPUTS = {
 }
 
 
-def _is_stale() -> bool:
-  '''D-08: state.json mtime > dashboard.html mtime means regen needed.
+def _is_stale_for(page_output: Path) -> bool:
+  '''Phase 26 Plan 26-07 (R1): per-file staleness check.
 
-  Returns True if dashboard.html is missing (caller handles via os.path.exists).
-  Returns True if state.json is newer than dashboard.html (regen path).
-  Returns True if cached dashboard.html predates the tabbed dashboard marker.
-  Returns False if dashboard.html is fresh relative to state.json.
+  D-08 generalised: state.json mtime > page_output mtime means regen needed.
+  Each sibling HTML (dashboard.html, dashboard-signals.html, ...) is now
+  gated by its own marker presence + own mtime — previously only
+  dashboard.html was checked, leaving siblings stale on disk after deploys
+  that bumped the marker but already had a fresh dashboard.html.
+
+  Returns True if page_output is missing (caller handles via .exists()).
+  Returns True if state.json is newer than page_output (regen path).
+  Returns True if cached page_output predates the tabbed dashboard marker.
+  Returns False if page_output is fresh relative to state.json.
   Returns False if state.json itself is missing (no state to render from).
   '''
   try:
-    html_mtime = os.stat(_DASHBOARD_PATH).st_mtime_ns
+    html_mtime = os.stat(page_output).st_mtime_ns
   except FileNotFoundError:
-    return True  # missing dashboard.html — caller handles 503
+    return True  # missing page output — caller handles 503
   try:
     state_mtime = os.stat(_STATE_PATH).st_mtime_ns
   except FileNotFoundError:
-    return False  # no state.json — serve whatever dashboard.html is
+    return False  # no state.json — serve whatever page_output is
   try:
-    if _REQUIRED_DASHBOARD_MARKER not in Path(_DASHBOARD_PATH).read_bytes():
+    if _REQUIRED_DASHBOARD_MARKER not in page_output.read_bytes():
       return True
   except OSError:
     return True
@@ -383,7 +389,10 @@ def register(app: FastAPI) -> None:
     page_output = _PAGE_OUTPUTS.get(page, _PAGE_OUTPUTS['signals'])
     page_path = Path(page_output)
     try:
-      if _is_stale() or not page_path.exists():
+      # Phase 26 Plan 26-07 (R1): each sibling checks its own marker + mtime,
+      # so a marker bump or a stale-on-disk sibling triggers regen even when
+      # dashboard.html happens to be fresh.
+      if _is_stale_for(page_path) or not page_path.exists():
         dashboard.render_dashboard_page(load_state(), page=page, out_path=page_path)
     except Exception as exc:  # noqa: BLE001 — D-10 never-crash
       logger.warning(
@@ -431,7 +440,9 @@ def register(app: FastAPI) -> None:
     from state_manager import load_state
 
     try:
-      if _is_stale():
+      # Phase 26 Plan 26-07 (R1): _is_stale_for(dashboard.html) preserves the
+      # original D-08 behaviour for the canonical dashboard.html serve path.
+      if _is_stale_for(Path(_DASHBOARD_PATH)):
         dashboard.render_dashboard_files(load_state())
     except Exception as exc:  # noqa: BLE001 — D-10 never-crash
       logger.warning(
