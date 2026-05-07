@@ -100,9 +100,14 @@ def render_market_strip(state: dict, active_market: str, active_function: str) -
     if active_function == 'account':
         return ''  # D-04
     markets = state.get('markets', {}) or {}
+    # Phase 26 Plan 26-07 (R6): pass active_function as query param so the
+    # markets-strip route doesn't need to sniff the Referer header (privacy-mode
+    # browsers strip Referer → wrong tab highlighted on swap). active_function
+    # values are a-z hyphens only — safe in a URL without escaping.
+    fn_q = html.escape(active_function or 'signals', quote=True)
     out = [
         '<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip"'
-        ' hx-trigger="markets-changed from:body" hx-get="/markets-strip" hx-swap="outerHTML">\n'
+        f' hx-trigger="markets-changed from:body" hx-get="/markets-strip?active_function={fn_q}" hx-swap="outerHTML">\n'
     ]
     for market_id in markets.keys():
         market_esc = html.escape(market_id, quote=True)

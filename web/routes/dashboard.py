@@ -73,6 +73,13 @@ _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py defa
 _STATE_PATH = 'state.json'
 _REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01: forces regen of all 5 sibling HTMLs post-deploy
 
+# Phase 26 Plan 26-07 (R7): mirror Pydantic write-side regex (web/routes/markets.py:20)
+# on the cookie read+write paths for defense-in-depth. Bounded length, ASCII only.
+_MARKET_ID_RE = re.compile(r'^[A-Z0-9_]{2,20}$')
+
+# Phase 26 Plan 26-07 (R6): allowlist for active_function query param.
+_ALLOWED_FUNCTIONS = {'signals', 'account', 'settings', 'market-test'}
+
 # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder with
 # env secret at request time so on-disk dashboard.html never carries the
 # real value. Plan 14-05 emits the literal placeholder in hx-headers.
@@ -236,13 +243,15 @@ def register(app: FastAPI) -> None:
     '''Phase 25 D-05: set selected_market cookie on every market-scoped render.
 
     Cookie is JS-readable (no HttpOnly) so /account can route to last-selected market.
+
+    Phase 26 Plan 26-07 (R7): write-path regex tightened to mirror Pydantic
+    upstream (web/routes/markets.py:20). Replaces the permissive char-strip
+    sanitiser with an allowlist fullmatch — anything outside ^[A-Z0-9_]{2,20}$
+    is silently dropped.
     '''
-    if not market_id or len(market_id) > 32:
+    if not _MARKET_ID_RE.fullmatch(market_id or ''):
       return
-    # Belt-and-braces sanitiser; market_id origin is state.json (server-controlled)
-    # but T-25-04-02 requires defensive strip of cookie-header special chars.
-    safe = market_id.replace('"', '').replace(';', '')
-    response.headers['Set-Cookie'] = f'selected_market={safe}{_MARKET_COOKIE_ATTRS}'
+    response.headers['Set-Cookie'] = f'selected_market={market_id}{_MARKET_COOKIE_ATTRS}'
 
   async def _serve_market_scoped_page(request: Request, market_id: str, function: str):
     '''Phase 25 D-01..D-05: serve a market-scoped page (signals/settings/market-test).
@@ -354,17 +363,20 @@ def register(app: FastAPI) -> None:
     from dashboard_renderer.components.nav import render_market_strip
 
     state = state_manager.load_state()
-    active_market = request.cookies.get('selected_market', '')
+    # Phase 26 Plan 26-07 (R7): regex-validate the cookie value before lookup.
+    # Forged or malformed cookies (whitespace, non-uppercase, control chars)
+    # are dropped → fallback to first-market.
+    raw_cookie = request.cookies.get('selected_market', '') or ''
+    active_market = raw_cookie if _MARKET_ID_RE.fullmatch(raw_cookie) else ''
     markets = state.get('markets', {}) or {}
     if not active_market or active_market not in markets:
       active_market = next(iter(markets), '')
-    # Determine active function from Referer header fallback; default to 'signals'.
-    active_function = 'signals'
-    referer = request.headers.get('referer', '')
-    for fn in ('settings', 'market-test', 'signals', 'account'):
-      if f'/{fn}' in referer:
-        active_function = fn
-        break
+    # Phase 26 Plan 26-07 (R6): read active_function from query param + allowlist
+    # validate; replaces the Referer-based fallback (broken under privacy-mode
+    # browsers that strip Referer).
+    active_function = request.query_params.get('active_function', 'signals')
+    if active_function not in _ALLOWED_FUNCTIONS:
+      active_function = 'signals'
     body = render_market_strip(state, active_market, active_function)
     return Response(
       content=body.encode('utf-8'),

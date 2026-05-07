@@ -135,6 +135,7 @@ def register(app: FastAPI) -> None:
   @app.post('/markets')
   def add_market(req: MarketRequest) -> Response:
     from state_manager import mutate_state
+    import system_params
     from system_params import DEFAULT_STRATEGY_SETTINGS
 
     def _apply(state: dict) -> None:
@@ -155,7 +156,19 @@ def register(app: FastAPI) -> None:
         'sort_order': order,
       }
       state.setdefault('positions', {})[req.market_id] = None
-      state.setdefault('signals', {})[req.market_id] = 0
+      # Phase 26 Plan 26-07 (R5): match dict shape from main.run_daily_check
+      # (main.py:1489-1499) so renderer reads consistent dict-shape signals.
+      # Previous int sentinel `0` forced a defensive isinstance(int) branch
+      # in dashboard_renderer/components/signals.py.
+      state.setdefault('signals', {})[req.market_id] = {
+        'signal': 0,
+        'signal_as_of': None,
+        'as_of_run': None,
+        'last_scalars': {},
+        'last_close': None,
+        'strategy_version': system_params.STRATEGY_VERSION,
+        'ohlc_window': [],
+      }
       state.setdefault('strategy_settings', {})[req.market_id] = dict(DEFAULT_STRATEGY_SETTINGS)
 
     mutate_state(_apply)
