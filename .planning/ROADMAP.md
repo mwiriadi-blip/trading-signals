@@ -30,6 +30,7 @@ None operator-blocked. All v1.2 prerequisites land within phases:
 - [x] **Phase 23: 5-year backtest validation gate** — Walk-forward backtest over 5y of yfinance data, `>100% cumulative return` pass criterion, `/backtest` route on dashboard with metrics + pass/fail badge (completed 2026-05-01)
 - [x] **Phase 24: v1.2 codemoot fix phase** — Fix 3 verified bugs + cleanup 7 code-quality items from post-milestone codemoot review (completed 2026-05-01)
 - [x] **Phase 25: Dashboard UI/UX overhaul — true multi-tab market preferences and first-run polish** — Convert decorative market dropdown + stacked Settings forms into real two-axis nav (market × function); fix 10 priority items from /ui-ux-pro-max review 2026-05-05
+- [ ] **Phase 26: Phase 25 follow-up — multi-tab market scoping fixes & post-overhaul cleanup** — Fix 4 BROKEN items (multi-tab scoping non-functional, template placeholder leak → 401s, header session widget unresolved, 3 red deploy tests), 7 RISKY items (cache invalidation, mixed return types, dead nav params, etc.), and 5 CLEANUP items (incl. `auth.json` audit + `.gitignore`) from 2026-05-07 review
 
 ## Phase Details
 
@@ -222,3 +223,49 @@ Plans:
 - [x] 25-09b-component-a11y-wiring-PLAN.md — Wave 4: D-19 component wiring — replace inline color styles with semantic classes, wrap wide tables, status-dot glyphs, aria-expanded sync JS, label-for audit.
 - [x] 25-10-terminology-version-PLAN.md — Wave 4: D-21 button copy renames + Account terminology unification; D-22 strategy version regen across 5 sibling HTMLs.
 - [x] 25-11-gap-closure-PLAN.md — Wave 5: Gap closure — wire D-14 Market Test placeholders + repair 3 D-11-broken tests (XSS defense, copy drift, golden snapshot). 313 pass / 0 fail.
+
+### Phase 26: Phase 25 follow-up — multi-tab market scoping fixes & post-overhaul cleanup
+
+**Goal:** Fix the regressions Phase 25 shipped (multi-tab scoping non-functional, template placeholder leaks → 401 on form submit, broken deploy tests) and clean up the residue (dead code, stale verification doc, leaked artifacts in repo root).
+
+**Depends on:** Nothing (cleanup only; no signal/state/persistence changes).
+
+**Source:** Reviewer-agent pass over `chore/document-nginx-sudoers` branch + main on 2026-05-07. Full evidence in `.planning/phases/26-phase-25-followup-multi-tab-scoping-fixes/26-CONTEXT.md`.
+
+**Scope:**
+
+- **BROKEN (4 items):**
+  1. **B1 — Multi-tab scoping ignores `active_market`.** `dashboard.py:1961` `_render_page_body`. Every `/markets/{M}/{fn}` renders every market's panels stacked. Phase 25 headline value prop is non-functional.
+  2. **B2 — `{{TEMPLATE}}` placeholders leak in market-scoped routes.** `web/routes/dashboard.py:235-284` `_serve_market_scoped_page` skips substitution. Forms 401 on PATCH because `{{WEB_AUTH_SECRET}}` ships literally to the client.
+  3. **B3 — Header session widget shows `{{SIGNOUT_BUTTON}}` / `{{SESSION_NOTE}}`.** `dashboard_renderer/components/header.py:64-69`. `is_cookie_session` not threaded through `render_dashboard_as_str`.
+  4. **B4 — 3 deploy tests red.** `tests/test_deploy_sh.py` regex didn't follow the `python -m pip` rewrite from `5716a60`/`d6f760b`.
+
+- **RISKY (7 items):**
+  - R1 — Sibling cache invalidation only checks `dashboard.html` (`web/routes/dashboard.py:74,119`).
+  - R2 — `render_dashboard()` mixed return type / wrong annotation (`dashboard_renderer/api.py:58-113`); split into two functions.
+  - R3 — Cached `render_dashboard_page` never threads `active_market` (`dashboard_renderer/api.py:143-165`); compounds B1.
+  - R4 — Dead `nav_mode` param + DEPRECATED `_render_dashboard_page_nav`.
+  - R5 — `add_market` writes `signals[id] = 0` — dict-shape mismatch with `run_daily_check`.
+  - R6 — `markets-strip` derives active_function from `Referer` (privacy-mode breaks tab highlight).
+  - R7 — `selected_market` cookie sanitiser permissive; tighten to `^[A-Z0-9_]{2,20}$` mirror.
+
+- **CLEANUP (5 items):**
+  - C1 — Repo root littered with untracked artifacts; **`auth.json` may be real creds — audit + rotate + `.gitignore` first**.
+  - C2 — Remove DEPRECATED `_render_dashboard_page_nav` (`dashboard.py:2083`).
+  - C3 — Remove dead `_render_market_selector` (`dashboard.py:770`).
+  - C4 — Resolve stale `25-VERIFICATION.md` vs `25-11-gap-closure-SUMMARY.md` (says FAILED vs all gaps closed).
+  - C5 — `render_dashboard` writes 4 sibling files every regen; consider lazy-regen on page-route hit.
+
+**Acceptance:** All 4 BROKEN fixed with regression tests; RISKY items fixed or explicitly accepted; C1 done; full pytest green; `grep -rn '{{[A-Z_]\+}}' public/ web/ dashboard_renderer/ dashboard.py` zero matches in served HTML.
+
+**Plans:** 8 plans
+
+Plans:
+- [ ] 26-01-secret-audit-and-gitignore-PLAN.md - Wave 0: Audit auth.json (real TOTP secret); rotate or accept-as-is; extend .gitignore for OS junk + agent runtime dirs; decide AGENTS.md placement.
+- [ ] 26-02-deploy-test-regex-fix-PLAN.md - Wave 1 (parallel with 03): Relax tests/test_deploy_sh.py regex to accept `(?:python -m )?pip install` form (B4).
+- [ ] 26-03-failing-test-scaffolding-PLAN.md - Wave 1 (parallel with 02): xfail(strict=True) test classes for B1 (TestPhase26MarketScoping), B2/B3 (TestPhase26PlaceholderLeak / HeaderSessionWidget / PanelPatchSurvives). TDD-style.
+- [ ] 26-04-template-substitute-helper-PLAN.md - Wave 2 (depends on 03): Extract _substitute(content, request) helper in web/routes/dashboard.py; both _serve_dashboard_content and _serve_market_scoped_page call it. Closes B2 + B3.
+- [ ] 26-05-active-market-scoping-PLAN.md - Wave 2 (depends on 03): Thread ctx.active_market into _render_signal_cards / render_settings_tab / _render_market_test_tab; forward through render_dashboard_page -> _build_render_context. Closes B1 + R3.
+- [ ] 26-06-renderer-api-cleanup-PLAN.md - Wave 3 (depends on 04 + 05): Split render_dashboard into render_dashboard_files (None) + render_panel_html (str); drop nav_mode dead param; delete DEPRECATED _render_dashboard_page_nav. Closes R2 + R4 + C2.
+- [ ] 26-07-cache-and-cookie-hardening-PLAN.md - Wave 3 (parallel with 06): _is_stale_for per-file (R1); add_market writes dict-shape signal (R5); markets-strip reads active_function from query param (R6); selected_market cookie regex tighten (R7).
+- [ ] 26-08-dead-code-and-doc-cleanup-PLAN.md - Wave 4 (depends on 06 + 07): Delete _render_market_selector (C3); resolve 25-VERIFICATION.md staleness (C4); document C5 lazy-regen as v1.3 debt.
