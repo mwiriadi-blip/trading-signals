@@ -498,13 +498,20 @@ def compute_unrealised_pnl(
 ) -> float:
   '''D-13. Unrealised P&L minus half-cost-on-open.
 
-  Formula: direction_mult * (current_price - entry_price) * n_contracts * multiplier
-           - cost_aud_open * n_contracts
+  Phase 27 #1 (review-fix agreed-7): delegates to pnl_engine.compute_unrealised_pnl
+  to eliminate duplicate money-math logic. pnl_engine returns Decimal AUD-quantized;
+  this wrapper coerces to float for downstream callers (state['account'] += pnl,
+  equity sums, dashboard formatting) that already expect float arithmetic. The
+  Decimal authority lives in pnl_engine; this wrapper is a thin adapter.
 
-  where direction_mult = +1 for LONG, -1 for SHORT.
-  cost_aud_open is the per-contract opening cost (half of round-trip):
-    SPI: SPI_COST_AUD / 2 = 3.0 AUD per contract
-    AUDUSD: AUDUSD_COST_AUD / 2 = 2.5 AUD per contract
+  Adapter shape (pnl_engine signature):
+    pnl_engine.compute_unrealised_pnl(side, entry_price, last_close,
+                                       contracts, multiplier, entry_cost_aud)
+  where entry_cost_aud is the TOTAL opening cost (per-contract * n_contracts),
+  matching pnl_engine's contract — sizing_engine's cost_aud_open is per-contract,
+  so we multiply by n_contracts at the boundary.
+
+  D-13 split-cost contract preserved: caller passes cost_aud_open = round_trip / 2.
   The closing half is deducted by Phase 3 record_trade.
 
   D-17: signature expanded from D-10 -- cost_aud_open is an explicit parameter
@@ -517,13 +524,22 @@ def compute_unrealised_pnl(
     cost_aud_open: per-contract opening cost in AUD (instrument_cost_aud / 2)
 
   Returns:
-    Unrealised P&L in AUD (can be negative).
+    Unrealised P&L in AUD (can be negative). Float for downstream compatibility;
+    underlying authority is Decimal AUD-quantized via pnl_engine.
   '''
-  direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
-  price_diff = current_price - position['entry_price']
-  gross = direction_mult * price_diff * position['n_contracts'] * multiplier
-  open_cost = cost_aud_open * position['n_contracts']
-  return gross - open_cost
+  from pnl_engine import compute_unrealised_pnl as _pnl_engine_unrealised
+  n = position['n_contracts']
+  total_entry_cost_aud = cost_aud_open * n
+  result_decimal = _pnl_engine_unrealised(
+    position['direction'],
+    position['entry_price'],
+    current_price,
+    n,
+    multiplier,
+    total_entry_cost_aud,
+  )
+  # NaN propagation: Decimal('NaN') -> float('nan') is well-defined.
+  return float(result_decimal)
 
 
 def step(
@@ -786,8 +802,14 @@ def _close_position(
     * multiplier
   )
   # D-13: closing half is same per-contract cost as opening half.
-  close_cost = cost_aud_open * position['n_contracts']
-  realised_pnl = gross - close_cost
+  # Phase 27 #1 (truth #3): close_cost arithmetic uses Decimal so AUD-cent
+  # precision is preserved; coerce back to float for ClosedTrade.realised_pnl
+  # which downstream callers (state_manager.record_trade gross_pnl projection,
+  # dashboard formatters) already consume as float. Authority for the cent-
+  # boundary lives in this Decimal slice; the float() at return is the boundary.
+  from system_params import to_aud
+  close_cost_decimal = to_aud(cost_aud_open) * to_aud(position['n_contracts'])
+  realised_pnl = gross - float(close_cost_decimal)
   return ClosedTrade(
     direction=position['direction'],
     entry_price=position['entry_price'],
