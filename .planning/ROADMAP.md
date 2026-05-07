@@ -278,7 +278,7 @@ Plans:
 
 **Depends on:** Phase 26
 
-**Plans:** 7/14 plans executed
+**Plans:** 8/14 plans executed
 
 Plans:
 **Wave 1**
@@ -291,7 +291,7 @@ Plans:
 - [x] 27-07-naive-datetime-and-migration-contiguity-PLAN.md — Wave 1: _assert_tz_aware fail-closed on write paths; _assert_migration_chain_contiguous fail-fast at module load. (completed 2026-05-07; 9 behavioral tests; SUMMARY at .planning/phases/27-…/27-07-SUMMARY.md)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 27-08-html-escape-audit-PLAN.md — Wave 2 (depends on 27-01 for Decimal cost interpolation): every dynamic HTML interpolation in dashboard + dashboard_renderer wrapped via _e alias; XSS injection regression tests.
+- [x] 27-08-html-escape-audit-PLAN.md — Wave 2 (depends on 27-01 for Decimal cost interpolation): every dynamic HTML interpolation in dashboard + dashboard_renderer wrapped via _e alias; XSS injection regression tests.
 - [ ] 27-09-signal-shape-unification-PLAN.md — Wave 2 (depends on 27-01 + 27-07): drop bare-int signal back-compat; schema bump + migrator; 38 test sites refactored; renderer isinstance(int) branch deleted.
 - [ ] 27-10-warnings-fifo-rundate-lookahead-tests-PLAN.md — Wave 2: WARNINGS_FIFO_MAX_LEN=50 bound + eviction test; daily-run-date INFO log assertion; backtest look-ahead-bias proof.
 - [ ] 27-11-crash-email-fallback-PLAN.md — Wave 2: _write_last_crash atomic helper; send_email failure writes last_crash.json; dashboard banner surfaces it on next visit.

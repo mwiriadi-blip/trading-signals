@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: - **Signal-only.** No broker API, ever
 status: verifying
-last_updated: "2026-05-08T00:00:00.000Z"
-last_activity: 2026-05-08
+last_updated: "2026-05-07T21:51:41.849Z"
+last_activity: 2026-05-07
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 45
-  completed_plans: 38
-  percent: 84
+  completed_plans: 39
+  percent: 87
 ---
 
 # STATE — Trading Signals
@@ -34,7 +34,7 @@ Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Phase complete — ready for verification
 - **Last activity:** 2026-05-07
-- **Progress:** [████████░░] 80%
+- **Progress:** [█████████░] 87%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
 
 ### Resume instructions for cloud Claude / fresh clone
@@ -126,6 +126,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 27 P04 | 7min | 1 tasks | 3 files |
 | Phase 27 P01 | ~75min | 4 tasks | 9 files |
 | Phase 27 P05 | ~25min | 2 tasks | 6 files |
+| Phase 27 P08 | 30min | 2 tasks tasks | 2 files files |
 
 ## Accumulated Context
 
@@ -222,6 +223,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 - Phase 14 D-15: check_stop_hit (daily-loop exit detection) intentionally does NOT honor manual_stop — display-only scope; Phase 15 candidate to align
 - [Phase ?]: All 3 UAT scenarios partial on 2026-04-26: STATE.md ## Completed Items records partial/2026-04-26 per REVIEWS H-3; D-17 fallback applied
 - [Phase ?]: Phase 22: STRATEGY_VERSION='v1.2.0' shipped on system_params; schema 3->4 with v3->v4 backfill of 'v1.1.0' on existing dict-shaped signal rows; dashboard footer renders the version via primitive str arg (no system_params.STRATEGY_VERSION import; LEARNINGS 2026-04-27 hex-boundary)
+- [Phase ?]: Phase 27 Plan 27-08 (HTML escape audit) — added quote=True to 13 html.escape() sites in dashboard.py paper-trade rendering (lines 1394, 1544-1549, 1627-1632) closing attribute-context XSS for double-quote payloads. Reused Phase 6 D-10 direct html.escape pattern; no parallel _e helper. AST-based test gate proves quote=True on every Call node across 10 audited files. 23 new tests; 1903/1903 full suite green.
 
 ### Todos Carried Forward
 
