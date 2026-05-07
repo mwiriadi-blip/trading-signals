@@ -60,6 +60,7 @@ import math  # used in _validate_trade (D-19) + update_equity_history (B-4) fini
 import os  # noqa: F401 — used in _atomic_write/_backup_corrupt (Waves 1/2)
 import sys  # noqa: F401 — used in load_state stderr logging (Wave 2)
 import tempfile  # noqa: F401 — used in _atomic_write (Wave 1)
+import warnings  # Phase 27 #6: read-path UTC-coercion shim emits DeprecationWarning
 import zoneinfo  # noqa: F401 — used in append_warning via _AWST (Wave 2)
 from datetime import (  # noqa: F401 — used in append_warning/_backup_corrupt (Waves 1/2)
   UTC,
@@ -107,6 +108,73 @@ _REQUIRED_STATE_KEYS = frozenset({
   'initial_account', 'contracts',
   'markets', 'strategy_settings',
 })
+
+# =========================================================================
+# Phase 27 #6: tz-aware datetime gate (fail-closed on write paths)
+# =========================================================================
+
+def _assert_tz_aware(dt: datetime, *, context: str) -> None:
+  '''Phase 27 #6 — fail-closed on naive datetimes in state-write paths.
+
+  Any helper that takes a `datetime` arg and converts it to an ISO/strftime
+  string for state persistence MUST gate the arg through this function at
+  helper entry. Naive datetimes (tzinfo is None or utcoffset returns None)
+  raise ValueError with the canonical message; the gate happens BEFORE any
+  state mutation so callers see fail-closed semantics.
+
+  Read paths (load_state) keep a separate UTC-coercion shim with
+  DeprecationWarning — see _coerce_legacy_naive_iso below — so legacy
+  state files written before this gate landed continue to load.
+  '''
+  if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+    raise ValueError(
+      f'naive datetime forbidden — must be tz-aware (context: {context})'
+    )
+
+
+def _coerce_legacy_naive_iso(state: dict) -> dict:
+  '''Phase 27 #6 — read-path UTC-coercion shim for legacy state files.
+
+  Older state.json files (pre-Phase 27 fail-closed gate) may have written
+  naive ISO timestamps into time-bearing fields. We don't want to nuke
+  those files at load — instead, walk the known datetime-string fields
+  and, if any value parses as a naive datetime, emit DeprecationWarning
+  and coerce via UTC. The state dict itself is left untouched (the
+  warning is the actionable signal; rewrite-on-next-save naturally
+  upgrades the on-disk shape since current writes use UTC ISO).
+
+  Currently scans equity_history rows. Other time-bearing fields
+  (warnings.date, last_run) are date-only strings (YYYY-MM-DD) and not
+  in scope for this shim — they're not full ISO datetimes.
+
+  Returns the input dict unchanged (the shim is observe-and-warn, not
+  mutate).
+  '''
+  for entry in state.get('equity_history', []):
+    if not isinstance(entry, dict):
+      continue
+    raw = entry.get('date')
+    if not isinstance(raw, str):
+      continue
+    # Only datetime-shaped strings (with 'T') are candidates; YYYY-MM-DD
+    # date-only strings are intentional and out of scope.
+    if 'T' not in raw:
+      continue
+    try:
+      parsed = datetime.fromisoformat(raw)
+    except ValueError:
+      continue
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+      warnings.warn(
+        'naive ISO datetime in legacy state coerced to UTC — please re-save',
+        DeprecationWarning,
+        stacklevel=2,
+      )
+      # One warning per load is enough — bail after first detection so
+      # we don't spam on a 365-day equity_history.
+      break
+  return state
+
 
 # =========================================================================
 # Schema migration registry (D-04, STATE-04)
@@ -676,6 +744,9 @@ def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = Fals
   if 'markets' not in state or 'strategy_settings' not in state:
     state = _migrate_v7_to_v8(state)
   _validate_loaded_state(state)           # D-18: raises ValueError on missing keys
+  # Phase 27 #6: read-path UTC-coercion shim — legacy naive ISO datetimes
+  # in equity_history emit DeprecationWarning rather than failing the load.
+  state = _coerce_legacy_naive_iso(state)
   # D-14 (Phase 8): materialise runtime-only _resolved_contracts from
   # tier labels. Underscore prefix = excluded from save_state (below).
   # KeyError propagates if a label in state['contracts'] is absent from
@@ -797,6 +868,9 @@ def append_warning(state: dict, source: str, message: str, now=None) -> dict:
   '''
   if now is None:
     now = datetime.now(UTC)
+  # Phase 27 #6 fail-closed: caller-provided naive datetimes raise here
+  # BEFORE any FIFO mutation, so the write path is rejected pre-mutation.
+  _assert_tz_aware(now, context='append_warning')
   today_awst = now.astimezone(_AWST).strftime('%Y-%m-%d')
   entry = {'date': today_awst, 'source': source, 'message': message}
   # FIFO trim: keep last (MAX_WARNINGS - 1) + new entry = MAX_WARNINGS total

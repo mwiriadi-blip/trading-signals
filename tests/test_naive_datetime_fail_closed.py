@@ -94,7 +94,10 @@ class TestLoadStateLegacyNaiveISOWarns:
       ],
       'warnings': [],
       'initial_account': 100000.0,
-      'contracts': {'SPI200': 'mini', 'AUDUSD': 'standard'},
+      'contracts': {
+        'SPI200': state_manager._DEFAULT_SPI_LABEL,
+        'AUDUSD': state_manager._DEFAULT_AUDUSD_LABEL,
+      },
       'markets': {},
       'strategy_settings': {},
     }
