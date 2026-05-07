@@ -45,6 +45,21 @@ from system_params import (
 )
 
 # =========================================================================
+# Phase 27 Plan 27-09: dict-shape helper for current-state seeds.
+# Inline definition (NOT imported from conftest — per LEARNING 2026-04-25
+# Plan 13-02: testpaths does not put tests/ on sys.path; conftest imports
+# fail). The canonical conftest helper isn't used by this file because
+# state_manager tests don't touch the web-tier autouse fixtures, but the
+# shape contract is the same.
+# =========================================================================
+def _signal_dict(direction: int = 0, version: str = 'v1.2.0') -> dict:
+  '''Phase 27 #11 (Plan 27-09): post-v10 canonical signal-row shape.
+  Production field name `signal` (NOT `direction` — plan deviation Rule 1).
+  '''
+  return {'signal': direction, 'strategy_version': version}
+
+
+# =========================================================================
 # Module-level path constants (mirrors test_signal_engine.py SIGNAL_ENGINE_PATH pattern)
 # =========================================================================
 
@@ -110,7 +125,8 @@ class TestLoadSave:
       'account': INITIAL_ACCOUNT,
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
-      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
+      'signals': {'SPI200': _signal_dict(0), 'AUDUSD': _signal_dict(0)},
       'trade_log': [],
       'equity_history': [],
       'warnings': [],
@@ -506,7 +522,8 @@ class TestCorruptionRecovery:
     bare_state = {
       'schema_version': STATE_SCHEMA_VERSION,
       'last_run': None,
-      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
+      'signals': {'SPI200': _signal_dict(0), 'AUDUSD': _signal_dict(0)},
       'trade_log': [],
       'equity_history': [],
       'warnings': [],
@@ -1064,7 +1081,8 @@ class TestSchemaVersion:
       'account': INITIAL_ACCOUNT,
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
-      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
+      'signals': {'SPI200': _signal_dict(0), 'AUDUSD': _signal_dict(0)},
       'trade_log': [], 'equity_history': [], 'warnings': [],
       # Phase 8 (v2 schema): CONF-01 + CONF-02 required keys. Under v2,
       # s.get(..., default) in MIGRATIONS[2] is idempotent — preserves
@@ -1341,7 +1359,8 @@ class TestLoadStateResolvesContracts:
       'schema_version': STATE_SCHEMA_VERSION,
       'account': INITIAL_ACCOUNT, 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
-      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
+      'signals': {'SPI200': _signal_dict(0), 'AUDUSD': _signal_dict(0)},
       'trade_log': [], 'equity_history': [], 'warnings': [],
       'initial_account': INITIAL_ACCOUNT,
       'contracts': {'SPI200': 'spi-made-up', 'AUDUSD': 'audusd-standard'},

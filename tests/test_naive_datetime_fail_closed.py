@@ -86,7 +86,13 @@ class TestLoadStateLegacyNaiveISOWarns:
       'account': 100000.0,
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
-      'signals': {'SPI200': 0, 'AUDUSD': 0},
+      # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
+      # Inline definition mirrors tests/conftest.py contract (per LEARNING
+      # 2026-04-25 Plan 13-02 — testpaths doesn't put tests/ on sys.path).
+      'signals': {
+        'SPI200': {'signal': 0, 'strategy_version': 'v1.2.0'},
+        'AUDUSD': {'signal': 0, 'strategy_version': 'v1.2.0'},
+      },
       'trade_log': [],
       'equity_history': [
         # Phase 27 #6: legacy naive ISO timestamp (no offset, no Z).
