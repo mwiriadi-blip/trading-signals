@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: - **Signal-only.** No broker API, ever
 status: executing
-last_updated: "2026-05-07T12:20:34.299Z"
+last_updated: "2026-05-07T19:38:00.000Z"
 last_activity: 2026-05-07
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 45
-  completed_plans: 31
-  percent: 69
+  completed_plans: 32
+  percent: 71
 ---
 
 # STATE — Trading Signals
@@ -23,16 +23,16 @@ progress:
 - **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
 - **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
 - **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 24 — v1.2 Codemoot Fix Phase
+- **Current focus:** Phase 27 — code-quality-correctness-sweep
 
 ## Current Position
 
-Phase: 24 — COMPLETE
-Plan: Not started
+Phase: 27 (code-quality-correctness-sweep) — EXECUTING
+Plan: 27-07 (Wave 1A) complete — 1 of 14 plans landed
 Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
 
 - **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Ready to execute
+- **Status:** Executing Phase 27
 - **Last activity:** 2026-05-07
 - **Progress:** [██████████] 100%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
@@ -119,6 +119,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 17 P01 | 90 | 5 tasks | 12 files |
 | Phase 19 P01 | 180 | 6 tasks | 18 files |
 | Phase 20 P01 | 180 | 7 tasks | 16 files |
+| Phase 27 P07 | 8m24s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -327,3 +328,5 @@ Operator-driven UAT scenarios that require live droplet + browser/phone hands-on
 **Plan 07-03 completed:** 2026-04-23T01:30:00Z — Wave 2 PHASE GATE (operator-verified). 3 files created (.github/workflows/daily.yml 45 lines, docs/DEPLOY.md 172 lines, README.md 49 lines) + 1 file extended (tests/test_scheduler.py 335 → 657 lines, +322). Workflow: cron `0 0 * * 1-5` + workflow_dispatch + permissions:contents:write + concurrency:trading-signals + actions/checkout@v4 + actions/setup-python@v5 (reads .python-version) + `python main.py --once` job step + stefanzweifel/git-auto-commit-action@v5 with add_options:'-f' (Pitfall 2 — force-add of gitignored state.json) + if:success() (D-11 — no commit on fail). 24 new tests (TestGHAWorkflow:12 + TestDeployDocs:12) including 2 dedicated review-fix tests (test_readme_has_gha_status_badge for Gemini LOW + test_deploy_md_local_dev_tz_note for Consensus LOW). 07-REVIEWS.md fixes pinned: Codex HIGH `parsed.get('on') or parsed.get(True)` fallback present; Consensus MEDIUM no `pytest.importorskip('yaml')` softener (PyYAML 6.0.2 pinned in Wave 0); Gemini LOW README badge present; Consensus LOW DEPLOY.md §Local-development TZ note present. ROADMAP SC-4 amended per D-12 (drop ANTHROPIC_API_KEY, name SIGNALS_EMAIL_TO). 552/552 tests pass; ruff clean. Operator verification (Task 3): workflow_dispatch ran green on github.com, state.json commit-back via github-actions[bot] confirmed, daily Resend email arrived in inbox, README.md GHA status badge renders as green "passing" indicator — outcome `approved`. SCHED-04..07 marked complete in REQUIREMENTS.md (SCHED-01..03 closed in Plan 07-02). Phase 7 ready for `/gsd-verify-work 7`. Two minor noise-only deviations (benign `importorskip.*yaml` substring matches in docstring narrative; ruff UP015 autofix). Commits: bbdc5e9 (Task 1 — workflow + TestGHAWorkflow + ROADMAP status check), 5b0a3b9 (Task 2 — DEPLOY.md + README.md + TestDeployDocs).
 
 **v1.1 roadmap created:** 2026-04-24 — `/gsd-roadmapper` produced 7-phase v1.1 plan (Phases 10..16) with 100% coverage on 31 REQs. Phase 10 (Foundation — v1.0 Cleanup & Deploy Key) is the entry point — no infrastructure prerequisites. Phase 11 is parallelizable with Phase 10. Phases 12+ gated on operator purchasing a domain and verifying Resend. Files written: `.planning/ROADMAP.md` (new v1.1 version) + `.planning/REQUIREMENTS.md` (traceability table populated). Ready for `/gsd-discuss-phase 10`.
+
+**Plan 27-07 completed:** 2026-05-07T19:38Z — 2 tasks, 2 files (state_manager.py +112/-1; tests/test_naive_datetime_fail_closed.py +122 NEW; tests/test_migration_contiguity.py +113 NEW). Task 1 (RED→GREEN): `_assert_tz_aware(dt, *, context)` raises `ValueError('naive datetime forbidden — must be tz-aware (context: …)')` at the head of `append_warning` (the sole state-write helper that takes a caller-supplied `now=` datetime); read-path `_coerce_legacy_naive_iso(state)` shim walks `equity_history` and emits one DeprecationWarning per load if any row carries a naive ISO datetime (legacy state files keep loading without nuking). Task 2 (RED→GREEN): `_assert_migration_chain_contiguous()` walks `range(2, STATE_SCHEMA_VERSION+1)` against MIGRATIONS and raises RuntimeError listing every missing key; called at module bottom (defensive — fails at import) AND at `load_state()` entry (review-fix M1 behavioral — fails on every load even if module-load was bypassed). 9/9 plan-tests green; 1803/1803 full suite green; one Rule-1 deviation (test fixture used wrong contract labels — fixed inline using `state_manager._DEFAULT_*_LABEL`). Commits: 1927992 (test RED Task 1), 46f7235 (feat GREEN Task 1), 1a04da0 (test RED Task 2), d2bd771 (feat GREEN Task 2). Plan blocks 27-01 (Wave 1B) — contiguity check will validate the v8→v9 schema bump on first import after 27-01 lands.

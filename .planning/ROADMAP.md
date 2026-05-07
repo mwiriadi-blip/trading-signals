@@ -288,7 +288,7 @@ Plans:
 - [ ] 27-04-instrument-regex-tightening-PLAN.md — Wave 1: INSTRUMENT_ID_RE = ^[A-Z0-9_]{2,20}$ canonical pattern; AST walker + false-positive rejection tests.
 - [ ] 27-05-magic-cost-helper-and-fallback-email-PLAN.md — Wave 1 (depends on 27-01 for Decimal): entry_side_cost helper replaces cost_aud/2 literals; _EMAIL_TO_FALLBACK constant deleted (SIGNALS_EMAIL_TO required).
 - [ ] 27-06-deferred-yfinance-and-version-flag-PLAN.md — Wave 1: lazy yfinance import in data_fetcher; python main.py --version → STRATEGY_VERSION → exit 0.
-- [ ] 27-07-naive-datetime-and-migration-contiguity-PLAN.md — Wave 1: _assert_tz_aware fail-closed on write paths; _assert_migration_chain_contiguous fail-fast at module load.
+- [x] 27-07-naive-datetime-and-migration-contiguity-PLAN.md — Wave 1: _assert_tz_aware fail-closed on write paths; _assert_migration_chain_contiguous fail-fast at module load. (completed 2026-05-07; 9 behavioral tests; SUMMARY at .planning/phases/27-…/27-07-SUMMARY.md)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 27-08-html-escape-audit-PLAN.md — Wave 2 (depends on 27-01 for Decimal cost interpolation): every dynamic HTML interpolation in dashboard + dashboard_renderer wrapped via _e alias; XSS injection regression tests.
