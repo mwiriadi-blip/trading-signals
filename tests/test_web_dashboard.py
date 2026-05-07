@@ -60,12 +60,13 @@ def client_with_dashboard(monkeypatch, tmp_path):
   '''TestClient bound to a temporary working directory.
 
   Yields (client, tmp_path, render_calls). render_calls is a list that
-  appends one entry every time dashboard.render_dashboard is invoked —
+  appends one entry every time dashboard.render_dashboard_files is invoked —
   letting tests assert exact regen counts.
 
-  The tracked render_dashboard WRITES a deterministic body to dashboard.html
-  so bytes-equality tests (REVIEWS MEDIUM #3) can verify the served
-  response matches the regenerated content.
+  Phase 26 Plan 06 (R2) renamed render_dashboard -> render_dashboard_files.
+  The tracked render_dashboard_files WRITES a deterministic body to
+  dashboard.html so bytes-equality tests (REVIEWS MEDIUM #3) can verify the
+  served response matches the regenerated content.
   '''
   monkeypatch.chdir(tmp_path)
 
@@ -76,7 +77,7 @@ def client_with_dashboard(monkeypatch, tmp_path):
     lambda *_a, **_kw: {'schema_version': 1, 'last_run': '2026-04-25'},
   )
 
-  # Track render_dashboard invocations.
+  # Track render_dashboard_files invocations (Plan 26-06 R2 rename).
   render_calls = []
   import dashboard
 
@@ -85,7 +86,7 @@ def client_with_dashboard(monkeypatch, tmp_path):
     # Touch dashboard.html so subsequent _is_stale() returns False.
     Path('dashboard.html').write_text('<html>regenerated</html>', encoding='utf-8')
 
-  monkeypatch.setattr(dashboard, 'render_dashboard', _track_render)
+  monkeypatch.setattr(dashboard, 'render_dashboard_files', _track_render)
 
   import sys
   sys.modules.pop('web.app', None)
@@ -312,7 +313,7 @@ class TestRenderFailure:
     def _exploding_render(state, *args, **kwargs):
       raise RuntimeError('simulated render failure')
 
-    monkeypatch.setattr(dashboard, 'render_dashboard', _exploding_render)
+    monkeypatch.setattr(dashboard, 'render_dashboard_files', _exploding_render)
 
     import sys
     sys.modules.pop('web.app', None)
@@ -361,7 +362,7 @@ class TestFirstRun:
       pass  # silently does nothing — dashboard.html still missing
     monkeypatch_dashboard = pytest.MonkeyPatch()
     try:
-      monkeypatch_dashboard.setattr(dashboard, 'render_dashboard', _no_write_render)
+      monkeypatch_dashboard.setattr(dashboard, 'render_dashboard_files', _no_write_render)
       r = client.get('/', headers=auth_headers)
     finally:
       monkeypatch_dashboard.undo()
@@ -376,7 +377,7 @@ class TestFirstRun:
     import dashboard
     monkeypatch_dashboard = pytest.MonkeyPatch()
     try:
-      monkeypatch_dashboard.setattr(dashboard, 'render_dashboard', lambda *_a, **_kw: None)
+      monkeypatch_dashboard.setattr(dashboard, 'render_dashboard_files', lambda *_a, **_kw: None)
       r = client.get('/', headers=auth_headers)
     finally:
       monkeypatch_dashboard.undo()
@@ -392,7 +393,7 @@ class TestFirstRun:
     import dashboard
     monkeypatch_dashboard = pytest.MonkeyPatch()
     try:
-      monkeypatch_dashboard.setattr(dashboard, 'render_dashboard', lambda *_a, **_kw: None)
+      monkeypatch_dashboard.setattr(dashboard, 'render_dashboard_files', lambda *_a, **_kw: None)
       r = client.get('/', headers=auth_headers)
     finally:
       monkeypatch_dashboard.undo()

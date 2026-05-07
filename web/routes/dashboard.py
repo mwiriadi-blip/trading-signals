@@ -262,8 +262,8 @@ def register(app: FastAPI) -> None:
 
     if htmx:
       # HTMX swap path — panel-only HTML (no shell, no nav).
-      # Phase 26 Plan 06 (R2): render_panel_html replaces the mixed-return
-      # render_dashboard(htmx_panel_only=True) form.
+      # Phase 26 Plan 06 (R2): render_panel_html replaces the legacy
+      # mixed-return form that returned str when htmx_panel_only=True.
       from dashboard_renderer.api import render_panel_html
       body = render_panel_html(
         state,

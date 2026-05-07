@@ -9,9 +9,9 @@ atomic tempfile + fsync + os.replace. Chart.js 4.4.6 UMD loads client-side
 from jsDelivr with SRI integrity check (D-12). All other assets (CSS, fonts,
 scripts) are inline — no external network requests except Chart.js.
 
-Public surface (D-01):
-  render_dashboard(state: dict, out_path: Path = Path('dashboard.html'),
-                   now: datetime | None = None) -> None
+Public surface (D-01; Phase 26 Plan 06 R2 rename):
+  render_dashboard_files(state: dict, out_path: Path = Path('dashboard.html'),
+                         now: datetime | None = None) -> None
 
 Private helpers (Waves 1/2 fill bodies — Wave 0 is scaffold):
   _render_header           UI-SPEC §Header
@@ -547,7 +547,7 @@ def _render_header(
             the Phase 14 {{WEB_AUTH_SECRET}} pattern). This is what
             main.run_daily_check writes to disk.
     True  — render the Sign Out button inline (test path: direct
-            render_dashboard(..., is_cookie_session=True)).
+            render_dashboard_files(..., is_cookie_session=True)).
     False — render the session note inline (test path: header-auth flow).
   '''
   return dr_render_header(state, now, is_cookie_session=is_cookie_session)
@@ -1246,7 +1246,7 @@ def _render_drift_banner(state: dict) -> str:
 
   Body lists each drift warning as a <li> in a <ul class="sentinel-body">.
 
-  Called from render_dashboard() body composition (REVIEWS H-2 — top-level
+  Called from render_dashboard_files() body composition (REVIEWS H-2 — top-level
   slot before _render_positions_table). NOT called from inside
   _render_positions_table — the banner sits at the same DOM level as
   future corruption + stale dashboard banners will eventually live.
@@ -2051,7 +2051,6 @@ def _render_tabbed_dashboard(ctx: RenderContext) -> str:
 def _render_single_page_dashboard(
   ctx: RenderContext,
   page: str,
-  nav_mode: str = 'web',
 ) -> str:
   from dashboard_renderer.components.nav import render_two_axis_nav, _first_market_id
   selected = _render_page_body(ctx, page)
@@ -2060,7 +2059,8 @@ def _render_single_page_dashboard(
   heading_class_attr = f' class="{heading_cls}"' if heading_cls else ''
 
   # Phase 25: derive active_function/active_market from ctx (with fallbacks for
-  # callers that don't pass the new kwargs — nav_mode='file' sibling generation).
+  # callers that don't pass the new kwargs — sibling regen path uses page-derived
+  # active_function and first-market default).
   active_function = getattr(ctx, 'active_function', None) or page
   if active_function not in ('signals', 'account', 'settings', 'market-test'):
     active_function = 'signals'
@@ -2082,34 +2082,6 @@ def _render_single_page_dashboard(
     inner = f'<section id="market-panel" aria-live="polite">\n{inner}</section>\n'
 
   return nav_html + inner + _render_footer(ctx.strategy_version)
-
-
-def _render_dashboard_page_nav(active_page: str, nav_mode: str = 'web') -> str:
-  '''DEPRECATED — Phase 25 Plan 03. Use render_two_axis_nav from dashboard_renderer.components.nav.
-
-  Retained to avoid breaking any direct test calls. Plan 25-09 (final cleanup) deletes this.
-  '''
-  if nav_mode == 'file':
-    pages = (
-      ('signals', 'dashboard-signals.html', 'Signals'),
-      ('account', 'dashboard-account.html', 'Account'),
-      ('settings', 'dashboard-settings.html', 'Settings'),
-      ('market-test', 'dashboard-market-test.html', 'Market Test'),
-    )
-  else:
-    pages = (
-      ('signals', '/signals', 'Signals'),
-      ('account', '/account', 'Account'),
-      ('settings', '/settings', 'Settings'),
-      ('market-test', '/market-test', 'Market Test'),
-    )
-  links = []
-  for page_key, href, label in pages:
-    cls = ' class="active"' if page_key == active_page else ''
-    links.append(
-      f'  <a href="{href}"{cls}>{label}</a>\n',
-    )
-  return '<nav class="tabs" aria-label="Dashboard tabs">\n' + ''.join(links) + '</nav>\n'
 
 
 def _render_html_shell(ctx: RenderContext, body: str) -> str:  # noqa: ARG001
@@ -2218,10 +2190,11 @@ def render_dashboard_files(
   )
 
 
-# Phase 26 Plan 06 back-compat: legacy callers (tests/regenerate_dashboard_golden.py,
-# tests/test_dashboard.py *) still call dashboard.render_dashboard(). Alias is an
-# assignment (not a `def`) so `grep 'render_dashboard('` finds only call sites.
-render_dashboard = render_dashboard_files
+# Phase 26 Plan 06 back-compat: legacy test callers in tests/test_dashboard.py
+# still reference dashboard.render_dashboard. Alias is an assignment (not a
+# `def`), so the audit-grep on call sites in production code stays clean while
+# tests keep importing the old name without churn.
+render_dashboard = render_dashboard_files  # noqa: F811 — back-compat alias
 
 
 def render_dashboard_page(
@@ -2249,6 +2222,6 @@ if __name__ == '__main__':
   # C-6 reviews: CONTEXT D-05 convenience CLI. `python -m dashboard` loads
   # the current state.json and renders dashboard.html using the current
   # AWST wall-clock. Never used by CI; operator-only preview path.
-  # render_dashboard(now=None) defaults to PERTH.localize-equivalent
+  # render_dashboard_files(now=None) defaults to PERTH.localize-equivalent
   # datetime.now(PERTH), so we just pass load_state() and a default path.
-  render_dashboard(load_state(), Path('dashboard.html'))
+  render_dashboard_files(load_state(), Path('dashboard.html'))

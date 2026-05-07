@@ -924,17 +924,18 @@ class TestOrchestrator:
     _seed_fresh_state(tmp_path / 'state.json')
     _install_fixture_fetch(monkeypatch)
 
-    # Force render_dashboard to raise at CALL TIME.
-    # C-2 reviews: monkeypatch target is `dashboard.render_dashboard` (the
-    # module attribute on the real dashboard module — the in-helper `import
-    # dashboard` reuses sys.modules['dashboard']). NOT
-    # `main.dashboard.render_dashboard`, which does not exist once the
+    # Force render_dashboard_files to raise at CALL TIME.
+    # C-2 reviews: monkeypatch target is `dashboard.render_dashboard_files`
+    # (the module attribute on the real dashboard module — the in-helper
+    # `import dashboard` reuses sys.modules['dashboard']). NOT
+    # `main.dashboard.render_dashboard_files`, which does not exist once the
     # module-top import is removed per C-2.
+    # Phase 26 Plan 06 (R2): renamed render_dashboard -> render_dashboard_files.
     import dashboard as _dashboard_module_for_patch
 
     def _raise(*args, **kwargs):
       raise RuntimeError('simulated render failure')
-    monkeypatch.setattr(_dashboard_module_for_patch, 'render_dashboard', _raise)
+    monkeypatch.setattr(_dashboard_module_for_patch, 'render_dashboard_files', _raise)
 
     rc = main.main(['--once'])
     assert rc == 0, 'D-06: dashboard failure must NOT change exit code'

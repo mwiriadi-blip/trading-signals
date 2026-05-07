@@ -126,7 +126,11 @@ def render_market_strip(state: dict, active_market: str, active_function: str) -
 
 
 def render_two_axis_nav(state: dict, active_function: str, active_market: str | None) -> str:
-    '''Compose function strip + market strip. Replaces dashboard._render_dashboard_page_nav.'''
+    '''Compose function strip + market strip.
+
+    Phase 26 Plan 06 (R4) deleted the legacy single-strip nav helper in
+    dashboard.py that this function replaced.
+    '''
     return render_function_strip(active_function, active_market, state) + render_market_strip(
         state, active_market or '', active_function
     )

@@ -69,8 +69,8 @@ def render_dashboard_files(
 
   Phase 26 Plan 06 (R2): pure file-write entrypoint. Returns None per
   annotation. The HTMX panel-only path moved to render_panel_html; the
-  mixed-return-type render_dashboard() that returned str when
-  htmx_panel_only=True is gone (eliminated annotation lie).
+  mixed-return-type predecessor that returned str on htmx_panel_only=True
+  is gone (eliminated annotation lie).
   '''
   import dashboard as d
 

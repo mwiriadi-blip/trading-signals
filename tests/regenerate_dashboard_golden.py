@@ -28,7 +28,7 @@ import pytz
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dashboard import render_dashboard  # noqa: E402, I001 — import after sys.path.insert
+from dashboard import render_dashboard_files  # noqa: E402, I001 — import after sys.path.insert
 
 FIXTURES_DIR = ROOT / 'tests' / 'fixtures' / 'dashboard'
 # C-1 reviews fix: PERTH.localize(...) is correct; tzinfo=PERTH is not.
@@ -45,7 +45,7 @@ def regenerate_one(state_name: str, golden_name: str) -> None:
   '''Load state fixture, render with frozen clock, write golden HTML.'''
   state = json.loads((FIXTURES_DIR / state_name).read_text())
   out_path = FIXTURES_DIR / golden_name
-  render_dashboard(state, out_path=out_path, now=FROZEN_NOW)
+  render_dashboard_files(state, out_path=out_path, now=FROZEN_NOW)
   print(f'[regen] wrote {golden_name} ({out_path.stat().st_size} bytes)')
 
 
