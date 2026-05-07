@@ -332,27 +332,28 @@ class TestIndicatorMathUnchanged:
     from signal_engine import compute_indicators
 
     # Synthesise a tiny canonical-shape OHLC DataFrame — enough to compute indicators
-    # without depending on a fixture file.
+    # without depending on a fixture file. Column casing matches signal_engine's
+    # `Close`-capitalised convention (yfinance OHLC default).
     n = 300
     idx = pd.date_range('2024-01-01', periods=n, freq='B')
     rng = np.random.default_rng(seed=42)
     close = 7000.0 + np.cumsum(rng.normal(0, 5, n))
     df = pd.DataFrame({
-      'open': close + rng.normal(0, 1, n),
-      'high': close + np.abs(rng.normal(0, 5, n)),
-      'low':  close - np.abs(rng.normal(0, 5, n)),
-      'close': close,
-      'volume': rng.integers(1_000_000, 10_000_000, n).astype('float64'),
+      'Open':  close + rng.normal(0, 1, n),
+      'High':  close + np.abs(rng.normal(0, 5, n)),
+      'Low':   close - np.abs(rng.normal(0, 5, n)),
+      'Close': close,
+      'Volume': rng.integers(1_000_000, 10_000_000, n).astype('float64'),
     }, index=idx)
 
     out = compute_indicators(df)
-    indicator_cols = ['atr', 'adx', 'plus_di', 'minus_di', 'mom1', 'mom3', 'mom12', 'rvol']
+    indicator_cols = ['ATR', 'ADX', 'PDI', 'NDI', 'Mom1', 'Mom3', 'Mom12', 'RVol']
     for col in indicator_cols:
-      if col in out.columns:
-        assert out[col].dtype == np.float64, (
-          f'truth #5: indicator {col!r} dtype must be float64; '
-          f'got {out[col].dtype} — Decimal must NOT leak into numpy/pandas paths'
-        )
+      assert col in out.columns, f'expected indicator column {col!r} not present'
+      assert out[col].dtype == np.float64, (
+        f'truth #5: indicator {col!r} dtype must be float64; '
+        f'got {out[col].dtype} — Decimal must NOT leak into numpy/pandas paths'
+      )
 
 
 # =========================================================================

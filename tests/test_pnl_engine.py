@@ -58,7 +58,8 @@ class TestComputeUnrealisedPnl:
     '''
     from pnl_engine import compute_unrealised_pnl
     result = compute_unrealised_pnl(side, entry, last_close, contracts, mult, entry_cost)
-    assert abs(result - expected) < 1e-9, (
+    # Phase 27 #1: result is Decimal; assert via float() coercion within 1e-9.
+    assert abs(float(result) - expected) < 1e-9, (
       f'{case_id}: expected {expected}, got {result}'
     )
 
@@ -68,7 +69,8 @@ class TestComputeUnrealisedPnl:
     '''
     from pnl_engine import compute_unrealised_pnl
     result = compute_unrealised_pnl('LONG', 7800.0, float('nan'), 2.0, 5.0, 3.0)
-    assert math.isnan(result), (
+    # Phase 27 #1: result is Decimal — NaN-detect via Decimal.is_nan() (truth #1).
+    assert result.is_nan() or math.isnan(float(result)), (
       f'D-07: NaN last_close must produce NaN result; got {result!r}'
     )
 
@@ -114,7 +116,8 @@ class TestComputeRealisedPnl:
     '''
     from pnl_engine import compute_realised_pnl
     result = compute_realised_pnl(side, entry, exit_price, contracts, mult, rt_cost)
-    assert abs(result - expected) < 1e-9, (
+    # Phase 27 #1: result is Decimal; assert via float() coercion within 1e-9.
+    assert abs(float(result) - expected) < 1e-9, (
       f'{case_id}: expected {expected}, got {result}'
     )
 
@@ -129,8 +132,11 @@ class TestPnlEngineHexBoundary:
   '''
 
   def test_pnl_engine_module_imports_only_math_and_typing(self) -> None:
-    '''D-19: AST-walk pnl_engine.py imports; ONLY math and typing are allowed.
-    No system_params, state_manager, datetime, os, numpy, pandas, etc.
+    '''D-19: AST-walk pnl_engine.py imports; ONLY math, typing, and decimal
+    are allowed. No system_params, state_manager, datetime, os, numpy, pandas, etc.
+
+    Phase 27 #1: `decimal` added to the allow-list — pnl_engine returns
+    Decimal AUD-quantized (HALF_UP) per project money-math policy.
     '''
     tree = ast.parse(PNL_ENGINE_PATH.read_text())
     imported: set[str] = set()
@@ -141,9 +147,9 @@ class TestPnlEngineHexBoundary:
       elif isinstance(node, ast.ImportFrom):
         if node.module:
           imported.add(node.module.split('.')[0])
-    forbidden = imported - {'math', 'typing', '__future__'}
+    forbidden = imported - {'math', 'typing', '__future__', 'decimal'}
     assert not forbidden, (
-      f'D-19: pnl_engine.py must only import math/typing; '
+      f'D-19: pnl_engine.py must only import math/typing/decimal; '
       f'found forbidden: {sorted(forbidden)}'
     )
 

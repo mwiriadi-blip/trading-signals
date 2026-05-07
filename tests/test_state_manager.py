@@ -2553,8 +2553,9 @@ class TestFullWalkV0ToV6:
     import json as _json
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 8, (
-      f'walk-forward chain v0->...->v8 must end at 8; '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 9, (
+      f'walk-forward chain v0->...->v9 must end at 9 '
+      f'(Phase 27 #1 Decimal money-math migration); '
       f'got {loaded["schema_version"]}'
     )
     # Phase 22 v3->v4 backfill also ran
@@ -2617,8 +2618,8 @@ class TestMigrateV6ToV7:
     )
     # Via _migrate walker: schema_version advances to 7
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 8, (
-      f'D-08: _migrate must walk v6->v8; got {out2["schema_version"]}'
+    assert out2['schema_version'] == 9, (
+      f'D-08: _migrate must walk v6->v9 (Phase 27 #1); got {out2["schema_version"]}'
     )
     assert out2['paper_trades'][0]['last_alert_state'] is None
     assert out2['paper_trades'][1]['last_alert_state'] is None
@@ -2716,7 +2717,7 @@ class TestMigrateV6ToV7:
       'D-08: missing paper_trades key must remain absent after migration'
     )
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 8
+    assert out2['schema_version'] == 9  # Phase 27 #1
 
   def test_migrate_v6_to_v7_silent_no_warnings_no_logs(self, caplog) -> None:
     '''D-15 silent migration: migrating 5 rows must emit zero log records and
@@ -2772,8 +2773,9 @@ class TestMigrateV6ToV7:
     }
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == 8, (
-      f'walk-forward chain v0->...->v8 must end at 8; '
+    assert loaded['schema_version'] == 9, (
+      f'walk-forward chain v0->...->v9 must end at 9 '
+      f'(Phase 27 #1 Decimal money-math migration); '
       f'got {loaded["schema_version"]}'
     )
     # Phase 20 v6->v7 backfill

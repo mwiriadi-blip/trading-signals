@@ -82,7 +82,12 @@ from system_params import (
   SPI_CONTRACTS,
   _DEFAULT_AUDUSD_LABEL,
   _DEFAULT_SPI_LABEL,
+  # Phase 27 #1: Decimal money-math precision boundary
+  AUD_QUANTIZE,  # noqa: F401 — used in _migrate_v8_to_v9
+  AUD_ROUND,  # noqa: F401 — used in _migrate_v8_to_v9
+  _decimal_default,  # used in save_state json.dumps default= kwarg
 )
+from decimal import Decimal as _Decimal
 
 # =========================================================================
 # Module-level constants (private)
@@ -366,6 +371,104 @@ def _migrate_v7_to_v8(s: dict) -> dict:
   return {**s, 'markets': markets, 'strategy_settings': settings}
 
 
+def _quantize_aud(v) -> float:
+  '''Phase 27 #1: route a money-shaped value through Decimal-quantize-HALF_UP
+  and return as a float (state.json wire format stays JSON-numeric for
+  backward compatibility with existing readers).
+
+  None / NaN / inf flow through unchanged so non-money sentinels are
+  preserved (e.g., realised_pnl=None for an open paper trade).
+
+  Float→Decimal coercion goes via str(v) so float-binary repr noise
+  ('1234.5600000000004') is stripped before quantize.
+  '''
+  if v is None:
+    return v
+  if isinstance(v, bool):
+    # Defensive: bool is a subclass of int; a bool money field is a bug
+    # we want to preserve as-is rather than silently coerce to 1.00 / 0.00.
+    return v
+  if isinstance(v, int | float):
+    if isinstance(v, float) and not math.isfinite(v):
+      return v  # NaN / inf — don't coerce; downstream save_state allow_nan=False catches.
+  try:
+    return float(_Decimal(str(v)).quantize(AUD_QUANTIZE, rounding=AUD_ROUND))
+  except Exception:
+    return v  # un-coercible (string label, etc.) — leave untouched.
+
+
+def _migrate_v8_to_v9(s: dict) -> dict:
+  '''Phase 27 #1: quantize all money-denominated state.json fields via
+  Decimal(AUD_QUANTIZE, HALF_UP) so AUD-cent precision survives every
+  save/load cycle (truth #4: round-trip preserves cents).
+
+  Idempotent: quantizing an already-quantized value yields the same value.
+  Defensive: only touches dict-shaped rows; missing fields are skipped.
+  D-15 silent migration: no append_warning, no log line.
+
+  Money fields touched (per plan must_haves):
+    state['account']                       — top-level cash balance
+    state['initial_account']               — reset baseline
+    state['equity_history'][i]['equity']   — daily equity rows
+    state['paper_trades'][i]['realised_pnl']     — closed paper-trade PnL
+    state['paper_trades'][i]['unrealised_pnl']   — if persisted (None on open)
+    state['paper_trades'][i]['entry_cost_aud']   — opening-half cost
+    state['trade_log'][i]['gross_pnl' / 'net_pnl' / 'cost_aud']  — closed trades
+
+  NOT touched: position fields (entry_price/atr_entry/peak_price are price-
+  domain, not AUD-cent-domain), signal fields, OHLC/indicator scalars.
+  These remain float64 — the Decimal slice is ONLY at the AUD-money boundary.
+  '''
+  out = dict(s)
+  if 'account' in out:
+    out['account'] = _quantize_aud(out['account'])
+  if 'initial_account' in out:
+    out['initial_account'] = _quantize_aud(out['initial_account'])
+
+  eq_hist = out.get('equity_history')
+  if isinstance(eq_hist, list):
+    new_hist = []
+    for row in eq_hist:
+      if isinstance(row, dict) and 'equity' in row:
+        new_row = dict(row)
+        new_row['equity'] = _quantize_aud(row['equity'])
+        new_hist.append(new_row)
+      else:
+        new_hist.append(row)
+    out['equity_history'] = new_hist
+
+  paper_trades = out.get('paper_trades')
+  if isinstance(paper_trades, list):
+    new_pt = []
+    for row in paper_trades:
+      if isinstance(row, dict):
+        new_row = dict(row)
+        for f in ('realised_pnl', 'unrealised_pnl', 'entry_cost_aud',
+                  'entry_price', 'exit_price'):
+          if f in new_row:
+            new_row[f] = _quantize_aud(new_row[f])
+        new_pt.append(new_row)
+      else:
+        new_pt.append(row)
+    out['paper_trades'] = new_pt
+
+  trade_log = out.get('trade_log')
+  if isinstance(trade_log, list):
+    new_tl = []
+    for row in trade_log:
+      if isinstance(row, dict):
+        new_row = dict(row)
+        for f in ('gross_pnl', 'net_pnl', 'cost_aud'):
+          if f in new_row:
+            new_row[f] = _quantize_aud(new_row[f])
+        new_tl.append(new_row)
+      else:
+        new_tl.append(row)
+    out['trade_log'] = new_tl
+
+  return out
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
@@ -375,6 +478,7 @@ MIGRATIONS: dict = {
   6: _migrate_v5_to_v6,  # Phase 19 D-08: paper_trades[] top-level array
   7: _migrate_v6_to_v7,  # Phase 20 D-08: last_alert_state on paper_trades[] rows
   8: _migrate_v7_to_v8,  # Phase 24: markets + strategy_settings
+  9: _migrate_v8_to_v9,  # Phase 27 #1: Decimal-quantize money fields (AUD cents, HALF_UP)
 }
 
 
@@ -676,7 +780,7 @@ def _validate_loaded_state(state: dict) -> None:
 # Public API
 # =========================================================================
 
-def reset_state(initial_account: float = INITIAL_ACCOUNT) -> dict:
+def reset_state(initial_account=INITIAL_ACCOUNT) -> dict:
   '''STATE-07 / D-01 / D-03 / Phase 10 BUG-01 D-02: fresh state,
   account + initial_account both equal to `initial_account` (default
   INITIAL_ACCOUNT from system_params).
@@ -690,9 +794,15 @@ def reset_state(initial_account: float = INITIAL_ACCOUNT) -> dict:
   Each call returns a NEW dict (no shared mutable references) so that
   mutating one returned state doesn't bleed into a future reset.
   '''
+  # Phase 27 #1: route initial_account through Decimal-quantize so a
+  # Decimal-typed caller (truth #4 round-trip path) doesn't leak a raw
+  # Decimal into the float-typed in-memory state. Floats stay floats.
+  ia_float = float(_Decimal(str(initial_account)).quantize(
+    AUD_QUANTIZE, rounding=AUD_ROUND,
+  ))
   return {
     'schema_version': STATE_SCHEMA_VERSION,
-    'account': float(initial_account),        # D-02: from arg
+    'account': ia_float,                      # D-02: from arg
     'last_run': None,
     'positions': {                            # D-01: None = inactive
       'SPI200': None,
@@ -708,7 +818,7 @@ def reset_state(initial_account: float = INITIAL_ACCOUNT) -> dict:
     # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys emitted on
     # fresh reset so corruption-recovery path + initial setup produce a
     # state that passes _validate_loaded_state under schema v2.
-    'initial_account': float(initial_account),  # D-02: from arg
+    'initial_account': ia_float,  # D-02: from arg
     'contracts': {
       'SPI200': _DEFAULT_SPI_LABEL,
       'AUDUSD': _DEFAULT_AUDUSD_LABEL,
@@ -829,7 +939,15 @@ def save_state(state: dict, path: Path = Path(STATE_FILE)) -> None:
   # the convention is load-time materialisation only. Plan 03's
   # `_stale_info` also relies on this filter for transient signalling.
   persisted = {k: v for k, v in state.items() if not k.startswith('_')}
-  data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False)
+  # Phase 27 #1: route money values through Decimal-quantize-HALF_UP at save
+  # time so disk format is canonical AUD-cent precision. Without this,
+  # repeated float arithmetic + json round-trip can accumulate ULP drift.
+  # _decimal_default is the encoder hook for any Decimal values that survive
+  # to json.dumps (sizing_engine / pnl_engine results assigned directly into
+  # state without prior quantize).
+  persisted = _migrate_v8_to_v9(persisted)
+  data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False,
+                    default=_decimal_default)
   _atomic_write(data, path)
 
 
@@ -839,9 +957,13 @@ def _save_state_unlocked(state: dict, path: Path) -> None:
   intra-process flock-on-different-fd deadlock (see _atomic_write docstring).
 
   D-14 underscore-key filter applies identically; allow_nan=False preserved.
+  Phase 27 #1: same Decimal-quantize-HALF_UP coercion + _decimal_default
+  encoder as save_state.
   '''
   persisted = {k: v for k, v in state.items() if not k.startswith('_')}
-  data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False)
+  persisted = _migrate_v8_to_v9(persisted)
+  data = json.dumps(persisted, sort_keys=True, indent=2, allow_nan=False,
+                    default=_decimal_default)
   _atomic_write_unlocked(data, path)
 
 

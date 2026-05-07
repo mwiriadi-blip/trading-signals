@@ -15,6 +15,7 @@ D-11: SPI mini $5/pt, $6 AUD RT (operator confirmed at /gsd-discuss-phase 2).
 D-XX (Phase 3): INITIAL_ACCOUNT, MAX_WARNINGS, STATE_SCHEMA_VERSION, STATE_FILE added.
 '''
 import re
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, TypedDict
 
 # =========================================================================
@@ -70,6 +71,64 @@ def redact_secret(s: str | None) -> str:
   if len(s) <= 6:
     return '[short]'
   return s[:6] + '...'
+
+# =========================================================================
+# Phase 27 #1: Decimal money-math precision boundary (review-fix agreed-7)
+# =========================================================================
+# Money arithmetic (P&L, account balance, equity history, paper-trade
+# realised/unrealised) flows through Python's stdlib Decimal at the
+# pnl_engine + state_manager persistence boundary so AUD-cent precision
+# survives repeated save/load cycles. Indicator math (ATR/ADX/Mom/RVol on
+# numpy/pandas) STAYS float64 — the hex boundary is preserved.
+#
+# AUD_QUANTIZE pins precision to 2dp (cents). AUD_ROUND = ROUND_HALF_UP
+# (NOT banker's rounding ROUND_HALF_EVEN) — chosen for trading PnL display
+# intuition: $2.005 rounds to $2.01.
+#
+# T-27-01-01 (tampering — money values silently drift via float ULP
+# accumulation across saves): mitigated by quantize-on-write in state_manager
+# + Decimal-typed pnl_engine returns + round-trip regression test.
+# T-27-01-03 (DoS — dashboard JSON crashes on raw Decimal): mitigated by
+# _decimal_default encoder hook below; every dashboard json.dumps uses it.
+#
+# Hex-boundary: stdlib `decimal` is safe under FORBIDDEN_MODULES_STDLIB_ONLY.
+
+AUD_QUANTIZE: Decimal = Decimal('0.01')
+AUD_ROUND = ROUND_HALF_UP
+
+
+def to_aud(x) -> Decimal:
+  '''Coerce x (int/float/str/Decimal) to Decimal quantized to AUD cents.
+
+  Routes through Decimal(str(x)) FIRST so float-binary representation noise
+  (e.g., 0.1 + 0.2 == 0.30000000000000004) is canonicalised to its decimal
+  string form before quantization. Quantize uses HALF_UP rounding.
+
+  Examples:
+    to_aud(1234.56)    -> Decimal('1234.56')
+    to_aud('2.005')    -> Decimal('2.01')   (HALF_UP, not HALF_EVEN)
+    to_aud(Decimal(0)) -> Decimal('0.00')
+  '''
+  return Decimal(str(x)).quantize(AUD_QUANTIZE, rounding=AUD_ROUND)
+
+
+def _decimal_default(o):
+  '''json.dumps default= hook: serialize Decimal as canonical string.
+
+  Used by state_manager.save_state and dashboard JSON paths so raw Decimal
+  values flowing through state['account'] / equity rows / paper_trades P&L
+  fields don't raise `TypeError: Object of type Decimal is not JSON
+  serializable`. String form preserves cent precision exactly across the
+  wire (avoids float-binary truncation).
+
+  Non-Decimal objects fall through to the default TypeError so genuine
+  serialization bugs still surface.
+  '''
+  if isinstance(o, Decimal):
+    return str(o)
+  raise TypeError(
+    f'Object of type {type(o).__name__} is not JSON serializable'
+  )
 
 # =========================================================================
 # Phase 27 #8: instrument-id syntax + membership (review-fix agreed-8)
@@ -218,7 +277,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
 MAX_WARNINGS: int = 100             # FIFO bound on state['warnings'] (D-11)
-STATE_SCHEMA_VERSION: int = 8       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08); Phase 20 → v7 (last_alert_state on paper_trades[] rows; D-08); v8 markets + per-market strategy_settings.
+STATE_SCHEMA_VERSION: int = 9       # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08); Phase 20 → v7 (last_alert_state on paper_trades[] rows; D-08); v8 markets + per-market strategy_settings; Phase 27 #1 → v9 quantize money fields via Decimal (AUD cents, HALF_UP).
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # =========================================================================
