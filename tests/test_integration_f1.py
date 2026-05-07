@@ -79,6 +79,10 @@ def _setup_f1(tmp_path, monkeypatch):
     captured['subject'] = subject
     captured['html'] = html_body or ''
   monkeypatch.setenv('SIGNALS_EMAIL_FROM', 'signals@example.com')
+  # Phase 27 #9: SIGNALS_EMAIL_TO is required (no fallback) — without it
+  # send_daily_email short-circuits with missing_recipient before reaching
+  # _post_to_resend, leaving captured['subject'] unset (cascade fix).
+  monkeypatch.setenv('SIGNALS_EMAIL_TO', 'ops@example.com')
   monkeypatch.setenv('RESEND_API_KEY', 'test_key_f1')
   monkeypatch.setattr(notifier, '_post_to_resend', _capture_post)
 

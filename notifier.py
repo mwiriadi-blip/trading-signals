@@ -98,8 +98,55 @@ class SendStatus(NamedTuple):
 # =========================================================================
 # Email sender / recipient config (D-14)
 # =========================================================================
+#
+# Phase 27 #9 (review-fix M3): no hardcoded fallback. SIGNALS_EMAIL_TO is
+# REQUIRED. Missing/blank → log ERROR + return SendStatus(ok=False) +
+# append a state-health warning marker (option b — fail-soft, never crash).
+# Operator notices misconfiguration via the dashboard health strip on the
+# next visit. See `_resolve_email_to_or_skip` below.
 
-_EMAIL_TO_FALLBACK = 'mwiriadi@gmail.com'  # operator-confirmed fallback (Option C per REVIEWS.md)
+
+def _resolve_email_to_or_skip(
+  state: dict | None = None,
+  *,
+  context: str,
+):
+  '''Phase 27 #9: resolve SIGNALS_EMAIL_TO or signal skip.
+
+  Returns the recipient address as a non-empty stripped string when set;
+  returns None when missing/blank (caller must skip dispatch).
+
+  Side effects on missing env var:
+    1. Log an ERROR via the module logger naming `context` (one of
+       'send_daily_email', 'send_crash_email', 'send_stop_alert_email').
+    2. If `state` is provided, append a marker entry to state['warnings']
+       via state_manager.append_warning so the dashboard health strip
+       surfaces the misconfiguration. Wrapped in try/except so notifier
+       NEVER crashes the daily run on append-warning failure.
+
+  Empty/whitespace-only env var ('   ') is treated identically to unset —
+  matches a common deploy-typo failure mode (export SIGNALS_EMAIL_TO=).
+  '''
+  to_addr = os.environ.get('SIGNALS_EMAIL_TO', '').strip()
+  if to_addr:
+    return to_addr
+  logger.error(
+    '[Email] SIGNALS_EMAIL_TO env var required — %s skipped', context,
+  )
+  if state is not None:
+    try:
+      from state_manager import append_warning
+      append_warning(
+        state,
+        'email',
+        'SIGNALS_EMAIL_TO env var missing — emails disabled',
+      )
+    except Exception as e:  # noqa: BLE001 — never-crash invariant
+      logger.error(
+        '[Email] could not append SIGNALS_EMAIL_TO health warning: %s: %s',
+        type(e).__name__, e,
+      )
+  return None
 
 
 # =========================================================================
@@ -1448,7 +1495,9 @@ def send_daily_email(
   D-04 (Phase 8): subject gets `[!]` prefix when `_has_critical_banner`
     returns True (stale state or corrupt-reset).
 
-  Recipient: os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK).
+  Recipient: SIGNALS_EMAIL_TO env var (required — Phase 27 #9). Missing
+  or empty → log ERROR + return SendStatus(ok=False) + append a
+  state-health warning marker visible on the dashboard health strip.
 
   Phase 12 (D-14/D-15/D-16): SIGNALS_EMAIL_FROM read per-send. Missing
   or empty → log ERROR + return SendStatus(ok=False, reason='missing_sender');
@@ -1505,7 +1554,11 @@ def send_daily_email(
     )
     return SendStatus(ok=True, reason='no_api_key')
 
-  to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
+  # Phase 27 #9: SIGNALS_EMAIL_TO is required (no fallback). Missing →
+  # log ERROR + state-health warning + early return.
+  to_addr = _resolve_email_to_or_skip(state, context='send_daily_email')
+  if to_addr is None:
+    return SendStatus(ok=False, reason='missing_recipient')
   try:
     _post_to_resend(api_key, from_addr, to_addr, subject, html_body)
     logger.info('[Email] sent to %s subject=%r', to_addr, subject)
@@ -1589,12 +1642,14 @@ def send_crash_email(
     )
     return SendStatus(ok=False, reason='no_api_key')
 
-  to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
-  if not to_addr:
-    logger.warning(
-      '[Email] WARN crash-email: SIGNALS_EMAIL_TO missing — skipping dispatch',
-    )
-    return SendStatus(ok=False, reason='no_recipient')
+  # Phase 27 #9: SIGNALS_EMAIL_TO is required (no fallback). Crash path
+  # passes state=None — append_warning would need a loadable state and
+  # the daemon may already be in a partially-corrupted state on the
+  # crash-email path. Plan 27-11 last_crash.json is the additional
+  # operator-recovery surface for the missing-env-var case.
+  to_addr = _resolve_email_to_or_skip(state=None, context='send_crash_email')
+  if to_addr is None:
+    return SendStatus(ok=False, reason='missing_recipient')
 
   try:
     _post_to_resend(
@@ -1941,7 +1996,13 @@ def send_stop_alert_email(transitions: list[dict], dashboard_url: str) -> bool:
   if not from_addr:
     logger.warning('[Email] WARN send_stop_alert_email: missing SIGNALS_EMAIL_FROM')
     return False
-  to_addr = os.environ.get('SIGNALS_EMAIL_TO', _EMAIL_TO_FALLBACK)
+  # Phase 27 #9: SIGNALS_EMAIL_TO is required (no fallback). The stop-alert
+  # path doesn't take a state dict (transitions arg only) — pass state=None;
+  # the next send_daily_email call appends the health-warning marker for
+  # operator visibility on the dashboard health strip.
+  to_addr = _resolve_email_to_or_skip(state=None, context='send_stop_alert_email')
+  if to_addr is None:
+    return False
   api_key = os.environ.get('RESEND_API_KEY', '').strip()
   if not api_key:
     logger.warning('[Email] WARN send_stop_alert_email: missing RESEND_API_KEY')

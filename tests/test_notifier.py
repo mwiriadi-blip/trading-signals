@@ -101,6 +101,19 @@ def _pin_signals_email_from(monkeypatch):
   )
 
 
+@pytest.fixture(autouse=True)
+def _pin_signals_email_to(monkeypatch):
+  '''Phase 27 #9 (review-fix M3): SIGNALS_EMAIL_TO is required (no
+  fallback). Pin a default test recipient so existing tests that exercise
+  send_daily_email / send_crash_email / send_stop_alert_email don't
+  short-circuit with missing_recipient. Tests in TestEmailToEnvVar /
+  TestSendDispatch that specifically exercise the missing-env-var path
+  delenv() this within their own bodies — pytest's last-mutation-wins
+  semantics mean per-test overrides take precedence.
+  '''
+  monkeypatch.setenv('SIGNALS_EMAIL_TO', 'mwiriadi@gmail.com')
+
+
 # =========================================================================
 # 6-class skeleton — one placeholder test per class (xfail / pytest.raises)
 # Nyquist D-8 gate — Waves 1 + 2 fill in real test bodies.
@@ -1219,9 +1232,13 @@ class TestSendDispatch:
     send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
     assert captured[0]['json']['to'] == ['custom@example.com']
 
-  def test_uses_fallback_recipient_when_signals_email_to_unset(
+  def test_skips_dispatch_when_signals_email_to_unset(
       self, tmp_path, monkeypatch) -> None:
-    '''D-14 Option C: _EMAIL_TO_FALLBACK == 'mwiriadi@gmail.com' when env unset.'''
+    '''Phase 27 #9 (review-fix M3): SIGNALS_EMAIL_TO is required — no
+    hardcoded fallback. Missing env → ERROR log + SendStatus(ok=False) +
+    no _post_to_resend call. Replaces D-14 Option C fallback behavior
+    (operator's personal email no longer lives in source).
+    '''
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('RESEND_API_KEY', 'k')
     monkeypatch.delenv('SIGNALS_EMAIL_TO', raising=False)
@@ -1233,8 +1250,10 @@ class TestSendDispatch:
 
     monkeypatch.setattr('notifier.requests.post', _fake_post)
     state = json.loads(SAMPLE_STATE_NO_CHANGE_PATH.read_text())
-    send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
-    assert captured[0]['json']['to'] == ['mwiriadi@gmail.com']
+    result = send_daily_email(state, {'^AXJO': 1, 'AUDUSD=X': 0}, FROZEN_NOW)
+    assert result.ok is False
+    assert result.reason == 'missing_recipient'
+    assert captured == [], 'must not dispatch when SIGNALS_EMAIL_TO missing'
 
 
 class TestAtomicWriteHtml:

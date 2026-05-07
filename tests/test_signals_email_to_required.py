@@ -180,6 +180,10 @@ class TestSignalsEmailToPresent:
         self.status_code = status_code
         self.text = body
 
+      def raise_for_status(self) -> None:
+        # Mirror requests behaviour for the subset _post_to_resend cares about.
+        return None
+
       def json(self):
         return {'id': 'fake'}
 
@@ -207,6 +211,10 @@ class TestSignalsEmailToPresent:
       def __init__(self, status_code: int = 200, body: str = '{}'):
         self.status_code = status_code
         self.text = body
+
+      def raise_for_status(self) -> None:
+        # Mirror requests behaviour for the subset _post_to_resend cares about.
+        return None
 
       def json(self):
         return {'id': 'fake'}
@@ -294,10 +302,16 @@ class TestNoHardcodedEmailInNotifier:
       r'[a-zA-Z0-9._%+-]+@(?!example\.|x\.com|domain\.com)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
       src,
     )
-    # Allow @carbonbookkeeping.com.au (verified Resend sender, lives as
-    # an example only inside docstrings/comments — never as a hardcoded
-    # default; presence is documentation, not config). Filter it out.
-    leaked = [m for m in leaked if 'carbonbookkeeping' not in m]
+    # Allow-list:
+    #  - @carbonbookkeeping.com.au (verified Resend sender, only inside
+    #    docstrings/comments as documentation, never as hardcoded config)
+    #  - onboarding@resend.dev (anti-pattern reference in Phase 12 SC-4
+    #    docstrings — "NEVER falls back to onboarding@resend.dev". Pure
+    #    documentation; if it ever appears as a code default it would
+    #    collide with our env-var-required policy and the SC-4 test would
+    #    catch it directly.)
+    _ALLOWED_DOC_EMAILS = ('carbonbookkeeping', 'onboarding@resend.dev')
+    leaked = [m for m in leaked if not any(a in m for a in _ALLOWED_DOC_EMAILS)]
     assert leaked == [], (
       f"notifier.py contains hardcoded operator-shaped email addresses: {leaked}"
     )
