@@ -27,7 +27,10 @@ import logging
 import time
 
 import pandas as pd
+import requests
 import requests.exceptions
+
+from system_params import HTTP_TIMEOUT_S
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ logger = logging.getLogger(__name__)
 # =========================================================================
 
 _yf = None  # memoized yfinance module reference; populated by _get_yf()
+_yf_session = None  # memoized requests.Session with HTTP_TIMEOUT_S default (Phase 27 #5)
 
 
 def _get_yf():
@@ -67,18 +71,40 @@ def _get_yf():
 
   Returns the imported `yfinance` module. Memoized — first call pays the
   import cost; subsequent calls are O(1).
-
-  Coordination with Plan 27-02 (HTTP_TIMEOUT_S): when that plan lands the
-  HTTP_TIMEOUT_S constant in system_params, this function will also build a
-  requests.Session with a patched .request that injects a default timeout.
-  Until then, fetch_ohlcv passes timeout=10 directly to ticker.history()
-  (see body below).
   '''
   global _yf
   if _yf is None:
     import yfinance as yf_  # local import — first call only
     _yf = yf_
   return _yf
+
+
+def _get_yf_session():
+  '''Phase 27 #5: lazy memoized requests.Session with HTTP_TIMEOUT_S default.
+
+  yfinance 1.2.0 accepts `session=` on Ticker(). We pass a Session whose
+  `.request` is patched to inject `timeout=HTTP_TIMEOUT_S` when the caller
+  did not supply one — guards every yfinance-internal HTTP call against
+  hung-network DoS (T-27-02-01).
+
+  setdefault — does NOT override yfinance's own per-call timeout (e.g. our
+  fetch_ohlcv still passes timeout=HTTP_TIMEOUT_S to ticker.history()
+  explicitly); only fires when yfinance internals call out without one.
+
+  Module-top mutation is FORBIDDEN by Plan 27-02 review-fix agreed-6 — the
+  patch lives behind this accessor so a `python main.py --version` cold
+  start never builds a Session.
+  '''
+  global _yf_session
+  if _yf_session is None:
+    s = requests.Session()
+    _orig = s.request
+    def _patched(method, url, **kwargs):
+      kwargs.setdefault('timeout', HTTP_TIMEOUT_S)
+      return _orig(method, url, **kwargs)
+    s.request = _patched
+    _yf_session = s
+  return _yf_session
 
 
 def _get_yf_rate_limit_error():
@@ -187,6 +213,9 @@ def fetch_ohlcv(
   # Phase 27 #14: lazy yfinance load on first attempt. _get_yf() memoizes,
   # so repeat fetches in the same process pay the import cost once.
   yf_mod = _get_yf()
+  # Phase 27 #5: lazy memoized session with HTTP_TIMEOUT_S default for
+  # yfinance-internal HTTP calls (auxiliary metadata, scrapers, etc).
+  yf_session = _get_yf_session()
   # Lazy-resolve the real yfinance YFRateLimitError class and extend the
   # retry-eligible except tuple for THIS call. Module-level _RETRY_EXCEPTIONS
   # keeps the proxy class so external tests can raise the proxy directly;
@@ -196,13 +225,13 @@ def fetch_ohlcv(
   retry_exceptions = _RETRY_EXCEPTIONS + (_real_yfe,)
   for attempt in range(1, retries + 1):
     try:
-      ticker = yf_mod.Ticker(symbol)
+      ticker = yf_mod.Ticker(symbol, session=yf_session)
       df = ticker.history(
         period=f'{days}d',
         interval='1d',
         auto_adjust=True,
         actions=False,
-        timeout=10,
+        timeout=HTTP_TIMEOUT_S,
       )
       if df.empty:
         raise ValueError(

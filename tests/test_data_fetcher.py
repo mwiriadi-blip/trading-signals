@@ -87,8 +87,15 @@ class _FakeTicker:
 
 
 def _make_fake_ticker_factory(behaviour, call_count):
-  '''Return a callable that mimics the `yf.Ticker` constructor.'''
-  def _factory(symbol: str):
+  '''Return a callable that mimics the `yf.Ticker` constructor.
+
+  Accepts (and ignores) `session=` kwarg per Phase 27 #5: production
+  passes `session=_get_yf_session()` so yfinance internals inherit the
+  HTTP_TIMEOUT_S default. Fakes don't make real HTTP calls so the
+  session is irrelevant — but the kwarg must be accepted to match the
+  real Ticker signature.
+  '''
+  def _factory(symbol: str, session=None):
     return _FakeTicker(symbol, behaviour, call_count)
   return _factory
 

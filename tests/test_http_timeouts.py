@@ -175,10 +175,15 @@ def test_post_to_resend_uses_canonical_timeout():
     f'_post_to_resend.timeout_s default ({default}) must equal '
     f'system_params.HTTP_TIMEOUT_S ({system_params.HTTP_TIMEOUT_S})'
   )
-  # Source-level: the requests.post call passes timeout=(5, ...).
+  # Source-level: the requests.post call passes timeout=(5, X) where X
+  # resolves to HTTP_TIMEOUT_S — either the literal name OR the parameter
+  # `timeout_s` whose default is HTTP_TIMEOUT_S (caller override preserved
+  # for crash-email path). Both shapes preserve the connect=5s / read=30s
+  # split semantics required by the original notifier review Fix 2.
   src = pathlib.Path('notifier.py').read_text()
-  assert re.search(r'timeout=\(5,\s*HTTP_TIMEOUT_S\)', src), (
+  assert re.search(r'timeout=\(5,\s*(HTTP_TIMEOUT_S|timeout_s)\)', src), (
     'notifier.py must call requests.post(..., timeout=(5, HTTP_TIMEOUT_S)) '
+    'or (5, timeout_s) where timeout_s defaults to HTTP_TIMEOUT_S '
     '— preserves connect=5s / read=HTTP_TIMEOUT_S split semantics.'
   )
 

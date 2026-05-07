@@ -27,6 +27,21 @@ from typing import Literal, TypedDict
 STRATEGY_VERSION: str = 'v1.2.0'
 
 # =========================================================================
+# Phase 27 #5: canonical outbound HTTP timeout (single source of truth)
+# =========================================================================
+# HTTP_TIMEOUT_S applies to EVERY outbound HTTP call in production code
+# (Resend POST, yfinance session, future adapters). Without an explicit
+# timeout, requests blocks indefinitely on a stuck socket — the daily
+# run hangs and the crash-email path never fires (T-27-02-01 DoS).
+#
+# Read-phase budget: 30s. Connect-phase is split per call site — notifier
+# uses (5, HTTP_TIMEOUT_S) so DNS / TCP handshake gets a tight 5s window.
+#
+# Single source: do NOT introduce a second timeout constant. AST regression
+# in tests/test_http_timeouts.py enforces (T-27-02-02 drift mitigation).
+HTTP_TIMEOUT_S: int = 30
+
+# =========================================================================
 # Phase 1 constants — migrated from signal_engine.py (D-01)
 # =========================================================================
 

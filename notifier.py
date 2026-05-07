@@ -69,6 +69,7 @@ from system_params import (
   _COLOR_TEXT_DIM,
   _COLOR_TEXT_MUTED,
   FALLBACK_CONTRACT_SPECS,
+  HTTP_TIMEOUT_S,
   INITIAL_ACCOUNT,
   TRAIL_MULT_LONG,
   TRAIL_MULT_SHORT,
@@ -102,8 +103,10 @@ _EMAIL_TO_FALLBACK = 'mwiriadi@gmail.com'  # operator-confirmed fallback (Option
 # =========================================================================
 # Retry policy (D-12 — mirror data_fetcher.fetch_ohlcv)
 # =========================================================================
+# Phase 27 #5: HTTP_TIMEOUT_S is imported from system_params (single source
+# of truth). The previous local _RESEND_TIMEOUT_S = 30 was deleted to avoid
+# constant drift — see tests/test_http_timeouts.py for the regression gate.
 
-_RESEND_TIMEOUT_S = 30
 _RESEND_RETRIES = 3
 _RESEND_BACKOFF_S = 10
 
@@ -1318,7 +1321,7 @@ def _post_to_resend(
   to_addr: str,
   subject: str,
   html_body: str | None = None,
-  timeout_s: int = _RESEND_TIMEOUT_S,
+  timeout_s: int = HTTP_TIMEOUT_S,
   retries: int = _RESEND_RETRIES,
   backoff_s: int = _RESEND_BACKOFF_S,
   text_body: str | None = None,

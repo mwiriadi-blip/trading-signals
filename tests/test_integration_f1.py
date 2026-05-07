@@ -64,7 +64,7 @@ def _setup_f1(tmp_path, monkeypatch):
   #    REVIEWS M-3: this is the implementation-equivalent of ROADMAP SC-1's
   #    `requests.get` boundary (yfinance wraps requests.get internally;
   #    both are above the network layer in data_fetcher).
-  def _fake_ticker(sym):
+  def _fake_ticker(sym, session=None):  # session= per Phase 27 #5
     class _T:
       def history(self, **_kw):
         name = 'axjo_400d.json' if sym == '^AXJO' else 'audusd_400d.json'
