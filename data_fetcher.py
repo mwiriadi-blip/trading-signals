@@ -28,15 +28,109 @@ import time
 
 import pandas as pd
 import requests.exceptions
-import yfinance as yf
-from yfinance.exceptions import YFRateLimitError
 
 logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# Phase 27 #14: deferred yfinance import.
+#
+# yfinance is heavy (~30+ submodules; pulls protobuf, scrapers, screeners,
+# domain modules). Importing at data_fetcher module-load time bloats the
+# cold-start cost of `python main.py --version`, dashboard-only routes, and
+# any test that doesn't actually fetch data.
+#
+# Strategy:
+#   1. NO module-top `import yfinance as yf`.
+#   2. PEP 562 `__getattr__` exposes `data_fetcher.yf` as a module attribute
+#      that lazily imports yfinance on first access. This preserves the
+#      existing test monkeypatch contract (`monkeypatch.setattr(
+#      'data_fetcher.yf.Ticker', ...)`) without forcing eager import.
+#   3. `_get_yf()` is the explicit accessor used by fetch_ohlcv. It memoizes
+#      the yfinance module; future Plan 27-02 (HTTP_TIMEOUT_S) can extend it
+#      to also build a configured requests.Session with a default timeout.
+#   4. `YFRateLimitError` stays importable at module level via a lightweight
+#      Exception subclass (review-fix M4). External code that does
+#      `from data_fetcher import YFRateLimitError` keeps working WITHOUT
+#      forcing yfinance import. Internal `except` clauses catch BOTH the
+#      module-level proxy (so re-raising as our own type composes) AND the
+#      real yfinance.exceptions.YFRateLimitError (resolved lazily through
+#      `_get_yf_rate_limit_error()` so the actual library exception class is
+#      caught when fetch is exercised).
+# =========================================================================
+
+_yf = None  # memoized yfinance module reference; populated by _get_yf()
+
+
+def _get_yf():
+  '''Lazy-import accessor for the yfinance module (Phase 27 #14).
+
+  Returns the imported `yfinance` module. Memoized — first call pays the
+  import cost; subsequent calls are O(1).
+
+  Coordination with Plan 27-02 (HTTP_TIMEOUT_S): when that plan lands the
+  HTTP_TIMEOUT_S constant in system_params, this function will also build a
+  requests.Session with a patched .request that injects a default timeout.
+  Until then, fetch_ohlcv passes timeout=10 directly to ticker.history()
+  (see body below).
+  '''
+  global _yf
+  if _yf is None:
+    import yfinance as yf_  # local import — first call only
+    _yf = yf_
+  return _yf
+
+
+def _get_yf_rate_limit_error():
+  '''Lazy resolver for the real yfinance.exceptions.YFRateLimitError class.
+
+  Used inside the retry-loop except tuple so that real yfinance rate-limit
+  errors (raised from inside ticker.history()) are caught even though the
+  module-top no longer imports them. yfinance is already loaded by the time
+  this function runs (fetch_ohlcv calls `_get_yf()` first).
+  '''
+  from yfinance.exceptions import YFRateLimitError as _YFE
+  return _YFE
+
+
+def __getattr__(name: str):
+  '''PEP 562 module-level __getattr__ — lazily expose `yf` as a module
+  attribute so existing test monkeypatches keep working.
+
+  Tests do `monkeypatch.setattr('data_fetcher.yf.Ticker', fake)`. That
+  resolves `data_fetcher.yf` first; PEP 562 __getattr__ fires for missing
+  attributes, calls _get_yf() to populate, and binds it on the module so
+  monkeypatch (which uses setattr on the module) works unchanged.
+  '''
+  if name == 'yf':
+    yf_ = _get_yf()
+    # Bind on the module so subsequent attribute lookups skip __getattr__.
+    import sys as _sys
+    _sys.modules[__name__].yf = yf_
+    return yf_
+  raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+
+
+class YFRateLimitError(Exception):
+  '''Phase 27 #14: module-level proxy for yfinance.exceptions.YFRateLimitError.
+
+  Importable at data_fetcher module-import time WITHOUT forcing yfinance to
+  load. External `from data_fetcher import YFRateLimitError` clauses
+  continue to work; the retry loop catches BOTH this proxy AND the real
+  yfinance class (via _get_yf_rate_limit_error()) so callers can choose
+  either name in their `except` clauses.
+  '''
 
 
 # Retry-eligible transient exceptions (04-RESEARCH.md §Pattern 1, Pitfall 4).
 # Empty-frame-on-invalid-symbol is raised as ValueError inside the try block
 # and added to the except tuple via tuple-unpack — NEVER catch bare Exception.
+#
+# Phase 27 #14: the module-level YFRateLimitError proxy is in this tuple so
+# the retry loop catches `raise data_fetcher.YFRateLimitError(...)` from any
+# external test/code path. The REAL yfinance.exceptions.YFRateLimitError is
+# resolved lazily inside fetch_ohlcv (see body) and added to the live except
+# tuple — keeping module-import time off yfinance.
 _RETRY_EXCEPTIONS = (
   YFRateLimitError,
   requests.exceptions.ReadTimeout,
@@ -90,9 +184,19 @@ def fetch_ohlcv(
                     required OHLCV columns — C-6 revision 2026-04-22.
   '''
   last_err: Exception | None = None
+  # Phase 27 #14: lazy yfinance load on first attempt. _get_yf() memoizes,
+  # so repeat fetches in the same process pay the import cost once.
+  yf_mod = _get_yf()
+  # Lazy-resolve the real yfinance YFRateLimitError class and extend the
+  # retry-eligible except tuple for THIS call. Module-level _RETRY_EXCEPTIONS
+  # keeps the proxy class so external tests can raise the proxy directly;
+  # this local extension catches the real library exception that history()
+  # raises in production.
+  _real_yfe = _get_yf_rate_limit_error()
+  retry_exceptions = _RETRY_EXCEPTIONS + (_real_yfe,)
   for attempt in range(1, retries + 1):
     try:
-      ticker = yf.Ticker(symbol)
+      ticker = yf_mod.Ticker(symbol)
       df = ticker.history(
         period=f'{days}d',
         interval='1d',
@@ -118,7 +222,7 @@ def fetch_ohlcv(
           f'(got {sorted(df.columns)}); yfinance schema may have drifted',
         )
       return df[['Open', 'High', 'Low', 'Close', 'Volume']]
-    except (*_RETRY_EXCEPTIONS, ValueError) as e:
+    except (*retry_exceptions, ValueError) as e:
       last_err = e
       logger.warning(
         '[Fetch] %s attempt %d/%d failed: %s: %s',
