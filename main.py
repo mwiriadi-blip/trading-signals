@@ -31,11 +31,22 @@ the Phase 4 _force_email_stub and wired _send_email_never_crash via the
 D-15 compute-then-email path — `run_daily_check` now returns a 4-tuple
 (rc, state, old_signals, run_date) consumed by the dispatch ladder.
 '''
+import sys
+
+# Phase 27 #17: --version cold-start short-circuit.
+# This MUST run BEFORE any heavy app-module imports (data_fetcher,
+# signal_engine, sizing_engine, services, etc.) so `python main.py --version`
+# pays only the system_params import cost. yfinance must NOT be in
+# sys.modules after this exits — verified by tests/test_version_flag.py.
+if __name__ == '__main__' and '--version' in sys.argv[1:]:
+  from system_params import STRATEGY_VERSION  # noqa: PLC0415 — early-exit hook
+  print(STRATEGY_VERSION)
+  sys.exit(0)
+
 import argparse
 import copy
 import logging
 import os
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -777,6 +788,16 @@ def _build_parser() -> argparse.ArgumentParser:
       f'Choices: {", ".join(system_params.SPI_CONTRACTS.keys())}. '
       'Interactive prompt if omitted on TTY.'
     ),
+  )
+  # Phase 27 #17: --version flag. Primary handler is the early sys.argv
+  # hook in `if __name__ == '__main__':` (before heavy app imports). This
+  # argparse-side registration is a fallback for the in-process test path
+  # (where main.py is imported and main(['--version']) is called) AND keeps
+  # `--help` complete by listing --version among the public flags.
+  p.add_argument(
+    '--version', action='store_true',
+    help='Print STRATEGY_VERSION and exit 0 (Phase 27 #17). '
+         'Short-circuited before heavy imports for fast cold-start.',
   )
   p.add_argument(
     '--audusd-contract',
@@ -1914,6 +1935,15 @@ def main(argv: list[str] | None = None) -> int:
 
   parser = _build_parser()
   args = parser.parse_args(argv)
+  # Phase 27 #17: in-process --version handler. Reachable when main() is
+  # called directly (e.g. tests calling main(['--version'])) since the
+  # __main__ block's early sys.argv hook does not fire on import paths.
+  # No heavy work done here — the import cost was already paid by the
+  # caller, so no cold-start guarantee on this path; the early hook in
+  # the __main__ block is the cold-start guarantee.
+  if getattr(args, 'version', False):
+    print(system_params.STRATEGY_VERSION)
+    return 0
   _validate_flag_combo(args, parser)
   logging.basicConfig(
     level=logging.INFO,
