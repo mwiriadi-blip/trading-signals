@@ -280,6 +280,18 @@ MAX_WARNINGS: int = 50              # FIFO bound on state['warnings'] (D-11; Pha
 STATE_SCHEMA_VERSION: int = 10      # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08); Phase 20 → v7 (last_alert_state on paper_trades[] rows; D-08); v8 markets + per-market strategy_settings; Phase 27 #1 → v9 quantize money fields via Decimal (AUD cents, HALF_UP); Phase 27 #11 (Plan 27-09) → v10 promote bare-int signal rows to dict (Phase 26 DEBT.md R5 — back-compat removal).
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
+# Phase 27 Plan 27-11 (review-fix agreed-5): second-line crash fallback.
+# When notifier.send_crash_email's outbound dispatch fails (Resend down,
+# network outage), the redacted crash payload is written here so the
+# operator sees it on the next dashboard visit even if the email never
+# reached them. Default sits next to STATE_FILE (NOT a separate working
+# location). Operator can override at runtime via the LAST_CRASH_PATH
+# env var — resolution lives in notifier._resolve_last_crash_path() so
+# system_params stays stdlib-only (no os/pathlib import here, per
+# FORBIDDEN_MODULES_STDLIB_ONLY hex constraint enforced in
+# tests/test_signal_engine.py::TestDeterminism).
+LAST_CRASH_FILE: str = 'last_crash.json'
+
 # =========================================================================
 # Phase 24 constants — market registry + per-market strategy settings
 # =========================================================================

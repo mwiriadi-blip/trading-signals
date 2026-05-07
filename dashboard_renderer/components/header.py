@@ -1,7 +1,10 @@
 '''Header component implementation.'''
 
 import html
+import json
+import os
 from datetime import datetime
+from pathlib import Path
 
 from dashboard_renderer.context import RenderContext
 from dashboard_renderer.formatters import (
@@ -9,6 +12,53 @@ from dashboard_renderer.formatters import (
   _derive_status_dot_class,
   _format_countdown_text,
 )
+from system_params import LAST_CRASH_FILE, STATE_FILE
+
+
+def _resolve_last_crash_path() -> Path:
+  '''Phase 27 #15 (Plan 27-11): mirror notifier._resolve_last_crash_path.
+
+  Honors the LAST_CRASH_PATH env-var override so an operator-configured
+  location is consistent across the writer (notifier) and the reader
+  (dashboard banner). Defined locally rather than imported to keep
+  dashboard_renderer free of a notifier import (hex boundary D-01:
+  renderer never imports notifier).
+  '''
+  override = os.environ.get('LAST_CRASH_PATH', '').strip()
+  if override:
+    return Path(override)
+  return Path(STATE_FILE).parent / LAST_CRASH_FILE
+
+
+def render_last_crash_banner() -> str:
+  '''Phase 27 #15 (Plan 27-11): surface last_crash.json on the dashboard.
+
+  Returns the empty string when no last_crash.json file exists at the
+  configured path. Otherwise renders a single ``<div class="last-crash-banner">``
+  block with timestamp + exception type + exception message — every
+  interpolation flows through ``html.escape(value, quote=True)`` per the
+  Plan 27-08 XSS contract.
+
+  Read failure (FileNotFoundError, JSONDecodeError, OSError) is silent —
+  defensive at the trust boundary (a malformed file MUST NOT crash the
+  dashboard render).
+  '''
+  path = _resolve_last_crash_path()
+  try:
+    data = json.loads(path.read_text())
+  except (FileNotFoundError, json.JSONDecodeError, OSError):
+    return ''
+  if not isinstance(data, dict):
+    return ''
+  timestamp = html.escape(str(data.get('timestamp_utc', '')), quote=True)
+  exc_type = html.escape(str(data.get('exception_type', '')), quote=True)
+  exc_msg = html.escape(str(data.get('exception_message', '')), quote=True)
+  return (
+    '<div class="last-crash-banner" role="alert" aria-live="polite">'
+    f'<strong>Last crash:</strong> {timestamp} — '
+    f'{exc_type}: {exc_msg}'
+    '</div>\n'
+  )
 
 
 def render_status_strip(state: dict, now_awst: datetime) -> str:
