@@ -165,7 +165,12 @@ class TestLoadSave:
     assert state['account'] == INITIAL_ACCOUNT
     assert state['last_run'] is None
     assert state['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
-    assert state['signals'] == {'SPI200': 0, 'AUDUSD': 0}, 'D-03: FLAT=0 init'
+    # Phase 27 #11 (Plan 27-09): reset_state writes dict-shaped signals.
+    # Bare-int back-compat removed per Phase 26 DEBT.md R5.
+    assert state['signals']['SPI200']['signal'] == 0, 'D-03: FLAT init (signal=0)'
+    assert state['signals']['AUDUSD']['signal'] == 0, 'D-03: FLAT init (signal=0)'
+    assert isinstance(state['signals']['SPI200'], dict), 'truth #1: dict shape only'
+    assert isinstance(state['signals']['AUDUSD'], dict), 'truth #1: dict shape only'
     assert state['trade_log'] == []
     assert state['equity_history'] == []
     assert state['warnings'] == []
@@ -897,13 +902,21 @@ class TestReset:
     )
 
   def test_reset_state_canonical_default_values(self) -> None:
-    '''STATE-07 / D-01 / D-03: every default value matches CONTEXT.md.'''
+    '''STATE-07 / D-01 / D-03: every default value matches CONTEXT.md.
+
+    Phase 27 #11 (Plan 27-09): signals is now dict-shaped only (Phase 26
+    DEBT.md R5 — bare-int back-compat removed).
+    '''
     state = reset_state()
     assert state['schema_version'] == STATE_SCHEMA_VERSION
     assert state['account'] == INITIAL_ACCOUNT
     assert state['last_run'] is None
     assert state['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
-    assert state['signals'] == {'SPI200': 0, 'AUDUSD': 0}, 'D-03: FLAT=0 init'
+    # Phase 27 #11: dict-shape only
+    assert isinstance(state['signals']['SPI200'], dict)
+    assert isinstance(state['signals']['AUDUSD'], dict)
+    assert state['signals']['SPI200']['signal'] == 0
+    assert state['signals']['AUDUSD']['signal'] == 0
     assert state['trade_log'] == []
     assert state['equity_history'] == []
     assert state['warnings'] == []
@@ -951,10 +964,17 @@ class TestResetState:
     assert state['account'] == state['initial_account']
 
   def test_reset_state_custom_initial_account_does_not_affect_other_fields(self) -> None:
-    '''D-02: other canonical fields unchanged when custom initial_account passed.'''
+    '''D-02: other canonical fields unchanged when custom initial_account passed.
+
+    Phase 27 #11 (Plan 27-09): signals dict-shaped (was bare-int).
+    '''
     state = reset_state(initial_account=50000)
     assert state['positions'] == {'SPI200': None, 'AUDUSD': None}
-    assert state['signals'] == {'SPI200': 0, 'AUDUSD': 0}
+    # Phase 27 #11: dict-shape only
+    assert isinstance(state['signals']['SPI200'], dict)
+    assert isinstance(state['signals']['AUDUSD'], dict)
+    assert state['signals']['SPI200']['signal'] == 0
+    assert state['signals']['AUDUSD']['signal'] == 0
     assert state['trade_log'] == []
     assert state['equity_history'] == []
     assert state['warnings'] == []
@@ -1122,7 +1142,11 @@ class TestMigrateV2Backfill:
     # Existing keys untouched
     assert migrated['account'] == 85432.10
     assert migrated['last_run'] == '2026-03-15'
-    assert migrated['signals'] == {'SPI200': 1, 'AUDUSD': -1}
+    # Phase 27 #11 (Plan 27-09): _migrate walks v1->v10; v9->v10 promotes
+    # bare-int signal rows to dict shape. Bare-int values are preserved
+    # in the `signal` key with strategy_version stamped per migrator.
+    assert migrated['signals']['SPI200']['signal'] == 1
+    assert migrated['signals']['AUDUSD']['signal'] == -1
     assert migrated['trade_log'] == [{'instrument': 'SPI200', 'net_pnl': 250.0}]
     assert migrated['equity_history'] == [{'date': '2026-03-14', 'equity': 85000.0}]
 
@@ -2560,9 +2584,9 @@ class TestFullWalkV0ToV6:
     import json as _json
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 9, (
-      f'walk-forward chain v0->...->v9 must end at 9 '
-      f'(Phase 27 #1 Decimal money-math migration); '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 10, (
+      f'walk-forward chain v0->...->v10 must end at 10 '
+      f'(Phase 27 #11 Plan 27-09 bare-int signal shape unification); '
       f'got {loaded["schema_version"]}'
     )
     # Phase 22 v3->v4 backfill also ran
@@ -2625,8 +2649,8 @@ class TestMigrateV6ToV7:
     )
     # Via _migrate walker: schema_version advances to 7
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 9, (
-      f'D-08: _migrate must walk v6->v9 (Phase 27 #1); got {out2["schema_version"]}'
+    assert out2['schema_version'] == 10, (
+      f'D-08: _migrate must walk v6->v10 (Phase 27 #11); got {out2["schema_version"]}'
     )
     assert out2['paper_trades'][0]['last_alert_state'] is None
     assert out2['paper_trades'][1]['last_alert_state'] is None
@@ -2724,7 +2748,7 @@ class TestMigrateV6ToV7:
       'D-08: missing paper_trades key must remain absent after migration'
     )
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 9  # Phase 27 #1
+    assert out2['schema_version'] == 10  # Phase 27 #11 (Plan 27-09)
 
   def test_migrate_v6_to_v7_silent_no_warnings_no_logs(self, caplog) -> None:
     '''D-15 silent migration: migrating 5 rows must emit zero log records and
@@ -2780,9 +2804,9 @@ class TestMigrateV6ToV7:
     }
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == 9, (
-      f'walk-forward chain v0->...->v9 must end at 9 '
-      f'(Phase 27 #1 Decimal money-math migration); '
+    assert loaded['schema_version'] == 10, (
+      f'walk-forward chain v0->...->v10 must end at 10 '
+      f'(Phase 27 #11 Plan 27-09 bare-int signal shape unification); '
       f'got {loaded["schema_version"]}'
     )
     # Phase 20 v6->v7 backfill

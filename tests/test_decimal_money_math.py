@@ -177,9 +177,10 @@ class TestStateRoundTripPreservesAudCents:
     is migrated to v9 with quantize-via-Decimal coercion (idempotent).
     '''
     from state_manager import MIGRATIONS, STATE_SCHEMA_VERSION
-    # Truth assertion: schema bumped to v9.
-    assert STATE_SCHEMA_VERSION == 9, (
-      f'Plan 27-01 must bump STATE_SCHEMA_VERSION to 9; got {STATE_SCHEMA_VERSION}'
+    # Truth assertion: schema bumped to v10 by Plan 27-09 (was v9 here at
+    # Plan 27-01 time). Test asserts the v9 migrator is still registered.
+    assert STATE_SCHEMA_VERSION >= 9, (
+      f'Plan 27-01 must bump STATE_SCHEMA_VERSION to >=9; got {STATE_SCHEMA_VERSION}'
     )
     # Truth assertion: migrator key 9 registered (contiguity check from 27-07
     # would also catch this at module import — belt-and-suspenders).

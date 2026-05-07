@@ -36,12 +36,10 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
       signal_int = 0
       signal_as_of_line = 'Signal as of never'
       scalars_line = html.escape(d._fmt_em_dash(), quote=True)
-    elif isinstance(sig_entry, int):
-      signal_int = sig_entry
-      label = html.escape(d._SIGNAL_LABEL.get(sig_entry, d._fmt_em_dash()), quote=True)
-      signal_as_of_line = 'Signal as of never'
-      scalars_line = html.escape(d._fmt_em_dash(), quote=True)
     else:
+      # Phase 27 #11 (Plan 27-09): bare-int branch deleted. After v9->v10
+      # migration runs at load_state, sig_entry is guaranteed to be a dict
+      # (or None — handled above). Phase 26 DEBT.md R5.
       signal_int = sig_entry.get('signal', 0)
       label = html.escape(d._SIGNAL_LABEL.get(signal_int, d._fmt_em_dash()), quote=True)
       signal_as_of = html.escape(sig_entry.get('signal_as_of', 'never'), quote=True)

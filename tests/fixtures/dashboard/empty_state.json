@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 10,
   "account": 100000.0,
   "last_run": null,
   "positions": {
@@ -7,8 +7,8 @@
     "AUDUSD": null
   },
   "signals": {
-    "SPI200": 0,
-    "AUDUSD": 0
+    "SPI200": {"signal": 0, "strategy_version": "v1.2.0"},
+    "AUDUSD": {"signal": 0, "strategy_version": "v1.2.0"}
   },
   "trade_log": [],
   "equity_history": [],

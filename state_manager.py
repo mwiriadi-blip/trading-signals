@@ -86,6 +86,8 @@ from system_params import (
   AUD_QUANTIZE,  # noqa: F401 — used in _migrate_v8_to_v9
   AUD_ROUND,  # noqa: F401 — used in _migrate_v8_to_v9
   _decimal_default,  # used in save_state json.dumps default= kwarg
+  # Phase 27 #11 (Plan 27-09): strategy_version stamp for bare-int promotion
+  STRATEGY_VERSION,  # used in _migrate_v9_to_v10
 )
 from decimal import Decimal as _Decimal
 
@@ -469,6 +471,59 @@ def _migrate_v8_to_v9(s: dict) -> dict:
   return out
 
 
+def _migrate_v9_to_v10(s: dict) -> dict:
+  '''Phase 27 #11 (Plan 27-09 / Phase 26 DEBT.md R5): drop bare-int signal
+  back-compat. Promote any legacy bare-int rows in state['signals'] to the
+  canonical dict shape with keys {signal, strategy_version}.
+
+  Truth #1 (post-migration invariant): state['signals'][market_id] is
+  always a dict.
+
+  Pre-migration legacy shape (Phase 3 reset_state, in-tree until 27-09):
+    state['signals']['SPI200'] = 0   # FLAT
+    state['signals']['SPI200'] = 1   # LONG
+    state['signals']['SPI200'] = -1  # SHORT
+
+  Post-migration canonical shape:
+    state['signals']['SPI200'] = {
+      'signal': 0 | 1 | -1,
+      'strategy_version': STRATEGY_VERSION,
+    }
+
+  We use the production field name `signal` (NOT `direction` as the plan
+  text says — production code at main.py:1190, signals.py:45,
+  sizing_engine.py:153 all use `signal`). Plan deviation Rule 1 (plan vs
+  reality).
+
+  Idempotent: dict-shaped rows pass through unchanged (no overwrite of
+  existing strategy_version or other fields like last_close /
+  last_scalars / ohlc_window).
+
+  Defensive: only touches int-shaped rows; missing/None values skipped.
+  D-15 silent migration: no append_warning, no log line.
+
+  After this migrator runs at load_state, the renderer's defensive
+  `isinstance(record, int)` branch is dead code (deleted in
+  dashboard_renderer/components/signals.py).
+  '''
+  signals = s.get('signals', {})
+  if not isinstance(signals, dict):
+    return s
+  out_signals = dict(signals)
+  for k, v in signals.items():
+    # Promote ONLY bare-int rows. Bool is an int subclass — exclude it
+    # defensively (no production path produces bool here, but `True is 1`
+    # in Python's ABC tree).
+    if isinstance(v, int) and not isinstance(v, bool):
+      out_signals[k] = {
+        'signal': v,
+        'strategy_version': STRATEGY_VERSION,
+      }
+  out = dict(s)
+  out['signals'] = out_signals
+  return out
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
@@ -479,6 +534,7 @@ MIGRATIONS: dict = {
   7: _migrate_v6_to_v7,  # Phase 20 D-08: last_alert_state on paper_trades[] rows
   8: _migrate_v7_to_v8,  # Phase 24: markets + strategy_settings
   9: _migrate_v8_to_v9,  # Phase 27 #1: Decimal-quantize money fields (AUD cents, HALF_UP)
+  10: _migrate_v9_to_v10,  # Phase 27 #11 (Plan 27-09): promote bare-int signal rows to dict
 }
 
 
@@ -808,9 +864,12 @@ def reset_state(initial_account=INITIAL_ACCOUNT) -> dict:
       'SPI200': None,
       'AUDUSD': None,
     },
-    'signals': {                              # D-03: FLAT=0 init
-      'SPI200': 0,
-      'AUDUSD': 0,
+    'signals': {                              # D-03: FLAT init (Phase 27 #11
+                                              # Plan 27-09: dict shape only —
+                                              # bare-int back-compat removed
+                                              # per Phase 26 DEBT.md R5)
+      'SPI200': {'signal': 0, 'strategy_version': STRATEGY_VERSION},
+      'AUDUSD': {'signal': 0, 'strategy_version': STRATEGY_VERSION},
     },
     'trade_log': [],
     'equity_history': [],
