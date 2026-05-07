@@ -122,6 +122,12 @@ def render_header(state: dict, now: datetime, is_cookie_session: bool | None = N
     auth_widget = d._render_session_note()
 
   status_strip = render_status_strip(state, now)
+  # Phase 27 #15 (Plan 27-11): silent-crash-dropout fallback. When
+  # notifier.send_crash_email's outbound dispatch failed on the prior
+  # daily run, last_crash.json carries the redacted crash payload and
+  # this banner surfaces it next to the status strip. Empty string when
+  # no file exists — banner is opt-in, never empty-shell HTML.
+  last_crash_banner = render_last_crash_banner()
 
   return (
     '<header>\n'
@@ -133,6 +139,7 @@ def render_header(state: dict, now: datetime, is_cookie_session: bool | None = N
     f'    {auth_widget}\n'
     '  </p>\n'
     f'{status_strip}'
+    f'{last_crash_banner}'
     '</header>\n'
   )
 
