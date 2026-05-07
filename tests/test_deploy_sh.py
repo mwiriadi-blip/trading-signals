@@ -91,7 +91,7 @@ class TestDeployShSequence:
     assert 'pip install --upgrade pip' not in deploy_text
 
   def test_step_5_pip_install_requirements_present(self, deploy_text):
-    assert re.search(r'\.venv/bin/pip install -r requirements\.txt', deploy_text)
+    assert re.search(r'\.venv/bin/(?:python -m )?pip install -r requirements\.txt', deploy_text)
 
   def test_step_6_two_sudo_restart_calls(self, deploy_text):
     '''REVIEWS HIGH #4: each unit gets its own `sudo -n systemctl restart`.'''
@@ -126,11 +126,11 @@ class TestDeployShSequence:
 
   def test_order_pull_before_pip(self, deploy_lines):
     p = _line_index(deploy_lines, r'git pull --ff-only origin main')
-    i = _line_index(deploy_lines, r'\.venv/bin/pip install -r requirements\.txt')
+    i = _line_index(deploy_lines, r'\.venv/bin/(?:python -m )?pip install -r requirements\.txt')
     assert p < i
 
   def test_order_pip_before_systemctl(self, deploy_lines):
-    i = _line_index(deploy_lines, r'\.venv/bin/pip install -r requirements\.txt')
+    i = _line_index(deploy_lines, r'\.venv/bin/(?:python -m )?pip install -r requirements\.txt')
     s = _line_index(deploy_lines, r'^sudo -n systemctl restart trading-signals$')
     assert i < s
 
