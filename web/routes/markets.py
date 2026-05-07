@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,15 @@ class MarketSettingsRequest(BaseModel):
   one_contract_floor: bool = False
   contract_cap: int | None = None
   direction_mode: Literal['both', 'long_only', 'short_only'] = 'both'
+
+  @field_validator('contract_cap', mode='before')
+  @classmethod
+  def _empty_string_to_none(cls, v):
+    # json-enc serialises a blank <input type="number"> as "". Pydantic's int
+    # parser rejects "" → 400. Treat blank as "unset" since the field is optional.
+    if v == '':
+      return None
+    return v
 
   @model_validator(mode='after')
   def _cap_positive(self) -> MarketSettingsRequest:
