@@ -32,13 +32,13 @@ must_haves:
 ---
 
 ## Helper decision
-
+- Canonical helper name: `html.escape` (direct stdlib call — `html.escape(value, quote=True)`)
 <!-- revision-fix: warning-1 — Task 0 records the canonical helper choice in this block. Task 0 verification greps for this block. -->
 
 Recorded by Task 0 after inspecting notifier.py:
-- Canonical helper name: _to be filled by Task 0_
-- Locality strategy (centralised vs per-module): _to be filled by Task 0_
-- Reused existing helper from Phase 6 D-10: _yes/no — to be filled by Task 0_
+- Locality strategy (centralised vs per-module): direct stdlib import per-module — no wrapper alias. Phase 6 D-10 established the convention of calling `html.escape(value, quote=True)` inline at every leaf render site (79 call sites in notifier.py); we extend the same pattern to dashboard.py + dashboard_renderer/components/*.py rather than introducing a parallel `_e` alias.
+- Reused existing helper from Phase 6 D-10: yes — same `html.escape(value, quote=True)` inline pattern, no new helper introduced (must_haves truth #6 honored).
+- Task 0 grep evidence: `grep -cE 'html\.escape\(' notifier.py` → 79 inline call sites; `grep -nE 'def _e|def _escape|def escape' notifier.py` → 0 helpers defined.
 
 ## Review fixes applied
 
