@@ -993,10 +993,17 @@ class TestWarnings:
     assert state['warnings'][0]['date'] == '2026-04-21'
 
   def test_append_warning_fifo_trims_oldest_entries(self) -> None:
-    '''D-11: 105 appends -> len(warnings) == MAX_WARNINGS (=100); oldest 5 dropped.'''
+    '''D-11 + Phase 27 #16 review-fix agreed-4: MAX_WARNINGS+5 appends ->
+    len(warnings) == MAX_WARNINGS; oldest 5 dropped.
+
+    Plan 27-10 generalised this test off the literal 100/105 sentinel so
+    the MAX_WARNINGS value-change (100 -> 50) does not require touching
+    this test.
+    '''
     state = reset_state()
     fixed_now = datetime(2026, 4, 21, 9, 0, 0, tzinfo=UTC)
-    for i in range(105):
+    n_appends = MAX_WARNINGS + 5
+    for i in range(n_appends):
       state = append_warning(state, 'test', f'msg {i}', now=fixed_now)
     assert len(state['warnings']) == MAX_WARNINGS, (
       f'D-11: bound to MAX_WARNINGS={MAX_WARNINGS}; got {len(state["warnings"])}'
@@ -1005,8 +1012,8 @@ class TestWarnings:
     assert state['warnings'][0]['message'] == 'msg 5', (
       'D-11: FIFO must drop oldest entries first'
     )
-    # Most recent is msg 104
-    assert state['warnings'][-1]['message'] == 'msg 104'
+    # Most recent is msg N-1
+    assert state['warnings'][-1]['message'] == f'msg {n_appends - 1}'
 
   def test_append_warning_returns_mutated_state(self) -> None:
     '''Pattern: all mutation functions return the mutated state for chaining.'''

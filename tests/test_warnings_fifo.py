@@ -43,29 +43,51 @@ class TestNoDuplicateFifoConstant:
   source of truth is system_params.MAX_WARNINGS.'''
 
   def test_no_duplicate_fifo_constant(self) -> None:
-    '''AST/grep: WARNINGS_FIFO_MAX_LEN does NOT appear anywhere in production
-    or test code.'''
+    '''AST: the symbol "WARNINGS_FIFO_MAX_LEN" must not be DEFINED or REFERENCED
+    as a Python identifier anywhere in production or test code.
+
+    Uses ast.walk to inspect Name / Assign / ImportFrom nodes — naturally
+    skips the docstring/comment occurrences in this very test file (which
+    are string literals, not identifiers).
+    '''
+    import ast
     repo_root = pathlib.Path(__file__).parent.parent
-    # Production module dirs + tests
-    search_paths = [repo_root]
-    bad_files: list[str] = []
-    for root in search_paths:
-      for f in root.rglob('*.py'):
-        # Skip virtualenv, .git, build artifacts, .planning
-        rel = f.relative_to(repo_root) if f.is_relative_to(repo_root) else f
-        parts = set(rel.parts)
-        if any(skip in parts for skip in ('.git', '.venv', 'venv', '__pycache__',
-                                            '.planning', 'node_modules', 'build', 'dist')):
-          continue
-        try:
-          text = f.read_text()
-        except (UnicodeDecodeError, OSError):
-          continue
-        if 'WARNINGS_FIFO_MAX_LEN' in text:
-          bad_files.append(str(rel))
-    assert not bad_files, (
-      f'review-fix agreed-4: WARNINGS_FIFO_MAX_LEN duplicates MAX_WARNINGS. '
-      f'Found in: {bad_files}'
+    bad_hits: list[tuple[str, int]] = []
+    for f in repo_root.rglob('*.py'):
+      rel = f.relative_to(repo_root) if f.is_relative_to(repo_root) else f
+      parts = set(rel.parts)
+      if any(skip in parts for skip in ('.git', '.venv', 'venv', '__pycache__',
+                                          '.planning', 'node_modules', 'build', 'dist')):
+        continue
+      try:
+        text = f.read_text()
+        tree = ast.parse(text, filename=str(f))
+      except (UnicodeDecodeError, OSError, SyntaxError):
+        continue
+      for node in ast.walk(tree):
+        # Variable definition / reference
+        if isinstance(node, ast.Name) and node.id == 'WARNINGS_FIFO_MAX_LEN':
+          bad_hits.append((str(rel), node.lineno))
+        # Module attribute access (e.g. system_params.WARNINGS_FIFO_MAX_LEN)
+        elif isinstance(node, ast.Attribute) and node.attr == 'WARNINGS_FIFO_MAX_LEN':
+          bad_hits.append((str(rel), node.lineno))
+        # `from X import WARNINGS_FIFO_MAX_LEN`
+        elif isinstance(node, ast.ImportFrom):
+          for alias in node.names:
+            if alias.name == 'WARNINGS_FIFO_MAX_LEN':
+              bad_hits.append((str(rel), node.lineno))
+        # Top-level assignment: WARNINGS_FIFO_MAX_LEN = ...
+        elif isinstance(node, ast.Assign):
+          for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == 'WARNINGS_FIFO_MAX_LEN':
+              bad_hits.append((str(rel), node.lineno))
+        elif isinstance(node, ast.AnnAssign):
+          if isinstance(node.target, ast.Name) and node.target.id == 'WARNINGS_FIFO_MAX_LEN':
+            bad_hits.append((str(rel), node.lineno))
+    assert not bad_hits, (
+      f'review-fix agreed-4: WARNINGS_FIFO_MAX_LEN duplicates MAX_WARNINGS '
+      f'(single source of truth). Found defined/referenced as identifier in: '
+      f'{bad_hits}'
     )
 
 
@@ -117,19 +139,36 @@ class TestDispatchUsesMaxWarningsConstant:
 
   def test_state_manager_imports_max_warnings(self) -> None:
     '''state_manager imports MAX_WARNINGS from system_params (single source).'''
+    import ast
     src = pathlib.Path(state_manager.__file__).read_text()
     assert 'MAX_WARNINGS' in src, (
       'state_manager.py must reference MAX_WARNINGS '
       '(single source of truth in system_params).'
     )
-    # The import block at the top of state_manager.py must pull MAX_WARNINGS
-    # from system_params (not redefine it locally).
-    assert re.search(
-      r'from\s+system_params\s+import\s+\(?[^)]*\bMAX_WARNINGS\b',
-      src, re.DOTALL,
-    ), (
-      'state_manager.py must import MAX_WARNINGS from system_params, '
-      'not redefine it locally.'
+    # AST walk: confirm `from system_params import ... MAX_WARNINGS ...`
+    # appears AND no top-level `MAX_WARNINGS = ...` definition exists
+    # (the latter would break single-source-of-truth).
+    tree = ast.parse(src)
+    imports_max_warnings = False
+    locally_defined = False
+    for node in ast.walk(tree):
+      if isinstance(node, ast.ImportFrom) and node.module == 'system_params':
+        for alias in node.names:
+          if alias.name == 'MAX_WARNINGS':
+            imports_max_warnings = True
+      elif isinstance(node, ast.Assign):
+        for target in node.targets:
+          if isinstance(target, ast.Name) and target.id == 'MAX_WARNINGS':
+            locally_defined = True
+      elif isinstance(node, ast.AnnAssign):
+        if isinstance(node.target, ast.Name) and node.target.id == 'MAX_WARNINGS':
+          locally_defined = True
+    assert imports_max_warnings, (
+      'state_manager.py must import MAX_WARNINGS from system_params.'
+    )
+    assert not locally_defined, (
+      'state_manager.py must NOT redefine MAX_WARNINGS locally — '
+      'system_params is the single source of truth.'
     )
 
   def test_no_hardcoded_warnings_bound_literal_in_state_manager(self) -> None:
