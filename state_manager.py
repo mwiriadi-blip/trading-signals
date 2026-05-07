@@ -378,6 +378,41 @@ MIGRATIONS: dict = {
 }
 
 
+def _assert_migration_chain_contiguous() -> None:
+  '''Phase 27 #12 — fail-fast on schema-migration chain gaps.
+
+  Walks integer keys [2, STATE_SCHEMA_VERSION] in MIGRATIONS and raises
+  RuntimeError listing every missing key. A future contributor who adds
+  STATE_SCHEMA_VERSION = N+1 with a `_migrate_vN_to_vN+1` function but
+  forgets to register it in the MIGRATIONS dict will hit this gate at
+  module-load time AND at every load_state() entry — they get a clear
+  message at the point load_state would otherwise silently corrupt
+  state by skipping the missing migrator.
+
+  Called at TWO sites (review-fix M1 — defensive AND behavioral):
+    - module bottom (after MIGRATIONS dict is defined): fails at import
+    - load_state() entry: fails on every load even if module-load was
+      somehow bypassed (e.g., partial reload, importlib hackery)
+  '''
+  if STATE_SCHEMA_VERSION < 1:
+    raise RuntimeError(
+      f'STATE_SCHEMA_VERSION must be >= 1, got {STATE_SCHEMA_VERSION}'
+    )
+  missing = [
+    v for v in range(2, STATE_SCHEMA_VERSION + 1)
+    if v not in MIGRATIONS
+  ]
+  if missing:
+    raise RuntimeError(
+      f'MIGRATIONS chain has gaps: missing keys {missing} '
+      f'(STATE_SCHEMA_VERSION={STATE_SCHEMA_VERSION})'
+    )
+
+
+# Defensive guard: fails at import-time if the in-tree chain has a gap.
+_assert_migration_chain_contiguous()
+
+
 def _read_signal_strategy_version(signal: dict) -> str:
   '''Phase 22 D-06: defensive read with WARN log.
 
@@ -711,6 +746,13 @@ def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = Fals
     _save_state_unlocked (no second lock acquire) to avoid the intra-
     process flock-on-different-fd deadlock.
   '''
+  # Phase 27 #12: re-check the migration chain at every load_state entry.
+  # Module-load already runs this once; running it again here is cheap and
+  # catches any partial-reload / importlib-hackery scenario where a
+  # contributor mutates MIGRATIONS or STATE_SCHEMA_VERSION without
+  # re-importing. Fires BEFORE the migration walk would silently skip a
+  # missing key.
+  _assert_migration_chain_contiguous()
   if not path.exists():
     return reset_state()                  # B-3: no auto-save on missing file
   raw = path.read_bytes()
