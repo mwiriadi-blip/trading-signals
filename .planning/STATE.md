@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: - **Signal-only.** No broker API, ever
 status: executing
-last_updated: "2026-05-07T11:29:33.050Z"
+last_updated: "2026-05-07T12:20:34.299Z"
 last_activity: 2026-05-07
 progress:
   total_phases: 8

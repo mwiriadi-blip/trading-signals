@@ -2,7 +2,7 @@
 phase: 27
 plan: 03
 type: execute
-wave: 1
+wave: 1A
 parallel: true
 depends_on: []
 files_modified:
@@ -31,6 +31,11 @@ must_haves:
       via: "redact before re-raise"
       pattern: "redact_secret\\("
 ---
+
+## Review fixes applied
+
+- [x] No changes — both reviewers marked this plan clean. Wave label updated to `1A` per Codex sequencing matrix (agreed-1) for consistency; otherwise unchanged.
+- [x] agreed-1 (wave/dependency rebuild) — wave changed `1` → `1A`; depends_on remains empty.
 
 <objective>
 Centralise secret redaction. Add `redact_secret(s: str) -> str` to system_params.py. Audit notifier.py (already has explicit "Fix 1 (T-06-02): redact api_key from any echo" pattern at line 1379), auth_store.py (TOTP secret persistence), data_fetcher.py (no API key today but future-proof), and any exception handlers that interpolate an api_key / secret variable into the message.
