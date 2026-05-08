@@ -1093,15 +1093,16 @@ def append_warning(state: dict, source: str, message: str, now=None) -> dict:
   `now` defaults to datetime.now(timezone.utc); tests inject a fixed UTC
   datetime for determinism without pytest-freezer.
 
-  MAX_WARNINGS rationale (B-5 reviews-revision pass):
-    MAX_WARNINGS = 100 is intentionally conservative for v1's daily cadence
-    (~5 months of warnings at 1/day average). A bad-day loop generating
-    50+ warnings in one run still fits within the bound. Chronic
-    high-warning regimes (e.g., a bug emitting hundreds per day) should
-    bump MAX_WARNINGS in system_params.py rather than expanding the
-    contract here. The FIFO drop-oldest discipline ensures the bound
-    is best-effort history — operators see the most recent 100 events,
-    which is the actionable window for a daily-cadence system.
+  MAX_WARNINGS rationale (B-5 reviews-revision pass; tightened in
+  Phase 27 #16 review-fix agreed-4 from prior 100 baseline):
+    MAX_WARNINGS = 50 is intentionally conservative for v1's daily cadence
+    (~7 weeks of warnings at 1/day average). A bad-day loop generating
+    25+ warnings in one run fills half the bound. Chronic high-warning
+    regimes (e.g., a bug emitting hundreds per day) should bump
+    MAX_WARNINGS in system_params.py rather than expanding the contract
+    here. The FIFO drop-oldest discipline ensures the bound is
+    best-effort history — operators see the most recent 50 events, which
+    is the actionable window for a daily-cadence system.
   '''
   if now is None:
     now = datetime.now(UTC)
