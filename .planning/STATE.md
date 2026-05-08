@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: - **Signal-only.** No broker API, ever
 status: verifying
-last_updated: "2026-05-08T01:15:45.472Z"
+last_updated: "2026-05-08T02:30:06.512Z"
 last_activity: 2026-05-08
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 45
-  completed_plans: 43
-  percent: 96
+  completed_plans: 44
+  percent: 98
 ---
 
 # STATE — Trading Signals
@@ -34,7 +34,7 @@ Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code 
 - **Milestone:** v1.1 — Interactive Trading Workstation
 - **Status:** Phase complete — ready for verification
 - **Last activity:** 2026-05-08
-- **Progress:** [██████████] 96%
+- **Progress:** [██████████] 98%
 - **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
 
 ### Resume instructions for cloud Claude / fresh clone
@@ -131,6 +131,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 27 P09 | 30min | 2 tasks tasks | 9 files files |
 | Phase 27 P11 | 19min | 2 tasks tasks | 4 files files |
 | Phase 27 P12 | 70min | 4 tasks tasks | 12 files files |
+| Phase 27 P13 | 36min | 4 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -234,6 +235,9 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 - [Phase ?]: 27-09 dict-only signal shape
 - [Phase ?]: Plan 27-11: LAST_CRASH_FILE str (not Path) in stdlib-only system_params; resolution lives in notifier._resolve_last_crash_path; LAST_CRASH_PATH env var supplies operator override.
 - [Phase ?]: Plan 27-12 notifier split: 9-file package, every file <500 LOC, late-bind monkeypatch proxies in dispatch.py preserve single-file mutability contract; notifier.py kept as fossil per Task B (10 source-text introspection tests prevent deletion); cleanup deferred to plan 27-15 in 27-DEBT.md
+- [Phase ?]: Sub-split daily_run.py into daily_run + daily_run_helpers + paper_trade_alerts to honour <500 LOC budget (Plan 27-13 §M1)
+- [Phase ?]: Switched _LAST_LOADED_STATE from PEP 562 __getattr__ proxy to real attribute on main.py with through-main accessors in state_actions
+- [Phase ?]: Late-bind via main package — every seam re-resolves names through main on every call (mirrors Plan 27-12)
 
 ### Todos Carried Forward
 
