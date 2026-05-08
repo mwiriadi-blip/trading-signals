@@ -76,7 +76,10 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
       f'      <p class="scalars">{scalars_line}</p>\n'
       '    </article>\n'
     )
-    trace_sig_dict = sig_entry if isinstance(sig_entry, dict) else {}
+    # Phase 27 WR-08: Plan 27-09 truth #1 + the renderer's TestRendererDefensiveIntBranchRemoved
+    # pin guarantee sig_entry reaching this point is None or dict. The
+    # `or {}` collapses both None and any unexpected falsy shape to {}.
+    trace_sig_dict = sig_entry or {}
     trace_placeholder = d._TRACE_OPEN_PLACEHOLDER.get(state_key, '')
     parts.append(d._render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
   parts.append('  </div>\n')
