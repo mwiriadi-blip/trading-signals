@@ -159,10 +159,10 @@ class TestKnownMarketIdsShape:
 
 # Production files that may compile instrument-id regexes. Files that do
 # NOT exist yet (post-split + future plans) are silently skipped.
+# CR-01 fix: notifier.py monolith deleted; package files added below.
 _PROD_FILES = [
   'dashboard.py',
   'main.py',
-  'notifier.py',
   'state_manager.py',
   'auth_store.py',
   'data_fetcher.py',
@@ -172,7 +172,7 @@ _PROD_FILES = [
   'web/routes/paper_trades.py',
   'web/routes/backtest.py',
   'web/app.py',
-]
+] + [str(p) for p in pathlib.Path('notifier').glob('*.py')]
 
 
 def _is_suspicious_pattern(pat: str) -> bool:

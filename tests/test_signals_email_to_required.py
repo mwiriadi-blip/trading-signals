@@ -282,22 +282,26 @@ class TestStateHealthWarningMarker:
 class TestNoHardcodedEmailInNotifier:
 
   def test_no_email_to_fallback_constant_in_notifier(self) -> None:
-    '''Constant `_EMAIL_TO_FALLBACK` must be deleted from notifier.py.'''
-    src = Path('notifier.py').read_text(encoding='utf-8')
-    assert '_EMAIL_TO_FALLBACK' not in src, (
-      "notifier.py must not reference _EMAIL_TO_FALLBACK (Phase 27 #9)"
-    )
+    '''Constant `_EMAIL_TO_FALLBACK` must be deleted from the notifier
+    package (CR-01: monolith notifier.py replaced with notifier/ package).'''
+    for p in Path('notifier').glob('*.py'):
+      src = p.read_text(encoding='utf-8')
+      assert '_EMAIL_TO_FALLBACK' not in src, (
+        f"{p} must not reference _EMAIL_TO_FALLBACK (Phase 27 #9)"
+      )
 
   def test_no_literal_operator_email_in_notifier(self) -> None:
     '''Operator's personal email address must not appear anywhere in
-    notifier.py source — secret-as-config hygiene.'''
-    src = Path('notifier.py').read_text(encoding='utf-8')
+    the notifier package source — secret-as-config hygiene.'''
+    src = '\n'.join(
+      p.read_text(encoding='utf-8') for p in Path('notifier').glob('*.py')
+    )
     assert 'mwiriadi@gmail.com' not in src
     assert 'mwiriadi@' not in src
     # Generic literal-email regex (excluding @example.com test fixtures
-    # which would never appear in production source anyway). notifier.py
-    # may legitimately reference @example.com in docstrings, so we only
-    # forbid real-looking domains.
+    # which would never appear in production source anyway). notifier
+    # package may legitimately reference @example.com in docstrings, so we
+    # only forbid real-looking domains.
     leaked = re.findall(
       r'[a-zA-Z0-9._%+-]+@(?!example\.|x\.com|domain\.com)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
       src,

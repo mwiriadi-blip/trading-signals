@@ -23,7 +23,8 @@ import re
 # (the post-split set is best-effort; the existence guard below skips
 # files that haven't been created yet).
 _PROD_BASE = [
-  'notifier.py',
+  # CR-01 fix: notifier.py monolith deleted; package files picked up via
+  # _POST_SPLIT_PACKAGES = ['notifier'] below.
   'data_fetcher.py',
   'dashboard.py',
   'main.py',
@@ -138,23 +139,21 @@ def test_http_timeout_constant_present():
 
 
 def test_resend_timeout_constant_deleted():
-  '''notifier.py must NOT define _RESEND_TIMEOUT_S anywhere (review-fix agreed-6).
+  '''notifier package must NOT define _RESEND_TIMEOUT_S anywhere (review-fix agreed-6).
 
   Single-source rule: HTTP_TIMEOUT_S in system_params.py is the only timeout
-  constant. _RESEND_TIMEOUT_S used to live at notifier.py:106 — must be gone.
+  constant. _RESEND_TIMEOUT_S used to live at notifier.py:106 — must be gone
+  from every package file (CR-01 fix: notifier.py monolith deleted).
   '''
-  src = pathlib.Path('notifier.py').read_text()
-  # Match assignment `_RESEND_TIMEOUT_S =` (with optional type hint).
-  # Not just substring: docstrings or comments mentioning the name in a
-  # historical note would not be a constant definition. Tighten to
-  # left-of-equals patterns.
   pattern = re.compile(r'^\s*_RESEND_TIMEOUT_S\s*(:\s*\w+\s*)?=', re.MULTILINE)
-  matches = pattern.findall(src)
-  assert not matches, (
-    f'_RESEND_TIMEOUT_S still defined in notifier.py — '
-    f'delete it and import HTTP_TIMEOUT_S from system_params instead. '
-    f'Found {len(matches)} assignment(s).'
-  )
+  for p in pathlib.Path('notifier').glob('*.py'):
+    src = p.read_text()
+    matches = pattern.findall(src)
+    assert not matches, (
+      f'_RESEND_TIMEOUT_S still defined in {p} — '
+      f'delete it and import HTTP_TIMEOUT_S from system_params instead. '
+      f'Found {len(matches)} assignment(s).'
+    )
 
 
 def test_post_to_resend_uses_canonical_timeout():
@@ -180,9 +179,11 @@ def test_post_to_resend_uses_canonical_timeout():
   # `timeout_s` whose default is HTTP_TIMEOUT_S (caller override preserved
   # for crash-email path). Both shapes preserve the connect=5s / read=30s
   # split semantics required by the original notifier review Fix 2.
-  src = pathlib.Path('notifier.py').read_text()
+  # CR-01 fix: notifier.py monolith deleted; transport lives in
+  # notifier/transport.py post-Plan 27-12 split.
+  src = pathlib.Path('notifier/transport.py').read_text()
   assert re.search(r'timeout=\(5,\s*(HTTP_TIMEOUT_S|timeout_s)\)', src), (
-    'notifier.py must call requests.post(..., timeout=(5, HTTP_TIMEOUT_S)) '
+    'notifier/transport.py must call requests.post(..., timeout=(5, HTTP_TIMEOUT_S)) '
     'or (5, timeout_s) where timeout_s defaults to HTTP_TIMEOUT_S '
     '— preserves connect=5s / read=HTTP_TIMEOUT_S split semantics.'
   )

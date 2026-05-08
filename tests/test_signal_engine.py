@@ -472,8 +472,9 @@ TEST_MAIN_PATH = Path('tests/test_main.py')
 DASHBOARD_PATH = Path('dashboard.py')
 TEST_DASHBOARD_PATH = Path('tests/test_dashboard.py')
 REGENERATE_DASHBOARD_GOLDEN_PATH = Path('tests/regenerate_dashboard_golden.py')
-# Phase 6 Wave 0: add notifier.py to AST guard
-NOTIFIER_PATH = Path('notifier.py')
+# Phase 6 Wave 0 / Phase 27 CR-01 fix: notifier.py monolith deleted post-Plan
+# 27-12 split — AST guard parametrizes over every notifier/*.py file instead.
+NOTIFIER_PKG_FILES = sorted(Path('notifier').glob('*.py'))
 TEST_NOTIFIER_PATH = Path('tests/test_notifier.py')
 REGENERATE_NOTIFIER_GOLDEN_PATH = Path('tests/regenerate_notifier_golden.py')
 # Phase 19 Wave 0: add pnl_engine.py to AST guard (D-14 + D-19)
@@ -982,26 +983,26 @@ class TestDeterminism:
       + '; '.join(offenders)
     )
 
-  @pytest.mark.parametrize('module_path', [NOTIFIER_PATH])
+  @pytest.mark.parametrize('module_path', NOTIFIER_PKG_FILES)
   def test_notifier_no_forbidden_imports(self, module_path: Path) -> None:
-    '''Phase 6 Wave 0: notifier.py must not import sibling hexes, numpy,
-    pandas, or yfinance. It IS allowed to import stdlib (html, json,
-    logging, os, time, tempfile, datetime, pathlib) + pytz + requests +
-    state_manager (load_state, CLI path only) + system_params (palette +
-    contract specs).
+    '''Phase 6 Wave 0 / Phase 27 CR-01: every notifier/*.py file must not
+    import sibling hexes, numpy, pandas, or yfinance. Allowed: stdlib (html,
+    json, logging, os, time, tempfile, datetime, pathlib) + pytz + requests +
+    state_manager (load_state, CLI path only) + system_params.
 
     Structural enforcement of CLAUDE.md §Architecture hexagonal-lite for
-    notifier: sibling-hex blocklists ALREADY forbid notifier
+    the notifier package: sibling-hex blocklists ALREADY forbid notifier
     (FORBIDDEN_MODULES, FORBIDDEN_MODULES_STATE_MANAGER,
     FORBIDDEN_MODULES_DATA_FETCHER, FORBIDDEN_MODULES_DASHBOARD); this
-    test closes the symmetric boundary — notifier cannot import them
-    either.
+    test closes the symmetric boundary — the notifier package cannot
+    import them either. CR-01 fix re-points the gate from the deleted
+    notifier.py monolith to every package file.
     '''
     imports = _top_level_imports(module_path)
     leaked = imports & FORBIDDEN_MODULES_NOTIFIER
     assert not leaked, (
       f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
-      f'notifier.py must not import sibling hexes (signal_engine, sizing_engine, '
+      f'notifier package must not import sibling hexes (signal_engine, sizing_engine, '
       f'data_fetcher, dashboard, main), numpy, pandas, or yfinance. '
       f'Allowed: stdlib + pytz + requests + state_manager + system_params. '
       f'notifier IS the email I/O hex — that is its PURPOSE.'

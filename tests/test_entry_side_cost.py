@@ -17,11 +17,17 @@ from decimal import Decimal
 import pytest
 
 
+def _notifier_pkg_files() -> list[str]:
+  '''CR-01 fix: notifier.py monolith deleted; AST gate now walks every
+  notifier/*.py file in the post-Plan 27-12 package layout.'''
+  return [str(p) for p in sorted(pathlib.Path('notifier').glob('*.py'))]
+
+
 PROD_FILES = [
   'pnl_engine.py',
   'sizing_engine.py',
-  'notifier.py',
   'main.py',
+  *_notifier_pkg_files(),
 ]
 
 

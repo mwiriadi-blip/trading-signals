@@ -54,7 +54,9 @@ from system_params import (
 # Module-level path + fixture constants
 # =========================================================================
 
-NOTIFIER_PATH = Path('notifier.py')
+# CR-01 fix: notifier.py monolith deleted post-Plan 27-12 split.
+# Tests now scan the notifier/ package directly.
+NOTIFIER_PKG_DIR = Path('notifier')
 TEST_NOTIFIER_PATH = Path('tests/test_notifier.py')
 REGENERATE_SCRIPT_PATH = Path('tests/regenerate_notifier_golden.py')
 NOTIFIER_FIXTURE_DIR = Path(__file__).parent / 'fixtures' / 'notifier'
@@ -2022,24 +2024,25 @@ class TestPostToResendContentType:
 
 
 # =========================================================================
-# Phase 10 CHORE-02 / D-05: ruff CI regression guard for notifier.py
+# Phase 10 CHORE-02 / D-05: ruff CI regression guard for notifier package
+# (CR-01 fix: notifier.py monolith deleted; gate now scans notifier/).
 # =========================================================================
 
 def test_ruff_clean_notifier() -> None:
-  '''CHORE-02 / D-05: notifier.py must be ruff-CLEAN (zero warnings of
+  '''CHORE-02 / D-05: notifier package must be ruff-CLEAN (zero warnings of
   ANY category) AND specifically have zero F401 (unused-import) entries.
 
   PRIMARY GATE (D-05 + ROADMAP SC-2): asserts `result.returncode == 0`.
   This catches ALL ruff warnings — F401, E-series style errors,
   W-series whitespace, UP-series py-upgrade suggestions, etc. — not
-  just unused imports. Any new ruff warning in notifier.py reds this.
+  just unused imports. Any new ruff warning in the notifier package reds this.
 
   SECONDARY DIAGNOSTIC: parses the JSON and asserts zero entries with
   `code == 'F401'`. When the primary gate reds, the diagnostic
   narrows the failure to "is it the Phase 10 F401 regression or
   something else?".
 
-  Invokes `ruff check notifier.py --output-format=json` via subprocess
+  Invokes `ruff check notifier/ --output-format=json` via subprocess
   (ruff 0.6.9, pinned in requirements.txt). Template per
   10-RESEARCH.md §Pattern 2. Stable across ruff 0.6.x per JSON output
   schema.
@@ -2053,7 +2056,7 @@ def test_ruff_clean_notifier() -> None:
   import sys
 
   result = subprocess.run(
-    [sys.executable, '-m', 'ruff', 'check', 'notifier.py', '--output-format=json'],
+    [sys.executable, '-m', 'ruff', 'check', 'notifier/', '--output-format=json'],
     capture_output=True,
     text=True,
     timeout=30,
@@ -2066,15 +2069,15 @@ def test_ruff_clean_notifier() -> None:
   # swallowed by a spurious F401 assertion.
   f401_entries = [e for e in entries if e.get('code') == 'F401']
   assert len(f401_entries) == 0, (
-    f'CHORE-02 / D-05: notifier.py must have zero F401 (unused-import) '
+    f'CHORE-02 / D-05: notifier/ must have zero F401 (unused-import) '
     f'warnings; found {len(f401_entries)}: '
     f'{[(e.get("location", {}).get("row"), e.get("message")) for e in f401_entries]}'
   )
-  # PRIMARY GATE: D-05 + ROADMAP SC-2 "ruff check notifier.py returns
+  # PRIMARY GATE: D-05 + ROADMAP SC-2 "ruff check notifier/ returns
   # zero warnings" — enforced via returncode, which ruff sets to 1
   # whenever ANY issue exists (of any rule category).
   assert result.returncode == 0, (
-    f'CHORE-02 / D-05 / SC-2: ruff check notifier.py must exit 0 '
+    f'CHORE-02 / D-05 / SC-2: ruff check notifier/ must exit 0 '
     f'(no warnings of ANY category). Got returncode={result.returncode}. '
     f'Full entries: {entries}. '
     f'stderr: {result.stderr[:200] if result.stderr else "(empty)"}'

@@ -175,7 +175,12 @@ class TestSecretRedactionGrepGate:
   negatives are not.
   '''
 
-  COVERED_FILES = ('notifier.py', 'auth_store.py', 'data_fetcher.py')
+  # CR-01 fix: notifier.py monolith deleted; scan every notifier/*.py
+  # in the post-Plan 27-12 package layout instead.
+  COVERED_FILES = tuple(
+    [str(p) for p in __import__('pathlib').Path('notifier').glob('*.py')]
+    + ['auth_store.py', 'data_fetcher.py']
+  )
 
   # Suspicious pattern: an f-string or %-format interpolation of a bare
   # secret-named variable. Allows {api_key:redact_secret(...)} or

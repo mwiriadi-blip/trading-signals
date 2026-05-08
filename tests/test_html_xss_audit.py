@@ -290,13 +290,13 @@ class TestAntiDoubleEscape:
 
 
 # ---------------------------------------------------------------------------
-# Coverage-stability gate — Phase 6 D-10 escape pattern in notifier.py
+# Coverage-stability gate — Phase 6 D-10 escape pattern in notifier package
 # preserved (count of html.escape call sites doesn't regress).
 # ---------------------------------------------------------------------------
 
 
 class TestNotifierEscapeCoverageStable:
-  '''Plan 27-08 must_haves: notifier.py existing escape coverage REUSED, not parallel.
+  '''Plan 27-08 must_haves: notifier package existing escape coverage REUSED, not parallel.
 
   Pre-Phase-27 baseline: 79 inline html.escape(value, quote=True) call sites.
   This test pins the floor; if a future refactor drops escape calls, the
@@ -305,13 +305,17 @@ class TestNotifierEscapeCoverageStable:
 
   def test_notifier_html_escape_count_at_or_above_baseline(self) -> None:
     from pathlib import Path
-    src = Path('notifier.py').read_text()
-    count = len(re.findall(r'html\.escape\(', src))
+    pkg = Path('notifier')
+    count = sum(
+      len(re.findall(r'html\.escape\(', p.read_text()))
+      for p in pkg.glob('*.py')
+    )
     # Phase 6 D-10 baseline: 69 active call sites (Phase 27 inspection
     # 2026-05-08; the prior grep of 79 included docstring/comment text).
-    # Allow growth, never shrinkage.
+    # Allow growth, never shrinkage. Aggregated across notifier/*.py
+    # post-Plan 27-12 split (CR-01 fix).
     assert count >= 69, (
-      f'notifier.py html.escape count regressed: {count} < 69. '
+      f'notifier package html.escape count regressed: {count} < 69. '
       f'Phase 6 D-10 escape coverage must be preserved.'
     )
 
@@ -323,8 +327,8 @@ class TestNotifierEscapeCoverageStable:
     leaks through.
     '''
     from pathlib import Path
-    for p in [
-      Path('notifier.py'),
+    pkg_files = list(Path('notifier').glob('*.py'))
+    for p in pkg_files + [
       Path('dashboard.py'),
       Path('dashboard_renderer/components/footer.py'),
       Path('dashboard_renderer/components/header.py'),

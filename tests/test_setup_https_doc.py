@@ -330,12 +330,15 @@ class TestCrossArtifactDriftGuard:
 
   def test_signals_email_from_matches_notifier(self, doc_text):
     '''INFRA-01 drift guard: doc's env-var instruction must name the
-    same env var that notifier.py reads.
+    same env var the notifier package reads (CR-01: monolith deleted,
+    package files scanned instead).
     '''
-    notifier_text = Path('notifier.py').read_text()
-    # notifier.py reads SIGNALS_EMAIL_FROM (Plan 02 artifact).
+    notifier_text = '\n'.join(
+      p.read_text() for p in Path('notifier').glob('*.py')
+    )
+    # notifier package reads SIGNALS_EMAIL_FROM (Plan 02 artifact).
     assert 'SIGNALS_EMAIL_FROM' in notifier_text, (
-      'notifier.py must read SIGNALS_EMAIL_FROM (Plan 02 INFRA-01)'
+      'notifier package must read SIGNALS_EMAIL_FROM (Plan 02 INFRA-01)'
     )
     assert re.search(
       r"os\.environ\.get\(\s*['\"]SIGNALS_EMAIL_FROM['\"]",
@@ -349,19 +352,21 @@ class TestCrossArtifactDriftGuard:
     has been removed. Cannot use a bare `'_EMAIL_FROM' not in
     notifier_text` check because `SIGNALS_EMAIL_FROM` contains
     `_EMAIL_FROM` as a substring — match the assignment form instead.
+    CR-01: scan every notifier/*.py post-Plan 27-12 split.
     '''
-    notifier_text = Path('notifier.py').read_text()
-    # Look for any module-level (or function-level) assignment of the
-    # form `_EMAIL_FROM = ...` — the original D-16-target constant.
-    # Allowed false-negatives: SIGNALS_EMAIL_FROM appears in `os.environ
-    # .get('SIGNALS_EMAIL_FROM', ...)` and in log messages — those do
-    # not match `^[ \t]*_EMAIL_FROM\s*=` because they have `SIGNALS`
-    # prefix and/or are inside string literals.
-    assert not re.search(
-      r'(^|[^A-Z_])_EMAIL_FROM\s*=',
-      notifier_text,
-      re.MULTILINE,
-    ), 'notifier.py still has `_EMAIL_FROM = ...` — Plan 02 D-16 incomplete'
+    for p in Path('notifier').glob('*.py'):
+      notifier_text = p.read_text()
+      # Look for any module-level (or function-level) assignment of the
+      # form `_EMAIL_FROM = ...` — the original D-16-target constant.
+      # Allowed false-negatives: SIGNALS_EMAIL_FROM appears in `os.environ
+      # .get('SIGNALS_EMAIL_FROM', ...)` and in log messages — those do
+      # not match `^[ \t]*_EMAIL_FROM\s*=` because they have `SIGNALS`
+      # prefix and/or are inside string literals.
+      assert not re.search(
+        r'(^|[^A-Z_])_EMAIL_FROM\s*=',
+        notifier_text,
+        re.MULTILINE,
+      ), f'{p} still has `_EMAIL_FROM = ...` — Plan 02 D-16 incomplete'
 
   def test_env_path_matches_systemd_unit(self, doc_text):
     '''12-REVIEWS.md LOW (belt-and-braces) — doc's .env path must match
