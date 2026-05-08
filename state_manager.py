@@ -43,11 +43,15 @@ but not the READ-MODIFY-WRITE — two writers can both load the same
 pre-lock snapshot, both serialize the write, and the second save
 clobbers the first. The new public helper mutate_state(mutator, path)
 holds the lock across the FULL load → mutate → save critical section.
-Web routes and main.py daily loop both call mutate_state. fcntl.flock
-is reentrant within a single process, so the inner save_state's lock
-acquisition is a kernel no-op when the outer mutate_state lock is
-already held; cross-process safety is preserved (separate file
-descriptors).
+Web routes and main.py daily loop both call mutate_state.
+
+INTRA-PROCESS REENTRANCY (corrected per IN-02 / Rule 1 fix vs original
+RESEARCH §Pattern 9 which mistakenly claimed reentrancy across DIFFERENT
+fds): on POSIX, fcntl.flock locks the open-file-description, NOT the
+inode/path. Two fds in the SAME process do NOT share lock ownership;
+the inner save_state must call _atomic_write_unlocked when the outer
+mutate_state already holds the lock. See _atomic_write docstring.
+Cross-process safety is preserved (separate file descriptors).
 
 The sole-writer invariant for state['warnings'] (TRADE-06) is
 unchanged: only state_manager.append_warning writes to that key; web
