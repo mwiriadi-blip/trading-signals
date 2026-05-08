@@ -36,11 +36,11 @@ def _send_email_never_crash(
   '''D-15 + NOTF-07/NOTF-08 + Phase 8 D-08 consumer bridge.
 
   C-2 reviews (Phase 5 precedent): `import notifier` lives INSIDE the
-  helper body (not at module top) so import-time errors in notifier.py
-  — syntax errors, bad sub-imports, circular-import bugs — are caught
-  by the SAME `except Exception` that catches runtime dispatch failures.
-  Without this, an import-time notifier error takes down main.py at
-  module load time, before the helper even runs.
+  helper body (not at module top) so import-time errors in the notifier
+  package — syntax errors, bad sub-imports, circular-import bugs — are
+  caught by the SAME `except Exception` that catches runtime dispatch
+  failures. Without this, an import-time notifier error takes down
+  main.py at module load time, before the helper even runs.
 
   Phase 8 D-08: returns the notifier.SendStatus verbatim on the happy
   path; caller (_dispatch_email_and_maintain_warnings) translates

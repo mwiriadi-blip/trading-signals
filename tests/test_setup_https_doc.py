@@ -4,7 +4,7 @@ Mirrors tests/test_setup_droplet_doc.py structural pattern + extends with
 TestCrossArtifactDriftGuard which asserts the runbook stays in sync with:
   - nginx/signals.conf (Plan 01) — production domain deployment artifact
   - deploy.sh (Plan 03) — 4 `sudo -n` commands documented in sudoers rule
-  - notifier.py (Plan 02) — SIGNALS_EMAIL_FROM env var name
+  - notifier package (Plan 02 + 27-12 split) — SIGNALS_EMAIL_FROM env var name
   - systemd/trading-signals-web.service (Phase 11) — EnvironmentFile= path
     matches the .env path documented in SETUP-HTTPS.md §7
     (12-REVIEWS.md LOW belt-and-braces drift guard).
@@ -278,7 +278,7 @@ class TestCrossArtifactDriftGuard:
   '''T-12-05 + T-12-06: doc stays in sync with code artifacts.
 
   THIS IS THE CRITICAL CLASS — when the runbook diverges from
-  nginx/signals.conf (Plan 01), deploy.sh (Plan 03), or notifier.py
+  nginx/signals.conf (Plan 01), deploy.sh (Plan 03), or the notifier package
   (Plan 02), these assertions fail at test-time rather than at
   operator-time.
   '''

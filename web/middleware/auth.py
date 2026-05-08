@@ -30,7 +30,7 @@ Phase 16.1 changes (D-04..D-07 + E-01 + E-02 — TOTP fold-in 2026-04-29):
         /forgot-2fa and /reset-totp.
 
 Architecture (CLAUDE.md hex-lite + Phase 10 D-15):
-  web/middleware/ is an adapter hex (peer of web/routes/, notifier.py).
+  web/middleware/ is an adapter hex (peer of web/routes/, notifier/).
   Allowed imports: fastapi, starlette, stdlib, itsdangerous (D-10).
   Forbidden imports: signal_engine, sizing_engine, system_params,
                      data_fetcher, notifier, dashboard, main, state_manager.

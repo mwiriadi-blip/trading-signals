@@ -261,7 +261,7 @@ _DEFAULT_SPI_LABEL: str = 'spi-mini'
 _DEFAULT_AUDUSD_LABEL: str = 'audusd-standard'
 
 # Phase 8 IN-05: shared fallback (multiplier, cost_aud) tuples used by
-# dashboard.py and notifier.py when state['_resolved_contracts'] is
+# dashboard.py and the notifier package when state['_resolved_contracts'] is
 # unavailable (pre-Phase-8 state shape or unit tests that build state dicts
 # directly). Single source of truth — previously duplicated inline in both
 # render modules. Values match the default SPI mini / AUD standard tiers
@@ -333,7 +333,7 @@ DEFAULT_STRATEGY_SETTINGS: dict[str, float | int | bool | None] = {
 # Palette constants — Phase 5 + Phase 6 shared (D-02 retrofit)
 # =========================================================================
 # Originally defined in dashboard.py module-level; migrated here so
-# notifier.py can import the same palette without cross-hex import (hex
+# the notifier package can import the same palette without cross-hex import (hex
 # fence D-01). Underscore prefix preserves "shared-implementation-detail"
 # semantics rather than "stable public API".
 
