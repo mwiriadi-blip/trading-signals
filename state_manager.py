@@ -476,8 +476,22 @@ def _migrate_v9_to_v10(s: dict) -> dict:
   back-compat. Promote any legacy bare-int rows in state['signals'] to the
   canonical dict shape with keys {signal, strategy_version}.
 
-  Truth #1 (post-migration invariant): state['signals'][market_id] is
-  always a dict.
+  Truth #1 (post-migration invariant): state['signals'][market_id] is a
+  dict for every state that has flowed through load_state(). The renderer
+  pin in dashboard_renderer/components/signals.py asserts this hard.
+
+  Phase 27 WR-02 scope clarification: several non-renderer call sites
+  (notifier/formatters._detect_signal_changes / _extract_signal /
+  _extract_signal_int, dashboard_legacy/calc_rows._render_entry_target_row,
+  daily_run.py old_signals capture + 3.g read, crash_boundary._build_*)
+  retain the legacy `isinstance(raw, int)` branch by design — they are
+  reachable from test fixtures that build state dicts directly without
+  routing through load_state() (e.g. tests/fixtures/notifier/empty_state.json,
+  tests/test_notifier.py::TestDetectSignalChanges::test_detect_legacy_int_signal_shape).
+  Removing the branches reds those tests; updating every fixture is
+  out-of-scope for Plan 27-09. The post-migration invariant therefore
+  applies on the *production* read path (everything that hits load_state)
+  but is intentionally relaxed on the *test* read path.
 
   Pre-migration legacy shape (Phase 3 reset_state, in-tree until 27-09):
     state['signals']['SPI200'] = 0   # FLAT
