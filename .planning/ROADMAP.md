@@ -278,7 +278,7 @@ Plans:
 
 **Depends on:** Phase 26
 
-**Plans:** 13/14 plans executed
+**Plans:** 14/14 plans executed
 
 Plans:
 **Wave 1**
@@ -299,4 +299,4 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 - [x] 27-12-notifier-split-PLAN.md — Wave 3 (depends on Wave 1+2 notifier touches): notifier.py (1974 LOC) → notifier/ package (templates / transport / warnings_fifo / crash_path / __init__); each <500 LOC; public API preserved.
 - [x] 27-13-main-split-PLAN.md — Wave 3 (depends on Wave 1+2 main.py touches): main.py (1996 LOC) → cli_parser + daily_loop + interactive + scheduler_driver; main.py <150 LOC entry+shim; CLI surface unchanged.
-- [ ] 27-14-dashboard-split-PLAN.md — Wave 3 (depends on Wave 2 dashboard touches): dashboard.py (2212 LOC) → either migrate-into-dashboard_renderer (Strategy A) or dashboard_legacy/ package (Strategy B); each file <500 LOC; HTML output byte-identical.
+- [x] 27-14-dashboard-split-PLAN.md — Wave 3 (depends on Wave 2 dashboard touches): dashboard.py (2221 LOC) → dashboard_legacy/ package (Strategy B chosen per review-fix agreed-10 default); 9 daughter modules, every file <500 LOC (largest 347); dashboard.py reduced to 224 LOC re-export shim; HTML output byte-identical to post-27-08+27-11 baseline (Task 1 golden at tests/fixtures/dashboard_canonical.html). 3 structural parity tests added; 2003/2003 full suite green. (completed 2026-05-08; SUMMARY at .planning/phases/27-…/27-14-SUMMARY.md)
