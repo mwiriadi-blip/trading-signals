@@ -278,7 +278,7 @@ Plans:
 
 **Depends on:** Phase 26
 
-**Plans:** 11/14 plans executed
+**Plans:** 12/14 plans executed
 
 Plans:
 **Wave 1**
@@ -297,6 +297,6 @@ Plans:
 - [x] 27-11-crash-email-fallback-PLAN.md — Wave 2: _write_last_crash atomic helper; send_email failure writes last_crash.json; dashboard banner surfaces it on next visit.
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 27-12-notifier-split-PLAN.md — Wave 3 (depends on Wave 1+2 notifier touches): notifier.py (1974 LOC) → notifier/ package (templates / transport / warnings_fifo / crash_path / __init__); each <500 LOC; public API preserved.
+- [x] 27-12-notifier-split-PLAN.md — Wave 3 (depends on Wave 1+2 notifier touches): notifier.py (1974 LOC) → notifier/ package (templates / transport / warnings_fifo / crash_path / __init__); each <500 LOC; public API preserved.
 - [ ] 27-13-main-split-PLAN.md — Wave 3 (depends on Wave 1+2 main.py touches): main.py (1996 LOC) → cli_parser + daily_loop + interactive + scheduler_driver; main.py <150 LOC entry+shim; CLI surface unchanged.
 - [ ] 27-14-dashboard-split-PLAN.md — Wave 3 (depends on Wave 2 dashboard touches): dashboard.py (2212 LOC) → either migrate-into-dashboard_renderer (Strategy A) or dashboard_legacy/ package (Strategy B); each file <500 LOC; HTML output byte-identical.
