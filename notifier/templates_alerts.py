@@ -11,6 +11,7 @@ XSS posture (preserved): every dynamic value flows through
 html.escape(value, quote=True) at leaf render site.
 '''
 import html
+import math
 from datetime import datetime
 
 import pytz
@@ -162,8 +163,8 @@ def _render_alert_email_html(transitions: list[dict], dashboard_url: str) -> str
     stop_fmt    = html.escape(f"{t.get('stop_price', 0.0):.2f}", quote=True)
     close_fmt   = html.escape(f"{t.get('today_close', 0.0):.2f}", quote=True)
     atr_dist    = t.get('atr_distance', 0.0)
-    # NaN check via self-inequality (no math import needed; avoids import count change).
-    if atr_dist != atr_dist:  # noqa: PLR0124 -- float NaN self-inequality check
+    # IN-01: math.isnan is the standard idiom; readable + intent-clear.
+    if math.isnan(atr_dist):
       dist_text = 'distance unknown'
     else:
       label = 'within trigger' if t.get('new_state') == 'APPROACHING' else 'beyond stop'
@@ -228,7 +229,8 @@ def _render_alert_email_text(transitions: list[dict], dashboard_url: str) -> str
     side      = str(t.get('side', ''))
     state     = str(t.get('new_state', ''))
     atr_dist  = t.get('atr_distance', 0.0)
-    if atr_dist != atr_dist:  # noqa: PLR0124 -- float NaN self-inequality
+    # IN-01: math.isnan is the standard idiom; readable + intent-clear.
+    if math.isnan(atr_dist):
       dist_label = 'distance unknown'
     else:
       label = 'within trigger' if t.get('new_state') == 'APPROACHING' else 'beyond stop'

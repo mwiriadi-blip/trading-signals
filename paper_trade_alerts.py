@@ -14,6 +14,7 @@ main._evaluate_paper_trade_alerts. Tests use this surface heavily
 (tests/test_main_alerts.py — 30+ test cases).
 '''
 import logging
+import math
 
 from alert_engine import compute_alert_state, compute_atr_distance
 import state_manager
@@ -77,7 +78,7 @@ def _evaluate_paper_trade_alerts_impl(state: dict, dashboard_url: str) -> dict:
       bar = ohlc[-1]
       scalars = sig.get('indicator_scalars', {})
       atr = scalars.get('atr', float('nan'))
-      if atr != atr:  # NaN check (no math import needed — NaN != NaN)
+      if math.isnan(atr):  # IN-01: math.isnan is the standard idiom
         logger.warning('[Alert] WARN no ATR for %s; treating as CLEAR', instrument)
         new_state = 'CLEAR'
       else:
