@@ -269,7 +269,10 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
         raise _PaperTradeIDOverflow(req.instrument, today_awst)
       counter = len(same_day) + 1
       trade_id = f'{prefix}{counter:03d}'
-      entry_cost_aud = _COST_AUD[req.instrument] / 2.0
+      # Phase 27 WR-01: route raw cost split through pnl_engine.entry_side_cost
+      # so the AUD-cent boundary uses the canonical HALF_UP-rounded helper.
+      from pnl_engine import entry_side_cost  # noqa: PLC0415 — local import per planner D-19
+      entry_cost_aud = float(entry_side_cost(_COST_AUD[req.instrument]))
       rows.append({
         'id': trade_id,
         'instrument': req.instrument,

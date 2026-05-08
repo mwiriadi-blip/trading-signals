@@ -27,6 +27,12 @@ PROD_FILES = [
   'pnl_engine.py',
   'sizing_engine.py',
   'main.py',
+  # WR-01 fix: web routes + dashboard renderer also persist / display the
+  # entry-side cost split. Extending the AST gate forces these paths
+  # through pnl_engine.entry_side_cost — single source of truth.
+  'web/routes/paper_trades.py',
+  'web/routes/trades.py',
+  'dashboard_renderer/stats.py',
   *_notifier_pkg_files(),
 ]
 

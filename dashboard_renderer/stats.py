@@ -159,7 +159,10 @@ def compute_unrealised_pnl_display(
       'module-level contract specs default tier', state_key,
     )
     multiplier, cost_aud_round_trip = contract_specs[state_key]
-  cost_aud_open = cost_aud_round_trip / 2
+  # Phase 27 WR-01: canonical entry-side helper from pnl_engine — single
+  # source of truth for the half-split (HALF_UP-quantized to AUD cents).
+  from pnl_engine import entry_side_cost  # noqa: PLC0415
+  cost_aud_open = float(entry_side_cost(cost_aud_round_trip))
   direction_mult = 1.0 if position['direction'] == 'LONG' else -1.0
   price_diff = current_close - position['entry_price']
   gross = direction_mult * price_diff * position['n_contracts'] * multiplier

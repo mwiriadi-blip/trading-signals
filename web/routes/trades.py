@@ -417,7 +417,10 @@ def _render_close_success_partial(instrument, gross_pnl, cost_aud, n_contracts) 
   the listener (it can render the OOB confirmation banner client-side
   from the event detail).
   '''
-  net_pnl = gross_pnl - (cost_aud * n_contracts / 2)
+  # Phase 27 WR-01: route entry-side cost through pnl_engine.entry_side_cost
+  # so the half-split uses the canonical AUD-quantized HALF_UP helper.
+  from pnl_engine import entry_side_cost  # noqa: PLC0415
+  net_pnl = gross_pnl - float(entry_side_cost(cost_aud)) * n_contracts
   payload = {
     'positions-changed': {
       'instrument': instrument,
