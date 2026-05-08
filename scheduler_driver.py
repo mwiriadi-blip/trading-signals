@@ -20,6 +20,7 @@ patched name lives on the `main` package. Functions in this module that need
 those references re-resolve through `main` on every call so the patch is visible.
 '''
 import logging
+import time
 
 import system_params
 from data_fetcher import DataFetchError, ShortFrameError
@@ -39,8 +40,9 @@ def _get_process_tzname() -> str:
   Production behaviour: identical to `time.tzname[0]`.
   Test behaviour: `monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')`.
   '''
-  import time as _time  # LOCAL — keep stdlib import graph tidy
-  return _time.tzname[0]
+  # IN-06: time is imported at module top (this seam is a plain function,
+  # not a never-crash wrapper — the local-import idiom was cargo-culted).
+  return time.tzname[0]
 
 
 def _run_daily_check_caught(job, args) -> None:
