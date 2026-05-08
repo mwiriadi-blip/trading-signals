@@ -197,15 +197,35 @@ class TestDispatchUsesMaxWarningsConstant:
 
   def test_dispatch_path_routes_through_state_manager(self) -> None:
     '''_dispatch_email_and_maintain_warnings must use state_manager helpers
-    (clear_warnings / append_warning) — NOT mutate state["warnings"] directly.'''
-    import main as main_mod
-    src = pathlib.Path(main_mod.__file__).read_text()
-    # Locate the _dispatch_email_and_maintain_warnings_impl function.
+    (clear_warnings / append_warning) — NOT mutate state["warnings"] directly.
+
+    Phase 27 Plan 13 split: the impl relocated from main.py to
+    crash_boundary.py per agreed-3. The introspection test now scans
+    crash_boundary.py with a fallback to main.py (so the invariant holds
+    regardless of where future code-reorgs place the impl).
+    '''
+    # Plan 27-13 split: impl lives in crash_boundary.py. Fallback to main.py
+    # for older revisions / forward compatibility.
+    candidate_paths = [
+      pathlib.Path('crash_boundary.py'),
+      pathlib.Path('main.py'),
+    ]
+    src = None
+    for p in candidate_paths:
+      if p.is_file():
+        text = p.read_text()
+        if 'def _dispatch_email_and_maintain_warnings_impl' in text:
+          src = text
+          break
+    assert src is not None, (
+      '_dispatch_email_and_maintain_warnings_impl not found in '
+      f'{[str(p) for p in candidate_paths]}'
+    )
     match = re.search(
       r'def _dispatch_email_and_maintain_warnings_impl\([^)]*\)[^:]*:(.+?)(?=\ndef\s|\Z)',
       src, re.DOTALL,
     )
-    assert match, '_dispatch_email_and_maintain_warnings_impl not found in main.py'
+    assert match, '_dispatch_email_and_maintain_warnings_impl regex did not match'
     body = match.group(1)
     # Helpers must be invoked at least once.
     assert 'clear_warnings' in body or 'state_manager.clear_warnings' in body, (
