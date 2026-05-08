@@ -1,0 +1,1521 @@
+<!-- captured at HEAD 579d835cc9993f39166361f8c29fbe265023b214 after 27-08+27-11 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Signals — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" integrity="sha384-MH1axGwz/uQzfIcjFdjEfsM0xlf5mmWfAwwggaOh5IPFvgKFGbJ2PZ4VBbgSYBQN" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js" integrity="sha384-nRnAvEUI7N/XvvowiMiq7oEI04gOXMCqD3Bidvedw+YNbj7zTQACPlRI3Jt3vYM4" crossorigin="anonymous"></script>
+  <script>
+
+function handleTradesError(evt) {
+  if (evt.detail.successful) return;
+  var section = evt.target.closest('section');
+  if (!section) return;
+  var errorBox = section.querySelector('.error');
+  if (!errorBox) return;
+  var status = evt.detail.xhr.status;
+  if (status === 401) {
+    errorBox.innerHTML = '<p class="error-heading">Auth header missing or wrong — refresh the page</p>';
+  } else if (status === 400) {
+    var body;
+    try { body = JSON.parse(evt.detail.xhr.responseText); } catch (e) {
+      errorBox.innerHTML = '<p class="error-heading">Server error — see journald</p>';
+      errorBox.hidden = false;
+      return;
+    }
+    var heading = '<p class="error-heading">Could not save trade:</p>';
+    var rows = (body.errors || []).map(function (e) {
+      return '<div class="error-row"><code>' + e.field + '</code>: ' + e.reason + '</div>';
+    }).join('');
+    errorBox.innerHTML = heading + '<div class="error-rows">' + rows + '</div>';
+  } else if (status === 409) {
+    errorBox.innerHTML = '<p class="error-heading">' + evt.detail.xhr.responseText + '</p>';
+  } else {
+    errorBox.innerHTML = '<p class="error-heading">Server error — see journald: journalctl -u trading-signals-web</p>';
+  }
+  errorBox.hidden = false;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('details[data-instrument]').forEach(function(el) {
+    el.addEventListener('toggle', function() {
+      var openKeys = Array.from(
+        document.querySelectorAll('details[data-instrument][open]')
+      ).map(function(d) { return d.getAttribute('data-instrument'); }).join(',');
+      document.cookie = 'tsi_trace_open=' + openKeys
+        + '; Path=/; SameSite=Lax; Max-Age=7776000; Secure';
+    });
+  });
+  document.querySelectorAll('.trace-indicator-name').forEach(function(cell) {
+    cell.addEventListener('click', function() {
+      var isOpen = this.getAttribute('data-formula-open') === 'true';
+      var next = this.closest('tr').nextElementSibling;
+      if (next && next.classList.contains('formula-row')) {
+        next.hidden = isOpen;
+        this.setAttribute('data-formula-open', isOpen ? 'false' : 'true');
+      }
+    });
+  });
+});
+  </script>
+  <style>
+:root {
+  --color-bg: #0f1117;
+  --color-surface: #161a24;
+  --color-border: #252a36;
+  --color-text: #e5e7eb;
+  --color-text-muted: #cbd5e1;
+  --color-text-dim: #64748b;
+  --color-long: #22c55e;
+  --color-short: #ef4444;
+  --color-flat: #eab308;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  --fs-label: 14px;       /* was 12 */
+  --fs-body: 16px;        /* was 14 — D-15 kills iOS auto-zoom */
+  --fs-heading: 23px;     /* was 20 (20 * 16/14 = 22.86 → 23) */
+  --fs-display: 32px;     /* was 28 (28 * 16/14 = 32 exactly) */
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --color-focus-ring: #e5e7eb;
+  --color-status-stale: #eab308;
+  --space-status-dot: 8px;
+  --touch-target-min: 44px;
+}
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+  cursor: default;
+}
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+header h1 {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+header .subtitle {
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0 16px;
+}
+header .meta {
+  display: inline-flex;
+  gap: 16px;
+  align-items: baseline;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-8);
+}
+header .meta .label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+header .meta .value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+section {
+  margin-bottom: var(--space-8);
+}
+section h2 {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.cards-row {
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+  flex: 1;
+  min-width: 300px;
+}
+.card .eyebrow {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+}
+.card .big-label {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+.card .sub {
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+.card .scalars {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+.chart-container {
+  position: relative;
+  /* G-S2 reviews: Fixed height mandatory for Chart.js
+     maintainAspectRatio: false — do NOT optimise away. */
+  height: 320px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}
+.chart-container.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.data-table thead th {
+  text-align: left;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.data-table tbody td {
+  font-size: var(--fs-body);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.data-table tbody td.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.data-table .empty-state {
+  text-align: center;
+  color: var(--color-text-dim);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-6);
+}
+.stat-tile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}
+.stat-tile .label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}
+.stat-tile .value {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+.subtle {
+  font-size: var(--fs-label);
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-4);
+}
+footer {
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: var(--fs-label);
+  margin: 48px 0 24px;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 720px) {
+  .cards-row {
+    flex-direction: column;
+  }
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+/* =========================================================================
+ * Phase 14 — Trade Journal HTMX components
+ * UI-SPEC §Decision 1 (open form), §Decision 2 (action buttons),
+ * §Decision 4 (error region), §Decision 6 (manual badge), §Decision 7 (form layout)
+ * All tokens inherited from :root above; no new design tokens.
+ * ========================================================================= */
+.open-form { margin-bottom: var(--space-6); }
+.open-form form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--space-6);
+}
+.open-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 140px;
+  flex: 1;
+}
+.open-form label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.open-form input,
+.open-form select {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-body);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.open-form select {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.open-form input:focus,
+.open-form select:focus {
+  outline: none;
+  border-color: var(--color-text-muted);
+  box-shadow: 0 0 0 1px var(--color-text-muted);
+}
+.open-form details {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+.open-form summary {
+  cursor: pointer;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) 0;
+}
+.open-form .advanced-helper {
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+  margin: var(--space-2) 0;
+}
+.open-form small {
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+}
+.btn-primary {
+  background: transparent;
+  color: var(--color-long);
+  border: 1px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.btn-primary:hover { background: rgba(34, 197, 94, 0.10); }
+.btn-primary:disabled {
+  color: var(--color-text-dim);
+  border-color: var(--color-text-dim);
+  cursor: not-allowed;
+  background: transparent;
+}
+.btn-row {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px var(--space-3);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.btn-row.btn-close { color: var(--color-short); border-color: var(--color-short); }
+.btn-row.btn-close:hover { background: rgba(239, 68, 68, 0.10); }
+.btn-row.btn-modify { color: var(--color-flat); border-color: var(--color-flat); }
+.btn-row.btn-modify:hover { background: rgba(234, 179, 8, 0.10); }
+.btn-row + .btn-row { margin-left: var(--space-2); }
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-left: var(--space-2);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  text-transform: lowercase;
+  border-radius: 4px;
+  letter-spacing: 0;
+}
+.badge-manual {
+  background: rgba(234, 179, 8, 0.10);
+  color: var(--color-flat);
+}
+.error {
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-short);
+  background: var(--color-surface);
+  padding: var(--space-3);
+  margin-top: var(--space-4);
+  border-radius: 4px;
+}
+.error-heading {
+  font-size: var(--fs-body);
+  font-weight: 400;
+  color: var(--color-text);
+  margin: 0 0 var(--space-2);
+}
+.error-row {
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  margin: 0;
+  padding: 2px 0;
+}
+.error-row code {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+#confirmation-banner {
+  margin: var(--space-4) 0;
+}
+.banner-success {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-3);
+  color: var(--color-text);
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .open-form .field { min-width: 100%; }
+}
+/* =========================================================================
+ * Phase 15 — Calculator sub-rows + Sentinel banners
+ * All tokens inherited from :root above; no new design tokens.
+ * ========================================================================= */
+.calc-row td.calc-cell {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.calc-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.calc-value {
+  font-size: var(--fs-body);
+  color: var(--color-text);
+}
+.calc-value.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.calc-sep {
+  color: var(--color-border);
+  margin: 0 var(--space-2);
+}
+.calc-dim {
+  color: var(--color-text-dim);
+}
+.calc-input {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-label);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+  max-width: 100px;
+}
+.calc-input:focus {
+  outline: none;
+  border-color: var(--color-text-muted);
+  box-shadow: 0 0 0 1px var(--color-text-muted);
+}
+td.calc-cell.entry-target {
+  background: var(--color-surface);
+}
+.trail-stop-split {
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.manual-stop-val { color: var(--color-flat); }
+.stop-sep { color: var(--color-text-dim); margin: 0 var(--space-1); }
+.computed-stop-val { color: var(--color-text-dim); }
+.computed-stop-val em { font-style: italic; }
+/* Sentinel banners */
+.sentinel-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.sentinel-drift { border-left: 4px solid var(--color-flat); }
+.sentinel-reversal { border-left: 4px solid var(--color-short); }
+.sentinel-heading {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+  margin: 0 0 var(--space-2);
+}
+.sentinel-body {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+.sentinel-body li { margin: 0 0 var(--space-1); list-style: disc; }
+.sentinel-body li:last-child { margin-bottom: 0; }
+
+/* Phase 16.1 — Sign Out + session-note widgets in header .meta row */
+.signout-form { margin-left: auto; }
+.btn-signout {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 4px var(--space-3);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.btn-signout:hover {
+  background: rgba(229, 231, 235, 0.06);
+  color: var(--color-text);
+}
+.session-note {
+  margin-left: auto;
+  font-size: var(--fs-label);
+  color: var(--color-text-dim);
+}
+/* Phase 17 D-03/D-04: trace panels (inputs/indicators/vote) */
+.trace-disclosure { margin-top: var(--space-3); }
+.trace-summary { cursor: pointer; font-weight: 600; color: var(--color-text-muted); }
+.trace-panel { margin-top: var(--space-2); overflow-x: auto; }
+.trace-panel table { width: 100%; border-collapse: collapse; font-size: var(--fs-label); }
+.trace-panel td { padding: 2px 6px; border-bottom: 1px solid var(--color-border); }
+.trace-panel td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, 'Courier New', monospace;
+}
+.trace-panel td.date { color: var(--color-text-muted); }
+.trace-indicator-name { cursor: pointer; }  /* D-15 — Mobile Safari click fix */
+.formula-row td { font-size: 0.8em; color: var(--color-text-muted); font-style: italic; padding-left: 12px; }
+.trace-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 700; }
+.trace-badge.plus  { background: #166534; color: #dcfce7; }
+.trace-badge.minus { background: #7f1d1d; color: #fee2e2; }
+.trace-badge.zero  { background: #713f12; color: #fef9c3; }
+.trace-badge.pass  { background: #166534; color: #dcfce7; }
+.trace-badge.fail  { background: #7f1d1d; color: #fee2e2; }
+.alert-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: var(--fs-label); font-weight: 700; white-space: nowrap; }
+.alert-clear     { background: #d4edda; color: #155724; }
+.alert-approaching { background: #fff3cd; color: #856404; }
+.alert-hit       { background: #f8d7da; color: #721c24; }
+.alert-none      { background: #e9ecef; color: #6c757d; }
+@media (max-width: 640px) {
+  .alert-badge { font-size: 10px; padding: 1px 4px; }
+}
+.trace-outcome { margin-top: var(--space-2); font-weight: 700; }
+.stats-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-3) var(--space-6);
+}
+.stats-bar-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+.paper-trades-table { width: 100%; border-collapse: collapse; }
+.paper-trades-table th, .paper-trades-table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); text-align: left; }
+.row-clickable { cursor: pointer; }
+.row-clickable:hover { background: var(--color-bg); }
+.pnl-positive { color: var(--color-long); }
+.pnl-negative { color: var(--color-short); }
+.pnl-zero { color: var(--color-text-dim); }
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+}
+.tabs a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+}
+.tabs a:hover, .tabs a:focus { color: var(--color-text); background: var(--color-surface); }
+.tab-panel {
+  scroll-margin-top: var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-8);
+}
+.market-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.market-selector h2 { margin: 0; }
+.market-selector select {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+}
+.checkbox-field {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+.account-stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.market-test-result { margin-top: var(--space-4); }
+@media (max-width: 600px) {
+  .stats-bar-item { min-width: calc(33% - var(--space-4)); }
+}
+/* =========================================================================
+ * Phase 25 Plan 09 — CSS tokens + responsive scaffolding (D-15, D-18, D-19, D-20)
+ * ========================================================================= */
+/* Signal color classes (D-19 #5) — implemented in 25-09b (no inline colors) */
+.signal-flat { color: var(--color-flat); }
+.signal-long { color: var(--color-long); }
+.signal-short { color: var(--color-short); }
+/* Status-dot styles (D-06 status strip + D-19 #3 signal labels) */
+.status-dot {
+  display: inline-block;
+  width: var(--space-status-dot);
+  height: var(--space-status-dot);
+  border-radius: 50%;
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}
+.status-dot--success { background: var(--color-long); }
+.status-dot--stale,
+.status-dot--flat { background: var(--color-flat); }
+.status-dot--failure,
+.status-dot--short { background: var(--color-short); }
+.status-dot--never { background: var(--color-text-dim); }
+.status-dot--long { background: var(--color-long); }
+.status-dot--neutral { background: var(--color-text-dim); }
+/* Table-scroll wrapper + stacked-row mobile layout (D-20) */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .table-scroll table { display: block; }
+  .table-scroll thead { display: none; }
+  .table-scroll tr {
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+  }
+  .table-scroll td { display: block; padding: var(--space-1) 0; }
+  .table-scroll td::before {
+    content: attr(data-label);
+    display: inline-block;
+    width: 50%;
+    color: var(--color-text-muted);
+    font-size: var(--fs-label);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+/* Tab-strip active-tab styles (D-18) */
+nav[role="tablist"] [role="tab"] {
+  padding: var(--space-2) var(--space-4);
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+nav[role="tablist"] [role="tab"]:hover,
+nav[role="tablist"] [role="tab"]:focus {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+nav[role="tablist"] [role="tab"][aria-current="page"],
+nav[role="tablist"] [role="tab"].tab-active {
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-long);
+}
+/* Focus-visible rules (D-19 #2) */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+/* Status-strip / onboarding-card / add-market-chip styles (Plans 25-05/25-06/25-07) */
+.status-strip {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+}
+.onboarding-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: var(--space-6);
+  margin: var(--space-6) 0;
+}
+.onboarding-card h3 { margin: 0 0 var(--space-2); }
+.add-market-chip {
+  display: inline-block;
+  margin-left: var(--space-2);
+}
+.add-market-chip > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-flat);
+  border-radius: 4px;
+  list-style: none;
+  min-height: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+.add-market-chip[open] > summary { border-style: solid; }
+.add-market-chip form {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div id="confirmation-banner"></div>
+<header>
+  <h1>Trading Signals</h1>
+  <p class="subtitle">Mechanical multi-market trading system</p>
+  <p class="meta">
+    <span class="label">Last updated</span>
+    <span class="value">2026-04-22 09:00 AWST</span>
+    {{SIGNOUT_BUTTON}}{{SESSION_NOTE}}
+  </p>
+<div id="status-strip" class="status-strip" hx-get="/status-strip" hx-trigger="refresh, visibilitychange[document.visibilityState=='visible'] from:document" hx-swap="outerHTML" aria-live="polite">
+  <span class="status-dot status-dot--stale" aria-hidden="true"></span>
+  <span class="status-label">Last run</span>
+  <time datetime="2026-04-21" class="mono">2026-04-21</time> · Stale
+  <span class="status-sep"> · </span>
+  <span class="status-label">Next run</span>
+  <span class="next-run">08:00 AWST · <span data-countdown="2026-04-23T08:00:00+08:00">in 23h 0m</span></span>
+</div>
+</header>
+<nav role="tablist" aria-label="Function" class="tabs tabs-function">
+  <a role="tab" tabindex="0" aria-current="page" class="tab-active" href="/signals" data-tab-key="signals">Signals</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/account" data-tab-key="account">Account</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/settings" data-tab-key="settings">Settings</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/market-test" data-tab-key="market-test">Market Test</a>
+</nav>
+<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip" hx-trigger="markets-changed from:body" hx-get="/markets-strip?active_function=signals" hx-swap="outerHTML">
+  <details class="add-market-chip">
+    <summary aria-label="Add market">+ Add market</summary>
+    <form
+        hx-post="/markets"
+        hx-ext="json-enc"
+        hx-target="this"
+        hx-swap="outerHTML"
+        hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'
+        hx-on::after-request="handleTradesError(event)">
+      <label for="add-market-id">Code</label>
+      <input id="add-market-id" name="market_id" type="text" pattern="[A-Z0-9_]{2,20}" required>
+      <label for="add-market-label">Label</label>
+      <input id="add-market-label" name="display_name" type="text" required>
+      <label for="add-market-symbol">Symbol</label>
+      <input id="add-market-symbol" name="symbol" type="text" required>
+      <label for="add-market-size">Multiplier</label>
+      <input id="add-market-size" name="multiplier" type="number" step="any" required>
+      <label for="add-market-cost">Cost (AUD)</label>
+      <input id="add-market-cost" name="cost_aud" type="number" step="any" value="0" required>
+      <button type="submit">Add market</button>
+      <button type="reset" onclick="this.closest('details').open=false;return false;">Cancel</button>
+    </form>
+  </details>
+</nav>
+<section id="market-panel" aria-live="polite">
+<section id="signals-tab" class="tab-panel" aria-labelledby="signals-tab-heading">
+  <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>
+<section aria-labelledby="heading-signals">
+  <h2 id="heading-signals">Signal Status</h2>
+  <div class="cards-row">
+    <article class="card">
+      <p class="eyebrow">SPI 200</p>
+      <p class="big-label signal-flat"><span class="status-dot status-dot--flat" aria-hidden="true"></span>FLAT</p>
+      <p class="sub">Signal as of 2026-04-21</p>
+      <p class="scalars">ADX 18.3  ·  Mom<sub>1</sub> -0.5%  ·  Mom<sub>3</sub> +0.1%  ·  Mom<sub>12</sub> +1.4%  ·  RVol 0.95</p>
+    </article>
+<details class="trace-disclosure" data-instrument="SPI200"{{TRACE_OPEN_SPI200}}>
+  <summary class="trace-summary">Show calculations</summary>
+<section class="trace-panel">
+  <p><em>Awaiting first daily run — calculations will appear after the next 08:00 AWST cycle.</em></p>
+</section>
+<section class="trace-panel">
+  <p class="eyebrow">INDICATORS</p>
+  <table class="trace-indicators-table">
+    <tbody>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="TR = max(High - Low, |High - prev Close|, |Low - prev Close|)">TR</td><td class="num">n/a (need 1 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">TR = max(High - Low, |High - prev Close|, |Low - prev Close|)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)">ATR(14)</td><td class="num">n/a (need 14 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)">+DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)">-DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)">ADX(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}">Mom1</td><td class="num">n/a (need 2 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}">Mom3</td><td class="num">n/a (need 4 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}">Mom12</td><td class="num">n/a (need 13 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="RVol(20) = Volume_t / SMA(Volume, 20)">RVol(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">RVol(20) = Volume_t / SMA(Volume, 20)</td></tr>
+  </tbody></table>
+</section>
+<section class="trace-panel trace-vote">
+  <p><em>Awaiting first daily run.</em></p>
+</section>
+</details>
+    <article class="card">
+      <p class="eyebrow">AUD / USD</p>
+      <p class="big-label signal-long"><span class="status-dot status-dot--long" aria-hidden="true"></span>LONG</p>
+      <p class="sub">Signal as of 2026-04-21</p>
+      <p class="scalars">ADX 27.3  ·  Mom<sub>1</sub> +1.5%  ·  Mom<sub>3</sub> +1.8%  ·  Mom<sub>12</sub> +2.2%  ·  RVol 0.95</p>
+    </article>
+<details class="trace-disclosure" data-instrument="AUDUSD"{{TRACE_OPEN_AUDUSD}}>
+  <summary class="trace-summary">Show calculations</summary>
+<section class="trace-panel">
+  <p><em>Awaiting first daily run — calculations will appear after the next 08:00 AWST cycle.</em></p>
+</section>
+<section class="trace-panel">
+  <p class="eyebrow">INDICATORS</p>
+  <table class="trace-indicators-table">
+    <tbody>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="TR = max(High - Low, |High - prev Close|, |Low - prev Close|)">TR</td><td class="num">n/a (need 1 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">TR = max(High - Low, |High - prev Close|, |Low - prev Close|)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)">ATR(14)</td><td class="num">n/a (need 14 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)">+DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)">-DI(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)">ADX(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}">Mom1</td><td class="num">n/a (need 2 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}">Mom3</td><td class="num">n/a (need 4 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}">Mom12</td><td class="num">n/a (need 13 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}</td></tr>
+<tr><td class="trace-indicator-name" data-formula-open="false" title="RVol(20) = Volume_t / SMA(Volume, 20)">RVol(20)</td><td class="num">n/a (need 20 bars, have 0)</td></tr>
+<tr class="formula-row" hidden><td colspan="2">RVol(20) = Volume_t / SMA(Volume, 20)</td></tr>
+  </tbody></table>
+</section>
+<section class="trace-panel trace-vote">
+  <p><em>Awaiting first daily run.</em></p>
+</section>
+</details>
+  </div>
+</section>
+<div id="trades-region">
+<section id="open-trade-form-section">
+  <h2>Record New Paper Trade</h2>
+  <form hx-post="/paper-trade/open"
+        hx-target="#trades-region"
+        hx-swap="outerHTML"
+        enctype="application/x-www-form-urlencoded">
+    <label for="paper-trade-instrument">Instrument</label>
+    <select id="paper-trade-instrument" name="instrument" required>
+      <option value="SPI200">SPI200</option>
+      <option value="AUDUSD">AUDUSD</option>
+    </select>
+    <label for="paper-trade-side">Side</label>
+    <select id="paper-trade-side" name="side" required>
+      <option value="LONG">LONG</option>
+      <option value="SHORT">SHORT</option>
+    </select>
+    <label for="paper-trade-entry-dt">Entry date/time (AWST)</label>
+    <input id="paper-trade-entry-dt" type="datetime-local" name="entry_dt" required>
+    <label for="paper-trade-entry-price">Entry price</label>
+    <input id="paper-trade-entry-price" type="number" name="entry_price" step="0.0001" min="0.0001" required>
+    <label for="paper-trade-contracts">Contracts</label>
+    <input id="paper-trade-contracts" type="number" name="contracts" step="0.01" min="0.01" required>
+    <label for="paper-trade-stop-price">Stop price (optional)</label>
+    <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">
+    <button type="submit" class="btn-primary">Record paper trade</button>
+  </form>
+</section>
+<section id="open-trades-section">
+  <h2>Open Paper Trades</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Open paper trades (scrollable)">
+  <table class="paper-trades-table">
+    <tbody>
+      <tr><td colspan="10" class="empty-state">No open paper trades. Use the form above to record a new entry.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+<section id="close-form-section"></section>
+<section id="closed-trades-section">
+  <h2>Closed Paper Trades</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed paper trades (scrollable)">
+  <table class="paper-trades-table">
+    <tbody>
+      <tr><td colspan="7" class="empty-state">No closed trades yet. Trades will appear here after you close an open position.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+</div>
+<section aria-labelledby="heading-trailing-stops">
+  <h2 id="heading-trailing-stops">Trailing Stops</h2>
+  <table class="data-table">
+    <thead><tr><th>Market</th><th>Direction</th><th>Current</th><th>Trailing Stop</th><th>Distance</th><th>Next Add</th><th>Updated</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>SPI 200</td>
+        <td>LONG</td>
+        <td class="num">$8,085.00</td>
+        <td class="num">$7,950.00</td>
+        <td class="num">$135.00 / 1.7%</td>
+        <td class="num">$8,050.00</td>
+        <td>2026-04-21</td>
+      </tr>
+      <tr>
+        <td>AUD / USD</td>
+        <td>SHORT</td>
+        <td class="num">$0.66</td>
+        <td class="num">$0.66</td>
+        <td class="num">$0.00 / 0.3%</td>
+        <td class="num">$0.66</td>
+        <td>2026-04-21</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section aria-labelledby="heading-equity">
+  <h2 id="heading-equity">Equity Curve</h2>
+  <div class="chart-container">
+    <canvas id="equityChart" aria-label="Account equity line chart over time" role="img"></canvas>
+  </div>
+  <script>
+    (function() {
+      const payload = {"data": [99950.0, 100096.82, 100133.63, 100280.45, 100317.27, 100354.08, 100500.9, 100537.72, 100574.53, 100721.35, 100758.17, 100794.98, 100941.8, 100978.62, 101125.43, 101162.25, 101199.07, 101345.88, 101382.7, 101419.52, 101566.33, 101603.15, 101639.97, 101786.78, 101823.6, 101970.42, 102007.23, 102044.05, 102190.87, 102227.68, 102264.5, 102411.31, 102448.13, 102484.95, 102631.76, 102668.58, 102815.4, 102852.21, 102889.03, 103035.85, 103072.66, 103109.48, 103256.3, 103293.11, 103329.93, 103476.75, 103513.56, 103660.38, 103697.2, 103734.01, 103880.83, 103917.65, 103954.46, 104101.28, 104138.1, 104174.91, 104321.73, 104358.55, 104505.36, 104532.18], "labels": ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24"]};
+      new Chart(document.getElementById("equityChart"), {
+        type: "line",
+        data: {
+          labels: payload.labels,
+          datasets: [{
+            label: "Account equity",
+            data: payload.data,
+            borderColor: "#22c55e",
+            backgroundColor: "#22c55e",
+            fill: false,
+            tension: 0.1,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4
+          }]
+        },
+        options: {
+          scales: {
+            x: { type: "category",
+               ticks: { color: "#cbd5e1", maxTicksLimit: 10 },
+               grid: { color: "#252a36" } },
+            y: { ticks: { color: "#cbd5e1",
+                         callback: (v) => "$" + v.toLocaleString() }},
+               grid: { color: "#252a36" } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (ctx) => "$" + ctx.parsed.y.toLocaleString() } }
+          },
+          maintainAspectRatio: false,
+          responsive: true
+        }
+      });
+    })();
+  </script>
+</section>
+  <div class="sentinel-banner sentinel-reversal" role="alert" aria-live="polite">
+    <p class="sentinel-heading">Drift detected</p>
+    <ul class="sentinel-body">
+        <li>You hold LONG SPI200, today&#x27;s signal is FLAT — consider closing.</li>
+        <li>You hold SHORT AUDUSD, today&#x27;s signal is LONG — reversal recommended (close SHORT, open LONG).</li>
+    </ul>
+  </div>
+</section>
+<section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">
+  <h2 id="settings-tab-heading">Settings</h2>
+<section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">SPI 200 SETTINGS</p>
+  <h2>Settings</h2>
+  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
+  <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
+    <input type="hidden" name="market_id" value="SPI200">
+    <fieldset>
+      <legend>Entry rules</legend>
+      <div class="field">
+        <label for="settings-SPI200-adx_gate">ADX gate</label>
+        <input id="settings-SPI200-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="25.0">
+        <small class="field-help">Skips trade days when trend strength is weak. Default 25.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-momentum_votes_required">Momentum votes</label>
+        <input id="settings-SPI200-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2">
+        <small class="field-help">Number of positive momentum windows required to enter. Default 2.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Risk</legend>
+      <div class="field">
+        <label for="settings-SPI200-trail_mult_long">Long ATR stop multiple</label>
+        <input id="settings-SPI200-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0">
+        <small class="field-help">Trailing-stop distance for long positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-trail_mult_short">Short ATR stop multiple</label>
+        <input id="settings-SPI200-trail_mult_short" name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0">
+        <small class="field-help">Trailing-stop distance for short positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-risk_pct_long">Long risk percent</label>
+        <input id="settings-SPI200-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00">
+        <small class="field-help">Account risk per long trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-risk_pct_short">Short risk percent</label>
+        <input id="settings-SPI200-risk_pct_short" name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50">
+        <small class="field-help">Account risk per short trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-contract_cap">Contract cap</label>
+        <input id="settings-SPI200-contract_cap" name="contract_cap" type="number" step="1" min="1" value="">
+        <small class="field-help">Maximum contracts per pyramid level. Default 3.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Direction</legend>
+      <div class="field">
+        <label for="settings-SPI200-direction_mode">Mode</label>
+        <select id="settings-SPI200-direction_mode" name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
+        <small class="field-help">Long-only, short-only, or both. Default both.</small>
+      </div>
+      <div class="field">
+        <label class="checkbox-field" for="settings-SPI200-one_contract_floor"><input id="settings-SPI200-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+        <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <button type="submit" class="btn-primary">Save settings</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">AUD / USD SETTINGS</p>
+  <h2>Settings</h2>
+  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
+  <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
+    <input type="hidden" name="market_id" value="AUDUSD">
+    <fieldset>
+      <legend>Entry rules</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-adx_gate">ADX gate</label>
+        <input id="settings-AUDUSD-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="25.0">
+        <small class="field-help">Skips trade days when trend strength is weak. Default 25.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-momentum_votes_required">Momentum votes</label>
+        <input id="settings-AUDUSD-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2">
+        <small class="field-help">Number of positive momentum windows required to enter. Default 2.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Risk</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-trail_mult_long">Long ATR stop multiple</label>
+        <input id="settings-AUDUSD-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0">
+        <small class="field-help">Trailing-stop distance for long positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-trail_mult_short">Short ATR stop multiple</label>
+        <input id="settings-AUDUSD-trail_mult_short" name="trail_mult_short" type="number" step="0.1" min="0.1" value="2.0">
+        <small class="field-help">Trailing-stop distance for short positions. Default 1.5×ATR.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-risk_pct_long">Long risk percent</label>
+        <input id="settings-AUDUSD-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00">
+        <small class="field-help">Account risk per long trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-risk_pct_short">Short risk percent</label>
+        <input id="settings-AUDUSD-risk_pct_short" name="risk_pct_short" type="number" step="0.1" min="0.1" value="0.50">
+        <small class="field-help">Account risk per short trade. Default 1.0%.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-contract_cap">Contract cap</label>
+        <input id="settings-AUDUSD-contract_cap" name="contract_cap" type="number" step="1" min="1" value="">
+        <small class="field-help">Maximum contracts per pyramid level. Default 3.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Direction</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-direction_mode">Mode</label>
+        <select id="settings-AUDUSD-direction_mode" name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
+        <small class="field-help">Long-only, short-only, or both. Default both.</small>
+      </div>
+      <div class="field">
+        <label class="checkbox-field" for="settings-AUDUSD-one_contract_floor"><input id="settings-AUDUSD-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+        <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <button type="submit" class="btn-primary">Save settings</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">ADD MARKET</p>
+  <form hx-post="/markets" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
+    <div class="field"><label for="add-market-form-id">Market ID</label><input id="add-market-form-id" name="market_id" required pattern="[A-Z0-9_]{2,20}"></div>
+    <div class="field"><label for="add-market-form-name">Display name</label><input id="add-market-form-name" name="display_name" required></div>
+    <div class="field"><label for="add-market-form-symbol">Symbol</label><input id="add-market-form-symbol" name="symbol" required></div>
+    <div class="field"><label for="add-market-form-currency">Currency</label><input id="add-market-form-currency" name="currency" value="AUD" required></div>
+    <div class="field"><label for="add-market-form-multiplier">Multiplier</label><input id="add-market-form-multiplier" name="multiplier" type="number" step="0.0001" min="0.0001" required></div>
+    <div class="field"><label for="add-market-form-cost">Cost AUD</label><input id="add-market-form-cost" name="cost_aud" type="number" step="0.01" min="0" value="0"></div>
+    <button type="submit" class="btn-primary">Add Market</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+</section>
+<section id="market-test-tab" class="tab-panel" aria-labelledby="market-test-tab-heading">
+  <h2 id="market-test-tab-heading">Market Test</h2>
+<section class="open-form market-test-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">MARKET TEST</p>
+  <form hx-post="/market-test/run" hx-target="#market-test-result" hx-swap="innerHTML" hx-on::after-request="handleTradesError(event)">
+    <div class="field"><label for="market-test-market">Market</label><select id="market-test-market" name="market_id" required>
+        <option value="SPI200">SPI 200</option>
+        <option value="AUDUSD">AUD / USD</option>
+    </select></div>
+    <div class="field"><label for="market-test-start-date">Start date</label><input id="market-test-start-date" name="start_date" type="date" required></div>
+    <div class="field"><label for="market-test-end-date">End date</label><input id="market-test-end-date" name="end_date" type="date" required></div>
+    <div class="field"><label for="market-test-balance">Initial balance</label><input id="market-test-balance" name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>
+    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0" placeholder="25.0"></div>
+    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3" placeholder="2"></div>
+    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1" placeholder="1.00"></div>
+    <div class="field"><label for="market-test-risk-short">Short risk %</label><input id="market-test-risk-short" name="risk_pct_short" type="number" step="0.1" min="0.1" placeholder="0.50"></div>
+    <div class="field"><label for="market-test-atr-long">Long ATR multiple</label><input id="market-test-atr-long" name="trail_mult_long" type="number" step="0.1" min="0.1" placeholder="3.0"></div>
+    <div class="field"><label for="market-test-atr-short">Short ATR multiple</label><input id="market-test-atr-short" name="trail_mult_short" type="number" step="0.1" min="0.1" placeholder="2.0"></div>
+    <div class="field"><label for="market-test-cap">Contract cap</label><input id="market-test-cap" name="contract_cap" type="number" step="1" min="1" placeholder=""></div>
+    <button type="submit" class="btn-primary">Run Test</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+  <div id="market-test-result" class="market-test-result"></div>
+</section>
+</section>
+</section>
+<section id="account-tab" class="tab-panel" aria-labelledby="account-tab-heading">
+  <h2 id="account-tab-heading">Account</h2>
+<div id="account-management-region">
+<section class="open-form account-balance-form">
+  <p class="eyebrow">ACCOUNT BASELINE</p>
+  <form hx-patch="/account/balance" hx-ext="json-enc" hx-target="#account-management-region" hx-swap="outerHTML" hx-on::after-request="handleTradesError(event)">
+    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="100000.00" required></div>
+    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="104532.18" required></div>
+    <button type="submit" class="btn-primary">Update balances</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section aria-labelledby="heading-account-stats">
+  <h2 id="heading-account-stats">Key Stats</h2>
+  <div class="stats-grid account-stats-grid">
+    <div class="stat-tile">
+      <p class="label">Starting Balance</p>
+      <p class="value">$100,000.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Account Balance</p>
+      <p class="value">$104,532.18</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Realised P&amp;L</p>
+      <p class="value">+836.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Unrealised P&amp;L</p>
+      <p class="value">+979.00</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Total Return</p>
+      <p class="value">+5.5%</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Max Drawdown</p>
+      <p class="value">0.0%</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Win Rate</p>
+      <p class="value">80.0%</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Open Exposure</p>
+      <p class="value">$16,171.32</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Open Trades</p>
+      <p class="value">2</p>
+    </div>
+    <div class="stat-tile">
+      <p class="label">Closed Trades</p>
+      <p class="value">5</p>
+    </div>
+  </div>
+</section>
+<section class="open-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
+  <p class="eyebrow">OPEN NEW POSITION</p>
+  <form
+    hx-post="/trades/open"
+    hx-ext="json-enc"
+    hx-swap="none"
+    hx-on::after-request="handleTradesError(event)"
+  >
+    <div class="field">
+      <label for="open-form-instrument">Instrument</label>
+      <select id="open-form-instrument" name="instrument" required>
+        <option value="SPI200">SPI 200</option>
+        <option value="AUDUSD">AUD / USD</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="open-form-direction">Direction</label>
+      <select id="open-form-direction" name="direction" required>
+        <option value="LONG">LONG</option>
+        <option value="SHORT">SHORT</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="open-form-entry-price">Entry price</label>
+      <input id="open-form-entry-price" name="entry_price" type="number" step="0.01" min="0.01" required>
+    </div>
+    <div class="field">
+      <label for="open-form-contracts">Contracts</label>
+      <input id="open-form-contracts" name="contracts" type="number" step="1" min="1" required>
+    </div>
+    <details class="form-advanced">
+      <summary>Advanced</summary>
+      <p class="advanced-helper">Leave blank unless back-dating a pyramided position.</p>
+      <div class="field">
+        <label for="open-form-executed-at">Executed at</label>
+        <input id="open-form-executed-at" name="executed_at" type="date">
+        <small>Optional. Defaults to today (AWST).</small>
+      </div>
+      <div class="field">
+        <label for="open-form-peak-price">Peak price</label>
+        <input id="open-form-peak-price" name="peak_price" type="number" step="0.01" min="0">
+        <small>LONG only. Leave blank to default to entry price.</small>
+      </div>
+      <div class="field">
+        <label for="open-form-trough-price">Trough price</label>
+        <input id="open-form-trough-price" name="trough_price" type="number" step="0.01" min="0">
+        <small>SHORT only. Leave blank to default to entry price.</small>
+      </div>
+      <div class="field">
+        <label for="open-form-pyramid-level">Pyramid level</label>
+        <input id="open-form-pyramid-level" name="pyramid_level" type="number" step="1" min="0" max="2">
+        <small>Defaults to 0. Use only when back-dating a pyramided position.</small>
+      </div>
+    </details>
+    <button type="submit" class="btn-primary">Open live position</button>
+  </form>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
+</section>
+<section aria-labelledby="heading-positions">
+  <h2 id="heading-positions">Open Positions</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Open positions (scrollable)">
+  <table class="data-table">
+    <caption class="visually-hidden">Open positions with current price, contracts, trail stop, and unrealised P&amp;L</caption>
+    <thead>
+      <tr>
+        <th scope="col">Instrument</th>
+        <th scope="col">Direction</th>
+        <th scope="col">Entry</th>
+        <th scope="col">Current</th>
+        <th scope="col">Contracts</th>
+        <th scope="col">Pyramid</th>
+        <th scope="col">Trail Stop</th>
+        <th scope="col">Unrealised P&amp;L</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="position-group-SPI200" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' hx-trigger="positions-changed from:body" hx-get="/?fragment=position-group-SPI200" hx-swap="innerHTML">
+      <tr id="position-row-SPI200">
+        <td>SPI 200</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td class="num">$8,000.00</td>
+        <td class="num">$8,085.00</td>
+        <td class="num">2</td>
+        <td class="num">Lvl 0</td>
+        <td class="num">$7,950.00</td>
+        <td class="num"><span class="pnl-positive">+$844.00</span></td>
+        <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=SPI200" hx-target="#position-group-SPI200" hx-swap="innerHTML">Modify</button></td>
+      </tr>
+    <tr class="calc-row" aria-label="Calculator data for SPI200">
+      <td colspan="9" class="calc-cell">
+        <span class="calc-label">STOP</span>
+        <span class="calc-value num">$7,950.00</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">DIST</span>
+        <span class="calc-value num">$135.00</span>
+        <span class="calc-dim"> / </span>
+        <span class="calc-value num">1.7%</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEXT ADD</span>
+        <span class="calc-value num">$8,050.00 <span class="calc-dim">(+1×ATR)</span></span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">LEVEL</span>
+        <span class="calc-value">level 0/2</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEW STOP</span>
+        <span class="calc-value num">$7,950.00</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">IF HIGH</span>
+        <input id="forward-stop-SPI200-z" name="z" type="number" step="0.01" min="0" hx-get="/?fragment=forward-stop&amp;instrument=SPI200" hx-trigger="input changed delay:300ms" hx-target="#forward-stop-SPI200-w" hx-include="this" class="calc-input" aria-label="Enter today&apos;s high to project trailing stop for SPI200">
+        <span class="calc-dim">stop rises to</span>
+        <span id="forward-stop-SPI200-w" class="calc-value num">—</span>
+        <span id="forward-stop-SPI200-hint" class="calc-dim">(enter high to project)</span>
+      </td>
+    </tr>
+    </tbody>
+    <tbody id="position-group-AUDUSD" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' hx-trigger="positions-changed from:body" hx-get="/?fragment=position-group-AUDUSD" hx-swap="innerHTML">
+      <tr id="position-row-AUDUSD">
+        <td>AUD / USD</td>
+        <td data-label="Direction"><span class="signal-short">SHORT</span></td>
+        <td class="num">$0.67</td>
+        <td class="num">$0.66</td>
+        <td class="num">2</td>
+        <td class="num">Lvl 0</td>
+        <td class="num"><span class="trail-stop-split"><span class="manual-stop-val">manual: $0.66</span><span class="stop-sep"> | </span><span class="computed-stop-val">computed: $0.67 <em>(will close)</em></span></span></td>
+        <td class="num"><span class="pnl-positive">+$135.00</span></td>
+        <td><button type="button" class="btn-row btn-close" hx-get="/trades/close-form?instrument=AUDUSD" hx-target="#position-group-AUDUSD" hx-swap="innerHTML">Close</button><button type="button" class="btn-row btn-modify" hx-get="/trades/modify-form?instrument=AUDUSD" hx-target="#position-group-AUDUSD" hx-swap="innerHTML">Modify</button></td>
+      </tr>
+    <tr class="calc-row" aria-label="Calculator data for AUDUSD">
+      <td colspan="9" class="calc-cell">
+        <span class="calc-label">STOP</span>
+        <span class="calc-value num">$0.66</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">DIST</span>
+        <span class="calc-value num">$0.00</span>
+        <span class="calc-dim"> / </span>
+        <span class="calc-value num">0.3%</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEXT ADD</span>
+        <span class="calc-value num">$0.66 <span class="calc-dim">(+1×ATR)</span></span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">LEVEL</span>
+        <span class="calc-value">level 0/2</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">NEW STOP</span>
+        <span class="calc-value num">$0.67</span>
+        <span class="calc-sep"> | </span>
+        <span class="calc-label">IF HIGH</span>
+        <input id="forward-stop-AUDUSD-z" name="z" type="number" step="0.01" min="0" hx-get="/?fragment=forward-stop&amp;instrument=AUDUSD" hx-trigger="input changed delay:300ms" hx-target="#forward-stop-AUDUSD-w" hx-include="this" class="calc-input" aria-label="Enter today&apos;s high to project trailing stop for AUDUSD">
+        <span class="calc-dim">stop rises to</span>
+        <span id="forward-stop-AUDUSD-w" class="calc-value num">—</span>
+        <span id="forward-stop-AUDUSD-hint" class="calc-dim">(enter high to project)</span>
+      </td>
+    </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+<section aria-labelledby="heading-trades">
+  <h2 id="heading-trades">Closed Trades</h2>
+  <p class="subtle">last 20</p>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed trades (scrollable)">
+  <table class="data-table">
+    <caption class="visually-hidden">Most recent 20 closed trades, newest first</caption>
+    <thead>
+      <tr>
+        <th scope="col">Closed</th>
+        <th scope="col">Instrument</th>
+        <th scope="col">Direction</th>
+        <th scope="col">Entry → Exit</th>
+        <th scope="col">Contracts</th>
+        <th scope="col">Reason</th>
+        <th scope="col">P&amp;L</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td data-label="Closed">2026-04-09</td>
+        <td data-label="Instrument">SPI 200</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td data-label="Entry → Exit" class="num">$7,980.00 → $8,020.00</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Signal flat</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$197.00</span></td>
+      </tr>
+      <tr>
+        <td data-label="Closed">2026-04-04</td>
+        <td data-label="Instrument">AUD / USD</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td data-label="Entry → Exit" class="num">$0.65 → $0.66</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">ADX drop</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$347.50</span></td>
+      </tr>
+      <tr>
+        <td data-label="Closed">2026-03-22</td>
+        <td data-label="Instrument">SPI 200</td>
+        <td data-label="Direction"><span class="signal-short">SHORT</span></td>
+        <td data-label="Entry → Exit" class="num">$7,900.00 → $7,950.00</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Reversal</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-negative">-$253.00</span></td>
+      </tr>
+      <tr>
+        <td data-label="Closed">2026-03-09</td>
+        <td data-label="Instrument">AUD / USD</td>
+        <td data-label="Direction"><span class="signal-short">SHORT</span></td>
+        <td data-label="Entry → Exit" class="num">$0.66 → $0.66</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Signal flat</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$197.50</span></td>
+      </tr>
+      <tr>
+        <td data-label="Closed">2026-02-22</td>
+        <td data-label="Instrument">SPI 200</td>
+        <td data-label="Direction"><span class="signal-long">LONG</span></td>
+        <td data-label="Entry → Exit" class="num">$7,850.00 → $7,920.00</td>
+        <td data-label="Contracts" class="num">1</td>
+        <td data-label="Reason">Stop hit</td>
+        <td data-label="P&amp;L" class="num"><span class="pnl-positive">+$347.00</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+</div>
+</section>
+<footer>
+  Signal-only system. Not financial advice.
+  <div class="strategy-version">Strategy version: <code>v1.2.0</code></div>
+</footer>
+  </div>
+<script>
+// Phase 25 D-19 #1: sync aria-expanded with <details> open state for SR users.
+(function () {
+  function syncAriaExpanded(el) {
+    el.setAttribute('aria-expanded', el.open ? 'true' : 'false');
+  }
+  function bindAll() {
+    document.querySelectorAll('details').forEach(function (d) {
+      syncAriaExpanded(d);
+      // Avoid duplicate toggle listeners after re-bind: store a marker.
+      if (!d.dataset.ariaSyncBound) {
+        d.addEventListener('toggle', function () { syncAriaExpanded(d); });
+        d.dataset.ariaSyncBound = '1';
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', bindAll);
+  document.body.addEventListener('htmx:afterSwap', bindAll);
+})();
+</script>
+</body>
+</html>
