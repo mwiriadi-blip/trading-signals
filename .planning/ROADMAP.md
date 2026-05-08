@@ -278,7 +278,7 @@ Plans:
 
 **Depends on:** Phase 26
 
-**Plans:** 14/14 plans executed
+**Plans:** 14/14 plans complete
 
 Plans:
 **Wave 1**
