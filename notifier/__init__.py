@@ -218,7 +218,11 @@ def _cli_main() -> int:
 
   from state_manager import load_state
 
-  logging.basicConfig(level=logging.INFO, format='%(message)s')
+  # IN-03: force=True overrides any prior basicConfig (e.g. from a host
+  # process that imported the package). Without force=True the call is a
+  # silent no-op when logging was already configured, so the CLI's INFO
+  # emits never appear.
+  logging.basicConfig(level=logging.INFO, format='%(message)s', force=True)
   state = load_state()
   old_signals: dict = {'^AXJO': None, 'AUDUSD=X': None}
   now = _dt.now(_pytz.timezone('Australia/Perth'))
