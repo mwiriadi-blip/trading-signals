@@ -139,9 +139,12 @@ def _render_paper_trades_open(paper_trades=None, signals=None) -> str:
 
   rows_html = ''
   for row in open_rows:
-    trade_id = row.get('id', '')
+    # WR-05: html.escape requires str — None/int row['id'] would crash the
+    # render. Force str coercion at the boundary so a malformed paper trade
+    # row never reaches html.escape with a non-str argument.
+    trade_id = str(row.get('id', '') or '')
     esc_id = html.escape(trade_id, quote=True)
-    instrument = row.get('instrument', '')
+    instrument = str(row.get('instrument', '') or '')
     sig = signals.get(instrument, {})
     lc = sig.get('last_close')
 
@@ -248,7 +251,9 @@ def _render_paper_trades_closed(paper_trades=None) -> str:
 
   rows_html = ''
   for row in closed_rows:
-    trade_id = row.get('id', '')
+    # WR-05: same str-coercion guard as the open-trades loop above —
+    # html.escape can't take None / int.
+    trade_id = str(row.get('id', '') or '')
     esc_id = html.escape(trade_id, quote=True)
     realised = row.get('realised_pnl') or 0.0
     pnl_str = f'{realised:+.2f}'

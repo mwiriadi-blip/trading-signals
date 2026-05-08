@@ -2711,6 +2711,48 @@ class TestRenderPaperTradesOpenTable:
     )
     assert '&lt;script&gt;' in out, 'HTML-escaped XSS trade_id must appear'
 
+  def test_open_table_handles_non_str_trade_id(self) -> None:
+    '''Phase 27 WR-05: row['id'] / row['instrument'] may legitimately be
+    None or int (no type check on read). html.escape requires str —
+    str-coercion at the boundary prevents a render crash on malformed
+    paper trade rows.'''
+    paper_trades = [
+      {
+        'id': None,  # would crash html.escape pre-fix
+        'instrument': None,
+        'side': 'LONG',
+        'entry_dt': '2026-04-28T10:00:00+08:00',
+        'entry_price': 7800.0,
+        'contracts': 1,
+        'stop_price': 7700.0,
+        'entry_cost_aud': 3.0,
+        'status': 'open',
+        'exit_dt': None,
+        'exit_price': None,
+        'realised_pnl': None,
+        'strategy_version': 'v1.2.0',
+      },
+      {
+        'id': 12345,  # int — likewise crashes html.escape pre-fix
+        'instrument': 99,
+        'side': 'SHORT',
+        'entry_dt': '2026-04-28T10:00:00+08:00',
+        'entry_price': 7800.0,
+        'contracts': 1,
+        'stop_price': 7900.0,
+        'entry_cost_aud': 3.0,
+        'status': 'open',
+        'exit_dt': None,
+        'exit_price': None,
+        'realised_pnl': None,
+        'strategy_version': 'v1.2.0',
+      },
+    ]
+    # Must not raise TypeError. Output type is str (rendered HTML).
+    out = dashboard._render_paper_trades_open(paper_trades, {})
+    assert isinstance(out, str)
+    assert '12345' in out, 'int trade_id should be coerced to str and rendered'
+
 
 class TestRenderPaperTradesClosedTable:
   '''Phase 19 D-11/D-13 — _render_paper_trades_closed helper.'''
