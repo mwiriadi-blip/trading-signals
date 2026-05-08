@@ -216,3 +216,32 @@ class TestStateSchemaVersionV7:
       f'Phase 20 D-08: schema bump must NOT change STRATEGY_VERSION; '
       f'got {system_params.STRATEGY_VERSION!r}'
     )
+
+
+class TestPaperTradeRouteConstantsParity:
+  '''Phase 27 WR-04: web/routes/paper_trades.py mirrors SPI/AUDUSD multiplier
+  + cost constants from system_params. The header comment in the route
+  file says "If system_params changes, update here and bump tests" — this
+  test IS the bump-test gate. Without it, a system_params edit silently
+  diverges from the route's persisted entry_cost_aud / P&L math.
+  '''
+
+  def test_multiplier_dict_matches_system_params(self) -> None:
+    from web.routes.paper_trades import _MULTIPLIER
+    assert _MULTIPLIER == {
+      'SPI200': system_params.SPI_MULT,
+      'AUDUSD': system_params.AUDUSD_NOTIONAL,
+    }, (
+      'WR-04: web/routes/paper_trades._MULTIPLIER drifted from '
+      'system_params (SPI_MULT, AUDUSD_NOTIONAL).'
+    )
+
+  def test_cost_aud_dict_matches_system_params(self) -> None:
+    from web.routes.paper_trades import _COST_AUD
+    assert _COST_AUD == {
+      'SPI200': system_params.SPI_COST_AUD,
+      'AUDUSD': system_params.AUDUSD_COST_AUD,
+    }, (
+      'WR-04: web/routes/paper_trades._COST_AUD drifted from '
+      'system_params (SPI_COST_AUD, AUDUSD_COST_AUD).'
+    )
