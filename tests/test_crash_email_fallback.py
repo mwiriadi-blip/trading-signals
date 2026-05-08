@@ -107,9 +107,12 @@ class TestWriteLastCrash:
     crash = tmp_path / 'last_crash.json'
     monkeypatch.setenv('LAST_CRASH_PATH', str(crash))
     payload = self._payload()
+    # Phase 27 WR-06: replace stale 'notifier.py:1423' reference with a
+    # placeholder (the monolith was deleted in CR-01 and the line numbers
+    # in notifier/transport.py do not match the original anyway).
     payload['traceback'] = (
       'Traceback (most recent call last):\n'
-      '  File "notifier.py", line 1423\n'
+      '  File "<test-fixture>", line 1\n'
       '    resend.send(api_key="re_test_abc123def456ghi789")\n'
       '  ResendError: ...'
     )
