@@ -140,7 +140,11 @@ def _distinct_equity_tuples(equity_history: list) -> list:
 def _render_equity_chart_container(state: dict) -> str:
   '''DASH-04 / CONTEXT D-11 / UI-SPEC §Chart Component. Category x-axis.
 
-  JSON payload injection defence (Pitfall 1): json.dumps + .replace('</', '<\\/').
+  JSON payload injection defence (Pitfall 1): json.dumps with
+  ensure_ascii=True (forces \\uXXXX for U+2028/U+2029 line separators —
+  some JS parsers treat those as line terminators inside string
+  literals, breaking the embedded payload) plus a `</` -> `<\\/` scrub
+  for the <script>-close vector. Phase 27 WR-07 hardening.
 
   D-11 empty state: chart hidden until >=5 distinct (date, equity) tuples.
   Three identical points still count as one distinct point (D-11 spec).
@@ -169,7 +173,12 @@ def _render_equity_chart_container(state: dict) -> str:
   from system_params import _decimal_default
   payload = json.dumps(
     {'labels': labels, 'data': data},
-    ensure_ascii=False,
+    # Phase 27 WR-07: ensure_ascii=True forces \uXXXX escaping for
+    # U+2028 / U+2029 (JS line-terminator characters that some parsers
+    # treat as ending a string literal). The <script>-close defence
+    # below catches the </ vector; ensure_ascii catches the line-sep
+    # vector. Both are required for embedded-script JSON safety.
+    ensure_ascii=True,
     sort_keys=True,    # Pitfall 2: byte-stable dict order
     allow_nan=False,   # G-1 reviews: stray NaN must fail loudly rather than
                        # emit invalid JSON that Chart.js renders as a blank line
