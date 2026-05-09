@@ -1,173 +1,152 @@
 # DEPLOY.md — Trading Signals operator runbook
 
-**Primary deployment:** GitHub Actions (free, stateless-by-design, cron-driven).
-**Alternative deployment:** Replit Reserved VM + Always On (persistent process).
+**Primary deployment:** DigitalOcean droplet running two systemd units behind nginx + Let's Encrypt TLS. The daily-run unit fetches data, computes signals, persists `state.json`, renders `dashboard.html`, sends the daily email, and pushes `state.json` back to `origin/main` via a deploy key. The web unit serves the FastAPI dashboard.
 
-***
+The one-time bring-up runbook is **[SETUP-DROPLET.md](../SETUP-DROPLET.md)**. This file is the routine-operations runbook.
 
-## Quickstart — GitHub Actions (primary)
+---
 
-1. Fork / clone the repo.
-2. Add Secrets under **Settings → Secrets and variables → Actions**:
-   - `RESEND_API_KEY` (required) — from Resend Dashboard → API Keys
-   - `SIGNALS_EMAIL_TO` (required) — your email address
-3. Enable Actions: **Settings → Actions → General → "Allow all actions and reusable workflows"**.
-4. **Update the README.md status badge URL** to your own `owner/repo` slug: replace the literal `${{GITHUB_REPOSITORY}}` placeholder in README.md with e.g. `mwiriadi/trading-signals`. Commit and push.
-5. Verify: **Actions tab → Daily signal check → "Run workflow"** (manual dispatch) → confirm green run + email arrives. The badge in README.md should now render as a green "passing" indicator.
-6. Wait for first scheduled run at **00:00 UTC (08:00 AWST)** next weekday.
+## TL;DR
 
-### What the workflow does
-
-The `.github/workflows/daily.yml` workflow runs every weekday at 00:00 UTC:
-
-1. Checks out the repo at HEAD.
-2. Installs Python 3.13.x (pinned in `.python-version`) with pip cache.
-3. Runs `.venv/bin/python main.py --once` — fetches OHLCV, computes signals, updates `state.json`, renders `dashboard.html`, sends the daily email.
-4. If step 3 succeeded, commits the updated `state.json` back to the repo using `stefanzweifel/git-auto-commit-action@v5` with `add_options: '-f'` (force-add; `state.json` is gitignored locally).
-
-### Cost estimate
-
-Daily run × 5 weekdays × 4.3 weeks/month × ~60s/run ≈ 21 minutes/month.
-
-- **Public repos:** unlimited Actions minutes.
-- **Private repos:** 2000 minutes/month free tier. Our usage is ~1% of the tier.
-- Ubuntu-latest runner is billed at the 1× multiplier. No other billable resources.
-
-***
-
-## Alternative — Replit (Reserved VM + Always On)
-
-Why Replit is an alternative, not primary:
-
-- Replit Autoscale cold-starts kill the in-process `schedule` loop — cannot persist a daily cron.
-- Replit Reserved VM + Always On keeps the process alive 24/7 but requires a paid plan.
-- GitHub Actions is free and stateless-by-design — no process to keep alive.
-
-### Setup
-
-1. Import this repo into Replit.
-2. Add Secrets in the **Replit Secrets tab**:
-   - `RESEND_API_KEY`
-   - `SIGNALS_EMAIL_TO`
-3. Enable **Reserved VM + Always On** under the Replit project's Deployments / Always On settings. Required for the `schedule` loop to persist across Replit's resource-reclaim cycles.
-4. Click **Run**. `.venv/bin/python main.py` (no flags) enters the schedule loop automatically per Phase 7 default-mode dispatch:
-   - Runs an immediate first check (SCHED-02).
-   - Registers `schedule.every().day.at('00:00').do(...)` for the daily loop.
-   - Loops forever calling `schedule.run_pending()` every 60 seconds.
-
-### Filesystem-persistence caveat
-
-- Replit **Reserved VM** persists `state.json` across process restarts.
-- Replit **Autoscale** DOES NOT — cold starts reset the filesystem on every wake. **Do not deploy this on Autoscale.**
-
-### Timezone invariant
-
-The `schedule` library's `.at('00:00')` uses **process-local time**. Both `ubuntu-latest` (GHA) and Replit Reserved VM default to UTC, and `_run_schedule_loop` asserts this at entry via the `_get_process_tzname()` wrapper:
-
-```python
-assert _get_process_tzname() == 'UTC', '[Sched] process tz must be UTC ...'
+```bash
+# Routine deploy (after pushing to origin/main from your workstation):
+ssh trader@<droplet>
+cd /home/trader/trading-signals
+bash deploy.sh
 ```
 
-If the assertion fails (custom `TZ` environment variable somewhere), set `TZ=UTC` in the Replit Secrets tab.
+`deploy.sh` is fail-loud and idempotent: branch check → fetch → ff-only pull → pip install → restart `trading-signals` + `trading-signals-web` units → curl `/healthz` retry loop → echo success + commit hash. It does NOT auto-revert (D-25 — fail-loud).
 
-***
+---
 
-## Environment variable reference
+## Architecture
+
+| Piece | Path | Role |
+|-------|------|------|
+| Daily-run unit | `trading-signals.service` | One-shot `python main.py --once` triggered by systemd timer at 00:00 UTC weekdays. Fetches data, computes signals, sends email, commits `state.json` back via deploy key. |
+| Web unit | `trading-signals-web.service` | Long-running `uvicorn web.app:app --host 127.0.0.1 --port 8000`. Source: `systemd/trading-signals-web.service` in this repo. |
+| nginx | `/etc/nginx/sites-enabled/signals.conf` | TLS termination + reverse-proxy `127.0.0.1:8000`. Source: `nginx/signals.conf` in this repo. |
+| Deploy script | `deploy.sh` | Pull-and-restart wrapper invoked by the operator. |
+
+Both units run as the `trader` user, write only to `/home/trader/trading-signals` (systemd `ProtectSystem=strict` + `ReadWritePaths=` on the web unit), and log to journald.
+
+---
+
+## One-time bring-up
+
+See **[SETUP-DROPLET.md](../SETUP-DROPLET.md)** for the full runbook:
+
+- Systemd unit install
+- `WEB_AUTH_SECRET` + `WEB_AUTH_USERNAME` provisioning (Phase 13 / 16.1 fail-closed)
+- TOTP enrollment walkthrough
+- `OPERATOR_RECOVERY_EMAIL` + `BASE_URL` for magic-link 2FA reset
+- Sudoers entry granting `trader` passwordless restart of the two units + nginx reload
+- nginx + Let's Encrypt wiring (see also `docs/SETUP-HTTPS.md`)
+- GitHub deploy-key setup for `state.json` push-back (Phase 10 INFRA-02)
+
+---
+
+## Routine deploys
+
+Workflow:
+
+1. Push code changes to `origin/main` from your workstation (PR or direct).
+2. SSH to the droplet as `trader`.
+3. `cd /home/trader/trading-signals && bash deploy.sh`.
+
+`deploy.sh` will exit non-zero if:
+
+- The droplet's checked-out branch is not `main` (D-22 branch safety).
+- `git pull --ff-only` rejects (the droplet has diverged — typically because the daily-run committed `state.json` and your push raced; resolve by pulling locally and rebasing).
+- `python3.13 -m venv` is missing or the venv is the wrong Python version.
+- Either systemctl restart returns non-zero (sudoers rule mismatch — see SETUP-DROPLET.md §Install sudoers).
+- The healthz retry loop (10 attempts × 1s) cannot reach `http://127.0.0.1:8000/healthz`.
+
+There is **no auto-revert.** If a deploy fails mid-flight, fix forward — pull a corrective commit and re-run `deploy.sh`.
+
+---
+
+## Environment variables
+
+All env vars live in `/home/trader/trading-signals/.env` (mode `0600`, owned by `trader`). The web unit's `EnvironmentFile=-/home/trader/trading-signals/.env` reads them at startup; the daily-run unit reads them via `python-dotenv`.
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `RESEND_API_KEY` | Yes (deploy) | Resend API key for daily email dispatch. Local dev without this key triggers Phase 6 graceful-degradation (writes `last_email.html` + console log). |
-| `SIGNALS_EMAIL_TO` | Yes (deploy) | Recipient email address override. If unset, notifier.py falls back to the Phase 6 hardcoded default. |
-| `RESET_CONFIRM` | No (dev/CI only) | Set to `YES` to skip the interactive prompt inside `_handle_reset` during CI runs. Never set this in production. |
+| `RESEND_API_KEY` | Yes (deploy) | Resend API key for daily email + magic-link 2FA reset email. |
+| `SIGNALS_EMAIL_TO` | Yes | Recipient address for the daily signal email. Required at notifier boot — no fallback (Phase 27-05). |
+| `SIGNALS_EMAIL_FROM` | Yes | Verified-domain sender (Phase 12). Resend rejects unverified senders. |
+| `WEB_AUTH_SECRET` | Yes (web) | 32-character hex shared secret. Web unit refuses to start if missing/empty/short (Phase 13 D-16, fail-closed). |
+| `WEB_AUTH_USERNAME` | Yes (web) | Login username for cookie + TOTP flow (Phase 16.1 AUTH-04). Must not contain `:`. |
+| `OPERATOR_RECOVERY_EMAIL` | Yes (web) | Recovery address for magic-link 2FA reset (Phase 16.1 AUTH-11). Must validate as `name@domain.tld` at boot. |
+| `BASE_URL` | Yes (web) | Absolute base URL (e.g. `https://signals.<owned-domain>.com`) used to construct magic-link reset URLs. Server skips magic-link emails if unset (no localhost fallback — see global LEARNING). |
+| `RESET_CONFIRM` | No (dev/CI only) | Set to `YES` to skip the interactive prompt inside `_handle_reset`. Never set in production. |
+
+See [SETUP-DROPLET.md](../SETUP-DROPLET.md) for the canonical command sequence to provision each variable on a fresh droplet.
 
 **Not in the formal contract (superseded / deferred):**
 
-- `ANTHROPIC_API_KEY` — LLM-backed summarisation was considered for v1 but deferred. Env var is ignored by current code.
-- `FROM_EMAIL` — sender address is hardcoded in `notifier.py` (Resend-verified-domain invariant per Phase 6 D-14).
-- `TO_EMAIL` — superseded by `SIGNALS_EMAIL_TO`.
+- `ANTHROPIC_API_KEY` — LLM-backed summarisation considered for v1, deferred. Ignored by current code.
+- `FROM_EMAIL` / `TO_EMAIL` — superseded by `SIGNALS_EMAIL_FROM` / `SIGNALS_EMAIL_TO`.
 
-***
+---
 
 ## Local development
 
-Phase 7 introduced a default-mode schedule loop. Running `.venv/bin/python main.py`
-with NO flags now enters an infinite `schedule.run_pending()` loop, and
-`_run_schedule_loop` asserts the process TZ is UTC. That means local
-developers need to be aware of TZ in one specific case.
+The `schedule` library's `.at('00:00')` uses **process-local time**. The droplet runs UTC; local workstations rarely do. `_run_schedule_loop` asserts `time.tzname == 'UTC'` at entry and exits non-zero otherwise.
 
 - **Provision a local venv with Python 3.13 first:** `python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt`
-- **`.venv/bin/python main.py` (default / loop mode) requires `TZ=UTC` in the shell.**
-  If you run this on a non-UTC workstation (e.g. macOS with `Australia/Perth`),
-  export UTC first: `export TZ=UTC && .venv/bin/python main.py`. Without this, the UTC
-  assertion raises at loop entry and the process exits non-zero.
-- **`.venv/bin/python main.py --once`, `.venv/bin/python main.py --test`, `.venv/bin/python main.py --force-email`, and `.venv/bin/python main.py --reset` are always safe locally, regardless of shell TZ.** These flags short-circuit before the schedule loop, so the UTC assertion never runs. The weekday gate inside `run_daily_check` uses `_compute_run_date()` which reads AWST via `zoneinfo`, not process TZ — so "today AWST" is computed correctly no matter what `TZ` your shell has.
+- **`.venv/bin/python main.py` (default / loop mode) requires `TZ=UTC` in the shell.** On a non-UTC workstation (e.g. macOS with `Australia/Perth`): `export TZ=UTC && .venv/bin/python main.py`. Without this, the UTC assertion raises at loop entry.
+- **`.venv/bin/python main.py --once`, `--test`, `--force-email`, `--reset` are always safe locally regardless of shell TZ.** These flags short-circuit before the schedule loop, so the UTC assertion never runs. The weekday gate inside `run_daily_check` reads AWST via `zoneinfo`, not process TZ — "today AWST" is computed correctly no matter what `TZ` the shell has.
 
-***
+---
 
 ## Troubleshooting
 
-### "Green run but no email arrived"
+### "No email arrived after a successful daily run"
 
-Check the `RESEND_API_KEY` secret is set correctly under Actions → Secrets. Phase 6 graceful-degradation writes `last_email.html` to the runner's ephemeral filesystem when the key is missing; the workflow run still shows green because email failures are non-fatal (NOTF-07 / NOTF-08).
+`RESEND_API_KEY` likely missing or revoked. Phase 6 graceful-degradation writes `last_email.html` to disk and logs `[Email] no Resend API key — wrote last_email.html` instead of crashing (NOTF-07 / NOTF-08). Check `journalctl -u trading-signals -n 100 --no-pager` for the log line, fix the key in `.env`, and re-run with `python main.py --force-email`.
 
-### "Email arrives later than 08:00 AWST"
+### "DataFetchError on the daily run"
 
-GitHub Actions cron drifts 5–30 minutes during peak hours — 00:00 UTC is the most popular cron slot on the planet and gets queued. This is **documented GitHub behaviour, not a bug**. For sub-minute precision, pick a less-popular offset (e.g. `'17 0 * * 1-5'` fires at 08:17 AWST) — but this is not recommended unless the daily schedule really demands it.
+Yahoo Finance transient outage. `data_fetcher.fetch_ohlcv` retries 3× with 10s backoff (DATA-03) before raising. If all retries fail, `main.py --once` exits rc=2 and the unit logs the failure; `state.json` stays at yesterday's value and next weekday's run retries. No manual intervention needed (ERR-01 spec amendment).
 
-### "Run failed with DataFetchError"
+### "deploy.sh exits with branch safety error"
 
-Yahoo Finance transient outage. `data_fetcher.fetch_ohlcv` retries 3× with 10s backoff (DATA-03) before raising. If all retries fail, the workflow exits non-zero and the commit step is skipped (`if: success()`), so `state.json` stays at yesterday's value and next weekday's run retries. No manual intervention needed.
+The droplet's working tree is not on `main`. Likely cause: a manual commit done directly on the droplet. Resolve by `git status` to confirm working state is clean, then `git checkout main`. If the droplet committed `state.json` to a detached HEAD, recover it with `git reflog`.
 
-### "State.json commit conflict"
+### "deploy.sh exits at the healthz retry loop"
 
-You manually edited `state.json` during a cron run. Resolve the git conflict manually:
+The web unit failed to start within ~10 seconds. Inspect:
 
 ```bash
-git pull --rebase
-# resolve conflicts in state.json
-git rebase --continue
-git push
+journalctl -u trading-signals-web -n 50 --no-pager
 ```
 
-**Never force-push** (CLAUDE.md safety rule).
+Common causes:
 
-### "Scheduler loop crashed on Replit"
+- **`RuntimeError: WEB_AUTH_SECRET env var is missing or empty`** — fail-closed at boot (Phase 13 D-16). Fix `.env` and `sudo systemctl restart trading-signals-web`.
+- **`RuntimeError: OPERATOR_RECOVERY_EMAIL ...`** — malformed recovery address. Fix `.env` per SETUP-DROPLET.md §Configure recovery email.
+- **Address already in use on 127.0.0.1:8000** — a prior process didn't shut down. `sudo systemctl stop trading-signals-web` then start fresh.
 
-Check the Replit console logs. `schedule.every().day.at('00:00')` requires the process to stay alive — verify **Always On** is active in the Replit project settings. If the loop logged an exception at WARNING level (e.g. `[Sched] unexpected error caught in loop`), that individual run failed but the loop kept ticking. If the process terminated, restart it manually.
+### "Magic-link 2FA reset email never arrives"
 
-### "Scheduler fires at the wrong wall-clock time on Replit"
-
-Confirm the Replit container's timezone is UTC (default for Reserved VM). Run `date` in the Replit shell; the output should end in `UTC`. If it doesn't, add `TZ=UTC` to the Replit Secrets tab and restart the process.
-
-### "First workflow run after deploy — no state.json commit"
-
-Check the workflow Actions log for `"Working tree clean. Nothing to commit."` — that means `add_options: '-f'` is missing from the `stefanzweifel/git-auto-commit-action@v5` step. `state.json` is in `.gitignore`, so the action's default `git add` is a no-op on it. Fix by adding `add_options: '-f'` to the step's `with:` block in `.github/workflows/daily.yml`.
-
-### "[skip ci] token limitations"
-
-The `[skip ci]` token in our commit messages prevents future push-triggered CI workflows from running on `state.json`-only commits. It does NOT affect the daily cron schedule — cron triggers are independent of commits. If you add a push-triggered test workflow later, `[skip ci]` will correctly prevent it from running on the bot's daily-update commits.
-
-### "Branch protection blocked the commit"
-
-If the `github-actions[bot]` commit was blocked by branch protection rules:
-
-- **Recommended:** Add `github-actions[bot]` to **Settings → Branches → Branch protection rules → Allow specified actors to bypass required pull requests**.
-- **Alternative:** Use a Personal Access Token with `contents: write` scope, store it as a repo secret (e.g. `BOT_PAT`), and pass it via `token: ${{ secrets.BOT_PAT }}` to the `git-auto-commit-action` step.
-
-### "README badge not rendering / shows 'Workflow not found'"
-
-The README.md status badge URL embeds the literal string `${{GITHUB_REPOSITORY}}` as a placeholder. Replace that placeholder with your own `owner/repo` slug (e.g. `mwiriadi/trading-signals`) and commit. The badge should render within a few seconds after the first green workflow run. If it still doesn't render, check that the workflow file is at `.github/workflows/daily.yml` (GitHub is case-sensitive about the `.github/workflows/` path).
+Most common cause: `BASE_URL` is unset, so the server skipped sending the email and only rendered the "Check your email" page (no localhost fallback by design — see LEARNING `Localhost fallbacks in URL construction break silently in production`). Check `journalctl -u trading-signals-web -n 50 | grep BASE_URL`. Fix `.env` and restart the web unit.
 
 ### "AssertionError: [Sched] process tz must be UTC" when running locally
 
 You ran `.venv/bin/python main.py` (default loop mode) on a workstation with non-UTC system TZ. Either:
-- Run `export TZ=UTC && .venv/bin/python main.py` (recommended for local loop-mode dev).
+
+- `export TZ=UTC && .venv/bin/python main.py` (recommended for local loop-mode dev).
 - Use `.venv/bin/python main.py --once` instead — `--once` short-circuits before the loop so the TZ assertion never runs.
 
-***
+### "state.json on the droplet drifted from origin/main"
+
+The daily-run unit pushes `state.json` back to `origin/main` via a deploy key after a green run (Phase 10 INFRA-02, `_push_state_to_git` in `main.py`). If the push fails (network, deploy key revoked, branch protection), the droplet keeps the local update but the repo is stale. Inspect `journalctl -u trading-signals -n 100 | grep -E 'state push|deploy key'` and re-run `python main.py --once --no-fetch` (or fix the underlying push path) to retry the push.
+
+---
 
 ## Notes
 
-- `SPEC.md` is the historical project brief; `PROJECT.md` and `CLAUDE.md` are the current source of truth for deployment specifics.
-- Env-var names in this runbook supersede `SPEC.md`: `TO_EMAIL` → `SIGNALS_EMAIL_TO`, `FROM_EMAIL` → hardcoded in `notifier.py`, `ACCOUNT_START` / `SEND_TEST_ON_START` removed entirely.
-- If you migrate the deployment to a minimal container image (Alpine, distroless), add `tzdata==2024.1` to `requirements.txt` — default ubuntu-latest and Replit Reserved VM ship with OS tzdata so current Phase 7 does not pin it.
+- `SPEC.md` is the historical v0 project brief; `.planning/PROJECT.md` and this file are the current source of truth for deployment specifics.
+- `.github/workflows/daily.yml.disabled` is preserved as rollback insurance per Phase 10 INFRA-03 (cron retired to avoid duplicate emails when DO took over). The trailing `.disabled` suffix tells GitHub to skip parsing it; the structural contract is pinned by `tests/test_scheduler.py::TestGHAWorkflow` so we can re-enable in a hurry if the droplet ever goes down.
+- The v1.0 milestone archive at `.planning/milestones/v1.0-phases/07-scheduler-github-actions-deployment/` retains the original GHA-primary runbook for historical context.

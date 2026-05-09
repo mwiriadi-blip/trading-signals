@@ -1,19 +1,9 @@
 # Trading Signals
 
-[![Daily signal check](https://github.com/${{GITHUB_REPOSITORY}}/actions/workflows/daily.yml/badge.svg)](https://github.com/${{GITHUB_REPOSITORY}}/actions/workflows/daily.yml)
-
 Python signal-only trading app. Computes daily ATR/ADX/momentum signals for
 SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`), persists state, renders a
 self-contained dashboard, and emails a weekday report at 08:00 AWST.
 **Never places live trades.**
-
-## Setup
-
-Before first push: **replace the literal `${{GITHUB_REPOSITORY}}` in the badge
-URL above with your own `owner/repo` slug** (e.g. `mwiriadi/trading-signals`).
-This is a one-time edit; GitHub does not substitute the placeholder for you
-in static files. See `docs/DEPLOY.md` Troubleshooting → "README badge not
-rendering" for details.
 
 ## Quickstart
 
@@ -23,7 +13,7 @@ rendering" for details.
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-.venv/bin/python main.py --once      # one-shot run (GitHub Actions / cron mode)
+.venv/bin/python main.py --once      # one-shot run (CI/cron mode)
 .venv/bin/python main.py             # run once, then enter schedule loop (requires TZ=UTC locally)
 .venv/bin/python main.py --test      # dry run — no state mutation; email marked [TEST]
 .venv/bin/python main.py --reset     # reinitialise state.json to fresh $100k
@@ -35,18 +25,20 @@ running the default (loop) mode on a non-UTC workstation.
 ## Documentation
 
 - [SPEC.md](SPEC.md) — full functional specification (archival brief).
-- [docs/DEPLOY.md](docs/DEPLOY.md) — **operator runbook** (GitHub Actions + Replit setup, env vars, troubleshooting).
+- [SETUP-DROPLET.md](SETUP-DROPLET.md) — one-time droplet bring-up runbook.
+- [docs/DEPLOY.md](docs/DEPLOY.md) — **operator runbook** (droplet runbook, env vars, troubleshooting).
 - [CLAUDE.md](CLAUDE.md) — conventions, architecture, stack lock.
 - [.planning/ROADMAP.md](.planning/ROADMAP.md) — phase breakdown.
 
 ## Architecture
 
 Hexagonal-lite. Pure math in `signal_engine.py` + `sizing_engine.py`; I/O
-adapters in `state_manager.py`, `notifier.py`, `dashboard.py`,
+adapters in `state_manager.py`, `notifier/`, `dashboard.py`,
 `data_fetcher.py`; `main.py` is the thin orchestrator. See
 [CLAUDE.md](CLAUDE.md) for boundary rules.
 
 ## Deployment
 
-- **Primary:** GitHub Actions — see [docs/DEPLOY.md](docs/DEPLOY.md).
-- **Alternative:** Replit Reserved VM + Always On — see [docs/DEPLOY.md](docs/DEPLOY.md) §Alternative.
+- **Primary:** DigitalOcean droplet + systemd. See [SETUP-DROPLET.md](SETUP-DROPLET.md) for the one-time bring-up runbook (web unit + sudoers + auth secrets + nginx wiring per Phase 11–13).
+- **Routine deploys:** SSH to the droplet and run `bash deploy.sh` — fast-forward pull from `origin/main`, refresh deps, restart `trading-signals` + `trading-signals-web` units, healthz-gated.
+- **Operator runbook:** [docs/DEPLOY.md](docs/DEPLOY.md) — env vars, daily-run schedule, troubleshooting.

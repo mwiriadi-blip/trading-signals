@@ -18,7 +18,7 @@ fall back to a local cache so daily_run.py can be imported standalone
 without forcing main to load first.
 
 Module-level assignment is safe because this process runs single-threaded
-in both droplet systemd / GHA one-shot / Replit schedule modes; no
+in droplet systemd one-shot and loop modes; no
 concurrency hazard. Documented as a "Revisit if parallel runs appear (v2)"
 decision in PROJECT.md.
 '''

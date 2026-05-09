@@ -119,7 +119,7 @@ def _run_schedule_loop(
 
   Pitfall 1 mitigation: the `schedule` library's `.at()` without tz arg uses
   process-local time. We rely on UTC. Fail fast if the process runs in any
-  other tz — Replit or GHA runner misconfiguration would otherwise silently
+  other tz — droplet misconfiguration would otherwise silently
   fire at the wrong wall-clock moment. The check goes through the
   `_get_process_tzname()` wrapper (Wave 0) so tests can patch
   `main._get_process_tzname` cleanly (07-REVIEWS.md Codex MEDIUM-fix:

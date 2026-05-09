@@ -623,13 +623,14 @@ class TestGHAWorkflow:
 
 
 class TestDeployDocs:
-  '''SCHED-06 / D-14..D-16: static validation of docs/DEPLOY.md + README.md.
+  '''Phase 27-16 deployment doc-sweep: static validation of docs/DEPLOY.md +
+  README.md after the GHA-primary / Replit-alternative content was retired and
+  replaced with DigitalOcean droplet + systemd as the primary documented path.
 
-  07-REVIEWS.md fixes validated by this class:
-  - Gemini LOW: README.md contains the GitHub Actions status badge
-    (`actions/workflows/daily.yml/badge.svg` substring).
-  - Consensus LOW: docs/DEPLOY.md contains the local-dev TZ=UTC note
-    (`TZ=UTC` substring inside a Local-development-style section).
+  Original Phase 7 GHA-primary assertions are preserved in the v1.0 milestone
+  archive at .planning/milestones/v1.0-phases/07-scheduler-github-actions-deployment/.
+  TestGHAWorkflow above is unchanged — it pins the disabled rollback workflow
+  contract per Phase 10 INFRA-03.
   '''
 
   DEPLOY_PATH = 'docs/DEPLOY.md'
@@ -638,47 +639,77 @@ class TestDeployDocs:
   def test_deploy_md_exists(self) -> None:
     import os
     assert os.path.isfile(self.DEPLOY_PATH), (
-      f'D-14: {self.DEPLOY_PATH} must exist as operator runbook'
+      f'{self.DEPLOY_PATH} must exist as operator runbook'
     )
 
   def test_readme_exists(self) -> None:
     import os
     assert os.path.isfile(self.README_PATH), (
-      'Phase 7 top-level README.md must exist'
+      'Top-level README.md must exist'
     )
 
-  def test_deploy_md_has_gha_quickstart(self) -> None:
+  def test_deploy_md_describes_droplet(self) -> None:
+    '''27-16: DEPLOY.md must describe DigitalOcean droplet + systemd as
+    primary, with first-class pointers at SETUP-DROPLET.md + deploy.sh.
+    '''
     with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
       content = fh.read()
-    assert 'GitHub Actions' in content
-    assert 'Quickstart' in content
-    assert 'Settings → Secrets and variables → Actions' in content, (
-      'Quickstart must include repo Secrets setup path'
+    assert 'DigitalOcean' in content, (
+      '27-16: DEPLOY.md must name DigitalOcean as the primary deployment target'
+    )
+    assert 'systemd' in content, (
+      '27-16: DEPLOY.md must describe systemd unit architecture'
+    )
+    assert 'SETUP-DROPLET.md' in content, (
+      '27-16: DEPLOY.md must reference SETUP-DROPLET.md (one-time bring-up)'
+    )
+    assert 'deploy.sh' in content, (
+      '27-16: DEPLOY.md must describe deploy.sh (routine deploys)'
     )
 
-  def test_deploy_md_has_replit_alternative(self) -> None:
+  def test_deploy_md_no_replit_in_active_docs(self) -> None:
+    '''27-16: Replit was retired from active docs. Historical archive at
+    .planning/milestones/v1.0-phases/07-... still references it — that
+    path is intentional and verified separately.
+    '''
     with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
       content = fh.read()
-    assert 'Replit' in content
-    assert 'Reserved VM' in content, (
-      'SCHED-06: Replit Reserved VM section required'
+    assert 'Replit' not in content, (
+      '27-16: docs/DEPLOY.md must not mention Replit — retired from active '
+      'docs (preserved only in v1.0 milestone archive)'
     )
-    assert 'Always On' in content, (
-      'SCHED-06: Always On requirement required'
-    )
-    assert 'Autoscale' in content and 'DOES NOT' in content, (
-      'Filesystem-persistence caveat must call out Autoscale'
+
+  def test_deploy_md_gha_disabled_note(self) -> None:
+    '''27-16: GHA presence in active docs is limited to a single rollback-
+    insurance note pointing at .github/workflows/daily.yml.disabled
+    (Phase 10 INFRA-03 contract).
+    '''
+    with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'daily.yml.disabled' in content, (
+      '27-16: DEPLOY.md must note .github/workflows/daily.yml.disabled as '
+      'rollback insurance per Phase 10 INFRA-03'
     )
 
   def test_deploy_md_env_var_contract(self) -> None:
+    '''27-16: env var section must cover the droplet's full surface,
+    including the Phase 13 + 16.1 web-auth additions.
+    '''
     with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
       content = fh.read()
+    # Daily-run side
     assert 'RESEND_API_KEY' in content
     assert 'SIGNALS_EMAIL_TO' in content
-    # D-12: ANTHROPIC_API_KEY must be explicitly noted as deferred (not required)
+    assert 'SIGNALS_EMAIL_FROM' in content, (
+      '27-16: SIGNALS_EMAIL_FROM is required since Phase 12 — must appear'
+    )
+    # Web-auth side (Phase 13 + 16.1)
+    assert 'WEB_AUTH_SECRET' in content
+    assert 'WEB_AUTH_USERNAME' in content
+    assert 'OPERATOR_RECOVERY_EMAIL' in content
+    assert 'BASE_URL' in content
+    # D-12: ANTHROPIC_API_KEY tolerated only if explicitly deferred
     if 'ANTHROPIC_API_KEY' in content:
-      # Allowed if and only if explicitly labelled as superseded / deferred.
-      # Naive check: the section header should indicate it is not required.
       assert (
         'deferred' in content.lower()
         or 'superseded' in content.lower()
@@ -690,45 +721,34 @@ class TestDeployDocs:
   def test_deploy_md_troubleshooting_section(self) -> None:
     with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
       content = fh.read()
-    assert '## Troubleshooting' in content or 'Troubleshooting' in content
-    # Required troubleshooting entries per Pitfalls 1, 2, 4, 5 + operator recovery:
-    required_entries = [
-      'no email arrived',           # green-run-no-email (Pitfall + NOTF-08)
-      'later than 08:00 AWST',      # Pitfall 5 drift
-      'DataFetchError',             # Phase 4 failure mode
-      'commit conflict',            # manual-edit conflict
-      'Replit',                     # Replit-specific
-      'wrong wall-clock',           # Pitfall 1 TZ
-      'no state.json commit',       # Pitfall 2 first-run-no-commit
-      '[skip ci]',                  # Pitfall 4 knowledge-only
+    content_lower = content.lower()
+    assert 'troubleshooting' in content_lower
+    # Required troubleshooting entries per droplet failure modes (case-insensitive
+    # so heading capitalisation is allowed to vary):
+    required_entries_ci = [
+      'no email arrived',     # green-run-no-email (NOTF-08)
+      'datafetcherror',       # Phase 4 failure mode
+      'deploy.sh',            # branch-safety + healthz failure modes
+      'healthz',              # web-unit boot failure
+      'magic-link',           # Phase 16.1 BASE_URL skip path
+      'assertionerror',       # Pitfall 1 TZ
     ]
-    for phrase in required_entries:
-      assert phrase in content, (
-        f'Troubleshooting must cover: "{phrase}"'
+    for phrase in required_entries_ci:
+      assert phrase in content_lower, (
+        f'27-16: Troubleshooting must cover (case-insensitive): "{phrase}"'
       )
 
   def test_deploy_md_local_dev_tz_note(self) -> None:
-    '''07-REVIEWS.md Consensus LOW fix: docs/DEPLOY.md must cover local-dev
-    TZ=UTC invariant for default (loop) mode.
+    '''Phase 7 invariant preserved post-rewrite: docs/DEPLOY.md must cover
+    the local-dev TZ=UTC requirement for default (loop) mode.
     '''
     with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
       content = fh.read()
     assert 'TZ=UTC' in content, (
-      '07-REVIEWS.md Consensus LOW: docs/DEPLOY.md must explicitly mention '
-      'TZ=UTC for local loop-mode development'
+      'docs/DEPLOY.md must explicitly mention TZ=UTC for local loop-mode dev'
     )
-    # The note should explain when loop vs one-shot modes need TZ:
     assert 'Local development' in content or 'local' in content.lower(), (
       'Local-dev section or mention required'
-    )
-
-  def test_deploy_md_cost_estimate(self) -> None:
-    with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
-      content = fh.read()
-    assert 'Cost' in content or 'cost' in content
-    assert '2000' in content, 'Cost estimate must reference 2000-min free tier'
-    assert '21' in content or 'minutes/month' in content, (
-      'Cost estimate must show monthly minute consumption'
     )
 
   def test_readme_points_at_deploy_md(self) -> None:
@@ -740,6 +760,16 @@ class TestDeployDocs:
     assert 'SPEC.md' in content
     assert 'CLAUDE.md' in content
 
+  def test_readme_points_at_setup_droplet(self) -> None:
+    '''27-16: README must give SETUP-DROPLET.md first-class billing in the
+    Documentation + Deployment sections (one-time bring-up runbook).
+    '''
+    with open(self.README_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'SETUP-DROPLET.md' in content, (
+      '27-16: README.md must point at SETUP-DROPLET.md'
+    )
+
   def test_readme_has_quickstart_commands(self) -> None:
     with open(self.README_PATH, encoding='utf-8') as fh:
       content = fh.read()
@@ -748,28 +778,34 @@ class TestDeployDocs:
     assert 'python main.py --reset' in content
     assert 'python main.py' in content  # default mode
 
-  def test_readme_has_gha_status_badge(self) -> None:
-    '''07-REVIEWS.md Gemini LOW fix: README.md must include a GitHub Actions
-    workflow status badge pointing at the Daily signal check workflow.
+  def test_readme_has_no_stale_gha_badge(self) -> None:
+    '''27-16: workflow file is .disabled — the GHA status badge always
+    rendered "workflow not found". Must be removed from README.
     '''
     with open(self.README_PATH, encoding='utf-8') as fh:
       content = fh.read()
-    assert 'actions/workflows/daily.yml/badge.svg' in content, (
-      '07-REVIEWS.md Gemini LOW: GitHub Actions status badge must be present '
-      'in README.md pointing at .github/workflows/daily.yml'
+    assert 'actions/workflows/daily.yml/badge.svg' not in content, (
+      '27-16: stale GHA status badge must be removed (workflow is .disabled)'
     )
-    # Sanity: the badge must be a clickable link (markdown image inside link syntax).
-    assert '[![' in content, (
-      'Badge must use `[![alt](img)](link)` markdown pattern'
+    assert '${{GITHUB_REPOSITORY}}' not in content, (
+      '27-16: stale ${{GITHUB_REPOSITORY}} placeholder must be removed'
+    )
+
+  def test_readme_has_no_replit(self) -> None:
+    '''27-16: Replit retired from active README.'''
+    with open(self.README_PATH, encoding='utf-8') as fh:
+      content = fh.read()
+    assert 'Replit' not in content, (
+      '27-16: README.md must not mention Replit'
     )
 
   def test_deploy_md_length_sane(self) -> None:
-    '''D-15: ~150 lines target; allow 120-220 range for flex.'''
+    '''27-16: target ~150 lines; allow 100-300 range for the rewrite.'''
     with open(self.DEPLOY_PATH, encoding='utf-8') as fh:
       lines = fh.readlines()
     count = len(lines)
-    assert 100 <= count <= 250, (
-      f'D-15: docs/DEPLOY.md length {count} outside sane range [100, 250]'
+    assert 100 <= count <= 300, (
+      f'27-16: docs/DEPLOY.md length {count} outside sane range [100, 300]'
     )
 
 
