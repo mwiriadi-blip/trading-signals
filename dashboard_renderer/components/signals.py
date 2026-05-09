@@ -80,6 +80,17 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
     # pin guarantee sig_entry reaching this point is None or dict. The
     # `or {}` collapses both None and any unexpected falsy shape to {}.
     trace_sig_dict = sig_entry or {}
+    # Backfill missing vote_params from current per-market settings so stale
+    # state rows (written before vote_params was persisted) render with the
+    # gate the next daily_run will use, not the hardcoded 25.0/0.02 fallback.
+    if trace_sig_dict.get('vote_params') is None:
+      import signal_engine
+      trace_sig_dict = {
+        **trace_sig_dict,
+        'vote_params': signal_engine.resolve_vote_params(
+          d._strategy_settings_for(state, state_key),
+        ),
+      }
     trace_placeholder = d._TRACE_OPEN_PLACEHOLDER.get(state_key, '')
     parts.append(d._render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
   parts.append('  </div>\n')
