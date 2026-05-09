@@ -196,6 +196,33 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 # Vote logic + latest-indicator extractor (D-06, D-08, D-09, D-10)
 # =========================================================================
 
+def resolve_vote_params(settings: dict | None) -> dict:
+  '''Resolve the per-trade params actually used by `get_signal`.
+
+  Single source of truth for the gate threshold + vote rule, so the dashboard
+  trace can render the same numbers the engine decided on instead of
+  re-deriving them from defaults. Keys mirror DEFAULT_STRATEGY_SETTINGS.
+  '''
+  resolved = {
+    'adx_gate': ADX_GATE,
+    'momentum_votes_required': 2,
+    'momentum_threshold': MOM_THRESHOLD,
+    'direction_mode': 'both',
+  }
+  if settings is not None:
+    resolved['adx_gate'] = float(settings.get('adx_gate', resolved['adx_gate']))
+    resolved['momentum_votes_required'] = int(
+      settings.get('momentum_votes_required', resolved['momentum_votes_required']),
+    )
+    resolved['momentum_threshold'] = float(
+      settings.get('momentum_threshold', resolved['momentum_threshold']),
+    )
+    resolved['direction_mode'] = str(
+      settings.get('direction_mode', resolved['direction_mode']),
+    )
+  return resolved
+
+
 def get_signal(
   df: pd.DataFrame,
   settings: dict | None = None,
@@ -220,15 +247,11 @@ def get_signal(
   (Caller flow: df2 = compute_indicators(df); signal = get_signal(df2).)
   '''
   row = df.iloc[-1]
-  adx_gate = ADX_GATE
-  votes_required = 2
-  mom_threshold = MOM_THRESHOLD
-  direction_mode = 'both'
-  if settings is not None:
-    adx_gate = float(settings.get('adx_gate', adx_gate))
-    votes_required = int(settings.get('momentum_votes_required', votes_required))
-    mom_threshold = float(settings.get('momentum_threshold', mom_threshold))
-    direction_mode = str(settings.get('direction_mode', direction_mode))
+  params = resolve_vote_params(settings)
+  adx_gate = params['adx_gate']
+  votes_required = params['momentum_votes_required']
+  mom_threshold = params['momentum_threshold']
+  direction_mode = params['direction_mode']
 
   adx = row['ADX']
   if pd.isna(adx) or adx < adx_gate:

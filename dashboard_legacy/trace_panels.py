@@ -102,11 +102,17 @@ def _render_trace_indicators(indicator_scalars: dict, bars_available: int) -> st
     '</section>\n'
   )
 
-def _render_trace_vote(indicator_scalars: dict, signal: int) -> str:
+def _render_trace_vote(
+  indicator_scalars: dict,
+  signal: int,
+  vote_params: dict | None = None,
+) -> str:
   '''Phase 17 D-07: Vote panel — 3 Mom badges + ADX gate badge + outcome.
 
   Badge classes: plus/minus/zero for Mom sign; pass/fail for ADX gate.
-  ADX gate threshold: 25.0 (literal per D-10 — NOT imported from system_params).
+  Gate + momentum threshold come from `vote_params` (the resolved per-trade
+  params persisted by daily_run alongside indicator_scalars). Falls back to
+  25.0 / 0.02 for state rows written before vote_params existed.
   Empty indicator_scalars: "Awaiting first daily run." per D-11.
   '''
   if not indicator_scalars:
@@ -116,7 +122,9 @@ def _render_trace_vote(indicator_scalars: dict, signal: int) -> str:
       '</section>\n'
     )
   _OUTCOME_LABEL = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
-  ADX_GATE_THRESHOLD = 25.0  # D-10: literal — no import from system_params
+  vp = vote_params or {}
+  adx_gate_threshold = float(vp.get('adx_gate', 25.0))
+  mom_threshold = float(vp.get('momentum_threshold', 0.02))
 
   def _mom_badge(val: float) -> str:
     if math.isnan(val) or val == 0.0:
@@ -138,17 +146,18 @@ def _render_trace_vote(indicator_scalars: dict, signal: int) -> str:
   mom12_val = html.escape(_format_indicator_value(mom12, _SEED_LENGTHS.get('mom12', 13), bars_avail), quote=True)
 
   adx_finite = not math.isnan(adx)
-  adx_pass = adx_finite and adx >= ADX_GATE_THRESHOLD
+  adx_pass = adx_finite and adx >= adx_gate_threshold
   adx_badge_cls = 'pass' if adx_pass else 'fail'
   adx_val_str = html.escape(_format_indicator_value(adx, _SEED_LENGTHS.get('adx', 20), bars_avail), quote=True)
-  gate_text = html.escape(f'>= {ADX_GATE_THRESHOLD:.0f}', quote=True)
+  gate_text = html.escape(f'>= {adx_gate_threshold:g}', quote=True)
   gate_result = 'PASS' if adx_pass else 'FAIL'
 
   outcome_label = html.escape(_OUTCOME_LABEL.get(signal, 'FLAT'), quote=True)
 
-  # Count positive mom votes (D-07: 2 of 3 majority).
-  votes = sum(1 for v in (mom1, mom3, mom12) if not math.isnan(v) and v > 0)
-  anti_votes = sum(1 for v in (mom1, mom3, mom12) if not math.isnan(v) and v < 0)
+  # Prelim "Vote" applies the same momentum threshold the engine uses, so
+  # Vote/FINAL only diverge when the ADX gate or direction mode flipped it.
+  votes = sum(1 for v in (mom1, mom3, mom12) if not math.isnan(v) and v > mom_threshold)
+  anti_votes = sum(1 for v in (mom1, mom3, mom12) if not math.isnan(v) and v < -mom_threshold)
   if votes > anti_votes:
     prelim = 'LONG'
   elif anti_votes > votes:
@@ -193,11 +202,12 @@ def _render_trace_panels(
   ohlc_window = sig_dict.get('ohlc_window', [])
   indicator_scalars = sig_dict.get('indicator_scalars', {})
   signal = sig_dict.get('signal', 0)
+  vote_params = sig_dict.get('vote_params')
   bars_available = len(ohlc_window)
   inner = (
     _render_trace_inputs(ohlc_window)
     + _render_trace_indicators(indicator_scalars, bars_available)
-    + _render_trace_vote(indicator_scalars, signal)
+    + _render_trace_vote(indicator_scalars, signal, vote_params)
   )
   return (
     f'<details class="trace-disclosure" data-instrument="{inst_esc}"{placeholder}>\n'

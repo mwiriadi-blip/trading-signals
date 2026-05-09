@@ -394,6 +394,9 @@ def _run_daily_check_impl(
       # last_scalars kept verbatim for backwards-compat notifier readers (D-09).
       'ohlc_window': ohlc_window,
       'indicator_scalars': indicator_scalars,
+      # Resolved per-trade params actually fed to get_signal — recorded so the
+      # dashboard trace renders the same gate the engine decided on.
+      'vote_params': signal_engine.resolve_vote_params(strategy_settings),
     }
 
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
