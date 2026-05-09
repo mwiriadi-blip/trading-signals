@@ -801,7 +801,7 @@ input:focus-visible,
   <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/settings" data-tab-key="settings">Settings</a>
   <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/market-test" data-tab-key="market-test">Market Test</a>
 </nav>
-<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip" hx-trigger="markets-changed from:body" hx-get="/markets-strip?active_function=signals" hx-swap="outerHTML">
+<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip" hx-trigger="markets-changed from:body, market-selected from:body" hx-get="/markets-strip?active_function=signals" hx-swap="outerHTML">
   <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/signals" hx-get="/markets/SPI200/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="SPI200">SPI200</a>
   <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/AUDUSD/signals" hx-get="/markets/AUDUSD/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="AUDUSD">AUDUSD</a>
   <details class="add-market-chip">

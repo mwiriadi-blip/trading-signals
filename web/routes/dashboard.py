@@ -316,6 +316,12 @@ def register(app: FastAPI) -> None:
     )
     _set_market_cookie(response, market_id)
     response.headers['Cache-Control'] = 'no-store, private'
+    if htmx:
+      # Panel-only swap leaves the tab strip stale (active underline stuck on
+      # the previously-active market). Fire market-selected so the strip's
+      # hx-trigger refetches /markets-strip and re-renders with active_market
+      # resolved from the freshly-set selected_market cookie.
+      response.headers['HX-Trigger'] = 'market-selected'
     return response
 
   @app.get('/markets/{market_id}/signals', response_class=Response)

@@ -107,7 +107,7 @@ def render_market_strip(state: dict, active_market: str, active_function: str) -
     fn_q = html.escape(active_function or 'signals', quote=True)
     out = [
         '<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip"'
-        f' hx-trigger="markets-changed from:body" hx-get="/markets-strip?active_function={fn_q}" hx-swap="outerHTML">\n'
+        f' hx-trigger="markets-changed from:body, market-selected from:body" hx-get="/markets-strip?active_function={fn_q}" hx-swap="outerHTML">\n'
     ]
     for market_id in markets.keys():
         market_esc = html.escape(market_id, quote=True)
