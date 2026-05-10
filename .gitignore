@@ -34,3 +34,6 @@ _debug_new_dashboard.html
 .cursor/
 .mcp.json
 .playwright-mcp/
+
+# Phase 28 (DEBT-01): Playwright UAT trace artefacts (per D-12 / Claude's discretion bullet 4)
+tests/uat/_traces/
