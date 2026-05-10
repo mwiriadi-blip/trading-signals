@@ -41,6 +41,7 @@ notes: |
 | Scenario | Source | Mode | Status | Evidence |
 |----------|--------|------|--------|----------|
 | ATR(14) hand-recalc to 1e-6 | 17 / UAT-1 | MCP | FAIL | symptom: ATR drift 1.22730353 — displayed=88.888811 vs 40-bar-window-recalc=87.66150746868470815084506843 (period=14, ohlc_bars=40); suspected: trace panel shows 40 OHLC bars but `signal_engine` computes ATR over full history — Wilder seed at the start of the displayed window does not match engine's seed many bars earlier; repro: `pytest -m uat tests/uat/test_uat_17_atr_handcalc.py` |
+| ATR(14) hand-recalc to 1e-6 | 17 / UAT-1 | MCP | PASS (Phase 29 closure — 29-11) | engine ATR seed exposed via signal_engine.atr_seed_for_window + sig['atr_seed'] persistence (commit af93de1); hand-recalc from persisted seed converges within 1e-6; regression: tests/test_trace_atr_seed.py::test_handcalc_converges_to_displayed_atr_within_1e-6; repro: .venv/bin/pytest tests/test_trace_atr_seed.py -q |
 | iOS Safari tap-to-toggle | 17 / UAT-2 | Manual | FAIL | Operator (iPhone Safari, 2026-05-10): tap toggled, reload does NOT preserve state — panel minimises and operator has to re-tap "Show calculations". Desktop Chrome via Playwright PASSES the same flow (UAT-17-3 below) — iOS-specific divergence; suspected: cookie-write inline JS at root.html script[0] (`document.cookie = 'tsi_trace_open=...; Secure'`) — likely Secure+SameSite=Lax interaction on iOS Safari, OR backend not reading `tsi_trace_open` to seed `<details open>` on render; repro: iPhone Safari → `/markets/SPI200/signals` → tap "Show calculations" → pull-to-refresh → panel collapsed |
 | Cookie persistence across reload | 17 / UAT-3 | MCP | PASS | toggle flipped (closed→open); cookie `tsi_trace_open` written with `SPI200` value; state preserved across `page.reload()`; tablist (auth indicator) still rendered. Desktop Chrome only — iOS Safari divergence captured separately under UAT-17-2. |
 
@@ -49,6 +50,7 @@ notes: |
 | Scenario | Source | Mode | Status | Evidence |
 |----------|--------|------|--------|----------|
 | Live yfinance 5y backtest CLI | 23 / UAT-1 | CLI | FAIL | rc=1; gate=triggered (cum_return=0.00% ≤ 100% threshold); SPI200=1265 bars 0 trades, AUDUSD=1300 bars 0 trades; tail: `[Backtest] FAIL (>100% threshold)`; symptom: zero trades over 5 years on live data; suspected: yfinance schema drift (Volume column shape) breaking RVol gate, OR signal-engine regression on live (vs fixture) data; repro: `python -m backtest --years 5` |
+| Live yfinance 5y backtest CLI | 23 / UAT-1 | CLI | DEFERRED to Phase 29.5 | spike (29-13) root cause: backtest/cli.py calls simulate() with no settings= arg → n_contracts=0 on every signal; fix shape TIGHT (1 call site) but operator chose to defer to Phase 29.5 to keep Phase 29 scope clean; full RCA at .planning/phases/29-v1-2-1-retroactive-patch-wrap-validation-sweep/29-13-YFINANCE-SPIKE-RCA.md; Phase 29.5 context at .planning/phases/29-5-yfinance-regression-fix/29-5-CONTEXT.md; original FAIL evidence preserved above |
 | /backtest browser visual smoke | 23 / UAT-2 | MCP | PASS | no template-leak literals (`{{`, `}}`, `Undefined`, `None None`) outside `<style>`/`<script>` blocks; inline `<style>` present (asset pipeline OK); 96,743-byte rendered HTML. |
 
 ## Phase 26 Scenarios
@@ -56,6 +58,7 @@ notes: |
 | Scenario | Source | Mode | Status | Evidence |
 |----------|--------|------|--------|----------|
 | Cold-start smoke | 26 / UAT-1 | MCP | FAIL | symptom: JS `pageerror` on first paint: `missing ) after argument list`; suspected: `dashboard_legacy/section_renderers.py:218-220` — equityChart inline JS has malformed y-axis brace structure (`y: { ticks: {...} }, grid: {...} }` closes `y` after `ticks` and leaves `grid` as a stray sibling with an unmatched closing `}`); repro: `pytest -m uat tests/uat/test_uat_26_coldstart.py`. Selectors render OK (market-strip + trace-disclosure both present); the failure is the JS error, not chrome rendering. |
+| Cold-start smoke | 26 / UAT-1 | MCP | PASS (Phase 29 closure — 29-02) | brace-rebalance fix at dashboard_legacy/section_renderers.py:218-220 (commit 73a8bc9); zero pageerror on first paint locked by tests/uat/test_uat_26_coldstart.py::test_no_pageerror_on_coldstart; repro: .venv/bin/pytest -m uat tests/uat/test_uat_26_coldstart.py |
 | Multi-tab signals scoping | 26 / UAT-2 | MCP | PASS | SPI200 + AUDUSD scoping correct via `[data-market-id][aria-current="page"]`; no cross-market leak. |
 | Multi-tab settings scoping | 26 / UAT-3 | MCP | PASS | SPI200 + AUDUSD settings scoped correctly. |
 | Multi-tab market-test scoping | 26 / UAT-4 | MCP | PASS | SPI200 + AUDUSD market-test scoped correctly. |
