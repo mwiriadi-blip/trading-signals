@@ -62,21 +62,44 @@ def base_url() -> str:
 
 @pytest.fixture
 def browser_context_args(browser_context_args):
-  # Inject droplet auth header on every request when secret is available.
-  # Without it the droplet returns 401 plain text on protected routes
-  # (302 → /login for browser-mode requests) — see web/middleware/auth.py.
-  extra: dict[str, str] = dict(browser_context_args.get('extra_http_headers') or {})
+  # Note: do NOT inject WEB_AUTH_SECRET via extra_http_headers — that
+  # would attach the header to cross-origin requests too (vendored CDN
+  # scripts), triggering CORS preflights the CDN rejects (caught
+  # 2026-05-10 by UAT-26-1 cold-start). The `page` fixture below
+  # registers a route handler that adds the header ONLY for same-origin
+  # requests to BASE_URL.
+  return {**browser_context_args, 'base_url': BASE_URL}
+
+
+_BASE_HOST = BASE_URL.split('//', 1)[-1].split('/', 1)[0]
+
+
+def _install_auth_route(page) -> None:
+  '''Add X-Trading-Signals-Auth to same-origin requests only.
+
+  Glob is scoped to BASE_URL (`https://signals.mwiriadi.me/**`) so
+  cross-origin scripts (CDN-hosted vendor JS) are NOT intercepted —
+  intercepting them risks (a) CORS preflight failure when the auth
+  header would attach, (b) subtle response-body differences when
+  Playwright proxies a cross-origin response that triggered a
+  vague "missing ) after argument list" SyntaxError on cold-start.
+  '''
   secret = _secret()
-  if secret:
-    extra['X-Trading-Signals-Auth'] = secret
-  args = {**browser_context_args, 'base_url': BASE_URL}
-  if extra:
-    args['extra_http_headers'] = extra
-  return args
+  if not secret:
+    return
+
+  def handler(route):
+    req = route.request
+    hdrs = dict(req.headers)
+    hdrs['X-Trading-Signals-Auth'] = secret
+    route.continue_(headers=hdrs)
+
+  page.route(lambda url: _BASE_HOST in url, handler)
 
 
 @pytest.fixture
 def page(page, request):
+  _install_auth_route(page)
   # Start a Playwright trace per test; on failure write to TRACE_DIR.
   page.context.tracing.start(screenshots=True, snapshots=True, sources=False)
   yield page

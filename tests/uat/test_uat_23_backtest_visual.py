@@ -53,7 +53,15 @@ def test_backtest_page_has_no_template_leak_artefacts(page, base_url):
     f'status={response.status if response else "no-response"}'
   )
 
-  html = page.content()
+  raw_html = page.content()
+
+  # Strip <style> and <script> content before scanning for template-leak
+  # literals: CSS `}` from nested rules (e.g. `@keyframes a{to{...}}`) and JS
+  # template literals trip the `{{`/`}}` checks at the asset layer rather
+  # than the rendered-page layer. We want to catch unrendered Jinja in the
+  # body content, not in legitimate CSS / JS.
+  html = re.sub(r'<style\b[^>]*>.*?</style>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
+  html = re.sub(r'<script\b[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
 
   # Each forbidden literal gets its own assertion so plan 06 root-cause
   # has a single named failure mode per FAIL line.
@@ -74,8 +82,9 @@ def test_backtest_page_has_no_template_leak_artefacts(page, base_url):
     'Suspected layer: tuple/format render of unset values upstream of template.'
   )
 
-  has_inline = bool(INLINE_STYLE_RE.search(html))
-  has_external = bool(EXTERNAL_STYLESHEET_RE.search(html))
+  # Stylesheet checks run against raw HTML (we just stripped <style>...).
+  has_inline = bool(INLINE_STYLE_RE.search(raw_html))
+  has_external = bool(EXTERNAL_STYLESHEET_RE.search(raw_html))
   assert has_inline or has_external, (
     'Missing-CSS regression: /backtest HTML has neither inline <style> nor '
     '<link rel="stylesheet">. Suspected layer: _wrap_html in '

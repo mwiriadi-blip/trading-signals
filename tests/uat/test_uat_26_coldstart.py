@@ -28,11 +28,13 @@ def test_cold_start_root_renders_dashboard(page, base_url):
     f'GET / failed: status={response.status} url={response.url}'
   )
 
-  # Cold-start contract: dashboard chrome (a signal panel or the #main region)
-  # must render. Selector list intentionally permissive; plan 06 may refine
-  # once production DOM is observed.
+  # Cold-start contract (plan 06 live-DOM tightening 2026-05-10): the
+  # production dashboard renders the market-strip (with [data-market-id]
+  # links) and the trace disclosure for at least one instrument. Either
+  # is sufficient evidence of a "rendered dashboard" — both are gone if
+  # the page is bare/auth-walled/error.
   page.wait_for_selector(
-    '[data-market-panel], [data-signal-panel], #signal-panel, #main, main',
+    '[data-market-id], details.trace-disclosure[data-instrument]',
     timeout=15_000,
   )
   body_text = page.locator('body').inner_text()
