@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: planning
-last_updated: "2026-05-10T02:21:14.924Z"
-last_activity: 2026-05-10
+status: Roadmap drafted, awaiting plan-phase
+last_updated: "2026-05-10T04:19:50.808Z"
+last_activity: 2026-05-10 — `/gsd-roadmapper` wrote v1.3 roadmap (Phases 28..38)
 progress:
   total_phases: 11
   completed_phases: 0
-  total_plans: 0  # plans assigned per-phase via /gsd-plan-phase
+  total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # STATE — Trading Signals
@@ -29,8 +28,9 @@ progress:
 
 Phase: 28 (v1.2 UAT Closure) — entry point, no infrastructure prerequisites
 Plan: —
-Status: Roadmap drafted, awaiting plan-phase
-Last activity: 2026-05-10 — `/gsd-roadmapper` wrote v1.3 roadmap (Phases 28..38)
+Status: Context gathered, awaiting `/gsd-plan-phase 28`
+Last activity: 2026-05-10 — `/gsd-discuss-phase 28` captured 20 D-decisions across 4 areas (P26 sign-off basis, VERIFICATION.md format, helper artefacts, failure handling)
+Resume file: .planning/phases/28-v1-2-uat-closure/28-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
