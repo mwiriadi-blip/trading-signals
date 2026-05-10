@@ -103,13 +103,13 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 - [x] 29-01-OPS-02-BACKTESTS-PATH-FIX-PLAN.md — Anchor `.planning/backtests/` paths to project root via `Path(__file__).resolve().parents[N]` + subprocess CWD-invariance test
 - [x] 29-02-UAT-26-1-COLDSTART-JS-FIX-PLAN.md — Brace-rebalance equityChart inline JS at section_renderers.py:218-220 + UAT pageerror regression test
 - [x] 29-03-DEBT-02-V1-2-1-PATCH-WRAP-PLAN.md — MILESTONES.md v1.2.1 sub-section + scheduler tz / status ladder / trace vote_params regression tests
-- [ ] 29-04-VALIDATION-SECURITY-PHASE-17-PLAN.md — Phase 17 VALIDATION.md + SECURITY.md retrofit (mechanical)
-- [ ] 29-05-VALIDATION-SECURITY-PHASE-19-PLAN.md — Phase 19 VALIDATION.md + SECURITY.md retrofit (mechanical)
-- [ ] 29-06-VALIDATION-SECURITY-PHASE-20-PLAN.md — Phase 20 VALIDATION.md + SECURITY.md retrofit (mechanical)
-- [ ] 29-07-VALIDATION-SECURITY-PHASE-22-PLAN.md — Phase 22 VALIDATION.md + SECURITY.md retrofit (mechanical)
-- [ ] 29-08-VALIDATION-SECURITY-PHASE-24-PLAN.md — Phase 24 VALIDATION.md + SECURITY.md retrofit (mechanical)
-- [ ] 29-09-VALIDATION-SECURITY-PHASE-25-PLAN.md — Phase 25 VALIDATION.md + SECURITY.md retrofit (mechanical)
-- [ ] 29-10-VALIDATION-SECURITY-PHASE-26-PLAN.md — Phase 26 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-04-VALIDATION-SECURITY-PHASE-17-PLAN.md — Phase 17 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-05-VALIDATION-SECURITY-PHASE-19-PLAN.md — Phase 19 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-06-VALIDATION-SECURITY-PHASE-20-PLAN.md — Phase 20 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-07-VALIDATION-SECURITY-PHASE-22-PLAN.md — Phase 22 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-08-VALIDATION-SECURITY-PHASE-24-PLAN.md — Phase 24 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-09-VALIDATION-SECURITY-PHASE-25-PLAN.md — Phase 25 VALIDATION.md + SECURITY.md retrofit (mechanical)
+- [x] 29-10-VALIDATION-SECURITY-PHASE-26-PLAN.md — Phase 26 VALIDATION.md + SECURITY.md retrofit (mechanical)
 - [ ] 29-11-UAT-17-1-ATR-SEED-EXPOSURE-PLAN.md — Expose engine Wilder ATR seed in trace panel + 1e-6 hand-recalc convergence test
 - [ ] 29-12-UAT-17-2-IOS-SAFARI-DETAILS-OPEN-PLAN.md — Server-side `<details open>` from `tsi_trace_open` cookie + integration test (depends on 29-11)
 - [ ] 29-13-UAT-23-1-YFINANCE-SPIKE-PLAN.md — Time-boxed yfinance regression spike (≤1d) with TIGHT inline fix OR WIDE escape to Phase 29.5 (autonomous=false)
@@ -336,7 +336,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 26. 25-followup | v1.2 | 8/8 | Complete | 2026-05-08 |
 | 27. quality sweep | v1.2 | 16/16 | Complete | 2026-05-10 |
 | 28. v1.2 UAT closure | v1.3 | 5/6 | In Progress|  |
-| 29. v1.2.1 patch wrap + validation sweep | v1.3 | 3/14 | In Progress|  |
+| 29. v1.2.1 patch wrap + validation sweep | v1.3 | 10/14 | In Progress|  |
 | 30. file-size pre-split | v1.3 | 0/0 | Not started | - |
 | 31. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 32. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
