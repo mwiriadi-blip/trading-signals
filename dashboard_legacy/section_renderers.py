@@ -216,7 +216,7 @@ def _render_equity_chart_container(state: dict) -> str:
     f'               ticks: {{ color: "{_COLOR_TEXT_MUTED}", maxTicksLimit: 10 }},\n'
     f'               grid: {{ color: "{_COLOR_BORDER}" }} }},\n'
     f'            y: {{ ticks: {{ color: "{_COLOR_TEXT_MUTED}",\n'
-    '                         callback: (v) => "$" + v.toLocaleString() }},\n'
+    '                         callback: (v) => "$" + v.toLocaleString() },\n'
     f'               grid: {{ color: "{_COLOR_BORDER}" }} }}\n'
     '          },\n'
     '          plugins: {\n'
