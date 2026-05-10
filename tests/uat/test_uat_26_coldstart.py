@@ -1,0 +1,44 @@
+'''Phase 28 / DEBT-01 / UAT-26-1: Cold-start smoke on production droplet.
+
+Sourced from .planning/milestones/v1.2-phases/26-phase-25-followup-multi-tab-scoping-fixes/26-UAT.md
+Test 1 ("Cold Start Smoke Test").
+
+Acceptance: GET / on the production droplet returns OK, the dashboard renders
+(at least one signal panel / main chrome element is present), and there are no
+JS console errors on first paint.
+'''
+from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.uat
+
+
+def test_cold_start_root_renders_dashboard(page, base_url):
+  console_errors: list[str] = []
+  page.on('pageerror', lambda exc: console_errors.append(str(exc)))
+  page.on(
+    'console',
+    lambda msg: console_errors.append(msg.text) if msg.type == 'error' else None,
+  )
+
+  response = page.goto(base_url + '/')
+  assert response is not None, 'GET / produced no response object'
+  assert response.ok, (
+    f'GET / failed: status={response.status} url={response.url}'
+  )
+
+  # Cold-start contract: dashboard chrome (a signal panel or the #main region)
+  # must render. Selector list intentionally permissive; plan 06 may refine
+  # once production DOM is observed.
+  page.wait_for_selector(
+    '[data-market-panel], [data-signal-panel], #signal-panel, #main, main',
+    timeout=15_000,
+  )
+  body_text = page.locator('body').inner_text()
+  assert body_text.strip(), 'Body had no rendered text on cold start'
+
+  # No JS errors on first paint.
+  assert not console_errors, (
+    f'Console errors on cold start: {console_errors[:3]}'
+  )
