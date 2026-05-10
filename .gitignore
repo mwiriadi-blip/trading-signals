@@ -37,3 +37,6 @@ _debug_new_dashboard.html
 
 # Phase 28 (DEBT-01): Playwright UAT trace artefacts (per D-12 / Claude's discretion bullet 4)
 tests/uat/_traces/
+
+# Phase 28 plan 06: per-operator UAT secrets (WEB_AUTH_SECRET etc.) — never committed.
+.env.uat

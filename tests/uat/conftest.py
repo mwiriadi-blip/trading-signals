@@ -9,9 +9,13 @@ The base_url targets the live production droplet. There is no staging
 clone (project convention). Specs MUST be read-only against production
 (no POSTs, no signal mutations) — see SECURITY threat model in PLAN-01.
 
-Credentials policy: this conftest does NOT hardcode session tokens.
-Specs that need an authenticated session must read UAT_USER + UAT_PASS
-from the environment and skip cleanly if absent.
+Auth: the production droplet authenticates via X-Trading-Signals-Auth
+header (per web/middleware/auth.py, validated against env WEB_AUTH_SECRET).
+Plan 06 wires this in: WEB_AUTH_SECRET is read from the gitignored
+.env.uat file (or process env as fallback) and injected via Playwright's
+extra_http_headers on every request. Tests that don't need auth (none
+in the v1.2 set) still inherit the header — droplet ignores it on
+PUBLIC_PATHS.
 '''
 from __future__ import annotations
 
@@ -25,6 +29,32 @@ TRACE_DIR = Path(__file__).parent / '_traces'
 TRACE_DIR.mkdir(exist_ok=True)
 
 
+def _load_env_uat() -> dict[str, str]:
+  '''Parse .env.uat from repo root if present. Tolerant: KEY=value lines,
+  blank/comment lines ignored, no quoting magic. Operator-only file,
+  gitignored, never committed.
+  '''
+  env_path = Path(__file__).resolve().parents[2] / '.env.uat'
+  if not env_path.is_file():
+    return {}
+  out: dict[str, str] = {}
+  for line in env_path.read_text(encoding='utf-8').splitlines():
+    s = line.strip()
+    if not s or s.startswith('#') or '=' not in s:
+      continue
+    k, _, v = s.partition('=')
+    out[k.strip()] = v.strip().strip('"').strip("'")
+  return out
+
+
+_ENV_UAT = _load_env_uat()
+
+
+def _secret() -> str | None:
+  '''Resolve WEB_AUTH_SECRET from process env or .env.uat. Process env wins.'''
+  return os.environ.get('WEB_AUTH_SECRET') or _ENV_UAT.get('WEB_AUTH_SECRET')
+
+
 @pytest.fixture(scope='session')
 def base_url() -> str:
   return BASE_URL
@@ -32,8 +62,17 @@ def base_url() -> str:
 
 @pytest.fixture
 def browser_context_args(browser_context_args):
-  # Record traces; keep them gitignored (see .gitignore).
-  return {**browser_context_args, 'base_url': BASE_URL}
+  # Inject droplet auth header on every request when secret is available.
+  # Without it the droplet returns 401 plain text on protected routes
+  # (302 → /login for browser-mode requests) — see web/middleware/auth.py.
+  extra: dict[str, str] = dict(browser_context_args.get('extra_http_headers') or {})
+  secret = _secret()
+  if secret:
+    extra['X-Trading-Signals-Auth'] = secret
+  args = {**browser_context_args, 'base_url': BASE_URL}
+  if extra:
+    args['extra_http_headers'] = extra
+  return args
 
 
 @pytest.fixture
@@ -58,9 +97,14 @@ def pytest_runtest_makereport(item, call):
 
 
 def uat_credentials() -> tuple[str, str] | None:
-  '''Return (user, pass) from env or None to skip the test.'''
-  u = os.environ.get('UAT_USER')
-  p = os.environ.get('UAT_PASS')
+  '''Return (user, pass) from env or None to skip the test.
+
+  Kept for forward-compat — Phase 16.1 cookie-session login needs both
+  credentials + TOTP, which the v1.2 UAT set does not exercise. Header
+  auth via WEB_AUTH_SECRET (above) is sufficient for the Phase 28 specs.
+  '''
+  u = os.environ.get('UAT_USER') or _ENV_UAT.get('UAT_USER')
+  p = os.environ.get('UAT_PASS') or _ENV_UAT.get('UAT_PASS')
   if not u or not p:
     return None
   return u, p
