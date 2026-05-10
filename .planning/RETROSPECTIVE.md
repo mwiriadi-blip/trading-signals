@@ -63,18 +63,107 @@ A GitHub-Actions-scheduled Python CLI that fetches yfinance data for SPI 200 + A
 
 ---
 
+## Milestone: v1.1 — Interactive Trading Workstation
+
+**Shipped:** 2026-04-30
+**Phases:** 8 (10, 11, 12, 13, 14, 15, 16, 16.1) | **Plans:** 38 | **Commits:** 179
+
+### What Was Built
+
+Hosted dashboard at `https://signals.mwiriadi.me` with FastAPI + uvicorn + nginx + Let's Encrypt on a DigitalOcean droplet, daily 08:00 cycle moved from GHA cron → systemd. Cookie session + TOTP 2FA + 30-day trusted-device cookies + magic-link recovery (Phase 16.1). HTMX trade-mutation forms with sole-writer invariant preserved. Live calculator + drift sentinel pipeline with lockstep email-vs-dashboard banner parity.
+
+### What Worked
+
+- **Phase 16.1 inserted mid-milestone (URGENT, 2026-04-27)** without derailing the other phases — proved the GSD insertion pattern works for high-priority operator-driven scope changes.
+- **F1 full-chain integration test** with sabotage verification — planted regressions actually red-light it.
+- **Operator UAT closure through real-world deployment** (UAT-16-A/B/C verified by observing drift email in production Gmail mobile) rather than synthetic checks.
+
+### What Was Inefficient
+
+- Silent regression in `main.py::_run_daily_check_caught` (commit `3279c312`) discarded the 4-tuple from `run_daily_check(args)` and stopped daily emails for ~7 days. Diagnosed via `journalctl` pattern matching, fixed with 4 regression tests + inverted Phase-4 fossil test. Rooted in the Phase-4 fossil test still asserting the old `False` return and being treated as truth.
+
+### Patterns Established
+
+- **Shared function body = sequential plans** (LEARNINGS.md 2026-04-27) — when multiple plans touch the same file, the wave structure must serialize them, not parallelize.
+- **Inverted fossil tests** — when a behavior intentionally changes, flip the existing test's assertion rather than adding a new one alongside, so future you can't regress to the old behavior.
+
+### Cost Observations
+
+- 6 days, 38 plans, 179 commits, +57,623 / -264 LOC (heavy on infra setup)
+- Phase 16.1 fold-in (TOTP 2FA + trusted device + magic-link) was the longest single phase — 3 sequential plans on shared `auth_store.py` + `web/routes/totp.py`.
+
+---
+
+## Milestone: v1.2 — Trader-Grade Transparency & Validation
+
+**Shipped:** 2026-05-10
+**Phases:** 9 (17, 19, 20, 22, 23, 24, 25, 26, 27 — Phase 18 multi-user + Phase 21 news deferred to v1.3+) | **Plans:** 48 | **Commits:** 221
+
+### What Was Built
+
+- **Per-signal transparency** (Phase 17) — Inputs/Indicators/Vote panels make every signal hand-reproducible from the dashboard alone. Schema v4→v5 with `ohlc_window` + `indicator_scalars`.
+- **Paper-trade ledger** (Phase 19) — manual entry, mark-to-market unrealised P&L, aggregate stats. Atomic-write contract preserved.
+- **Stop-loss alerts** (Phase 20) — CLEAR/APPROACHING/HIT state machine, dedup'd per state transition.
+- **Strategy versioning** (Phase 22) — `STRATEGY_VERSION='v1.2.0'` constant tags every signal/trade row.
+- **5-year backtest gate** (Phase 23) — pure-compute `backtest/` module, `/backtest` route, `>100%` cum-return pass criterion.
+- **Two-axis market × function nav** (Phase 25) — `/markets/{m}/{fn}` with cookie + URL persistence. WAI-ARIA roving tabindex. Schema v7→v8.
+- **Phase 25 follow-up** (Phase 26) — fixed 4 BROKEN regressions (multi-tab scoping, template placeholder leak → 401, header session widget, deploy tests).
+- **Code-quality sweep** (Phase 27) — Decimal money math (schema v8→v9), file-size hygiene (notifier/main/dashboard each <500 LOC, byte-identical render), naive-datetime fail-closed, migration-chain contiguity assert, look-ahead-bias backtest test, `--version` flag, lazy yfinance import.
+
+### What Worked
+
+- **Re-audit caught stale audit drift.** The 2026-05-02 milestone audit only covered Phases 17, 19, 20, 22, 23, 24 — Phases 25-27 closed afterward without an audit refresh. Re-audit on 2026-05-10 surfaced one procedural gap (Phase 26 missing VERIFICATION.md), which was closed atomically before milestone close (`ad7f2a1`). **Lesson: audit per phase-closure, not just per-milestone.**
+- **xfail(strict=True) test scaffolding then flip-to-green.** Phase 26 used xfail-strict tests as the contract for the bug being open; the same tests flipping green serve as proof the fix landed. Pattern reused across Phases 25, 26, 27.
+- **TDD on schema migrations.** Schema bumps v4→v5 (Phase 17), v6→v7 (Phase 20), v7→v8 (Phase 25), v8→v9 (Phase 27) all landed cleanly because the contiguity assert from Phase 27 fails fast at module load if any link is missing.
+- **Byte-identical render parity** as the acceptance gate for Phase 27-14's `dashboard.py` 2221-LOC → 9-module package split. Refactor proven safe by golden HTML diff, not by hand inspection.
+- **Decimal money math at I/O boundary, float64 for indicators.** Phase 27-01 split: write paths quantize HALF_UP to AUD cents; signal compute stays float64. No performance regression, no float-drift on P&L.
+
+### What Was Inefficient
+
+- **Phase 25 shipped 4 BROKEN regressions** (multi-tab scoping non-functional, template placeholder leak → 401 on PATCH, header session widget unresolved, 3 red deploy tests). Required a follow-up Phase 26 to clean up. Root cause: too much scope in a single phase (12 plans, 22 design decisions) without per-plan verification gates — the gap between "all plans complete" and "system actually works end-to-end" was bigger than expected.
+- **Post-ship polish drifted outside phase-tracking.** 5 ad-hoc commits 2026-05-08..2026-05-10 (scheduler tz fix, signal status ladder, v1.1 backtested defaults, trace vote_params, market tab refresh) landed on `main` without a phase wrapper. They're real v1.2 deliverables but never appeared in any plan or summary. Deferred decision to v1.3: retroactive v1.2.1 patch phase or accept-as-state.
+- **Phase 26 VERIFICATION.md missing** until day-of-close. Operator skipped browser-based UAT, relied on xfail-flip + 1794-test suite as evidence, but the formal closure doc didn't get written until commit `ad7f2a1` on 2026-05-10. **Lesson: xfail-flip is good evidence, but VERIFICATION.md captures the *rationale for accepting deferred UAT* — write it at the time of decision, not retroactively.**
+- **Nyquist VALIDATION.md only on 2 of 9 phases** (23, 27). Phases 17-26 shipped before Nyquist became standard practice; retroactive validation deferred to v1.3 backlog and recommended only if subsystems evolve.
+
+### Patterns Established
+
+- **Per-phase audit cadence:** schedule a `/gsd-audit-phase` after every phase close; the milestone-audit is then a re-validation, not the first audit. Catches procedural gaps (missing VERIFICATION.md, stale UAT.md, xfail not flipped) at the right granularity.
+- **Schema migration contiguity assert at module load** (Phase 27-07) — fails fast if the v3..vN chain has any gap. Cheap insurance, prevents silent corruption when migrations accidentally get reordered or dropped.
+- **`_assert_tz_aware` fail-closed at write paths** — naive datetimes used to silently round-trip through `state.json` and cause subtle off-by-tz bugs in the daily run. Boundary check makes the error loud.
+- **Decimal money math, float64 indicator math** — split by responsibility, quantize on save, dashboard `json.dumps` Decimal-safe.
+- **Document deploy primary path explicitly** (Phase 27-16) — when there are 3 candidate paths (GHA cron / Replit Always On / DO droplet systemd) and one wins, retire the others from active docs (preserve only in archives) so future operators don't get confused.
+
+### Key Lessons
+
+1. **Multi-plan UI phases need per-plan verification gates.** Phase 25's 12 plans + 22 design decisions completed but shipped 4 BROKEN regressions. Either split mega-phases or add a per-plan acceptance test.
+2. **xfail-flip is a great contract, VERIFICATION.md is the rationale.** Both. xfail proves the bug is gone; VERIFICATION.md explains why operator-deferred UAT is acceptable closure.
+3. **Re-audit the audit.** A milestone audit that's >7 days old is stale if new phases closed in between. Re-run before `/gsd-complete-milestone`.
+4. **Polish that lands on `main` outside phase-tracking is real scope.** Either wrap in a phase or formally accept-as-state at milestone close. Don't pretend it didn't happen.
+
+### Cost Observations
+
+- 11 days, 48 plans, 221 commits, +76,605 / -6,653 LOC (heavy on UI overhaul Phase 25 + file splits Phase 27)
+- Phase 27 was the largest single phase (16 plans across 4 waves) — file-size splits + correctness sweep + security verification + Nyquist validation all in one
+- Production was live and serving daily emails throughout the milestone (no downtime); Phase 25-27 work was merged-to-main with each phase's HTML output byte-identical to baseline (Phase 27-14 golden snapshot)
+
+---
+
 ## Cross-Milestone Trends
 
-_To be populated at v1.1 close._
+| Metric | v1.0 | v1.1 | v1.2 |
+|--------|------|------|------|
+| Phases | 9 | 8 | 9 |
+| Plans | 33 | 38 | 48 |
+| Tests | 662 | 1319 | 1880+ |
+| Commits | 250 | 179 | 221 |
+| Days | 4 | 6 | 11 |
+| Plans/day | 8.3 | 6.3 | 4.4 |
+| Review blockers caught pre-execution | 5 (Phase 8) | — | xfail-strict scaffolding (Phase 26) |
+| Code-review findings fixed | 8 (Phase 9 codemoot) | — | 19 (Phase 27 sweep) + 10 (Phase 24 codemoot) |
+| Schema migrations | v1→v2 | v2→v3 (auth) | v4→v5→v6→v7→v8→v9 |
+| Mid-milestone fold-ins | Phase 9 | Phase 16.1 | Phase 24, 25, 26, 27 |
 
-| Metric | v1.0 | v1.1 |
-|--------|------|------|
-| Phases | 9 | — |
-| Plans | 33 | — |
-| Tests | 662 | — |
-| Commits | 250 | — |
-| Review blockers caught pre-execution | 5 (Phase 8) | — |
-| Code-review findings fixed | 8 (0 critical, 2 warning, 6 info) | — |
+**Trend:** Plans/day decreased as phases got more cross-cutting (UI overhaul + multi-file splits). Tests grew ~3x across milestones. Schema versions grew from one bump per milestone to six in v1.2 alone — a sign that v1.2 was schema-heavy (every functional area touched persistence).
 
 ---
 

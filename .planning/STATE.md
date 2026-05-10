@@ -1,41 +1,41 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.2
-milestone_name: - **Signal-only.** No broker API, ever
-status: milestone_complete
-last_updated: "2026-05-08T02:58:16Z"
-last_activity: 2026-05-08
+milestone_name: "Trader-Grade Transparency & Validation"
+status: milestone_shipped
+shipped: 2026-05-10
+tag: v1.2
+last_updated: "2026-05-10T00:00:00Z"
+last_activity: 2026-05-10
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 45
-  completed_plans: 45
+  total_phases: 9
+  completed_phases: 9
+  total_plans: 48
+  completed_plans: 48
   percent: 100
+next_milestone: v1.3
+next_milestone_status: planning_pending
 ---
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-04-24 (v1.1 roadmap created by /gsd-roadmapper)
+**Last updated:** 2026-05-10 (v1.2 milestone shipped via `/gsd-complete-milestone`)
 
 ## Project Reference
 
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
-- **Core value (v1.0, validated):** Deliver an accurate, reproducible daily signal and actionable instruction to one email inbox every weekday at 08:00 AWST — with full state persistence so P&L, positions, and trade history survive restarts.
-- **Core value (v1.1, in progress):** Transform the email-only v1.0 CLI into a hosted, interactive trade journal at `signals.<owned-domain>.com` — a single URL viewable from any device, POST-able for recording executed trades, with live stop-loss + pyramid guidance and position-vs-signal drift sentinels.
-- **Operator:** Marc (Perth, AWST UTC+8 no DST)
-- **Current focus:** Phase 27 — code-quality-correctness-sweep
+- **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
+- **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
+- **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 1880+ tests green)
+- **Current focus:** v1.3 milestone scope undefined — run `/gsd-new-milestone`
 
 ## Current Position
 
-Phase: 27
-Plan: Not started
-Plans: 3/3 executed + verified. All AUTH-04..AUTH-12 requirements green at code + test level. 17 plan commits + 3 SUMMARY.md + 1 VERIFICATION.md (5e77154). Phase code is shippable; only blocker is the 7-scenario operator UAT runbook in `.planning/phases/16.1-phone-friendly-auth-ux-for-dashboard-access/16.1-HUMAN-UAT.md` which requires a real iPhone (Safari + Chrome).
-
-- **Milestone:** v1.1 — Interactive Trading Workstation
-- **Status:** Milestone complete
-- **Last activity:** 2026-05-08
-- **Progress:** [██████████] 98%
-- **v1.2 status:** PLANNING (REQUIREMENTS.md + ROADMAP.md created 2026-04-30; awaiting `/gsd-plan-phase 17` or `/gsd-plan-phase 22` to start Wave 1).
+- **Milestone:** v1.2 — Trader-Grade Transparency & Validation
+- **Status:** ✅ SHIPPED 2026-05-10 (tag `v1.2`)
+- **Last activity:** 2026-05-10
+- **Progress:** [██████████] 100%
+- **Next:** v1.3 — planning pending. Pre-loaded backlog includes Phase 28 (v1.2 deferred UAT closure: 8 operator-facing scenarios across Phases 17/23/26).
 
 ### Resume instructions for cloud Claude / fresh clone
 
