@@ -62,7 +62,11 @@ def _render_trace_inputs(ohlc_window: list) -> str:
     '</section>\n'
   )
 
-def _render_trace_indicators(indicator_scalars: dict, bars_available: int) -> str:
+def _render_trace_indicators(
+  indicator_scalars: dict,
+  bars_available: int,
+  atr_seed: float | None = None,
+) -> str:
   '''Phase 17 D-03 + D-05 + D-06: Indicators panel — one row per indicator
   with tap-to-toggle formula reveal.
 
@@ -71,8 +75,31 @@ def _render_trace_indicators(indicator_scalars: dict, bars_available: int) -> st
   Followed immediately by a hidden formula-row for D-03 tap-to-toggle.
 
   Empty indicator_scalars: all 9 rows render with "n/a (need N bars, have 0)".
+
+  Phase 29 Plan 11: if atr_seed is provided and finite, render an extra
+  "ATR seed (bar -1)" row before the ATR(14) row so hand-recalc can anchor
+  to the engine-persisted Wilder seed. Stale rows (None or NaN) show a
+  "(stale row — refresh after next 08:00 cycle)" fallback.
   '''
   rows = []
+
+  # ATR seed row (before the main indicator loop).
+  if atr_seed is None or (isinstance(atr_seed, float) and math.isnan(atr_seed)):
+    seed_cell = '<em>(stale row — refresh after next 08:00 cycle)</em>'
+  else:
+    seed_val_esc = html.escape(f'{float(atr_seed):.6f}', quote=True)
+    seed_cell = seed_val_esc
+  seed_title = html.escape(
+    'Wilder seed at bar before window — hand-recalc starts here', quote=True
+  )
+  rows.append(
+    f'<tr>'
+    f'<td class="trace-indicator-name" title="{seed_title}">'
+    f'ATR seed (bar -1)</td>'
+    f'<td class="num">{seed_cell}</td>'
+    f'</tr>\n'
+  )
+
   for key in _INDICATOR_DISPLAY_ORDER:
     formula = _TRACE_FORMULAS.get(key, '')
     formula_esc = html.escape(formula, quote=True)
@@ -203,10 +230,13 @@ def _render_trace_panels(
   indicator_scalars = sig_dict.get('indicator_scalars', {})
   signal = sig_dict.get('signal', 0)
   vote_params = sig_dict.get('vote_params')
+  # Phase 29 Plan 11: extract persisted Wilder ATR seed (may be absent on
+  # legacy state rows written before Plan 11 — treated as stale).
+  atr_seed = sig_dict.get('atr_seed')
   bars_available = len(ohlc_window)
   inner = (
     _render_trace_inputs(ohlc_window)
-    + _render_trace_indicators(indicator_scalars, bars_available)
+    + _render_trace_indicators(indicator_scalars, bars_available, atr_seed=atr_seed)
     + _render_trace_vote(indicator_scalars, signal, vote_params)
   )
   return (

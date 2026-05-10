@@ -291,3 +291,42 @@ def get_latest_indicators(df: pd.DataFrame) -> dict:
     'mom12': float(row['Mom12']),
     'rvol': float(row['RVol']),
   }
+
+
+def atr_seed_for_window(
+  history_df: pd.DataFrame,
+  window_start_index: int,
+  period: int = ATR_PERIOD,
+) -> float:
+  '''Return the Wilder ATR value at bar window_start_index - 1 (seed bar).
+
+  This is the engine-persisted anchor a hand-recalc needs to reproduce
+  the displayed ATR without drift: start the Wilder recursion from this
+  seed at the first bar of the window.
+
+  Returns float('nan') if:
+    - window_start_index - 1 < 0 (no bar before the window), or
+    - the ATR series has NaN at that position (still in warmup).
+
+  Re-uses the same _true_range / _wilder_smooth path as compute_atr so the
+  result is bit-identical to what the engine computed (no tolerance fudge).
+  '''
+  seed_bar_idx = window_start_index - 1
+  if seed_bar_idx < 0:
+    return float('nan')
+  # Normalise column names to title-case so callers may pass either 'high' or 'High'.
+  _col_map = {c.lower(): c for c in history_df.columns}
+  _needs_rename = any(c != c.title() for c in ('high', 'low', 'close') if c in _col_map)
+  if _needs_rename:
+    _rename = {
+      _col_map[c]: c.title()
+      for c in ('high', 'low', 'close')
+      if c in _col_map and _col_map[c] != c.title()
+    }
+    history_df = history_df.rename(columns=_rename)
+  tr_full = _true_range(history_df)
+  atr_full = _wilder_smooth(tr_full, period)
+  seed_val = atr_full.iloc[seed_bar_idx]
+  if pd.isna(seed_val):
+    return float('nan')
+  return float(seed_val)

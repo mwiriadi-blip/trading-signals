@@ -382,6 +382,12 @@ def _run_daily_check_impl(
       'mom12': float(_last['Mom12']),
       'rvol': float(_last['RVol']),
     }
+    # Phase 29 Plan 11 (UAT-17-1 closure): persist Wilder ATR seed at the bar
+    # immediately before the displayed 40-bar window so the trace panel can
+    # surface a deterministic anchor for hand-recalc convergence checks.
+    # window_start_index = len(df) - len(ohlc_window) (i.e. len(df) - 40).
+    _window_start_index = len(df) - len(ohlc_window)
+    _atr_seed = signal_engine.atr_seed_for_window(df, _window_start_index)
     state['signals'][state_key] = {
       'signal': new_signal,
       'signal_as_of': signal_as_of,
@@ -397,6 +403,8 @@ def _run_daily_check_impl(
       # Resolved per-trade params actually fed to get_signal — recorded so the
       # dashboard trace renders the same gate the engine decided on.
       'vote_params': signal_engine.resolve_vote_params(strategy_settings),
+      # Phase 29 Plan 11: Wilder ATR seed at bar before window (UAT-17-1).
+      'atr_seed': _atr_seed,
     }
 
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
