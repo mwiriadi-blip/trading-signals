@@ -14,7 +14,30 @@ A **shipped** hosted Python web app (v1.1, 2026-04-30) running a mechanical tren
 
 **Production:** `https://signals.mwiriadi.me` — HTTPS + auth gated, daily 08:00 Sydney (AEST/AEDT, DST-aware) signal cycle on droplet systemd, daily emails flowing through Resend, 1880+ tests green, dashboard shows reproducible signals + paper-trade ledger + 5-year backtest gate. Schema at v9 (Decimal AUD-quantized money). DigitalOcean droplet + systemd is the documented PRIMARY deploy path; GHA cron disabled (preserved as rollback insurance).
 
-**Next:** v1.3 milestone scope undefined — run `/gsd-new-milestone` to plan. v1.3 backlog pre-loaded with Phase 28 (v1.2 deferred UAT closure: 8 operator-facing scenarios across Phases 17/23/26).
+**Next:** v1.3 — Multi-Tenant Friends & Family — planning in flight.
+
+## Current Milestone: v1.3 Multi-Tenant Friends & Family
+
+**Goal:** Open the system to invite-only friends-and-family with full per-user state isolation, per-user 08:00 Sydney emails, news context, and a guided UI — while closing v1.2 deferred UAT debt and retroactively wrapping the post-v1.2 polish commits as v1.2.1.
+
+**Target features:**
+
+- **v1.2 UAT closure (Phase 28)** — 8 deferred operator-facing scenarios across v1.2 Phases 17/23/26 (ATR hand-recalc, iOS Safari tap, cookie persistence, live yfinance CLI, `/backtest` browser smoke, cold-start, multi-tab walkthrough).
+- **v1.2.1 retroactive patch wrap** — 5 ad-hoc post-ship polish commits formalised as a dedicated cleanup phase.
+- **Multi-tenant refactor** — admin namespace separation; existing `state.json` migrates to a privileged admin namespace; F&F users live in a per-user pool. `state_manager` rewritten to scope read/write by `user_id`. Schema v9 → v10. Signals stay shared/deterministic; trades/alerts/journal/equity become per-user.
+- **RBAC — invite-only** — admin (Marc) issues invite tokens; admin can disable/remove users; existing auth UX (cookie session + TOTP + trusted-device + magic-link) extended per-user.
+- **Per-user 08:00 Sydney email** — each user receives their own daily email with their stop-loss alerts + paper P&L. Admin retains existing email; F&F opt in via dashboard.
+- **News integration** — per-market dashboard panel from `yfinance.Ticker.news` + critical-event flag using yfinance importance hint with hand-curated keyword fallback.
+- **Guide UI** — inline tooltips on every panel + one-time first-run walkthrough modal for new users.
+- **Retroactive validation sweep** — backfill Nyquist `VALIDATION.md` + `SECURITY.md` for v1.2 Phases 17/19/20/22/23/24/25/26 (only 23 + 27 currently have one).
+- **Bug fix** — `.planning/backtests` CWD-relative path → project-root-anchored.
+
+**Key context:**
+
+- Phase numbering continues from Phase 28.
+- Hard constraint preserved: signal-only — no live trading. F&F inherit the same constraint.
+- Privacy: F&F never see admin or each-other data; admin sees user list + invite/revoke only, never F&F trade content.
+- Schema migration must preserve admin's live paper-trade history (no fresh start).
 
 ## Core Value
 
@@ -39,18 +62,22 @@ All 80 v1.0 + 40 v1.1 + 22 v1.2 = **142 requirements** shipped.
 - ✓ **VERSION (3)** — `STRATEGY_VERSION` constant + signal/trade row tagging + retroactive migration — v1.2
 - ✓ **BACKTEST (4)** — pure-compute `backtest/` module + 5y walk-forward + `/backtest` route + `>100%` cum-return pass criterion — v1.2
 
-### Active (v1.3+ candidates)
+### Active (v1.3 — in flight)
 
-Pre-loaded backlog at v1.2 close (8 deferred UAT items become Phase 28 of v1.3):
+Items pulled into v1.3 scope (see Current Milestone section above):
 
 - [ ] **Phase 28 (v1.2 UAT closure)** — Phase 17 ATR hand-recalc + iOS Safari tap + cookie persistence; Phase 23 live yfinance CLI + `/backtest` browser smoke; Phase 26 cold-start + multi-tab market browser walkthrough (8 items total)
-- [ ] **Phase 18** — Multi-user RBAC (deferred from v1.1, v1.2; revisit if friends-and-family demand emerges)
-- [ ] **Phase 21** — News integration (`yfinance.Ticker.news` on dashboard + email)
-- [ ] **Phase 23.5** — Hygiene cleanup (backups, deliverability, per-user TZ)
-- [ ] Retroactive Nyquist `VALIDATION.md` for Phases 17, 19, 20, 22, 24, 25, 26 (only 23 + 27 have one)
-- [ ] Retroactive `SECURITY.md` for Phases 17, 19, 20, 22, 23, 24, 25, 26 (only 27 has one)
+- [ ] **v1.2.1 retroactive patch wrap** — formalise 5 post-ship polish commits (scheduler tz, signal status ladder, v1.1 backtested defaults, trace vote_params, market tab refresh)
+- [ ] **Multi-tenant refactor + RBAC** — admin namespace separation; invite-only F&F with per-user state isolation; admin user management
+- [ ] **Per-user email pipeline** — each F&F user gets their own 08:00 Sydney email
+- [ ] **News integration** — dashboard panel + critical-event flag (was Phase 21, now scoped narrower than original brief)
+- [ ] **Guide UI** — inline tooltips + first-run tour modal
+- [ ] **Retroactive validation sweep** — Nyquist `VALIDATION.md` + `SECURITY.md` for Phases 17/19/20/22/23/24/25/26
 - [ ] `.planning/backtests` path CWD-relative — make project-root-anchored
-- [ ] Decide v1.2.1 patch wrap for 5 ad-hoc post-ship polish commits (scheduler tz, signal status ladder, v1.1 backtested defaults, trace vote_params, market tab refresh)
+
+### Active (v1.4+ candidates)
+
+- [ ] **Phase 23.5** — Hygiene cleanup (backups, deliverability, per-user TZ — last item now relevant given multi-tenant)
 
 Carried-forward from v1.0/v1.1:
 - [ ] F1 full-chain integration test harness completion (Phase 15 added partial coverage; gaps remain)
@@ -63,7 +90,7 @@ Carried-forward from v1.0/v1.1:
 - Any instruments beyond SPI 200 and AUD/USD — adding more is a v2+ milestone.
 - Intraday data / tick-level signals — daily close only.
 - Backtesting UI — the app only runs forward.
-- Multi-user accounts / auth — single-operator tool.
+- ~~Multi-user accounts / auth — single-operator tool.~~ **Re-scoped in v1.3:** invite-only multi-tenant for friends-and-family with full per-user state isolation. Admin (Marc) is sole invite issuer; no public signup.
 - React / Vue / any SPA framework — dashboard is a single static HTML file.
 - Database — all state lives in one `state.json` file.
 - Financial advice / regulatory disclosures — footer disclaimer only.
@@ -130,7 +157,7 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-05-10 after v1.2 milestone close.*
+*Last updated: 2026-05-10 — v1.3 milestone started (Multi-Tenant Friends & Family).*
 
 <details>
 <summary>Historical: v1.1 Progress (archived)</summary>

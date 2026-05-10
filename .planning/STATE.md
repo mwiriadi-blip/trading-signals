@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: "Trader-Grade Transparency & Validation"
-status: milestone_shipped
-shipped: 2026-05-10
-tag: v1.2
-last_updated: "2026-05-10T00:00:00Z"
+milestone: v1.3
+milestone_name: Multi-Tenant Friends & Family
+status: planning
+last_updated: "2026-05-10T02:21:14.924Z"
 last_activity: 2026-05-10
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 48
-  completed_plans: 48
-  percent: 100
-next_milestone: v1.3
-next_milestone_status: planning_pending
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # STATE — Trading Signals
@@ -31,11 +27,10 @@ next_milestone_status: planning_pending
 
 ## Current Position
 
-- **Milestone:** v1.2 — Trader-Grade Transparency & Validation
-- **Status:** ✅ SHIPPED 2026-05-10 (tag `v1.2`)
-- **Last activity:** 2026-05-10
-- **Progress:** [██████████] 100%
-- **Next:** v1.3 — planning pending. Pre-loaded backlog includes Phase 28 (v1.2 deferred UAT closure: 8 operator-facing scenarios across Phases 17/23/26).
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-10 — Milestone v1.3 started
 
 ### Resume instructions for cloud Claude / fresh clone
 
