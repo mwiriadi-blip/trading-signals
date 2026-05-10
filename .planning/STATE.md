@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-10T18:00:00+08:00"
-last_activity: 2026-05-10 -- Phase 29 complete (14/14 plans); Phase 29.5 spawned for UAT-23-1 yfinance fix
+last_updated: "2026-05-10T19:00:00+08:00"
+last_activity: 2026-05-10 -- Phase 29.5 planned (1/1 plan); ready to execute — closes UAT-23-1 backtest settings wiring fix
 progress:
   total_phases: 11
   completed_phases: 1
@@ -27,11 +27,11 @@ progress:
 
 ## Current Position
 
-Phase: 29 (v1.2.1 Retroactive Patch Wrap + Validation Sweep) — COMPLETE (14/14 plans)
-Plan: 14 of 14
-Status: Phase 29 complete. Phase 29.5 (yfinance backtest settings fix) spawned — see .planning/phases/29-5-yfinance-regression-fix/29-5-CONTEXT.md
-Last activity: 2026-05-10 -- Phase 29 all 14 plans executed; UAT-23-1 deferred to Phase 29.5
-Resume file: .planning/phases/29-5-yfinance-regression-fix/29-5-CONTEXT.md
+Phase: 29.5 (yfinance Regression Fix) — READY TO EXECUTE (1/1 plan)
+Plan: 0 of 1 complete
+Status: Phase 29.5 planned. Execute 29-5-01-SETTINGS-WIRING-PLAN.md to wire settings= into backtest CLI and close UAT-23-1.
+Last activity: 2026-05-10 -- Phase 29.5 planned (1 plan, 1 wave, autonomous). Fix site: backtest/cli.py:135.
+Resume file: .planning/phases/29-5-yfinance-regression-fix/29-5-01-SETTINGS-WIRING-PLAN.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
