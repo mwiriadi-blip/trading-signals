@@ -116,6 +116,16 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 - [ ] 29-14-PHASE-28-VERIFICATION-CLOSURE-PLAN.md — Append PASS rows to 28-VERIFICATION.md + Phase 29 Closure section (autonomous=false; iOS Safari operator checkpoint)
 **Plan-time verification:** none (debt closure / docs-only / single bug fix).
 
+### Phase 29.5: yfinance Regression Fix — COMPLETE
+
+**Goal:** Wire `settings=system_params.default_settings_for_market(instrument)` into `backtest/cli.py::_run_one_instrument` to close UAT-23-1 (SPI200 0-trades bug caused by `one_contract_floor=False` default).
+**Depends on:** Phase 29 (plan 29-13 escape to autonomous fix)
+**Requirements:** UAT-23-1
+**Plans:** 1 plan, 1 wave, autonomous
+**Plan list:**
+- [x] 29-5-01-SETTINGS-WIRING-PLAN.md — Wire settings= into _run_one_instrument; add TestSettingsWiring regression guard; acceptance gate (commits eea89ba, 4b08e81)
+**Result:** SPI200 67 trades, AUDUSD 40 trades. Combined +79.90% (FAIL threshold — strategy performance, not code defect). UAT-23-1 closed.
+
 ### Phase 30: File-Size Pre-Split
 
 **Goal:** All pre-existing 500-LOC violators are split behaviour-preservingly under D-09 cap before any v1.3 multi-tenant change touches their semantics, so later `user_id` injection diffs stay clean and merge-safe; AST hex blocklist is extended to cover v1.3 I/O modules.

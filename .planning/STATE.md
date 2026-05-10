@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-10T19:00:00+08:00"
-last_activity: 2026-05-10 -- Phase 29.5 planned (1/1 plan); ready to execute — closes UAT-23-1 backtest settings wiring fix
+last_updated: "2026-05-10T17:41:00Z"
+last_activity: 2026-05-10 -- Phase 29.5 complete (1/1 plan executed); UAT-23-1 closed — settings= wired into backtest CLI, SPI200 67 trades, AUDUSD 40 trades
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 20
-  completed_plans: 6
-  percent: 30
+  completed_plans: 7
+  percent: 35
 ---
 
 # STATE — Trading Signals
@@ -27,11 +27,10 @@ progress:
 
 ## Current Position
 
-Phase: 29.5 (yfinance Regression Fix) — READY TO EXECUTE (1/1 plan)
-Plan: 0 of 1 complete
-Status: Phase 29.5 planned. Execute 29-5-01-SETTINGS-WIRING-PLAN.md to wire settings= into backtest CLI and close UAT-23-1.
-Last activity: 2026-05-10 -- Phase 29.5 planned (1 plan, 1 wave, autonomous). Fix site: backtest/cli.py:135.
-Resume file: .planning/phases/29-5-yfinance-regression-fix/29-5-01-SETTINGS-WIRING-PLAN.md
+Phase: 29.5 (yfinance Regression Fix) — COMPLETE (1/1 plan)
+Plan: 1 of 1 complete
+Status: Phase 29.5 complete. UAT-23-1 closed. settings= wired into backtest CLI. SPI200 67 trades, AUDUSD 40 trades. Combined 79.9% return (FAIL threshold — strategy performance, not code defect). Next: Phase 30 or operator-directed.
+Resume file: none (phase complete)
 
 ### Resume instructions for cloud Claude / fresh clone
 
