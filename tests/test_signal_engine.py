@@ -499,6 +499,11 @@ FORBIDDEN_MODULES = frozenset({
   'state_manager', 'notifier', 'dashboard', 'main',
   # Orchestration and external service deps (belong in other hexes)
   'schedule', 'dotenv', 'pytz', 'yfinance',
+  # v1.3 I/O peers (Phase 30 OPS-03 — forward-looking guard for v1.3 modules):
+  # web/* is the FastAPI adapter; news_fetcher/news_filter are the news-integration
+  # peers introduced in Phase 36; auth_store is the user registry surface extended
+  # in Phase 32. None of these are pure-math hex peers.
+  'web', 'news_fetcher', 'news_filter', 'auth_store',
 })
 
 # Phase 2 stdlib-only hex modules must also avoid numpy and pandas (D-07, RESEARCH §Stack)
