@@ -21,6 +21,25 @@ def _bull_5y_df(start='2020-01-01', n_bars=1300, base=7000.0, drift=0.5) -> pd.D
   }, index=idx)
 
 
+def _trend_5y_df(start='2020-01-01', n_bars=1300, initial=100.0,
+                  daily_ret=1.0015) -> pd.DataFrame:
+  """Strong compound-return uptrend — Mom1/Mom3/Mom12 exceed MOM_THRESHOLD (0.02)
+  so signal_engine fires LONG signals and the simulator produces >0 trades.
+
+  _bull_5y_df uses linear drift at base=7000 which yields Mom ~0.14% << 2%
+  threshold and thus 0 trades. This fixture uses multiplicative returns.
+  """
+  idx = pd.date_range(start=start, periods=n_bars, freq='B', tz='Australia/Perth')
+  closes = [initial * (daily_ret ** i) for i in range(n_bars)]
+  return pd.DataFrame({
+    'Open':   [c * 0.999 for c in closes],
+    'High':   [c * 1.002 for c in closes],
+    'Low':    [c * 0.998 for c in closes],
+    'Close':  closes,
+    'Volume': [1_000_000] * n_bars,
+  }, index=idx)
+
+
 def _flat_5y_df(start='2020-01-01', n_bars=1300, base=7000.0) -> pd.DataFrame:
   """Flat — no momentum, no signals, no trades → cum_return = 0% → FAIL."""
   idx = pd.date_range(start=start, periods=n_bars, freq='B', tz='Australia/Perth')
@@ -38,6 +57,15 @@ def patched_fetcher(monkeypatch):
   """Stub fetch_ohlcv for both instruments — returns canned 5y data."""
   def _fake_fetch(symbol, start, end, refresh=False, cache_dir=None, min_years=5):
     return _bull_5y_df()
+  monkeypatch.setattr('backtest.cli.fetch_ohlcv', _fake_fetch)
+  return _fake_fetch
+
+
+@pytest.fixture
+def patched_fetcher_trend(monkeypatch):
+  """Stub returning compound-return trend data that crosses MOM_THRESHOLD."""
+  def _fake_fetch(symbol, start, end, refresh=False, cache_dir=None, min_years=5):
+    return _trend_5y_df()
   monkeypatch.setattr('backtest.cli.fetch_ohlcv', _fake_fetch)
   return _fake_fetch
 
@@ -244,4 +272,35 @@ class TestStrategyVersionTagging:
     assert report['metadata']['strategy_version'] == 'vTEST-9.9.9', (
       f'STRATEGY_VERSION not fresh-read; got {report["metadata"]["strategy_version"]!r} '
       f'(original was {original!r})'
+    )
+
+
+class TestSettingsWiring:
+  """UAT-23-1 regression guard: _run_one_instrument must pass per-market
+  settings to simulate(), producing non-zero trades for both instruments."""
+
+  def test_spi200_produces_nonzero_trades_with_settings(
+      self, tmp_path, patched_fetcher_trend
+  ):
+    out = tmp_path / 'spi_wiring.json'
+    args = RunArgs(years=5, end_date='2026-05-01', output=out)
+    report, _, _ = run_backtest(args)
+    spi_trades = report['metrics']['SPI200']['total_trades']
+    assert spi_trades > 0, (
+      f'SPI200 must produce >0 trades when per-market settings are wired; '
+      f'got {spi_trades}. This likely means settings= was not passed to '
+      f'simulate() in _run_one_instrument (UAT-23-1 regression).'
+    )
+
+  def test_audusd_produces_nonzero_trades_with_settings(
+      self, tmp_path, patched_fetcher_trend
+  ):
+    out = tmp_path / 'audusd_wiring.json'
+    args = RunArgs(years=5, end_date='2026-05-01', output=out)
+    report, _, _ = run_backtest(args)
+    audusd_trades = report['metrics']['AUDUSD']['total_trades']
+    assert audusd_trades > 0, (
+      f'AUDUSD must produce >0 trades when per-market settings are wired; '
+      f'got {audusd_trades}. This likely means settings= was not passed to '
+      f'simulate() in _run_one_instrument (UAT-23-1 regression).'
     )
