@@ -10,7 +10,10 @@ testpaths = ['tests']
 python_files = ['test_*.py']
 python_classes = ['Test*']
 python_functions = ['test_*']
-addopts = '-ra --strict-markers'
+addopts = '-ra --strict-markers -m "not uat"'
+markers = [
+    'uat: live operator-facing UAT scenarios that hit the production droplet (run with `pytest -m uat`)',
+]
 
 [tool.ruff]
 line-length = 100

@@ -1,0 +1,4 @@
+# Phase 28 (DEBT-01): persisted UAT substrate.
+# Install with: pip install -r requirements-dev.txt
+# Then bootstrap browsers: playwright install chromium
+pytest-playwright==0.5.2
