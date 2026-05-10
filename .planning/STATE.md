@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: Plan 28-03 spec persisted (cookie-persistence UAT-17-3 collectable under `pytest -m uat`); ready for next plan in wave
-last_updated: "2026-05-10T05:51:14.980Z"
-last_activity: "2026-05-10 — Plan 28-03 completed (commit 92ef6df): added tests/uat/test_uat_17_cookie_persistence.py asserting cookie WRITE + READ + no session loss in one test; default suite count unchanged (2 uat tests deselected)."
+status: executing
+last_updated: "2026-05-10T07:53:34.190Z"
+last_activity: 2026-05-10 -- Phase 29 execution started
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 6
+  total_plans: 20
   completed_plans: 6
-  percent: 100
+  percent: 30
 ---
 
 # STATE — Trading Signals
@@ -23,14 +23,14 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 1880+ tests green)
-- **Current focus:** v1.3 roadmap created (11 phases 28..38, 28/28 REQs mapped) — ready for `/gsd-discuss-phase 28`.
+- **Current focus:** Phase 29 — v1.2.1 Retroactive Patch Wrap + Validation Sweep
 
 ## Current Position
 
-Phase: 28 (v1.2 UAT Closure) — wave 2 in progress
-Plan: 28-03 complete (3/6); next plan per phase wave map
-Status: Plan 28-03 spec persisted (cookie-persistence UAT-17-3 collectable under `pytest -m uat`); ready for next plan in wave
-Last activity: 2026-05-10 — Plan 28-03 completed (commit 92ef6df): added tests/uat/test_uat_17_cookie_persistence.py asserting cookie WRITE + READ + no session loss in one test; default suite count unchanged (2 uat tests deselected).
+Phase: 29 (v1.2.1 Retroactive Patch Wrap + Validation Sweep) — EXECUTING
+Plan: 1 of 14
+Status: Executing Phase 29
+Last activity: 2026-05-10 -- Phase 29 execution started
 Resume file: .planning/phases/29-v1-2-1-retroactive-patch-wrap-validation-sweep/29-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone

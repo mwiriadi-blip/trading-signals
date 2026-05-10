@@ -100,9 +100,9 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
   4. `python -m backtest` and the `/backtest` route resolve `.planning/backtests/` from project root regardless of caller CWD; one regression test runs both from `/tmp` and asserts identical output paths.
 **Plans:** 14 plans
 **Plan list:**
-- [ ] 29-01-OPS-02-BACKTESTS-PATH-FIX-PLAN.md — Anchor `.planning/backtests/` paths to project root via `Path(__file__).resolve().parents[N]` + subprocess CWD-invariance test
-- [ ] 29-02-UAT-26-1-COLDSTART-JS-FIX-PLAN.md — Brace-rebalance equityChart inline JS at section_renderers.py:218-220 + UAT pageerror regression test
-- [ ] 29-03-DEBT-02-V1-2-1-PATCH-WRAP-PLAN.md — MILESTONES.md v1.2.1 sub-section + scheduler tz / status ladder / trace vote_params regression tests
+- [x] 29-01-OPS-02-BACKTESTS-PATH-FIX-PLAN.md — Anchor `.planning/backtests/` paths to project root via `Path(__file__).resolve().parents[N]` + subprocess CWD-invariance test
+- [x] 29-02-UAT-26-1-COLDSTART-JS-FIX-PLAN.md — Brace-rebalance equityChart inline JS at section_renderers.py:218-220 + UAT pageerror regression test
+- [x] 29-03-DEBT-02-V1-2-1-PATCH-WRAP-PLAN.md — MILESTONES.md v1.2.1 sub-section + scheduler tz / status ladder / trace vote_params regression tests
 - [ ] 29-04-VALIDATION-SECURITY-PHASE-17-PLAN.md — Phase 17 VALIDATION.md + SECURITY.md retrofit (mechanical)
 - [ ] 29-05-VALIDATION-SECURITY-PHASE-19-PLAN.md — Phase 19 VALIDATION.md + SECURITY.md retrofit (mechanical)
 - [ ] 29-06-VALIDATION-SECURITY-PHASE-20-PLAN.md — Phase 20 VALIDATION.md + SECURITY.md retrofit (mechanical)
@@ -336,7 +336,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 26. 25-followup | v1.2 | 8/8 | Complete | 2026-05-08 |
 | 27. quality sweep | v1.2 | 16/16 | Complete | 2026-05-10 |
 | 28. v1.2 UAT closure | v1.3 | 5/6 | In Progress|  |
-| 29. v1.2.1 patch wrap + validation sweep | v1.3 | 0/14 | In Progress |  |
+| 29. v1.2.1 patch wrap + validation sweep | v1.3 | 3/14 | In Progress|  |
 | 30. file-size pre-split | v1.3 | 0/0 | Not started | - |
 | 31. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 32. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
