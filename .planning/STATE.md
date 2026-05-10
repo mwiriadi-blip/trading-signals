@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-10T07:53:34.190Z"
-last_activity: 2026-05-10 -- Phase 29 execution started
+last_updated: "2026-05-10T18:00:00+08:00"
+last_activity: 2026-05-10 -- Phase 29 complete (14/14 plans); Phase 29.5 spawned for UAT-23-1 yfinance fix
 progress:
   total_phases: 11
   completed_phases: 1
@@ -27,11 +27,11 @@ progress:
 
 ## Current Position
 
-Phase: 29 (v1.2.1 Retroactive Patch Wrap + Validation Sweep) — EXECUTING
-Plan: 1 of 14
-Status: Executing Phase 29
-Last activity: 2026-05-10 -- Phase 29 execution started
-Resume file: .planning/phases/29-v1-2-1-retroactive-patch-wrap-validation-sweep/29-CONTEXT.md
+Phase: 29 (v1.2.1 Retroactive Patch Wrap + Validation Sweep) — COMPLETE (14/14 plans)
+Plan: 14 of 14
+Status: Phase 29 complete. Phase 29.5 (yfinance backtest settings fix) spawned — see .planning/phases/29-5-yfinance-regression-fix/29-5-CONTEXT.md
+Last activity: 2026-05-10 -- Phase 29 all 14 plans executed; UAT-23-1 deferred to Phase 29.5
+Resume file: .planning/phases/29-5-yfinance-regression-fix/29-5-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
