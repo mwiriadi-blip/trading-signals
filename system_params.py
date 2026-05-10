@@ -446,7 +446,8 @@ class Position(TypedDict):
 # =========================================================================
 
 LOOP_SLEEP_S: int = 60                   # tick-budget between schedule.run_pending calls (D-01)
-SCHEDULE_TIME_UTC: str = '00:00'         # 08:00 AWST = 00:00 UTC — passed to schedule.at() (D-07)
+SCHEDULE_TIME_LOCAL: str = '08:00'       # 08:00 Sydney — schedule.at() with SCHEDULE_TZ handles DST
+SCHEDULE_TZ: str = 'Australia/Sydney'    # ASX timezone; pre-market trigger (ASX opens 10:00 Sydney)
 WEEKDAY_SKIP_THRESHOLD: int = 5          # weekday() >= 5 means Sat/Sun (stdlib contract; D-03)
 
 # =========================================================================

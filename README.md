@@ -2,7 +2,8 @@
 
 Python signal-only trading app. Computes daily ATR/ADX/momentum signals for
 SPI 200 (`^AXJO`) and AUD/USD (`AUDUSD=X`), persists state, renders a
-self-contained dashboard, and emails a weekday report at 08:00 AWST.
+self-contained dashboard, and emails a weekday report at 08:00 Sydney
+(AEST/AEDT — handles DST; pre-ASX-open).
 **Never places live trades.**
 
 ## Quickstart

@@ -117,13 +117,13 @@ def _run_schedule_loop(
   Test call: `_run_schedule_loop(..., scheduler=fake, sleep_fn=fake_sleep,
   max_ticks=1)` — one tick, no real sleep, no real scheduler thread.
 
-  Pitfall 1 mitigation: the `schedule` library's `.at()` without tz arg uses
-  process-local time. We rely on UTC. Fail fast if the process runs in any
-  other tz — droplet misconfiguration would otherwise silently
-  fire at the wrong wall-clock moment. The check goes through the
-  `_get_process_tzname()` wrapper (Wave 0) so tests can patch
-  `main._get_process_tzname` cleanly (07-REVIEWS.md Codex MEDIUM-fix:
-  `time.tzname` is platform-dependent and sometimes frozen).
+  Pitfall 1 mitigation: process tz is forced to UTC for log discipline; the
+  schedule trigger is anchored in Sydney (`SCHEDULE_TZ`) by passing tz to
+  `schedule.every().day.at(time, tz)`. The lib converts Sydney wall-clock
+  → next UTC fire moment, handling AEST/AEDT transitions internally. The
+  UTC-process check goes through the `_get_process_tzname()` wrapper (Wave 0)
+  so tests can patch `main._get_process_tzname` cleanly (07-REVIEWS.md
+  Codex MEDIUM-fix: `time.tzname` is platform-dependent and sometimes frozen).
 
   Pitfall 7 mitigation: max_ticks=None means infinite loop (production). Tests
   MUST pass a finite max_ticks to avoid hanging.
@@ -146,13 +146,16 @@ def _run_schedule_loop(
   _sleep = sleep_fn or _time.sleep
 
   logger.info(
-    '[Sched] scheduler entered; next fire 00:00 UTC (08:00 AWST) Mon–Fri'
+    '[Sched] scheduler entered; next fire %s %s (handles DST) Mon–Fri',
+    system_params.SCHEDULE_TIME_LOCAL, system_params.SCHEDULE_TZ,
   )
   # Late-bind _run_daily_check_caught via the main package for the same
-  # monkeypatch propagation reason.
-  _scheduler.every().day.at(system_params.SCHEDULE_TIME_UTC).do(
-    _main_pkg._run_daily_check_caught, job, args,
-  )
+  # monkeypatch propagation reason. Pass tz to schedule.at() so the lib
+  # converts local-wall-clock → next UTC fire moment, handling AEST/AEDT.
+  _scheduler.every().day.at(
+    system_params.SCHEDULE_TIME_LOCAL,
+    system_params.SCHEDULE_TZ,
+  ).do(_main_pkg._run_daily_check_caught, job, args)
 
   ticks = 0
   while max_ticks is None or ticks < max_ticks:

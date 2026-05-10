@@ -207,7 +207,7 @@ class TestLoopDriver:
     assert fake.run_pending_calls == 0
     assert sleeps == []
     assert len(fake.registered) == 1
-    assert fake.registered[0][0] == '00:00'
+    assert fake.registered[0][0] == '08:00'
 
   def test_max_ticks_one_runs_single_cycle(self, monkeypatch) -> None:
     monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')
@@ -399,8 +399,8 @@ class TestDefaultModeDispatch:
     assert rc == 0
     assert any(
       'scheduler entered' in r.message
-      and '00:00 UTC' in r.message
-      and '08:00 AWST' in r.message
+      and '08:00' in r.message
+      and 'Australia/Sydney' in r.message
       for r in caplog.records
     )
     # Assert deprecated Phase 4 line is NOT present anywhere in the record stream:
