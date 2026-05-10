@@ -802,8 +802,8 @@ input:focus-visible,
   <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/market-test" data-tab-key="market-test">Market Test</a>
 </nav>
 <nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip" hx-trigger="markets-changed from:body, market-selected from:body" hx-get="/markets-strip?active_function=signals" hx-swap="outerHTML">
-  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/signals" hx-get="/markets/SPI200/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="SPI200">SPI200</a>
-  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/AUDUSD/signals" hx-get="/markets/AUDUSD/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="AUDUSD">AUDUSD</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/SPI200/signals" hx-get="/markets/SPI200/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="SPI200">SPI200 · MINI</a>
+  <a role="tab" tabindex="-1" aria-current="false" class="tab-inactive" href="/markets/AUDUSD/signals" hx-get="/markets/AUDUSD/signals" hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}' data-market-id="AUDUSD">AUDUSD · MINI</a>
   <details class="add-market-chip">
     <summary aria-label="Add market">+ Add market</summary>
     <form
@@ -902,7 +902,7 @@ input:focus-visible,
 <section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">
   <h2 id="settings-tab-heading">Settings</h2>
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">SPI 200 SETTINGS</p>
+  <p class="eyebrow">SPI 200 [MINI] SETTINGS</p>
   <h2>Settings</h2>
   <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
@@ -911,12 +911,12 @@ input:focus-visible,
       <legend>Entry rules</legend>
       <div class="field">
         <label for="settings-SPI200-adx_gate">ADX gate</label>
-        <input id="settings-SPI200-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="25.0">
+        <input id="settings-SPI200-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="20.0">
         <small class="field-help">Skips trade days when trend strength is weak. Default 25.</small>
       </div>
       <div class="field">
         <label for="settings-SPI200-momentum_votes_required">Momentum votes</label>
-        <input id="settings-SPI200-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2">
+        <input id="settings-SPI200-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="1">
         <small class="field-help">Number of positive momentum windows required to enter. Default 2.</small>
       </div>
     </fieldset>
@@ -924,7 +924,7 @@ input:focus-visible,
       <legend>Risk</legend>
       <div class="field">
         <label for="settings-SPI200-trail_mult_long">Long ATR stop multiple</label>
-        <input id="settings-SPI200-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0">
+        <input id="settings-SPI200-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="2.5">
         <small class="field-help">Trailing-stop distance for long positions. Default 1.5×ATR.</small>
       </div>
       <div class="field">
@@ -934,7 +934,7 @@ input:focus-visible,
       </div>
       <div class="field">
         <label for="settings-SPI200-risk_pct_long">Long risk percent</label>
-        <input id="settings-SPI200-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00">
+        <input id="settings-SPI200-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="5.00">
         <small class="field-help">Account risk per long trade. Default 1.0%.</small>
       </div>
       <div class="field">
@@ -944,7 +944,7 @@ input:focus-visible,
       </div>
       <div class="field">
         <label for="settings-SPI200-contract_cap">Contract cap</label>
-        <input id="settings-SPI200-contract_cap" name="contract_cap" type="number" step="1" min="1" value="">
+        <input id="settings-SPI200-contract_cap" name="contract_cap" type="number" step="1" min="1" value="1">
         <small class="field-help">Maximum contracts per pyramid level. Default 3.</small>
       </div>
     </fieldset>
@@ -952,12 +952,25 @@ input:focus-visible,
       <legend>Direction</legend>
       <div class="field">
         <label for="settings-SPI200-direction_mode">Mode</label>
-        <select id="settings-SPI200-direction_mode" name="direction_mode"><option value="both" selected>Both</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
+        <select id="settings-SPI200-direction_mode" name="direction_mode"><option value="both">Both</option><option value="long_only" selected>Long only</option><option value="short_only">Short only</option></select>
         <small class="field-help">Long-only, short-only, or both. Default both.</small>
       </div>
       <div class="field">
-        <label class="checkbox-field" for="settings-SPI200-one_contract_floor"><input id="settings-SPI200-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+        <label class="checkbox-field" for="settings-SPI200-one_contract_floor"><input id="settings-SPI200-one_contract_floor" name="one_contract_floor" type="checkbox" checked> 1-contract floor</label>
         <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Costs</legend>
+      <div class="field">
+        <label for="settings-SPI200-contract_type">Contract type</label>
+        <select id="settings-SPI200-contract_type" name="contract_type"><option value="mini" selected>MINI</option><option value="standard">STANDARD</option><option value="full">FULL</option><option value="cfd">CFD</option></select>
+        <small class="field-help">Mini / standard / full futures, or CFD. Shown next to the market name. Does not change sizing — multiplier and cost do.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-financing_rate_annual_pct">Overnight financing %/yr</label>
+        <input id="settings-SPI200-financing_rate_annual_pct" name="financing_rate_annual_pct" type="number" step="0.01" min="0" max="20" value="0.00">
+        <small class="field-help">CFD overnight financing rate (annualised). 0 for futures. Persisted now; P&amp;L deduction wires in a follow-up phase.</small>
       </div>
     </fieldset>
     <button type="submit" class="btn-primary">Save settings</button>
@@ -965,7 +978,7 @@ input:focus-visible,
   <div class="error" role="alert" aria-live="polite" hidden></div>
 </section>
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">AUD / USD SETTINGS</p>
+  <p class="eyebrow">AUD / USD [MINI] SETTINGS</p>
   <h2>Settings</h2>
   <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
@@ -974,12 +987,12 @@ input:focus-visible,
       <legend>Entry rules</legend>
       <div class="field">
         <label for="settings-AUDUSD-adx_gate">ADX gate</label>
-        <input id="settings-AUDUSD-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="25.0">
+        <input id="settings-AUDUSD-adx_gate" name="adx_gate" type="number" step="0.1" min="0" value="20.0">
         <small class="field-help">Skips trade days when trend strength is weak. Default 25.</small>
       </div>
       <div class="field">
         <label for="settings-AUDUSD-momentum_votes_required">Momentum votes</label>
-        <input id="settings-AUDUSD-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="2">
+        <input id="settings-AUDUSD-momentum_votes_required" name="momentum_votes_required" type="number" step="1" min="1" max="3" value="1">
         <small class="field-help">Number of positive momentum windows required to enter. Default 2.</small>
       </div>
     </fieldset>
@@ -987,7 +1000,7 @@ input:focus-visible,
       <legend>Risk</legend>
       <div class="field">
         <label for="settings-AUDUSD-trail_mult_long">Long ATR stop multiple</label>
-        <input id="settings-AUDUSD-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="3.0">
+        <input id="settings-AUDUSD-trail_mult_long" name="trail_mult_long" type="number" step="0.1" min="0.1" value="2.5">
         <small class="field-help">Trailing-stop distance for long positions. Default 1.5×ATR.</small>
       </div>
       <div class="field">
@@ -997,7 +1010,7 @@ input:focus-visible,
       </div>
       <div class="field">
         <label for="settings-AUDUSD-risk_pct_long">Long risk percent</label>
-        <input id="settings-AUDUSD-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="1.00">
+        <input id="settings-AUDUSD-risk_pct_long" name="risk_pct_long" type="number" step="0.1" min="0.1" value="5.00">
         <small class="field-help">Account risk per long trade. Default 1.0%.</small>
       </div>
       <div class="field">
@@ -1007,7 +1020,7 @@ input:focus-visible,
       </div>
       <div class="field">
         <label for="settings-AUDUSD-contract_cap">Contract cap</label>
-        <input id="settings-AUDUSD-contract_cap" name="contract_cap" type="number" step="1" min="1" value="">
+        <input id="settings-AUDUSD-contract_cap" name="contract_cap" type="number" step="1" min="1" value="1">
         <small class="field-help">Maximum contracts per pyramid level. Default 3.</small>
       </div>
     </fieldset>
@@ -1019,8 +1032,21 @@ input:focus-visible,
         <small class="field-help">Long-only, short-only, or both. Default both.</small>
       </div>
       <div class="field">
-        <label class="checkbox-field" for="settings-AUDUSD-one_contract_floor"><input id="settings-AUDUSD-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
+        <label class="checkbox-field" for="settings-AUDUSD-one_contract_floor"><input id="settings-AUDUSD-one_contract_floor" name="one_contract_floor" type="checkbox" checked> 1-contract floor</label>
         <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Costs</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-contract_type">Contract type</label>
+        <select id="settings-AUDUSD-contract_type" name="contract_type"><option value="mini" selected>MINI</option><option value="standard">STANDARD</option><option value="full">FULL</option><option value="cfd">CFD</option></select>
+        <small class="field-help">Mini / standard / full futures, or CFD. Shown next to the market name. Does not change sizing — multiplier and cost do.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-financing_rate_annual_pct">Overnight financing %/yr</label>
+        <input id="settings-AUDUSD-financing_rate_annual_pct" name="financing_rate_annual_pct" type="number" step="0.01" min="0" max="20" value="0.00">
+        <small class="field-help">CFD overnight financing rate (annualised). 0 for futures. Persisted now; P&amp;L deduction wires in a follow-up phase.</small>
       </div>
     </fieldset>
     <button type="submit" class="btn-primary">Save settings</button>
@@ -1053,13 +1079,13 @@ input:focus-visible,
     <div class="field"><label for="market-test-start-date">Start date</label><input id="market-test-start-date" name="start_date" type="date" required></div>
     <div class="field"><label for="market-test-end-date">End date</label><input id="market-test-end-date" name="end_date" type="date" required></div>
     <div class="field"><label for="market-test-balance">Initial balance</label><input id="market-test-balance" name="initial_account_aud" type="number" step="100" min="1" value="10000" required></div>
-    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0" placeholder="25.0"></div>
-    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3" placeholder="2"></div>
-    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1" placeholder="1.00"></div>
+    <div class="field"><label for="market-test-adx">ADX override</label><input id="market-test-adx" name="adx_gate" type="number" step="0.1" min="0" placeholder="20.0"></div>
+    <div class="field"><label for="market-test-votes">Votes override</label><input id="market-test-votes" name="momentum_votes_required" type="number" step="1" min="1" max="3" placeholder="1"></div>
+    <div class="field"><label for="market-test-risk-long">Long risk %</label><input id="market-test-risk-long" name="risk_pct_long" type="number" step="0.1" min="0.1" placeholder="5.00"></div>
     <div class="field"><label for="market-test-risk-short">Short risk %</label><input id="market-test-risk-short" name="risk_pct_short" type="number" step="0.1" min="0.1" placeholder="0.50"></div>
-    <div class="field"><label for="market-test-atr-long">Long ATR multiple</label><input id="market-test-atr-long" name="trail_mult_long" type="number" step="0.1" min="0.1" placeholder="3.0"></div>
+    <div class="field"><label for="market-test-atr-long">Long ATR multiple</label><input id="market-test-atr-long" name="trail_mult_long" type="number" step="0.1" min="0.1" placeholder="2.5"></div>
     <div class="field"><label for="market-test-atr-short">Short ATR multiple</label><input id="market-test-atr-short" name="trail_mult_short" type="number" step="0.1" min="0.1" placeholder="2.0"></div>
-    <div class="field"><label for="market-test-cap">Contract cap</label><input id="market-test-cap" name="contract_cap" type="number" step="1" min="1" placeholder=""></div>
+    <div class="field"><label for="market-test-cap">Contract cap</label><input id="market-test-cap" name="contract_cap" type="number" step="1" min="1" placeholder="1"></div>
     <button type="submit" class="btn-primary">Run Test</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
@@ -1073,8 +1099,8 @@ input:focus-visible,
 <section class="open-form account-balance-form">
   <p class="eyebrow">ACCOUNT BASELINE</p>
   <form hx-patch="/account/balance" hx-ext="json-enc" hx-target="#account-management-region" hx-swap="outerHTML" hx-on::after-request="handleTradesError(event)">
-    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="100000.00" required></div>
-    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="100000.00" required></div>
+    <div class="field"><label for="account-balance-initial">Starting balance</label><input id="account-balance-initial" name="initial_account" type="number" step="0.01" min="0.01" value="10000.00" required></div>
+    <div class="field"><label for="account-balance-current">Account balance</label><input id="account-balance-current" name="account" type="number" step="0.01" min="0" value="10000.00" required></div>
     <button type="submit" class="btn-primary">Update balances</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
@@ -1084,11 +1110,11 @@ input:focus-visible,
   <div class="stats-grid account-stats-grid">
     <div class="stat-tile">
       <p class="label">Starting Balance</p>
-      <p class="value">$100,000.00</p>
+      <p class="value">$10,000.00</p>
     </div>
     <div class="stat-tile">
       <p class="label">Account Balance</p>
-      <p class="value">$100,000.00</p>
+      <p class="value">$10,000.00</p>
     </div>
     <div class="stat-tile">
       <p class="label">Realised P&amp;L</p>

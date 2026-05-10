@@ -597,15 +597,16 @@ class TestRecordTrade:
       cost_aud=6.0, n_contracts=2, gross_pnl=1000.0
       closing_cost_half = 6.0 * 2 / 2 = 6.0
       net_pnl = 1000.0 - 6.0 = 994.0
-      account = 100_000.0 + 994.0 = 100_994.0
+      account = INITIAL_ACCOUNT + 994.0
     '''
     state = reset_state()
     state['positions']['SPI200'] = self._make_open_position()
     trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
     result = record_trade(state, trade)
 
-    assert result['account'] == 100_994.0, (
-      f'D-14: expected 100_994.0, got {result["account"]}'
+    expected = INITIAL_ACCOUNT + 994.0
+    assert result['account'] == expected, (
+      f'D-14: expected {expected}, got {result["account"]}'
     )
 
   def test_record_trade_appends_to_trade_log_with_net_pnl(self) -> None:
@@ -807,8 +808,9 @@ class TestRecordTrade:
       cost_aud=6.0, multiplier=5.0,
     )
     result = record_trade(state, correct_trade)
-    assert result['account'] == 100_994.0, (
-      'CORRECT: gross_pnl=1000.0 (raw) -> net_pnl=994.0 -> account=100_994.0'
+    expected_correct = INITIAL_ACCOUNT + 994.0
+    assert result['account'] == expected_correct, (
+      f'CORRECT: gross_pnl=1000.0 (raw) -> net_pnl=994.0 -> account={expected_correct}'
     )
     assert result['trade_log'][0]['net_pnl'] == 994.0
 
@@ -827,10 +829,11 @@ class TestRecordTrade:
     )
     bug_result = record_trade(state2, bug_trade)
     # The bug: account is understated by exactly closing_cost_half = 6.0
-    assert bug_result['account'] == 100_988.0, (
-      'BUG: passing realised_pnl as gross_pnl double-deducts close cost; '
-      'account becomes 100_988.0 instead of 100_994.0 (short by 6.0). '
-      'Phase 4 MUST compute gross_pnl as RAW price-delta and pass THAT.'
+    expected_bug = INITIAL_ACCOUNT + 988.0
+    assert bug_result['account'] == expected_bug, (
+      f'BUG: passing realised_pnl as gross_pnl double-deducts close cost; '
+      f'account becomes {expected_bug} instead of {expected_correct} (short by 6.0). '
+      f'Phase 4 MUST compute gross_pnl as RAW price-delta and pass THAT.'
     )
     # The bug delta is exactly closing_cost_half — proves the cause
     assert (
@@ -2603,9 +2606,9 @@ class TestFullWalkV0ToV6:
     import json as _json
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 10, (
-      f'walk-forward chain v0->...->v10 must end at 10 '
-      f'(Phase 27 #11 Plan 27-09 bare-int signal shape unification); '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 11, (
+      f'walk-forward chain v0->...->v11 must end at 11 '
+      f'(v11: contract_type + financing_rate_annual_pct backfill on markets); '
       f'got {loaded["schema_version"]}'
     )
     # Phase 22 v3->v4 backfill also ran
@@ -2668,8 +2671,8 @@ class TestMigrateV6ToV7:
     )
     # Via _migrate walker: schema_version advances to 7
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 10, (
-      f'D-08: _migrate must walk v6->v10 (Phase 27 #11); got {out2["schema_version"]}'
+    assert out2['schema_version'] == 11, (
+      f'D-08: _migrate must walk v6->v11; got {out2["schema_version"]}'
     )
     assert out2['paper_trades'][0]['last_alert_state'] is None
     assert out2['paper_trades'][1]['last_alert_state'] is None
@@ -2767,7 +2770,7 @@ class TestMigrateV6ToV7:
       'D-08: missing paper_trades key must remain absent after migration'
     )
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 10  # Phase 27 #11 (Plan 27-09)
+    assert out2['schema_version'] == 11  # v11: contract_type + financing_rate backfill
 
   def test_migrate_v6_to_v7_silent_no_warnings_no_logs(self, caplog) -> None:
     '''D-15 silent migration: migrating 5 rows must emit zero log records and
@@ -2823,9 +2826,8 @@ class TestMigrateV6ToV7:
     }
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == 10, (
-      f'walk-forward chain v0->...->v10 must end at 10 '
-      f'(Phase 27 #11 Plan 27-09 bare-int signal shape unification); '
+    assert loaded['schema_version'] == 11, (
+      f'walk-forward chain v0->...->v11 must end at 11; '
       f'got {loaded["schema_version"]}'
     )
     # Phase 20 v6->v7 backfill
@@ -2855,8 +2857,16 @@ class TestMarketRegistrySchema:
     assert loaded['schema_version'] == STATE_SCHEMA_VERSION
     assert loaded['markets']['SPI200']['symbol'] == '^AXJO'
     assert loaded['markets']['AUDUSD']['symbol'] == 'AUDUSD=X'
-    assert loaded['strategy_settings']['SPI200']['momentum_votes_required'] == 2
-    assert loaded['strategy_settings']['AUDUSD']['one_contract_floor'] is False
+    # v11 per-market optima: SPI200 + AUDUSD ship with backtested defaults
+    # (1-vote, 1-contract floor + cap, 5%/0.5% asymmetric risk).
+    assert loaded['strategy_settings']['SPI200']['momentum_votes_required'] == 1
+    assert loaded['strategy_settings']['SPI200']['direction_mode'] == 'long_only'
+    assert loaded['strategy_settings']['AUDUSD']['one_contract_floor'] is True
+    assert loaded['strategy_settings']['AUDUSD']['direction_mode'] == 'both'
+    # v11 market-entry backfill: contract_type + financing_rate populated.
+    assert loaded['markets']['SPI200']['contract_type'] == 'mini'
+    assert loaded['markets']['AUDUSD']['contract_type'] == 'mini'
+    assert loaded['markets']['SPI200']['financing_rate_annual_pct'] == 0.0
 
   def test_record_trade_allows_market_present_in_positions(self) -> None:
     state = reset_state()

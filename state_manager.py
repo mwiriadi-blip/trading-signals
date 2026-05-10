@@ -83,6 +83,7 @@ from system_params import (
   AUDUSD_CONTRACTS,
   DEFAULT_MARKETS,
   DEFAULT_STRATEGY_SETTINGS,
+  default_settings_for_market,
   SPI_CONTRACTS,
   _DEFAULT_AUDUSD_LABEL,
   _DEFAULT_SPI_LABEL,
@@ -332,8 +333,11 @@ def _default_market_registry() -> dict:
 
 def _default_strategy_settings(markets: dict | None = None) -> dict:
   source = markets if markets is not None else DEFAULT_MARKETS
+  # Per-market lookup (v11): SPI200/AUDUSD ship with backtested optima; any
+  # operator-added market falls back to the conservative DEFAULT_STRATEGY_SETTINGS
+  # via default_settings_for_market.
   return {
-    key: dict(DEFAULT_STRATEGY_SETTINGS)
+    key: default_settings_for_market(key)
     for key in source
   }
 
@@ -542,6 +546,44 @@ def _migrate_v9_to_v10(s: dict) -> dict:
   return out
 
 
+def _migrate_v10_to_v11(s: dict) -> dict:
+  '''v11: backfill contract_type + financing_rate_annual_pct on every market
+  registry entry. Pulls defaults from DEFAULT_MARKETS for known markets;
+  operator-added markets get contract_type='cfd' and financing_rate_annual_pct=0.0
+  as conservative starting values (CFD is the most common retail vehicle for
+  arbitrary equities/indices).
+
+  Existing per-market strategy_settings are NOT overwritten — operators who
+  customised SPI/AUDUSD settings keep their values. The per-market optima in
+  DEFAULT_STRATEGY_SETTINGS_BY_MARKET only apply to fresh state via
+  reset_state() / new market additions.
+
+  Idempotent: existing contract_type / financing_rate_annual_pct values are
+  preserved. D-15 silent migration: no append_warning, no log line.
+  '''
+  markets = s.get('markets')
+  if not isinstance(markets, dict):
+    return s
+  out_markets = {}
+  for key, value in markets.items():
+    if not isinstance(value, dict):
+      out_markets[key] = value
+      continue
+    entry = dict(value)
+    if 'contract_type' not in entry:
+      default_market = DEFAULT_MARKETS.get(key, {})
+      entry['contract_type'] = str(default_market.get('contract_type', 'cfd'))
+    if 'financing_rate_annual_pct' not in entry:
+      default_market = DEFAULT_MARKETS.get(key, {})
+      entry['financing_rate_annual_pct'] = float(
+        default_market.get('financing_rate_annual_pct', 0.0),
+      )
+    out_markets[key] = entry
+  out = dict(s)
+  out['markets'] = out_markets
+  return out
+
+
 MIGRATIONS: dict = {
   1: lambda s: s,  # no-op at v1; hook proves the walk-forward mechanism works
   2: _migrate_v1_to_v2,  # Phase 8 IN-06: named function for future migrations
@@ -553,6 +595,7 @@ MIGRATIONS: dict = {
   8: _migrate_v7_to_v8,  # Phase 24: markets + strategy_settings
   9: _migrate_v8_to_v9,  # Phase 27 #1: Decimal-quantize money fields (AUD cents, HALF_UP)
   10: _migrate_v9_to_v10,  # Phase 27 #11 (Plan 27-09): promote bare-int signal rows to dict
+  11: _migrate_v10_to_v11,  # v11: contract_type + financing_rate_annual_pct on markets
 }
 
 

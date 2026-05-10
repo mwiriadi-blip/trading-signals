@@ -562,14 +562,17 @@ def _phase26_three_market_state() -> dict:
       'SPI200': {
         'display_name': 'SPI 200', 'symbol': '^AXJO', 'currency': 'AUD',
         'multiplier': 5.0, 'cost_aud': 6.0, 'enabled': True, 'sort_order': 10,
+        'contract_type': 'mini', 'financing_rate_annual_pct': 0.0,
       },
       'AUDUSD': {
         'display_name': 'AUD / USD', 'symbol': 'AUDUSD=X', 'currency': 'AUD',
         'multiplier': 10000.0, 'cost_aud': 5.0, 'enabled': True, 'sort_order': 20,
+        'contract_type': 'mini', 'financing_rate_annual_pct': 0.0,
       },
       'ESM': {
         'display_name': 'ES Mini', 'symbol': 'ES=F', 'currency': 'USD',
         'multiplier': 50.0, 'cost_aud': 4.0, 'enabled': True, 'sort_order': 30,
+        'contract_type': 'mini', 'financing_rate_annual_pct': 0.0,
       },
     },
     'positions': {'SPI200': None, 'AUDUSD': None, 'ESM': None},
@@ -637,9 +640,10 @@ class TestPhase26MarketScoping:
       headers={AUTH_HEADER_NAME: VALID_SECRET},
     )
     assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
-    assert 'SPI 200 SETTINGS' in resp.text, 'active-market eyebrow missing'
-    assert 'AUD / USD SETTINGS' not in resp.text, 'leak: AUDUSD eyebrow on SPI200 page'
-    assert 'ES MINI SETTINGS' not in resp.text, 'leak: ESM eyebrow on SPI200 page'
+    # v11: eyebrow now includes contract_type tag — '<display> [<TYPE>] SETTINGS'.
+    assert 'SPI 200 [MINI] SETTINGS' in resp.text, 'active-market eyebrow missing'
+    assert 'AUD / USD [MINI] SETTINGS' not in resp.text, 'leak: AUDUSD eyebrow on SPI200 page'
+    assert 'ES MINI' not in resp.text or 'ES MINI [' not in resp.text, 'leak: ESM eyebrow on SPI200 page'
 
   def test_audusd_settings_eyebrow_only_active_market(self, monkeypatch, tmp_path):
     client = _phase26_setup(monkeypatch, tmp_path)
@@ -648,9 +652,10 @@ class TestPhase26MarketScoping:
       headers={AUTH_HEADER_NAME: VALID_SECRET},
     )
     assert resp.status_code == 200, f'unexpected status: {resp.status_code} body={resp.text[:200]}'
-    assert 'AUD / USD SETTINGS' in resp.text, 'active-market eyebrow missing'
-    assert 'SPI 200 SETTINGS' not in resp.text, 'leak: SPI200 eyebrow on AUDUSD page'
-    assert 'ES MINI SETTINGS' not in resp.text, 'leak: ESM eyebrow on AUDUSD page'
+    # v11: eyebrow now includes contract_type tag — '<display> [<TYPE>] SETTINGS'.
+    assert 'AUD / USD [MINI] SETTINGS' in resp.text, 'active-market eyebrow missing'
+    assert 'SPI 200 [MINI] SETTINGS' not in resp.text, 'leak: SPI200 eyebrow on AUDUSD page'
+    assert 'ES MINI [' not in resp.text, 'leak: ESM eyebrow on AUDUSD page'
 
   def test_esm_market_test_eyebrow_only_active_market(self, monkeypatch, tmp_path):
     '''Plan 26-05 must thread active_market into render_market_test_tab so the

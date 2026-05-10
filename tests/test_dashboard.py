@@ -310,23 +310,27 @@ class TestStatsMath:
   # --- Total Return ---
 
   def test_total_return_happy_path(self) -> None:
-    '''current_equity 104532.18 → (104532.18-100000)/100000 = 0.0453218 → "+4.5%".'''
-    state = {'equity_history': [{'date': '2026-04-24', 'equity': 104532.18}]}
+    '''current_equity 104532.18 → (104532.18-100000)/100000 = 0.0453218 → "+4.5%".
+
+    initial_account stamped on state so the test is deterministic against
+    operator-chosen baselines (default INITIAL_ACCOUNT changed to 10K in v11).
+    '''
+    state = {'initial_account': 100000.0, 'equity_history': [{'date': '2026-04-24', 'equity': 104532.18}]}
     assert dashboard._compute_total_return(state) == '+4.5%'
 
   def test_total_return_negative(self) -> None:
     '''current_equity 95000 → -5.0%.'''
-    state = {'equity_history': [{'date': '2026-04-24', 'equity': 95000.0}]}
+    state = {'initial_account': 100000.0, 'equity_history': [{'date': '2026-04-24', 'equity': 95000.0}]}
     assert dashboard._compute_total_return(state) == '-5.0%'
 
   def test_total_return_from_account_when_history_empty(self) -> None:
     '''Empty history → fall back to state["account"] per CONTEXT D-10.'''
-    state = {'equity_history': [], 'account': 100000.0}
+    state = {'initial_account': 100000.0, 'equity_history': [], 'account': 100000.0}
     assert dashboard._compute_total_return(state) == '+0.0%'
 
   def test_total_return_zero_when_equal_to_initial(self) -> None:
-    '''equity == INITIAL_ACCOUNT → "+0.0%" (signed format locked).'''
-    state = {'equity_history': [{'date': '2026-01-01', 'equity': 100000.0}]}
+    '''equity == initial_account → "+0.0%" (signed format locked).'''
+    state = {'initial_account': 100000.0, 'equity_history': [{'date': '2026-01-01', 'equity': 100000.0}]}
     assert dashboard._compute_total_return(state) == '+0.0%'
 
   # --- Unrealised P&L display (inline re-implementation parity) ---
@@ -876,6 +880,7 @@ class TestRenderBlocks:
     '''Tile 1 (Total Return) coloured via CSS class — pnl-positive, pnl-negative, pnl-zero (D-19 #5).'''
     # Positive
     state = _make_state(with_equity=1, with_trades=0, with_positions=False, with_signals=False)
+    state['initial_account'] = 100_000.0  # explicit baseline (default INITIAL_ACCOUNT is 10k since v11)
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 105_000.0}]
     output = dashboard._render_key_stats(state)
     assert 'pnl-positive' in output
@@ -1166,10 +1171,11 @@ class TestTotalReturnInitialAccount:
 
   def test_missing_initial_account_falls_back_to_INITIAL_ACCOUNT(self) -> None:
     '''No initial_account key → fallback to INITIAL_ACCOUNT baseline
-    (100k); account==100k gives '+0.0%'.
+    (10k since v11); account==INITIAL_ACCOUNT gives '+0.0%'.
     '''
+    from system_params import INITIAL_ACCOUNT
     state = {
-      'account': 100_000.0,
+      'account': float(INITIAL_ACCOUNT),
       'equity_history': [],
     }
     assert dashboard._compute_total_return(state) == '+0.0%'

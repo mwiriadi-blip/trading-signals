@@ -14,6 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 logger = logging.getLogger(__name__)
 
 
+_CONTRACT_TYPE = Literal['mini', 'standard', 'full', 'cfd']
+
+
 class MarketRequest(BaseModel):
   model_config = ConfigDict(extra='forbid')
 
@@ -23,6 +26,8 @@ class MarketRequest(BaseModel):
   currency: str = Field(default='AUD', min_length=3, max_length=3)
   multiplier: float = Field(gt=0)
   cost_aud: float = Field(ge=0)
+  contract_type: _CONTRACT_TYPE = 'cfd'
+  financing_rate_annual_pct: float = Field(default=0.0, ge=0, le=20.0)
 
 
 class MarketPatchRequest(BaseModel):
@@ -35,6 +40,8 @@ class MarketPatchRequest(BaseModel):
   cost_aud: float | None = Field(default=None, ge=0)
   enabled: bool | None = None
   sort_order: int | None = None
+  contract_type: _CONTRACT_TYPE | None = None
+  financing_rate_annual_pct: float | None = Field(default=None, ge=0, le=20.0)
 
 
 class MarketSettingsRequest(BaseModel):
@@ -50,12 +57,32 @@ class MarketSettingsRequest(BaseModel):
   one_contract_floor: bool = False
   contract_cap: int | None = None
   direction_mode: Literal['both', 'long_only', 'short_only'] = 'both'
+  # Cost knobs persisted on the market entry (not strategy_settings) — surfaced
+  # here so the Settings form can save them in a single round-trip alongside
+  # entry/risk/direction. Optional: form may omit them and existing market-
+  # level values are retained.
+  contract_type: _CONTRACT_TYPE | None = None
+  financing_rate_annual_pct: float | None = Field(default=None, ge=0, le=20.0)
 
   @field_validator('contract_cap', mode='before')
   @classmethod
   def _empty_string_to_none(cls, v):
     # json-enc serialises a blank <input type="number"> as "". Pydantic's int
     # parser rejects "" → 400. Treat blank as "unset" since the field is optional.
+    if v == '':
+      return None
+    return v
+
+  @field_validator('financing_rate_annual_pct', mode='before')
+  @classmethod
+  def _empty_string_rate_to_none(cls, v):
+    if v == '':
+      return None
+    return v
+
+  @field_validator('contract_type', mode='before')
+  @classmethod
+  def _empty_string_type_to_none(cls, v):
     if v == '':
       return None
     return v
@@ -92,11 +119,21 @@ def _save_settings(market_id: str, req: MarketSettingsRequest) -> None:
   from state_manager import mutate_state
 
   def _apply(state: dict) -> None:
-    if market_id not in state.get('markets', {}):
+    markets = state.get('markets', {})
+    if market_id not in markets:
       raise HTTPException(status_code=404, detail='market not found')
     if req.market_id != market_id:
       raise HTTPException(status_code=400, detail='market_id does not match path')
     state.setdefault('strategy_settings', {})[market_id] = _settings_to_state(req)
+    # Persist cost knobs at market level — only when provided. Skipping a field
+    # leaves the existing market-entry value untouched (matches PATCH /markets
+    # semantics).
+    market_entry = markets.get(market_id)
+    if isinstance(market_entry, dict):
+      if req.contract_type is not None:
+        market_entry['contract_type'] = req.contract_type
+      if req.financing_rate_annual_pct is not None:
+        market_entry['financing_rate_annual_pct'] = float(req.financing_rate_annual_pct)
 
   mutate_state(_apply)
 
@@ -145,7 +182,7 @@ def register(app: FastAPI) -> None:
   def add_market(req: MarketRequest) -> Response:
     from state_manager import mutate_state
     import system_params
-    from system_params import DEFAULT_STRATEGY_SETTINGS
+    from system_params import default_settings_for_market
 
     def _apply(state: dict) -> None:
       markets = state.setdefault('markets', {})
@@ -163,6 +200,8 @@ def register(app: FastAPI) -> None:
         'cost_aud': float(req.cost_aud),
         'enabled': True,
         'sort_order': order,
+        'contract_type': req.contract_type,
+        'financing_rate_annual_pct': float(req.financing_rate_annual_pct),
       }
       state.setdefault('positions', {})[req.market_id] = None
       # Phase 26 Plan 26-07 (R5): match dict shape from main.run_daily_check
@@ -178,7 +217,8 @@ def register(app: FastAPI) -> None:
         'strategy_version': system_params.STRATEGY_VERSION,
         'ohlc_window': [],
       }
-      state.setdefault('strategy_settings', {})[req.market_id] = dict(DEFAULT_STRATEGY_SETTINGS)
+      # Per-market optimum if known (SPI200/AUDUSD); conservative fallback otherwise.
+      state.setdefault('strategy_settings', {})[req.market_id] = default_settings_for_market(req.market_id)
 
     mutate_state(_apply)
     return JSONResponse({'ok': True}, headers={'HX-Trigger': 'markets-changed'})

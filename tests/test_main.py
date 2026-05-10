@@ -232,15 +232,15 @@ class TestCLI:
     state_manager.save_state(state, path=tmp_path / 'state.json')
     monkeypatch.setenv('RESET_CONFIRM', 'YES')
 
+    from system_params import INITIAL_ACCOUNT
     rc = main.main([
       '--reset',
-      '--initial-account', '100000',
+      '--initial-account', str(int(INITIAL_ACCOUNT)),
       '--spi-contract', 'spi-mini',
       '--audusd-contract', 'audusd-standard',
     ])
     assert rc == 0
 
-    from system_params import INITIAL_ACCOUNT
     post = json.loads((tmp_path / 'state.json').read_text())
     assert post['account'] == INITIAL_ACCOUNT, (
       f'CLI-02: post-reset account should be ${INITIAL_ACCOUNT}, got {post["account"]}'
@@ -1416,7 +1416,9 @@ class TestResetInteractive:
     rc = main.main(['--reset'])
     assert rc == 0
     s = json.loads((tmp_path / 'state.json').read_text())
-    assert s['initial_account'] == 100000.0
+    from system_params import INITIAL_ACCOUNT
+    # v11: INITIAL_ACCOUNT is 10k. Blank-input default tracks the constant.
+    assert s['initial_account'] == float(INITIAL_ACCOUNT)
     assert s['contracts'] == {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'}
 
   def test_reset_interactive_dollar_sign_comma_stripping(

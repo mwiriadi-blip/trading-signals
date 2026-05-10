@@ -1044,7 +1044,7 @@ input:focus-visible,
 <section id="settings-tab" class="tab-panel" aria-labelledby="settings-tab-heading">
   <h2 id="settings-tab-heading">Settings</h2>
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">SPI 200 SETTINGS</p>
+  <p class="eyebrow">SPI 200 [CFD] SETTINGS</p>
   <h2>Settings</h2>
   <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
@@ -1102,12 +1102,25 @@ input:focus-visible,
         <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
       </div>
     </fieldset>
+    <fieldset>
+      <legend>Costs</legend>
+      <div class="field">
+        <label for="settings-SPI200-contract_type">Contract type</label>
+        <select id="settings-SPI200-contract_type" name="contract_type"><option value="mini">MINI</option><option value="standard">STANDARD</option><option value="full">FULL</option><option value="cfd" selected>CFD</option></select>
+        <small class="field-help">Mini / standard / full futures, or CFD. Shown next to the market name. Does not change sizing — multiplier and cost do.</small>
+      </div>
+      <div class="field">
+        <label for="settings-SPI200-financing_rate_annual_pct">Overnight financing %/yr</label>
+        <input id="settings-SPI200-financing_rate_annual_pct" name="financing_rate_annual_pct" type="number" step="0.01" min="0" max="20" value="0.00">
+        <small class="field-help">CFD overnight financing rate (annualised). 0 for futures. Persisted now; P&amp;L deduction wires in a follow-up phase.</small>
+      </div>
+    </fieldset>
     <button type="submit" class="btn-primary">Save settings</button>
   </form>
   <div class="error" role="alert" aria-live="polite" hidden></div>
 </section>
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
-  <p class="eyebrow">AUD / USD SETTINGS</p>
+  <p class="eyebrow">AUD / USD [CFD] SETTINGS</p>
   <h2>Settings</h2>
   <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
@@ -1163,6 +1176,19 @@ input:focus-visible,
       <div class="field">
         <label class="checkbox-field" for="settings-AUDUSD-one_contract_floor"><input id="settings-AUDUSD-one_contract_floor" name="one_contract_floor" type="checkbox"> 1-contract floor</label>
         <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Costs</legend>
+      <div class="field">
+        <label for="settings-AUDUSD-contract_type">Contract type</label>
+        <select id="settings-AUDUSD-contract_type" name="contract_type"><option value="mini">MINI</option><option value="standard">STANDARD</option><option value="full">FULL</option><option value="cfd" selected>CFD</option></select>
+        <small class="field-help">Mini / standard / full futures, or CFD. Shown next to the market name. Does not change sizing — multiplier and cost do.</small>
+      </div>
+      <div class="field">
+        <label for="settings-AUDUSD-financing_rate_annual_pct">Overnight financing %/yr</label>
+        <input id="settings-AUDUSD-financing_rate_annual_pct" name="financing_rate_annual_pct" type="number" step="0.01" min="0" max="20" value="0.00">
+        <small class="field-help">CFD overnight financing rate (annualised). 0 for futures. Persisted now; P&amp;L deduction wires in a follow-up phase.</small>
       </div>
     </fieldset>
     <button type="submit" class="btn-primary">Save settings</button>

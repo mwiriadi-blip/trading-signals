@@ -187,14 +187,14 @@ class TestStateSchemaVersionV7:
   '''
 
   def test_state_schema_version_is_8(self) -> None:
-    '''Phase 27 #11 (Plan 27-09): STATE_SCHEMA_VERSION bumped 9->10 for
-    bare-int signal back-compat removal (Phase 26 DEBT.md R5). Test name
+    '''v11: STATE_SCHEMA_VERSION bumped 10->11 for contract_type +
+    financing_rate_annual_pct backfill on the market registry. Test name
     retained for git-history continuity; value asserts the current schema
     version.
     '''
-    assert system_params.STATE_SCHEMA_VERSION == 10, (
-      f'Phase 27 #11: STATE_SCHEMA_VERSION must be 10 '
-      f'(bare-int signal shape unification); '
+    assert system_params.STATE_SCHEMA_VERSION == 11, (
+      f'v11: STATE_SCHEMA_VERSION must be 11 '
+      f'(contract_type + financing_rate_annual_pct on markets); '
       f'got {system_params.STATE_SCHEMA_VERSION!r}'
     )
 

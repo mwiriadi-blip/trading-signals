@@ -275,9 +275,9 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 # Phase 3 constants — state persistence (STATE-01, STATE-07, D-11)
 # =========================================================================
 
-INITIAL_ACCOUNT: float = 100_000.0  # starting account balance (STATE-07, reset_state)
+INITIAL_ACCOUNT: float = 10_000.0   # starting account balance (STATE-07, reset_state); operator-default sized for retail SPI mini / AUDUSD mini lot
 MAX_WARNINGS: int = 50              # FIFO bound on state['warnings'] (D-11; Phase 27 #16 review-fix agreed-4: tightened from 100 to 50)
-STATE_SCHEMA_VERSION: int = 10      # bump on each schema change (STATE-04); Phase 14 → v3 (manual_stop on Position; D-09); Phase 22 → v4 (strategy_version on signal rows; D-04); Phase 17 → v5 (ohlc_window + indicator_scalars on signal rows; D-08); Phase 19 → v6 (paper_trades[] top-level array; D-08); Phase 20 → v7 (last_alert_state on paper_trades[] rows; D-08); v8 markets + per-market strategy_settings; Phase 27 #1 → v9 quantize money fields via Decimal (AUD cents, HALF_UP); Phase 27 #11 (Plan 27-09) → v10 promote bare-int signal rows to dict (Phase 26 DEBT.md R5 — back-compat removal).
+STATE_SCHEMA_VERSION: int = 11      # v11 adds per-market contract_type + financing_rate_annual_pct; per-market default strategy settings honoured by reset_state.
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # Phase 27 Plan 27-11 (review-fix agreed-5): second-line crash fallback.
@@ -296,6 +296,17 @@ LAST_CRASH_FILE: str = 'last_crash.json'
 # Phase 24 constants — market registry + per-market strategy settings
 # =========================================================================
 
+# contract_type is a free-form display tag rendered next to the market name
+# (e.g. "SPI 200 · MINI"). It does NOT change sizing — multiplier/cost_aud do.
+# Allowed vocabulary: 'mini', 'standard', 'full', 'cfd' (lowercase persisted,
+# uppercased in UI).
+#
+# financing_rate_annual_pct is the annualised overnight financing rate (CFD-
+# only) the operator pays to hold a position overnight. Persisted at the
+# market level, editable in Settings. P&L deduction not yet wired into the
+# sizing engine — UI persistence only for now (no open positions in production
+# at time of introduction; deferring engine integration avoids a sizing-math
+# change without a backtest).
 DEFAULT_MARKETS: dict[str, dict] = {
   'SPI200': {
     'display_name': 'SPI 200',
@@ -305,6 +316,8 @@ DEFAULT_MARKETS: dict[str, dict] = {
     'cost_aud': SPI_COST_AUD,
     'enabled': True,
     'sort_order': 10,
+    'contract_type': 'mini',
+    'financing_rate_annual_pct': 0.0,
   },
   'AUDUSD': {
     'display_name': 'AUD / USD',
@@ -314,9 +327,14 @@ DEFAULT_MARKETS: dict[str, dict] = {
     'cost_aud': AUDUSD_COST_AUD,
     'enabled': True,
     'sort_order': 20,
+    'contract_type': 'mini',
+    'financing_rate_annual_pct': 0.0,
   },
 }
 
+# Conservative original Phase 24 defaults — retained for any market that has
+# no per-market entry in DEFAULT_STRATEGY_SETTINGS_BY_MARKET (e.g. operator-
+# added markets). Per-market optima override below.
 DEFAULT_STRATEGY_SETTINGS: dict[str, float | int | bool | None] = {
   'adx_gate': ADX_GATE,
   'momentum_votes_required': 2,
@@ -328,6 +346,48 @@ DEFAULT_STRATEGY_SETTINGS: dict[str, float | int | bool | None] = {
   'contract_cap': None,
   'direction_mode': 'both',
 }
+
+# Per-market optima derived from 5y backtest (2021-05 → 2026-05) on $10k
+# starting balance. SPI200 long-only ADX20/v1 returned +207%; AUDUSD both-
+# direction ADX20/v1 returned +22.7%. Risk asymmetry (5%/0.5%) and 1-contract
+# cap+floor reflect the retail $10k account constraint where 1-lot sizing is
+# unavoidable. Markets not listed here fall back to DEFAULT_STRATEGY_SETTINGS.
+DEFAULT_STRATEGY_SETTINGS_BY_MARKET: dict[str, dict] = {
+  'SPI200': {
+    'adx_gate': 20.0,
+    'momentum_votes_required': 1,
+    'trail_mult_long': 2.5,
+    'trail_mult_short': 2.0,
+    'risk_pct_long': 0.05,
+    'risk_pct_short': 0.005,
+    'one_contract_floor': True,
+    'contract_cap': 1,
+    'direction_mode': 'long_only',
+  },
+  'AUDUSD': {
+    'adx_gate': 20.0,
+    'momentum_votes_required': 1,
+    'trail_mult_long': 2.5,
+    'trail_mult_short': 2.0,
+    'risk_pct_long': 0.05,
+    'risk_pct_short': 0.005,
+    'one_contract_floor': True,
+    'contract_cap': 1,
+    'direction_mode': 'both',
+  },
+}
+
+
+def default_settings_for_market(market_id: str) -> dict:
+  '''Per-market optimum strategy settings, falling back to the conservative
+  Phase 24 defaults for markets without a tuned entry. Returns a fresh dict;
+  callers may mutate the returned value.
+  '''
+  base = dict(DEFAULT_STRATEGY_SETTINGS)
+  override = DEFAULT_STRATEGY_SETTINGS_BY_MARKET.get(market_id)
+  if override:
+    base.update(override)
+  return base
 
 # =========================================================================
 # Palette constants — Phase 5 + Phase 6 shared (D-02 retrofit)

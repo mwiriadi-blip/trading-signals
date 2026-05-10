@@ -109,8 +109,17 @@ def render_market_strip(state: dict, active_market: str, active_function: str) -
         '<nav role="tablist" aria-label="Market" class="tabs tabs-market" id="market-tab-strip"'
         f' hx-trigger="markets-changed from:body, market-selected from:body" hx-get="/markets-strip?active_function={fn_q}" hx-swap="outerHTML">\n'
     ]
-    for market_id in markets.keys():
+    for market_id, market_meta in markets.items():
         market_esc = html.escape(market_id, quote=True)
+        # Contract type ('mini'|'standard'|'full'|'cfd'), shown uppercased after
+        # the market id. Falls back to 'CFD' for legacy / pre-v11 entries that
+        # haven't been backfilled yet (defensive — _migrate_v10_to_v11 should
+        # have populated this on load).
+        contract_type = ''
+        if isinstance(market_meta, dict):
+            contract_type = str(market_meta.get('contract_type', '') or '').strip()
+        contract_label = contract_type.upper() if contract_type else ''
+        label = f'{market_esc} · {html.escape(contract_label, quote=True)}' if contract_label else market_esc
         is_active = (market_id == active_market)
         tabindex = '0' if is_active else '-1'
         aria_current = 'page' if is_active else 'false'
@@ -123,7 +132,7 @@ def render_market_strip(state: dict, active_market: str, active_function: str) -
             f'hx-target="#market-panel" hx-swap="innerHTML" hx-push-url="true" '
             f'hx-headers=\'{{"X-Trading-Signals-Auth": "{{{{WEB_AUTH_SECRET}}}}"}}\' '
             f'data-market-id="{market_esc}">'
-            f'{market_esc}</a>\n'
+            f'{label}</a>\n'
         )
     out.append(render_add_market_chip())
     out.append('</nav>\n')

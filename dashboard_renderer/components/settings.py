@@ -11,8 +11,24 @@ def render_settings_tab(state: dict, *, active_market: str | None = None) -> str
   display_names = d._display_names(state)
   if active_market and active_market in display_names:
     display_names = {active_market: display_names[active_market]}
+  market_registry = state.get('markets', {}) if isinstance(state, dict) else {}
   for market_id, display in display_names.items():
     settings = d._strategy_settings_for(state, market_id)
+    market_entry = market_registry.get(market_id, {}) if isinstance(market_registry, dict) else {}
+    if not isinstance(market_entry, dict):
+      market_entry = {}
+    contract_type = str(market_entry.get('contract_type', 'cfd') or 'cfd').lower()
+    contract_label = contract_type.upper()
+    financing_rate = market_entry.get('financing_rate_annual_pct', 0.0)
+    try:
+      financing_rate_value = f'{float(financing_rate):.2f}'
+    except (TypeError, ValueError):
+      financing_rate_value = '0.00'
+    type_options_src = ('mini', 'standard', 'full', 'cfd')
+    type_options = ''.join(
+      f'<option value="{opt}"{" selected" if opt == contract_type else ""}>{opt.upper()}</option>'
+      for opt in type_options_src
+    )
     cap_value = '' if settings.get('contract_cap') is None else str(settings.get('contract_cap'))
     checked = ' checked' if settings.get('one_contract_floor') else ''
     direction_mode = str(settings.get('direction_mode', 'both'))
@@ -25,7 +41,7 @@ def render_settings_tab(state: dict, *, active_market: str | None = None) -> str
     sections.append(
       '<section class="open-form settings-form" '
       '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
-      f'  <p class="eyebrow">{html.escape(display, quote=True)} SETTINGS</p>\n'
+      f'  <p class="eyebrow">{html.escape(display, quote=True)} [{html.escape(contract_label, quote=True)}] SETTINGS</p>\n'
       '  <h2>Settings</h2>\n'
       '  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>\n'
       '  <form hx-patch="/markets/settings" hx-ext="json-enc" '
@@ -86,6 +102,19 @@ def render_settings_tab(state: dict, *, active_market: str | None = None) -> str
       '      <div class="field">\n'
       f'        <label class="checkbox-field" for="{pre}-one_contract_floor"><input id="{pre}-one_contract_floor" name="one_contract_floor" type="checkbox"{checked}> 1-contract floor</label>\n'
       '        <small class="field-help">Skip the trade when sizing would compute &lt; 1 contract. Default off.</small>\n'
+      '      </div>\n'
+      '    </fieldset>\n'
+      '    <fieldset>\n'
+      '      <legend>Costs</legend>\n'
+      '      <div class="field">\n'
+      f'        <label for="{pre}-contract_type">Contract type</label>\n'
+      f'        <select id="{pre}-contract_type" name="contract_type">{type_options}</select>\n'
+      '        <small class="field-help">Mini / standard / full futures, or CFD. Shown next to the market name. Does not change sizing — multiplier and cost do.</small>\n'
+      '      </div>\n'
+      '      <div class="field">\n'
+      f'        <label for="{pre}-financing_rate_annual_pct">Overnight financing %/yr</label>\n'
+      f'        <input id="{pre}-financing_rate_annual_pct" name="financing_rate_annual_pct" type="number" step="0.01" min="0" max="20" value="{financing_rate_value}">\n'
+      '        <small class="field-help">CFD overnight financing rate (annualised). 0 for futures. Persisted now; P&amp;L deduction wires in a follow-up phase.</small>\n'
       '      </div>\n'
       '    </fieldset>\n'
       '    <button type="submit" class="btn-primary">Save settings</button>\n'
