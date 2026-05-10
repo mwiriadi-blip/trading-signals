@@ -158,6 +158,18 @@ Plus accepted tech debt:
 - 12 pre-existing test failures (test_nginx_signals_conf x9, test_notifier x2, test_setup_https_doc x1) carried from v1.1
 - 5 ad-hoc post-ship polish commits 2026-05-08..2026-05-10 (scheduler tz fix, signal status ladder, v1.1 backtested per-market defaults, trace vote_params, market tab strip refresh) accepted into v1.2 but never phase-tracked. Decide in v1.3 whether to retroactively wrap as v1.2.1 patch phase.
 
+### v1.2.1 — Retroactive Patch Wrap (2026-05-10)
+
+Five ad-hoc post-ship polish commits (2026-05-08..05-10) formalised as a single retroactive patch phase per Phase 29 D-11/D-13. Behaviour-locking regression tests added in Phase 29 plan 29-03 where the commit changed observable behaviour; UX-only and existing-fixture-covered commits get pointer rows.
+
+| Commit | Behaviour | Test | Note |
+|--------|-----------|------|------|
+| `05a4c0c` | Daily run fires at 08:00 Sydney (AEST/AEDT, DST-aware) | `tests/test_scheduler.py::TestSchedulerTimezone` | DST transition case included |
+| `da31412` | Signal Status card renders trigger ladder + trailing-stop line | `tests/test_signals_status_ladder.py` | New regression suite |
+| `b7ed1f2` | v11 backtested per-market defaults, $10K baseline, contract+financing UI | `tests/test_backtest_*` (existing fixture suite) | Pointer only — covered by deterministic backtest fixtures |
+| `587b6f0` + `bb780af` | Trace panel renders engine-resolved vote params; backfill at render time for stale state rows | `tests/test_trace_vote_params.py` | Locality discipline per project LEARNING 2026-05-10 |
+| `878199c` | Market tab strip refresh on tab click (active underline tracks selection) | none — UX | Visual-only fix, no behaviour contract |
+
 ### Audit
 
 See [`milestones/v1.2-MILESTONE-AUDIT.md`](milestones/v1.2-MILESTONE-AUDIT.md) for the re-audit (status: `tech_debt` — no requirement gaps; one procedural gap on Phase 26 closed by `ad7f2a1`).
