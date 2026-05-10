@@ -26,10 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 29.5 (yfinance Regression Fix) — COMPLETE (1/1 plan)
-Plan: 1 of 1 complete
-Status: Phase 29.5 complete. UAT-23-1 closed. settings= wired into backtest CLI. SPI200 67 trades, AUDUSD 40 trades. Combined 79.9% return (FAIL threshold — strategy performance, not code defect). Next: Phase 30 or operator-directed.
-Resume file: .planning/phases/30-file-size-pre-split/30-CONTEXT.md
+Phase: 30 (File-Size Pre-Split) — READY TO EXECUTE (7/7 plans, 0 complete)
+Plan: 0 of 7 complete
+Status: Phase 30 planned. 7 plans in 2 waves. Wave 1 = [30-01..30-06] parallel (6 plans: OPS-03 + 5 file splits). Wave 2 = [30-07] integration gate. Next: /gsd-execute-phase 30.
+Resume file: .planning/phases/30-file-size-pre-split/30-01-PLAN.md
 
 ### Resume instructions for cloud Claude / fresh clone
 

@@ -135,7 +135,15 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
   1. Every daughter file produced by splitting `web/routes/trades.py` (746), `web/routes/dashboard.py` (644), `web/routes/totp.py` (614), `web/routes/login.py` (608), and `web/routes/paper_trades.py` (493) is ≤500 LOC.
   2. Full route + template + test parity is preserved — every existing route URL resolves to the same handler signature; full test suite is green; rendered HTML is byte-identical for the dashboard route on a fixture state.
   3. AST blocklist test (`tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent`) is extended so `signal_engine`, `sizing_engine`, `system_params`, and `backtest/` cannot import any of `news_fetcher`, `news_filter`, `auth_store` extensions, `web/*`, or any other v1.3-introduced I/O module.
-**Plans:** TBD
+**Plans:** 7 plans
+**Plan list:**
+- [ ] 30-01-PLAN.md — OPS-03: Extend FORBIDDEN_MODULES with v1.3 I/O module names (web, news_fetcher, news_filter, auth_store)
+- [ ] 30-02-PLAN.md — OPS-01: Split web/routes/trades.py (746 LOC) into trades/ package (__init__, _models, _renderers)
+- [ ] 30-03-PLAN.md — OPS-01: Split web/routes/dashboard.py (650 LOC) into dashboard/ package (__init__, _renderers — closures stay in register())
+- [ ] 30-04-PLAN.md — OPS-01: Split web/routes/totp.py (614 LOC) into totp/ package (__init__, _renderers)
+- [ ] 30-05-PLAN.md — OPS-01: Split web/routes/login.py (608 LOC) into login/ package (__init__, _renderers — re-exports _is_safe_next for sibling totp)
+- [ ] 30-06-PLAN.md — OPS-01: Split web/routes/paper_trades.py (493 LOC) into paper_trades/ package (__init__, _models, _renderers — re-exports _D09_KEYS, _MULTIPLIER, _COST_AUD)
+- [ ] 30-07-PLAN.md — Final integration gate (depends on 30-01..30-06): full suite + LOC audit + AST guard + ruff
 **Plan-time verification:** none (mechanical splits + AST blocklist extension).
 **UI hint:** yes
 
@@ -347,7 +355,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 27. quality sweep | v1.2 | 16/16 | Complete | 2026-05-10 |
 | 28. v1.2 UAT closure | v1.3 | 5/6 | In Progress|  |
 | 29. v1.2.1 patch wrap + validation sweep | v1.3 | 10/14 | In Progress|  |
-| 30. file-size pre-split | v1.3 | 0/0 | Not started | - |
+| 30. file-size pre-split | v1.3 | 0/7 | Not started | - |
 | 31. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 32. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
 | 33. cookie + Depends + sub-router admin gate | v1.3 | 0/0 | Not started | - |
