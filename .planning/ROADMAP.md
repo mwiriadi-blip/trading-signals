@@ -78,7 +78,14 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
   2. Operator confirms iOS Safari tap-to-toggle on the trace panel works and the cookie persists across one browser reload.
   3. Operator runs `python -m backtest --years 5` against live yfinance and confirms the cumulative-return >100% gate produces a clean rc=0; operator opens `/backtest` in browser and visually confirms the report renders with no template-leak artefacts.
   4. Operator runs the cold-start smoke + multi-tab market-scoping walkthrough on the production droplet; all 6 UAT-26-N scenarios are signed `verified` in a single `VERIFICATION.md`.
-**Plans:** TBD
+**Plans:** 6 plans
+**Plan list:**
+- [ ] 28-01-PLAN.md — Persisted UAT substrate: pyproject uat marker + pytest-playwright dev dep + tests/uat/ conftest
+- [ ] 28-02-PLAN.md — Phase 17 UAT-1 ATR(14) hand-recalc Playwright spec
+- [ ] 28-03-PLAN.md — Phase 17 UAT-3 cookie-persistence Playwright spec
+- [ ] 28-04-PLAN.md — Phase 23 UAT-2 /backtest visual-smoke Playwright spec
+- [ ] 28-05-PLAN.md — Phase 26 UAT-1..6 cold-start + multi-tab Playwright specs
+- [ ] 28-06-PLAN.md — Live evidence pass + 28-VERIFICATION.md (autonomous=false; iOS Safari operator checkpoint)
 **Plan-time verification:** none (mechanical UAT closure).
 
 ### Phase 29: v1.2.1 Retroactive Patch Wrap + Validation Sweep
