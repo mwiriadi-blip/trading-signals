@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: executing
-last_updated: "2026-05-10T17:41:00Z"
-last_activity: 2026-05-10 -- Phase 29.5 complete (1/1 plan executed); UAT-23-1 closed — settings= wired into backtest CLI, SPI200 67 trades, AUDUSD 40 trades
+status: completed
+last_updated: "2026-05-10T10:06:52.824Z"
 progress:
-  total_phases: 11
-  completed_phases: 1
-  total_plans: 20
-  completed_plans: 7
-  percent: 35
+  total_phases: 12
+  completed_phases: 3
+  total_plans: 21
+  completed_plans: 21
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -30,7 +29,7 @@ progress:
 Phase: 29.5 (yfinance Regression Fix) — COMPLETE (1/1 plan)
 Plan: 1 of 1 complete
 Status: Phase 29.5 complete. UAT-23-1 closed. settings= wired into backtest CLI. SPI200 67 trades, AUDUSD 40 trades. Combined 79.9% return (FAIL threshold — strategy performance, not code defect). Next: Phase 30 or operator-directed.
-Resume file: none (phase complete)
+Resume file: .planning/phases/30-file-size-pre-split/30-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
