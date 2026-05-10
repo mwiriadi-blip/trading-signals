@@ -157,7 +157,7 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-05-10 — v1.3 milestone started (Multi-Tenant Friends & Family).*
+*Last updated: 2026-05-10 — Phase 29.5 complete (yfinance Regression Fix). UAT-23-1 closed: settings= wired into backtest CLI, SPI200 67 trades, AUDUSD 40 trades.*
 
 <details>
 <summary>Historical: v1.1 Progress (archived)</summary>
