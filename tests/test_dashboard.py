@@ -2550,8 +2550,8 @@ class TestTracePanels:
     assert 'Path=/; SameSite=Lax' in rendered, (
       'D-12: cookie attributes Path=/ + SameSite=Lax required'
     )
-    assert 'Max-Age=7776000' in rendered, (
-      'D-12: 90-day cookie Max-Age=7776000 required'
+    assert 'Max-Age=31536000' in rendered, (
+      'Phase 29 Plan 12: 1-year cookie Max-Age=31536000 required (T-29-12-02 — survives iOS Safari tab-discard-reload)'
     )
     assert 'Secure' in rendered, (
       'RESEARCH A4: Secure attribute required on cookie write for HTTPS droplet'

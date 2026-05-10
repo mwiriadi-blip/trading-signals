@@ -254,10 +254,30 @@ _VALID_TRACE_INSTRUMENT_KEYS: frozenset = frozenset({'SPI200', 'AUDUSD'})
 # web/routes/dashboard.py substitutes them per-request with ' open' or ''
 # based on the tsi_trace_open cookie (allowlist-filtered).
 # Note: attribute-level vs Phase 16.1's block-level placeholders — new design.
-_TRACE_OPEN_PLACEHOLDER: dict[str, str] = {
-  'SPI200': '{{TRACE_OPEN_SPI200}}',
-  'AUDUSD': '{{TRACE_OPEN_AUDUSD}}',
-}
+#
+# Phase 29 Plan 12: replaced static 2-entry dict with a defaultdict-style
+# callable so ALL market IDs (including Phase 25+ dynamically-added markets)
+# emit the correct {{TRACE_OPEN_<KEY>}} placeholder. The static dict form is
+# kept as a legacy fallback for any out-of-tree callers that accessed the dict
+# directly by key; _TRACE_OPEN_PLACEHOLDER.get(key, '') is the canonical call
+# site — callers that do .get() still work; new markets now produce a
+# placeholder instead of an empty string.
+class _TraceOpenPlaceholderMap:
+  '''Returns {{TRACE_OPEN_<KEY>}} for any valid instrument key; '' for invalid.
+
+  Mimics dict .get(key, default) so existing call sites are unchanged.
+  Invalid key = does not satisfy ^[A-Z0-9_]{2,20}$ (matches _MARKET_ID_RE).
+  '''
+  import re as _re
+  _RE = _re.compile(r'^[A-Z0-9_]{2,20}$')
+
+  def get(self, key: str, default: str = '') -> str:  # noqa: ANN001
+    if not self._RE.fullmatch(key or ''):
+      return default
+    return f'{{{{TRACE_OPEN_{key}}}}}'
+
+
+_TRACE_OPEN_PLACEHOLDER = _TraceOpenPlaceholderMap()
 
 # D-03 + D-12: _TRACE_TOGGLE_JS re-exported from assets.py (Phase 25).
 from dashboard_renderer.assets import _TRACE_TOGGLE_JS  # noqa: F811

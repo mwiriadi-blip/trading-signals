@@ -176,15 +176,21 @@ def register(app: FastAPI) -> None:
     '''Read tsi_trace_open cookie and return allowlisted instrument keys.
 
     The cookie value is a comma-separated list of instrument keys
-    (e.g. "SPI200,AUDUSD"). Only keys in _VALID_TRACE_INSTRUMENT_KEYS are
-    returned — all other values are discarded. Returns empty frozenset when
-    cookie absent or contains no valid keys.
+    (e.g. "SPI200,AUDUSD"). Only keys matching the canonical market-ID regex
+    ^[A-Z0-9_]{2,20}$ (sourced from _MARKET_ID_RE) are accepted — all other
+    values are discarded silently. Returns empty frozenset when cookie absent
+    or contains no valid keys.
+
+    Phase 29 Plan 12: widened from a static frozenset{'SPI200','AUDUSD'} to
+    a regex-validated format allowlist so dynamically-added markets (Phase 25+
+    multi-market API) are also covered. Security is preserved: _trace_open_repl
+    can only emit b' open' or b'' — no injection surface regardless of market ID.
     '''
     raw = request.cookies.get('tsi_trace_open', '')
     if not raw:
       return frozenset()
     parts = {p.strip() for p in raw.split(',') if p.strip()}
-    return frozenset(parts & _VALID_TRACE_INSTRUMENT_KEYS)
+    return frozenset(p for p in parts if _MARKET_ID_RE.fullmatch(p))
 
   @app.get('/')
   def get_dashboard(request: Request, fragment: str | None = None):

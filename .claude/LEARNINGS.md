@@ -26,6 +26,14 @@ Keep tight. ~15 lines max per entry; split if larger.
 
 <!-- Newest at the top. -->
 
+### Static trade-open allowlist breaks multi-market trace panels — use regex validation
+
+**Symptom:** iOS Safari reload collapses the trace panel even though desktop Chrome preserves it. Any market added after Phase 17 (dynamic via Phase 25+ multi-market API) always renders closed regardless of cookie.
+**Root cause:** Two hardcoded static structures gated the server-side `<details open>` path: (1) `_VALID_TRACE_INSTRUMENT_KEYS = frozenset({'SPI200','AUDUSD'})` in `web/routes/dashboard.py::_resolve_trace_open` discarded cookie values for any market not in the 2-entry set; (2) `_TRACE_OPEN_PLACEHOLDER` was a static 2-entry dict — `.get(key, '')` returned `''` for any new market, so no placeholder was emitted and `_substitute()` had nothing to match. Both were frozen at Phase 17 and never extended for Phase 25 dynamic markets.
+**Fix:** (1) `_resolve_trace_open` now validates cookie values against `_MARKET_ID_RE.fullmatch` (format-based allowlist, same regex used by write path) instead of the static frozenset. (2) `_TRACE_OPEN_PLACEHOLDER` replaced with `_TraceOpenPlaceholderMap` — a `.get(key, '')` shim that generates `{{TRACE_OPEN_<KEY>}}` for any market ID matching the regex. (3) `Max-Age` on cookie JS write bumped from 7776000 (90 days) to 31536000 (1 year) per T-29-12-02.
+**Prevention:** `grep -n '_VALID_TRACE_INSTRUMENT_KEYS\|_TRACE_OPEN_PLACEHOLDER' web/routes/dashboard.py dashboard_legacy/render_helpers.py` — any literal frozenset containing exactly SPI200/AUDUSD is a Phase-17 freeze artifact. When adding a new market-scoped render path, run `pytest -k trace_details` to confirm server-side open/close works end-to-end.
+**Date:** 2026-05-10
+
 ### Trace panel must read engine-resolved params, not re-derive from defaults
 
 **Symptom:** SPI 200 dashboard card showed "ADX gate FAIL — ADX 18.66 >= 25" and "Vote: LONG / FINAL: FLAT" while the per-market settings JSON had `adx_gate: 20.0`. Engine actually traded with 20.0 (signal_engine.get_signal reads `settings.get('adx_gate', ADX_GATE)`), but the trace panel hardcoded `ADX_GATE_THRESHOLD = 25.0` per a Phase 17 D-10 "literal — NOT imported from system_params" rule. Same drift on the prelim Vote line: it counted `v > 0` instead of `v > MOM_THRESHOLD`, so a Mom1 of 0.0074 was treated as a positive vote in the trace but ignored by the engine. Net effect: the trace lied about what the engine decided, and the lie scaled with every per-market override.

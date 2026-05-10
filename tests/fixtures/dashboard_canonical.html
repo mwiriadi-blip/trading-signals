@@ -1,4 +1,4 @@
-<!-- captured at HEAD 227a6df36d0b0ed8361d913c21943a057093dc86 after triggers/stop-line -->
+<!-- captured at HEAD af93de17d7406526b9af0279e77d5b518ff1f437 after 29-12 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('details[data-instrument][open]')
       ).map(function(d) { return d.getAttribute('data-instrument'); }).join(',');
       document.cookie = 'tsi_trace_open=' + openKeys
-        + '; Path=/; SameSite=Lax; Max-Age=7776000; Secure';
+        + '; Path=/; SameSite=Lax; Max-Age=31536000; Secure';
     });
   });
   document.querySelectorAll('.trace-indicator-name').forEach(function(cell) {
