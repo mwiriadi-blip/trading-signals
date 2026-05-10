@@ -44,3 +44,26 @@ def test_cold_start_root_renders_dashboard(page, base_url):
   assert not console_errors, (
     f'Console errors on cold start: {console_errors[:3]}'
   )
+
+
+@pytest.mark.uat
+def test_no_pageerror_on_coldstart(page, base_url):
+  '''Regression for UAT-26-1 (Phase 28 FAIL): equityChart inline JS brace bug
+  caused "missing ) after argument list" on every cold-start. Fixed in Phase 29
+  plan 29-02 (section_renderers.py line 219 brace rebalance). This test locks
+  that fix by asserting zero pageerror events on the per-market dashboard route
+  where the equity chart renders.
+  '''
+  errors: list[str] = []
+  page.on('pageerror', errors.append)
+
+  response = page.goto(base_url + '/markets/SPI200/dashboard')
+  assert response is not None, 'GET /markets/SPI200/dashboard produced no response'
+  assert response.ok, (
+    f'GET /markets/SPI200/dashboard failed: status={response.status}'
+  )
+
+  # Wait for networkidle so any deferred Chart.js init has a chance to fire.
+  page.wait_for_load_state('networkidle', timeout=15_000)
+
+  assert errors == [], f'JS pageerror(s): {[str(e) for e in errors]}'
