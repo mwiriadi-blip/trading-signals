@@ -1,5 +1,5 @@
 ---
-status: partial
+status: complete
 phase: 26-phase-25-followup-multi-tab-scoping-fixes
 source:
   - 26-01-SUMMARY.md
@@ -11,7 +11,14 @@ source:
   - 26-07-SUMMARY.md
   - 26-08-SUMMARY.md
 started: 2026-05-07
-updated: 2026-05-07
+updated: 2026-05-10
+finalized: 2026-05-10
+finalization_note: |
+  Status flipped partial → complete during /gsd-verify-work 26 retroactive close.
+  All 10 tests resolved (2 auto-passed, 8 skipped-with-reason). Per workflow rules
+  (verify-work.md complete_session): pending=0, blocked=0, skipped_no_reason=0
+  → status: complete. UAT outcome was definitive on 2026-05-07; only the
+  frontmatter status was stale.
 ---
 
 ## Current Test
