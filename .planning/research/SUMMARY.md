@@ -1,224 +1,236 @@
 # Project Research Summary
 
-**Project:** Trading Signals — SPI 200 & AUD/USD Mechanical System
-**Domain:** Python mechanical trading signal generator (single-operator, daily-close, signal-only, email-delivered)
-**Researched:** 2026-04-20
-**Confidence:** HIGH on stack/features/architecture; MEDIUM-HIGH on pitfalls (some risk items regime-dependent)
+**Project:** trading-signals — v1.3 Multi-Tenant Friends & Family
+**Domain:** Multi-tenant retrofit of an existing single-operator FastAPI + HTMX + JSON-state trading-signal app (Python 3.11, yfinance, Resend, no DB, no SPA)
+**Researched:** 2026-05-10
+**Confidence:** HIGH on stack/architecture/pitfalls; MEDIUM on yfinance news schema (library churn) and on the per-user state-layout decision (two credible options — see Gaps).
+
+This SUMMARY is the **synthesis** of four parallel research files. Each detail-level claim lives in:
+
+- [STACK.md](./STACK.md) — zero-new-runtime-deps thesis; Shepherd.js + Microtip CDN-only frontend; Resend tier math.
+- [FEATURES.md](./FEATURES.md) — table-stakes vs differentiators vs anti-features for v1.3.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — component-level integration shape; AST-hex preservation; daily-cycle fan-out batching.
+- [PITFALLS.md](./PITFALLS.md) — 16 new pitfalls (#21–#36) on top of the v1.0-archive baseline; "Looks Done But Isn't" checklist.
+
+---
 
 ## Executive Summary
 
-This is a narrow-on-purpose single-operator tool: one mechanical system, two instruments (`^AXJO`, `AUDUSD=X`), one daily cadence, one email per weekday morning. The SPEC.md is already thorough and the stack is essentially pinned — `yfinance + pandas + numpy + requests + schedule + python-dotenv + pytz` plus Resend for email and Chart.js (CDN) for a static dashboard. Research agreed the spec's stack is correct with three opinionated adjustments: **hand-roll ATR(14)/ADX(20)/+DI/-DI in ~60 lines of NumPy** (do NOT add `pandas-ta` or TA-Lib), **use `requests` for Resend** (skip the Python SDK), and **pin `yfinance>=0.2.65`** to dodge the mid-2025 rate-limit regressions.
+v1.3 is a **multi-tenant retrofit**, not a green-field. The single-operator file-state app already runs in production at `https://signals.mwiriadi.me` with 1880+ tests green; v1.3 layers invite-only F&F access, per-user state isolation, per-user 08:00 Sydney email fan-out, yfinance news context, and a guided UI on top — without breaking the v1.0 hex-lite AST guard, the atomic-write contract, or the determinism contract that says signals are computed once per market per day. **Zero new runtime Python dependencies; two CDN-only frontend additions (Shepherd.js, Microtip), both single-file and SRI-pinnable.** The hard constraints (no DB, no SPA, signal-only, file-based persistence) survive untouched.
 
-Architecture is hexagonal-lite at 5-file scale: pure functions in `signal_engine.py`, I/O adapters in `state_manager.py` / `notifier.py` / `dashboard.py`, and `main.py` as the thin orchestrator. The canonical workflow is a single `run_daily_check()` function with named steps that can be read top-to-bottom — no pipeline abstraction, no framework. State lives in a single `state.json` written atomically (tempfile + `os.replace`) with a `schema_version` field from day one. The signal engine is the only place the business math exists, it takes plain args and returns plain values, and every indicator and decision is driven by fixture-based golden-file tests — no live yfinance in CI.
+The recommended approach has three structural moves. **First**, schema migration that buckets every per-user-shaped key (positions, paper_trades, equity_history, alerts, journal, ui_prefs) under `state['users'][user_id]` while keeping shared/computed keys (signals, markets, strategy_settings) at the top level — preserving "compute once, distribute many" determinism. **Second**, FastAPI `Depends(current_user)` injected at the router level (NOT per-route) so every authenticated route receives a user identity declaratively, and a sibling `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` so a future admin route cannot forget the gate. **Third**, daily-cycle fan-out batches per-user alert updates into a single terminal `mutate_state` call so the W3 invariant (exactly two saves per cycle) survives, and per-user crash boundaries ensure one bad user never aborts the cycle for the rest.
 
-The dominant risk category is **silently wrong signals**: yfinance returning empty or stale frames with no exception, Wilder smoothing implemented as SMA instead of `ewm(alpha=1/period, adjust=False)`, ADX warm-up garbage, LONG→FLAT not closing positions, LONG→SHORT flips only half-executing in one run, `max(1, int(...))` silently breaching the 1% risk budget on small accounts, and `--test` runs corrupting production state. **Deployment flip:** the spec lists Replit as primary and GitHub Actions as fallback — research recommends inverting this. Replit's own docs warn against relying on filesystem persistence on published apps, and the `schedule` loop dies under Autoscale. **GitHub Actions with a committed `state.json`, `permissions: contents: write`, and a `concurrency:` block is the safer, free, stateless-by-design primary.** Replit becomes the interactive dev environment, or the "paid Reserved VM + Object Storage" option for operators who want a persistent dashboard URL.
+The dominant risks are **cross-tenant data leak** (IDOR via bolt-on `user_id`, admin-list templates leaking trade content, crash-email leaking the wrong user's state, logs dumping per-user state) and **partial fan-out failure** (one user's broken state silently aborts the cycle for users 14..N while users 1..13 see normal output and admin doesn't notice). Both are systemic-gap risks, not bug risks — they're prevented architecturally (centralized `load_X_for_user()` loader; sub-router admin gate; `PublicUserSummary` model; per-user crash boundary with summary email to admin) rather than caught case-by-case. The privacy boundary is elevated to a **milestone-wide quality gate** via a dedicated `TestTenantIsolation` test class that every per-user phase must pass before merge.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-Keep the spec's seven production dependencies — no additions. Hand-roll the technical indicators rather than pulling in a TA library whose canonical upstream (`pandas-ta`) is flagged for archival by July 2026, and whose C-extension alternative (TA-Lib) adds Replit build friction for three indicators. `requests` handles Resend in ~10 lines (Resend's Python SDK is a thin wrapper; matches Marc's Carbon Bookkeeping pattern). Chart.js goes in via the **UMD build pinned to an exact version** — the ESM build in a classic `<script>` tag is a known blank-chart footgun.
+**Zero new runtime deps; two CDN-only frontend additions.** Every new capability rides existing libraries (`fastapi`, `secrets`, `pathlib`, `json`, `re`, `yfinance`, `pytz`, `httpx`/`requests`) plus pure-CSS Microtip and battle-tested Shepherd.js for the tour. **Schema bumps from the actual codebase truth** — `STATE_SCHEMA_VERSION = 11` per `system_params.py` (NOT v9 as PROJECT.md and Phase 27 docs say) — to v12 with the multi-tenant restructure. **This is a plan-time verification item:** Stack research assumed v9→v10; Architecture research caught v11 in the codebase; the roadmap must use the codebase truth.
 
-**Core technologies:**
-- **Python 3.11** — Replit + `actions/setup-python@v5` default; stable for TA libs that transitively matter.
-- **pandas 2.2.x + numpy 1.26/2.x** — DataFrame math, rolling windows; pandas 2.2 supports both NumPy majors.
-- **yfinance >=0.2.65, <0.3** — only free zero-auth source that covers `^AXJO` + `AUDUSD=X`. Pre-0.2.65 versions had 2025 rate-limit/session regressions.
-- **requests >=2.32** — Resend HTTPS POST; already a yfinance transitive.
-- **schedule >=1.2.2** — in-process daily tick for Replit path; GHA uses cron instead (no Python scheduler).
-- **python-dotenv >=1.0.1** — local `.env` loading only (Replit Secrets / GHA secrets inject directly).
-- **pytz >=2024.1** — `Australia/Perth` (UTC+8, no DST); spec-mandated, interchangeable with stdlib `zoneinfo`.
-- **Chart.js 4.4.6 UMD (CDN, pinned)** — static dashboard equity curve.
-- **pytest + pytest-freezer** — dev-only; fixture-driven indicator tests, frozen-clock scheduler tests.
+**Core technologies (deltas only):**
 
-**Adjustments to SPEC:**
-- Pin yfinance to `>=0.2.65,<0.3` (tighter than spec's `>=0.2.40`).
-- Pin Chart.js to an exact version (`4.4.6`) with explicit UMD path; no `@latest`.
-- Treat GitHub Actions as primary deploy path (not fallback).
+- **`secrets.token_urlsafe(32)`** — invite-token entropy (256 bits); store sha256 hash, never the raw token; verify via `hmac.compare_digest`.
+- **`fastapi.Depends(current_user)` + `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])`** — declarative auth/RBAC at the routing layer; one chokepoint; sub-router pattern means a future admin route cannot forget the gate.
+- **`fcntl.flock`** (stdlib) — per-user advisory lock files to serialize HTMX writes against the daily fan-out.
+- **`re` + hand-curated keyword list** — critical-event news classifier with word-boundary regex, multi-keyword threshold, and a dampener allowlist (`first-rate`, `second-rate`). **`yfinance.Ticker.news` has NO native importance/severity field** — confirmed across Stack/Features/Pitfalls research; keyword regex is mandatory, not optional.
+- **Shepherd.js v14.5.1** (CDN, UMD, SRI-pinned) — first-run tour. Verify license at install time (was AGPL through some 2024 versions); MIT path via Driver.js if license-blocked.
+- **Microtip 0.2.2** (CDN, pure CSS) — inline tooltips. Survives every HTMX swap with no JS rebind.
+- **Resend HTTPS API (existing)** — same code path; per-user fan-out throttled to documented rate-limit ÷ 2.
+
+**Mandatory stdlib-only mitigations (no new deps):**
+- `secrets.token_urlsafe(32)` + sha256 storage for invite tokens
+- `fcntl.flock` for per-user write serialization
+- `email.utils.formataddr` for Unicode display names
+- `Referrer-Policy: no-referrer` header on signup pages
+- `List-Unsubscribe` + `List-Unsubscribe-Post` headers (RFC 8058) on per-user emails
+- Jinja2 default `autoescape=True` on news rendering (NEVER `|safe` on third-party headlines)
 
 ### Expected Features
 
-Feature scope is already fully specified in SPEC.md — 13 active requirements all mapping to P1. Research added 3 small-but-essential items and identified 4 anti-features to hold the line on.
+Detail in FEATURES.md. The v1.3 scope is **deliberately narrow** — invite-only F&F (≤dozens of users), shared signal compute, per-user state isolation. Anything that turns it into a SaaS (public signup, billing, leaderboards, real-time chat) is an explicit anti-feature.
 
-**Must have (table stakes — ship in v1):**
-- Accurate daily signal (ATR/ADX Wilder, 2-of-3 momentum vote + ADX≥25 gate, FLAT→close semantics)
-- Position sizing with vol-targeting (clip [0.3, 2.0]) and pyramiding (+1×/+2× ATR, max 3 contracts)
-- Exit rules — signal reversal, ADX<20 dropout, trailing stop (3× LONG / 2× SHORT ATR from peak)
-- `state.json` persistence — account, positions, signals, trade_log, equity_history, last_run
-- Daily HTML email via Resend with ACTION REQUIRED block on signal change, mobile-responsive dark theme
-- Weekday heartbeat email (unchanged-signal "no action" email every run so silence = broken app)
-- Dashboard HTML with equity curve, positions, last 20 trades, key stats
-- Scheduler: weekday 08:00 AWST (= 00:00 UTC cron `0 0 * * 1-5`)
-- CLI: `--test`, `--reset`, `--force-email` with structural read-only guarantees
-- Graceful error handling (never crash silently; surface errors in next email)
-- **[ADD] `schema_version` field + atomic writes (tempfile + `os.replace`)** — cheap insurance against crash-mid-write data loss
-- **[ADD] Stale-run banner when `last_run` > 2 days old** — operator's only signal that the scheduler died
-- **[ADD] Weekday gate inside `run_daily_check`** even when using `schedule` — Always-On restarts can land on weekends
+**Must have (table stakes):**
 
-**Should have (v1.x polish after 4 weeks stable):**
-- Timestamped state backups + `--restore` flag to pick one
-- `--dry-run` flag (compute + print, no write, no email)
-- Signal history panel and per-instrument ADX/Mom chart in dashboard
-- CSV trade-log export (`--export-trades`) for tax time
-- Slack webhook as secondary channel for action-required days
+- Multi-tenant `state.json` refactor with admin namespace preserved.
+- Invite token plumbing + admin invite form + email-delivered acceptance link + TOTP enrol.
+- Admin user-list with **disable** (reversible); terminal **delete** deferred to v1.3.x.
+- Privacy boundary: F&F never see admin or each other; admin sees user-list metadata only. Enforced by `PublicUserSummary` Pydantic model + `RedactStateFilter` on logs.
+- Per-user paper ledger / equity / alerts / journal / ui_prefs / trusted-device cookie pool.
+- Shared signal compute (one yfinance fetch + one signal calc per market per day).
+- Per-user 08:00 Sydney email with per-user crash boundary + admin summary email on partial failure.
+- Per-user email enable/disable + pause-until.
+- News panel per market (top 5 headlines, dedup'd, daily cache TTL) + critical-event keyword classifier with explicit "heuristic" banner copy.
+- AST forbidden-import enforces `signal_engine` cannot import `news_*`.
+- First-run 3-step tour (server-side per-user state, NOT localStorage) + skip + replay-from-help.
+- Inline tooltips, mobile-safe, WAI-ARIA `role="tooltip"`.
+- **Phase 28 v1.2 UAT closure** + **v1.2.1 retroactive patch wrap** + **`.planning/backtests` path bug fix**.
 
-**Defer (v2+ — only with concrete trigger):**
-- More instruments (each needs its own backtest + contract-spec block)
-- Weekly-cadence mode switch (if daily results ever diverge from backtest)
-- Richer dashboard charts
+**Should have (differentiators — ship if cheap):**
+- Critical-event email subject prefix (`[!news]`).
+- Tour Step 1 explicitly highlights v1.2 trace panel.
+- Admin user-list shows last-login + last-paper-trade timestamps.
+- "View on Yahoo Finance" link per news headline with `rel="noopener noreferrer"`.
 
-**Anti-features (resist permanently):**
-- Live broker execution / order submission (hard constraint)
-- Intraday / tick-level signals (different product)
-- Multi-user / auth / SPA dashboard
-- Database (SQLite/Postgres) — state.json fits for ~40 years
-- News/sentiment/auto-tuning — breaks determinism and the backtested edge
+**Defer (v1.4+):**
+- Per-user timezone, Resend webhook open-rate, web push, bulk invite CSV, admin terminal delete.
+
+**Anti-features (never):**
+Public signup, real-time chat, live trading, news-driven signal influence, billing, third-party data brokering, cross-user leaderboard, per-user signal customization, in-dashboard charting beyond equity curve.
 
 ### Architecture Approach
 
-Hexagonal-lite at 5-file scale: pure functions separated from I/O, orchestrated by a thin `main.py`. All business logic lives in `signal_engine.py` as pure functions over `(df, args)` — the only I/O leak is `fetch_data` (kept here for DataFrame-contract cohesion). State is a plain dict throughout (JSON-serialisable trivially, no custom class). A single `run_daily_check()` function in `main.py` expresses the workflow as 12 named sequential steps — no pipeline abstraction, no middleware, no callbacks. Entry paths differ by deployment (Replit sits in `schedule` loop; GHA passes `--once` and exits) but both call the same `run_daily_check()`. Tests drive the pure core with committed OHLCV fixtures and golden indicator values — no live yfinance in CI.
+Detail in ARCHITECTURE.md. The hex-lite layering is preserved — pure-math modules are AST-guarded against I/O imports; v1.3 adds peers, never breaks the hex.
 
-**Major components:**
-1. **`main.py`** — CLI parsing, dotenv, scheduler-vs-one-shot dispatch, orchestration, top-level error boundary. Owns time (passes `as_of_date` down). No math, no Resend inline, no state parsing.
-2. **`signal_engine.py`** — Pure indicator math (ATR/ADX/Mom/RVol), signal vote, sizing, stop/pyramid math, unrealised P&L, plus the one `fetch_data` yfinance call. Deterministic, clock-free, stateless.
-3. **`state_manager.py`** — Load/save `state.json` with atomic write, corruption recovery (backup + reinit), schema versioning & migrations, helpers (`record_trade`, `update_equity_history`, `reset_state`). No signal logic, no network.
-4. **`notifier.py`** — Build subject + HTML body (inline CSS, mobile-safe), POST to Resend, degrade gracefully when `RESEND_API_KEY` missing. Writes `last_email.html` in test mode.
-5. **`dashboard.py`** — Render `dashboard.html` from state + today's indicator snapshot. Write-only; never mutates state.
-6. **`state.json`** — Single source of truth. Written atomically. Gitignored locally; committed by GHA after each run for durable state.
-7. **`.github/workflows/daily.yml`** — Cron `0 0 * * 1-5` (weekday 00:00 UTC = 08:00 AWST), `setup-python@v5`, `stefanzweifel/git-auto-commit-action@v5` for `state.json` commit-back, `permissions: contents: write`, `concurrency: trading-signals`.
+**Major components (v1.3 deltas):**
 
-**Key separation rule:** every function in `signal_engine.py` takes plain arguments and returns plain values. `signal_engine ↔ state_manager` have **no direct link** — all interaction goes through `main.py`. This keeps tests untangled.
+1. **`state_manager.py`** — gains `mutate_user_state(user_id, mutator)` thin wrapper; `load_user_view(user_id)`; `iter_user_ids()`. New migration step `_migrate_v11_to_v12`.
+2. **`auth_store.py`** — gains `users[]` and `pending_invites[]` arrays alongside `trusted_devices[]`. **Co-located on purpose** — adding a user and revoking their devices on delete are one transaction.
+3. **`web/dependencies.py`** (NEW) — `Depends(current_user_id)` and `Depends(require_admin)` factories.
+4. **`web/middleware/auth.py`** — cookie payload extends to `{"uid": "..."}`; sets `request.state.user_id`.
+5. **`web/routes/admin/`** (NEW package) — admin sub-router with the gate baked in at mount time.
+6. **`per_user_fanout.py`** (NEW top-level orchestrator seam) — fan-out lives outside `daily_run.py` because `daily_run.py` is already at 530 LOC. Builds an in-memory `updates` dict and applies all per-user alert updates in a SINGLE terminal `mutate_state` call so the W3 invariant survives.
+7. **`news_fetcher.py`** (NEW I/O peer) + **`news_filter.py`** (NEW pure module, joins AST hex stdlib-only set).
+8. **`web/routes/tour.py`** (NEW) + **`dashboard_legacy/tour_panel.py`** + **`tooltip_data.py`** (NEW).
+
+**File-size pre-split (Phase-0 work, NOT optional polish):** Architecture research found these files **already exceed the v1.2 D-09 500-LOC cap before v1.3 additions:** `web/routes/trades.py` (746), `web/routes/dashboard.py` (644), `web/routes/totp.py` (614), `web/routes/login.py` (608), `web/routes/paper_trades.py` (493). v1.3 must split these BEFORE adding `user_id` scoping — splitting an over-cap file while changing its semantics simultaneously courts merge-conflict pain. This is a real first phase, not surprise debt.
+
+### State Layout — Decision Recommendation
+
+The two parallel researchers proposed credibly different shapes:
+
+| Option | Shape | Concurrency | Migration | Researcher |
+|--------|-------|-------------|-----------|------------|
+| **A. Sharded directory** | `state/users/{uid}.json` + registry + `state/signals/{market}.json` | Per-user lock natural | Multiple new files | Stack |
+| **B. Single state.json with `users{}` map** | Shared keys top-level; per-user under `state['users'][uid]`; `auth.json` co-locates `users[]` + `pending_invites[]` | Existing `mutate_state` chokepoint serializes; needs added per-user flock | Single in-place migration step | Architecture |
+
+> **Most eloquent: Option B (single-file `users{}` map).** It preserves the existing `mutate_state(mutator)` chokepoint verbatim — no second atomic-write contract to maintain, no per-user backup story to evolve, no directory-scan in the daily fan-out. Locality wins: the rule "we save once per cycle" stays in `state_manager`. The `mutate_user_state(user_id, mutator)` wrapper is six lines; it composes naturally with `mutate_state` rather than splitting the contract. **However**, Pitfalls research flags a real logical race even with atomic `os.replace`: the daily admin-fan-out and a live HTMX write from a wakeful F&F user at 08:00:03 can clobber each other's logical updates (Pitfall 25). Option B mitigates with `flock` on `state/users/{uid}.lock` held across the read-modify-write window. Option A naturally has per-user locks because each user is a separate file.
+
+**Recommendation to roadmapper:** start with Option B (single-file `users{}` map + per-user flock). Reasons: (a) one atomic-write contract, (b) one backup story, (c) Architecture research read the existing code end-to-end, (d) file size at 20 users is ~1MB with sub-millisecond parse. **Plan-phase verification:** confirm the flock-across-read-modify-write pattern works under existing `mutate_state` semantics before locking the choice; if friction-laden, fall back to Option A. Either way, the per-user flock is non-negotiable (Pitfall 25).
 
 ### Critical Pitfalls
 
-Top pitfalls that cause silently-wrong output in a signal-only app (where silently wrong is worse than a crash because the operator places real money trades from it):
+Top five from PITFALLS.md (full list is 16 pitfalls #21–#36):
 
-1. **yfinance silent partial/empty downloads** — `yf.download` returns empty frames or stale last-bars without raising. **Mitigate:** assert `len(df) >= 300`, assert `df.index[-1].date()` is recent per-instrument staleness budget, treat "empty after 3× retry" as hard fail (email error, do NOT write state, do NOT compute signal).
-2. **Wilder ATR/ADX implemented as SMA instead of `ewm(alpha=1/period, adjust=False)`** — numbers look plausible but diverge materially from backtest; trailing stops hit too often. **Mitigate:** golden-file tests with hand-calculated 30-bar fixtures, 1e-9 tolerance via `numpy.testing.assert_allclose`; `min_periods=period` on every ewm call so leading bars are NaN, not garbage.
-3. **LONG→FLAT doesn't close; LONG→SHORT one-run flip misses the SHORT** — ambiguous "signal reversal" semantics, and a single-pass exit-then-entry check that reads stale `position.active`. **Mitigate:** write the full 9-cell truth table test ({LONG,SHORT,none} × {LONG,SHORT,FLAT}); two-phase eval — apply exits first, then evaluate entries against the updated state.
-4. **`max(1, int(n_contracts))` silently breaches 1% risk budget on small accounts** — one SPI contract can be 6× the intended risk at $100k account size. **Mitigate:** replace with `if n == 0: skip trade with warning`, OR keep the floor but surface effective risk loudly in every email. Log raw vs clipped values.
-5. **Pyramiding double-adds on a gap-up day** — single `if unrealised >= 1×ATR: add` can fire twice in one run if price gaps to +2.3×ATR. **Mitigate:** gate on persisted `pyramid_level`, increment by 1 max per run, only evaluate the next-level threshold. State-machine test with gap-up fixture.
-6. **state.json crash mid-write corrupts months of history** — default `open('w') + json.dump` isn't atomic. **Mitigate:** `tempfile.mkstemp` + `f.flush()` + `os.fsync()` + `os.replace(tmp, path)` pattern; keep rolling `state.json.bak`; add `schema_version` from day one.
-7. **Replit Autoscale loses state; `schedule` dies on sleep** — `schedule` needs a long-running process, Replit Autoscale is stateless-by-design. **Mitigate:** **GitHub Actions is the primary path**, not the fallback. `cron: '0 0 * * 1-5'`, `permissions: contents: write`, `concurrency` block, `stefanzweifel/git-auto-commit-action@v5` for state persistence. Replit becomes optional (Reserved VM + Always On).
-8. **`--test` flag writes state anyway** — if `save_state` isn't gated, test runs corrupt prod state (pyramid levels, equity history, last_run). **Mitigate:** structurally separate `compute_everything(state)` → `if not test: apply + save`. Assert `state.json` mtime unchanged after `--test` run.
-9. **Timezone off-by-one** — `^AXJO` closes 06:00 UTC, `AUDUSD=X` rolls 21:00 UTC, Perth is UTC+8 no DST. Mixing these yields stale "today" labels. **Mitigate:** separate `signal_as_of = df.index[-1].date()` (from data) from `run_date = datetime.now(Australia/Perth)` (from clock); log both; never substitute. Email says "act at next session open", not "act now".
-10. **Chart.js ESM served into classic `<script>` = blank chart** — `import` statement SyntaxError. **Mitigate:** explicit UMD path: `https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js` with SRI hash.
+1. **IDOR via bolt-on `user_id`** (Pitfall 21) — every entity-ID route is privilege escalation if lookup uses raw ID. **Avoid:** centralized `load_X_for_user()` loader; per-route `test_<route>_returns_404_for_other_users_entity`.
+2. **Admin-vs-user boundary missing on one new route** (Pitfall 22) — copy-pasted `Depends(require_admin)` lines mean someone forgets one. **Avoid:** `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router; startup invariant test walks `app.routes`.
+3. **Schema migration crashes mid-flight** (Pitfall 27) — atomic-write covers the file but not the migration logic. **Avoid:** build new state in fresh dict, validate via Pydantic, save once with new schema_version stamped. Auto-backup before migrate. Round-trip test on 5 fixtures mandatory.
+4. **Per-user fan-out partial failure** (Pitfall 24) — user #14's broken state aborts users #14..N silently. **Avoid:** per-user `try/except` crash boundary; admin gets end-of-cycle summary email; `/healthz/last-cycle` endpoint.
+5. **Crash-email + `_LAST_LOADED_STATE` cache leaks the wrong user's state** (Pitfall 26) — v1.0 D-08 explicitly flagged "revisit if parallel runs appear (v2)"; multi-tenant fan-out IS that revisit. **Avoid:** drop the cache OR scope via `contextvars.ContextVar`; crash email body is `PublicUserSummary` only — never trade content.
 
-Full 20-pitfall list and recovery playbook in `.planning/research/PITFALLS.md`.
+**Honourable mentions:** Pitfall 25 (concurrent write race — solved by per-user flock), Pitfall 28 (invite token weaknesses), Pitfall 29 (yfinance schema drift / XSS / SSRF), Pitfall 31 (Resend per-user burst → 429), Pitfall 34 (state.json git push-back → F&F trade content in git history forever).
+
+---
 
 ## Implications for Roadmap
 
-**Reconciling the phase counts:** Architecture proposes 7 phases ordered by dependency; Pitfalls maps 20 pitfalls to 10 phase slots. The 10-slot model is finer-grained and better for risk-tracking; the 7-phase model is the shippable-increment model. **Recommendation: use 7 build-order milestones, each internally broken into phases where risk density warrants.** The signal engine milestone in particular may need 2–3 internal phases because it concentrates the highest-risk pitfalls (3, 4, 5, 6, 7, 10, 11, 12) and demands operator confirmation on ambiguous semantics before committing to code.
+The three downstream researchers (Features, Architecture, Pitfalls) **independently converged** on essentially the same phase order. The roadmapper should treat this as the converged recommendation.
 
-### Phase 1: Signal Engine Foundation (pure-math core)
-**Rationale:** Signal correctness is the entire product. Build it first, in isolation, driven by fixture-based golden-file tests — before any network, state, or email code exists. Every downstream phase depends on stable indicator and signal contracts, and the highest-risk pitfalls (Wilder ATR/ADX, ADX warm-up garbage, RVol-near-zero blow-up, LONG→FLAT semantics, LONG→SHORT two-phase eval, pyramid state machine, trailing-stop intraday convention, contract multipliers) all live here.
-**Delivers:** `signal_engine.py` with hand-rolled ATR(14)/ADX(20)/+DI/-DI/Mom/RVol, signal vote, position sizing, pyramid check, trailing-stop math, unrealised P&L. `tests/test_signal_engine.py` with committed CSV fixtures for both instruments and golden-file indicator outputs. Zero yfinance, zero Resend, zero file I/O outside tests.
-**Addresses:** All P1 signal/sizing/exit/pyramid features from FEATURES.md.
-**Avoids:** Pitfalls 3 (Wilder), 4 (ADX warm-up), 6 (FLAT closes), 7 (LONG→SHORT flip), 8 (RVol zero), 9 (risk-budget breach), 10 (pyramid double-add), 11 (close-only stops), 12 (multiplier errors), 20 (live-API tests).
-**Operator confirmation required before build:** Trailing-stop convention (intraday high/low for peak and hit-check vs close-only) — impacts backtest reconciliation. `max(1, int(...))` floor policy — accept-with-warning or skip-trade.
+### Suggested Phase Sequence
 
-### Phase 2: State Persistence with Recovery
-**Rationale:** State is the second deterministic contract the rest of the app depends on. Can be built in parallel with Phase 1 (no shared code). Must ship before end-to-end wiring so the orchestrator has a reliable storage layer to call.
-**Delivers:** `state_manager.py` with `load_state`, `save_state` (atomic via tempfile + `os.replace` + fsync), `_initial_state`, `_migrate_if_needed`, `_backup_corrupt_file`, `record_trade`, `update_equity_history`, `reset_state`. Schema invariants documented. `schema_version` field from day one.
-**Uses:** Python stdlib `tempfile`, `os.replace`, `json`.
-**Implements:** Persistence/Output layer from ARCHITECTURE.md.
-**Avoids:** Pitfalls 13 (crash mid-write), 19 (test flag mutates state — structural separation of compute and persist enforced here).
-
-### Phase 3: End-to-End Skeleton (fetch + wire, no email, no dashboard)
-**Rationale:** First point where the app runs against live data. Shipping this early lets Marc verify the core behaviour daily-by-hand for ~1 week before outputs are layered on — if the signal logic is wrong, it surfaces before it gets buried under email formatting.
-**Delivers:** `signal_engine.fetch_data` with 3× retry + shape assertions (non-empty, len>=300, last-bar-date staleness check). `main.py` orchestrator with `run_daily_check`, CLI parsing (`--test`, `--reset`, `--once`), dotenv loading, top-level error boundary, structured console logs. `python main.py --once` reads Yahoo, computes signals, updates state.json, prints summary.
-**Uses:** yfinance pinned `>=0.2.65,<0.3`, `python-dotenv`, stdlib `argparse`.
-**Avoids:** Pitfalls 1 (yfinance silent empty), 2 (AXJO/Perth off-by-one — log both `signal_as_of` and `run_date`), 5 (look-ahead — email copy says "act at next open").
-
-### Phase 4: Dashboard (visual verification)
-**Rationale:** Parallel-able with Phase 5 (no shared code). Visual verification before email work starts — Marc can eyeball state and P&L after each `--once` run.
-**Delivers:** `dashboard.py` rendering `dashboard.html` with inline CSS, Chart.js 4.4.6 UMD from pinned CDN (with SRI hash), equity curve, positions table, last 20 trades, key stats (total return, Sharpe, max DD, win rate), AWST "Last updated" timestamp. No `<meta refresh>` hammering.
-**Avoids:** Pitfalls 15 (meta-refresh), 16 (Chart.js CDN drift).
-
-### Phase 5: Email Notification
-**Rationale:** The one-user-facing output. Independent of dashboard. Must ship with robust graceful-degradation path (missing API key, 4xx/5xx, network error) so email failure never kills the workflow.
-**Delivers:** `notifier.py` with `build_subject`, `build_email_html` (inline CSS, mobile-responsive, dark theme, ACTION REQUIRED red-border block on signal change, stale-run banner, warnings carry-over), `send_signal_email` POSTing to Resend with 15s timeout. `--force-email` flag. Test mode writes `last_email.html` instead of sending. Resend domain verification (SPF/DKIM/DMARC on `carbonbookkeeping.com.au`) confirmed before first live send.
-**Avoids:** Pitfalls 14 (Resend deliverability — verify in Resend dashboard, not just API 200).
-
-### Phase 6: Scheduler + Deployment (GitHub Actions primary)
-**Rationale:** Lights-out operation. GHA-first because Replit's filesystem persistence is not guaranteed per their own docs and the `schedule` loop dies on Autoscale. Replit becomes optional/dev-only.
-**Delivers:** `.github/workflows/daily.yml` with `cron: '0 0 * * 1-5'`, `permissions: contents: write`, `concurrency: { group: trading-signals, cancel-in-progress: false }`, `actions/checkout@v4`, `actions/setup-python@v5`, `stefanzweifel/git-auto-commit-action@v5` for state.json commit-back, manual `workflow_dispatch:` trigger. Scheduler loop in `main.main()` for Replit/local dev path with weekday gate in `run_daily_check`. `.env.example` finalised. Setup notes in `main.py` docstring.
-**Avoids:** Pitfalls 17 (Replit Autoscale), 18 (GHA state.json race/perms/drift).
-**Note:** The SPEC framing of "Replit primary, GHA fallback" should be **inverted** in the deployment guide. Both documented; GHA is the recommended default.
-
-### Phase 7: Hardening + Long-Tail
-**Rationale:** Absorb real-world failure modes observed over the first 1–2 weeks of live running. Formalise recovery paths.
-**Delivers:** Warning carry-over from `state.warnings` into the next email header. Stale-state banner (>2 days). Schema migration path exercised with at least one no-op version bump. Crash-email path tested by deliberate fault injection. Timestamped backups + `--restore` flag. `--dry-run` flag. Optional `signals.log` rolled daily. Recovery runbook documented.
-**Avoids:** Pitfalls 1 (warning carry-over surfaces data issues to operator), and closes the "looks done but isn't" checklist from PITFALLS.md.
+| # | Phase | Rationale | Pitfalls Addressed |
+|---|-------|-----------|--------------------|
+| 28 | **v1.2 UAT closure** | 8 deferred items (Phase 17/23/26). No new surface area. | — (debt) |
+| 28.x | **v1.2.1 retroactive patch wrap** | 5 ad-hoc commits formalised + retroactive `VALIDATION.md`/`SECURITY.md` for v1.2 Phases 17/19/20/22/23/24/25/26 + `.planning/backtests` path fix. | — (debt) |
+| 29 | **File-size pre-split (Phase 0 of v1.3)** | Behaviour-preserving splits of `trades.py`/`login.py`/`totp.py`/`dashboard.py` BEFORE multi-tenant changes. | Sets up 21, 22 (cleaner diff for `user_id` injection) |
+| 30 | **Schema migration v11 → v12 + admin namespace + atomic-build-then-save + backup** | Foundational. Round-trip test on 5 fixtures. Auto-backup. `state/users/` gitignore + CI gate + rclone-to-B2 backup. | **27** (mid-flight crash), **34** (git push-back) |
+| 31 | **User registry + invite-token storage in `auth.json`** | `secrets.token_urlsafe(32)` + sha256 + `hmac.compare_digest` + flock on consume + 7-day expiry. Storage layer only. | **28** (token vulnerabilities) |
+| 32 | **Cookie + `Depends(current_user)` + sub-router admin gate** | Cookie payload `{"uid": "..."}`; sub-router pattern locked Day 1; CSRF refresh shim (HTMX `HX-Refresh: true` on stale 403). Admin still only user — observable behaviour identical. | **22** (admin gate), **35** (auth-after-body), **36** (CSRF stale) |
+| 33 | **Per-route user_id scoping + privacy boundary tests + flock helper** | Centralized `load_X_for_user()`; `PublicUserSummary` model; `RedactStateFilter` on logs; **`TestTenantIsolation` quality gate (milestone-wide)**; per-user flock; pyramid/exit semantics shift to fan-out. | **21** (IDOR), **23** (privacy regression), **25** (write race), **26** (crash-email leak) |
+| 34 | **Per-user email fan-out + admin invite/disable/revoke routes + invite-acceptance flow** | `per_user_fanout.py`. Per-user crash boundary. Admin summary email. `asyncio.Semaphore(2)` Resend throttle. `List-Unsubscribe` (RFC 8058). No session token in email body. `formataddr` for Unicode names. | **24** (partial fan-out), **31** (Resend / unsubscribe / forwarding) |
+| 35 | **News integration (parallel-safe — could ship anywhere after Phase 30)** | Adapter normalises both pre-0.2.55 and post-0.2.55 yfinance schemas. Single fetch per market per cycle, shared cache. Word-boundary regex with multi-keyword threshold and dampener allowlist. 30-headline labelled fixture: precision ≥0.7, recall ≥0.9. Per-user dismiss state. `autoescape=True`; XSS test. **No native importance hint exists** — keyword regex is the entire signal. AST blocklist extended. | **29** (schema drift / XSS / SSRF), **30** (false +/-, dismiss) |
+| 36 | **Guide UI (Tour + Tooltips — comes last because it depends on stable UI)** | Shepherd.js v14.5.1 (license-verified) + Microtip 0.2.2, both CDN/SRI. Tour DOM portaled at `<body>` level (NOT inside HTMX swap target). Tour state per-user in `state.json` (NOT localStorage). Stable anchors. `htmx:afterSwap` re-validation. `role="dialog"` + Esc-closes + focus-trap. Tooltips inherit `tabindex`, ≥16px font, unique `aria-describedby` IDs. axe-core sweep zero new violations vs Phase 25 baseline. | **32** (HTMX swap kills tour), **33** (tooltip a11y regression of Phase 25) |
+| 37 | **Milestone close audit (Codemoot + Nyquist gate)** | Per CLAUDE.md mandatory milestone gate. Backfill VALIDATION/SECURITY for any v1.3 phase missing one. Verify findings against current code (codemoot ~40-50% false-positive rate). | All — final sweep |
 
 ### Phase Ordering Rationale
 
-- **Phases 1 & 2 are the only true pre-requisites** — everything else is glue and adapters on top of a proven signal engine + proven state layer. Build both in parallel if capacity allows.
-- **Phase 3 ships the first live behaviour** with no outputs except console logs, so buggy signals surface before email formatting or dashboard polish hides them.
-- **Phases 4 & 5 are parallel-able** — dashboard and email share no code, only read the same state + report view-model.
-- **Phase 6 is deliberately late** because scheduling without validated outputs is pointless; lights-out deployment goes in only after the one-shot path is trusted.
-- **Phase 7 is explicitly post-shipping** — hardening against failure modes that only appear in production.
+The convergence is not coincidence — it falls out of dependency structure:
+
+- **Schema before routes** — routes need `state['users'][uid]` to exist.
+- **Auth-store users before middleware** — middleware looks up role; lookup needs the store.
+- **Middleware before RBAC routes** — admin gate is a `Depends` chained on `current_user`.
+- **RBAC + scoping before fan-out** — fan-out reads `state['users']`.
+- **News and Guide UI last** — additive, not tangled with auth/state changes.
+- **File-size pre-split BEFORE schema** — splits are behaviour-preserving and shrink the merge surface for every later phase.
+- **v1.2 closure BEFORE v1.3 substance** — PROJECT.md scopes Phase 28 + v1.2.1 into v1.3.
+
+### Quality Gates (lift "Looks Done But Isn't" into per-phase success criteria)
+
+PITFALLS.md provides a 24-item checklist. Selected highlights:
+
+- **Schema phase:** migration round-trip test (5 fixtures, lossless v9→v12→v9'); backup file present after migrate; `git ls-files | grep '^state/users/'` returns nothing.
+- **RBAC phase:** startup invariant test walks `app.routes`, every `/admin/*` path has `require_admin` in dependency chain; `invites.json` contains only sha256 hashes; two parallel `consume(token)` → exactly one wins.
+- **Per-user scoping phase:** `TestTenantIsolation` class green; every entity-ID route has `test_<route>_returns_404_for_other_users_entity`; admin user-list HTML rendered with fixture user holding 5 trades contains zero `(entry_price|n_contracts|"direction":\s*"(LONG|SHORT)")` matches; crash-email body with same fixture also zero matches.
+- **Per-user email phase:** fan-out with 50 mocked users completes within 30s, throttled, no 429s; `List-Unsubscribe` header present; no session token URL in body; `Müller` round-trip via RFC 2047.
+- **News phase:** yfinance pinned; both-schema fixtures green; `<script>alert(1)</script>` headline renders as `&lt;script&gt;`; classifier precision ≥0.7, recall ≥0.9; per-user dismiss isolated.
+- **Guide UI phase:** tour overlay survives `htmx:afterSwap` of `#main`; "Restart tour" works on second click; keyboard-only flow (Tab/Esc); axe-core zero new violations; tooltip count adds zero new tab stops on inactive market panels.
+- **Cross-cutting:** `RedactStateFilter` installed at startup; per-user state mtime advances for all users in cycle; `git status` after fan-out is clean for `state/users/`.
 
 ### Research Flags
 
-**Phases likely needing deeper research during planning (`/gsd-research-phase`):**
-- **Phase 1 (Signal Engine):** Risk-dense. Multiple ambiguous decisions need operator confirmation before code: trailing-stop intraday vs close-only convention; `max(1, int(...))` floor policy; LONG→FLAT close semantics; pyramid level state machine; per-instrument contract multiplier decision (full SPI $25/pt vs SPI mini $5/pt). Recommend a discuss-phase pass specifically to pin these with Marc before Phase 1 implementation.
-- **Phase 6 (Deployment):** GHA permissions model, cron drift expectations, state.json commit-back race conditions, and the Replit vs GHA recommendation inversion all need explicit operator sign-off because they contradict the SPEC's primary/fallback ordering.
+| Phase | Need deeper research? | Reason |
+|-------|----------------------|--------|
+| 28, 28.x, 29 | NO | Mechanical / behaviour-preserving / debt closure. |
+| 30 (schema migration) | **YES** | Confirm codebase is at `STATE_SCHEMA_VERSION = 11` (Architecture's finding) vs v9 (PROJECT.md assumption). Re-read `system_params.py` migration chain. |
+| 31 (registry + invites) | NO | stdlib-stable patterns; Pitfalls research locked the shape. |
+| 32 (cookie + Depends + admin) | NO | FastAPI patterns canonical. |
+| 33 (per-user scoping + flock) | **YES** | Confirm `flock(LOCK_EX)` interacts cleanly with existing `mutate_state` semantics under simulated 50-thread stress. Fall back to sharded directory if friction-laden. |
+| 34 (per-user email fan-out) | **YES (light)** | Re-verify Resend's current rate limits at plan time (threshold has changed historically). Confirm batch-send API availability. |
+| 35 (news integration) | **YES** | yfinance schema drift across 0.2.40 → 0.2.55 → 1.x is real; capture fresh fixtures from pinned version at plan time. |
+| 36 (guide UI) | NO | Patterns documented. License re-verification of Shepherd at install is a one-line check. |
+| 37 (milestone close) | NO | Process step. |
 
-**Phases with standard patterns (skip phase research):**
-- **Phase 2 (State Persistence):** Atomic-write pattern is stdlib-standard (`tempfile` + `os.replace`); JSON schema migration is well-trodden ground.
-- **Phase 3 (E2E Skeleton):** Thin orchestrator + dotenv + argparse — bread-and-butter Python CLI pattern.
-- **Phase 4 (Dashboard):** Static HTML + pinned Chart.js UMD via CDN is a fixed recipe once the pitfall items (pinning, SRI, removing `<meta refresh>`) are noted.
-- **Phase 5 (Email):** `requests.post` to Resend is ~10 lines; HTML email mobile-responsive conventions are well-documented; Marc has working precedent from Carbon Bookkeeping.
-- **Phase 7 (Hardening):** Reactive — driven by what Phase 3–6 surface in live running, not by upfront research.
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Core libraries are industry-standard and spec-pinned; one opinionated call (hand-roll TA) is well-defended by the pandas-ta archival signal and the low line count involved. |
-| Features | HIGH | SPEC.md is already thorough; scope is narrow-on-purpose; 13 P1 items map 1:1 with FEATURES.md table stakes. Anti-features are clearly bounded. |
-| Architecture | HIGH | Hexagonal-lite at 5-file scale is the standard Python pattern for small scheduled jobs; every component boundary is defended by reference to SPEC + PITFALLS. |
-| Pitfalls | MEDIUM-HIGH | 20 pitfalls identified; the logic-correctness ones (3, 6, 7, 10, 11) are HIGH confidence (directly from SPEC semantics); the data-quality ones (1, 2, 8) are MEDIUM because they depend on yfinance/Yahoo behaviour which varies. Recovery playbook is HIGH. |
+| Stack | HIGH | Zero new runtime deps; CDN libraries verified active 2025/2026; Resend tier math verified; one license-verification action item. |
+| Features | HIGH | Constrained by existing v1.0 hard rules; anti-feature list well-grounded. |
+| Architecture | HIGH | Read every existing seam at file level (state_manager, auth_store, web/middleware, daily_run, web/routes); ONE plan-time verification (state schema is v11 not v9). |
+| Pitfalls | HIGH | 13/16 HIGH-confidence (project-local + universal LEARNINGS + v1.0-archive validated in production). 3 MEDIUM (yfinance schema, Resend rate limit, tour/HTMX) — prevention via plan-time re-verification. |
 
-**Overall confidence:** HIGH — the domain is narrow, SPEC is already detailed, every major architectural decision is defensible from first principles, and the main risk is logic correctness inside `signal_engine.py` which is the lightest-weight, fastest-iterating, fixture-testable part of the codebase.
+**Overall confidence: HIGH** for the multi-tenant scoping and the privacy/concurrency/migration patterns; **MEDIUM** for two scoped items: (a) per-user state-layout choice, (b) external-API drift. Both MEDIUMs have prevention via plan-time re-verification, not architectural change.
 
-### Gaps to Address
+### Gaps to Address (Plan-Time Verification Items)
 
-- **Trailing-stop convention** (intraday high/low update and intraday hit-check vs close-only): SPEC is silent on intraday. Pitfall 11 recommends intraday as the consistent choice for a daily-decision system; **needs operator confirmation in Phase 1 discuss step** — impacts backtest reconciliation directly.
-- **`max(1, int(n_contracts))` floor policy:** Accept-with-warning (keep floor, surface effective risk loudly) or skip-trade (drop the floor, miss the trade). **Needs operator confirmation in Phase 1** — impacts P&L realism vs trade frequency.
-- **Contract multiplier reality-check for SPI:** $25/pt (full ASX 200 futures) vs $5/pt (SPI mini) — operator's actual broker determines which is correct. **Confirm in Phase 1 constants dict.**
-- **Replit vs GHA primary path:** SPEC says Replit-primary. Research says GHA-primary. **Needs operator sign-off in Phase 6** — both paths will be documented regardless, but the deployment guide should guide toward one.
-- **Resend domain verification for `signals@carbonbookkeeping.com.au`:** MEMORY.md notes Resend is configured for Carbon Bookkeeping. **Verify this specific sender in Resend dashboard before Phase 5 first live send** — SPF/DKIM/DMARC CNAMEs must be present for deliverability.
-- **yfinance version drift:** 2025 saw multiple breaking releases. Pin an exact version in Phase 3 requirements.txt (not `>=`) and bump deliberately. Re-verify the `>=0.2.65` choice at build time.
-- **LONG→FLAT semantics** (whether FLAT (0) triggers a close): Phase 1 9-cell truth table will force a decision. Recommended: `if new_signal != current_direction and position.active: close` — FLAT closes.
+1. **Schema version mismatch.** PROJECT.md says v9; codebase is at `STATE_SCHEMA_VERSION = 11`. Roadmap should use codebase truth (v11→v12). Re-read `system_params.py` and `state_manager.py` migration chain in plan-phase before locking the migration phase.
+2. **State layout final choice.** Single-file `users{}` map (Architecture, more eloquent) vs sharded directory (Stack, naturally per-user lock). Recommend Option B with per-user flock; verify flock interaction in plan-phase.
+3. **Resend rate-limit current threshold.** Re-verify at plan time before locking throttle constant.
+4. **yfinance news schema fresh fixtures.** Capture at plan time from pinned version.
+5. **Shepherd.js license at install.** Verify before merge of Phase 36; switch to Driver.js (MIT) if AGPL-blocked.
+6. **Pre-existing 500-LOC violations.** `trades.py` (746), `login.py` (608), `totp.py` (614), `dashboard.py` route (644), `paper_trades.py` (493). Phase-0 split work in v1.3 — NOT optional, NOT surprise debt.
+
+---
 
 ## Sources
 
-### Primary (HIGH confidence)
-- `.planning/PROJECT.md` — project constraints, deployment targets, Perth AWST schedule
-- `SPEC.md` — 513-line functional spec covering signal rules, email format, CLI flags, state schema, error handling
-- `~/.claude/CLAUDE.md` — global patterns: atomic file writes, fire-and-forget async dangers, HTML escaping, async/await discipline
-- `MEMORY.md` — Resend config status (Carbon Bookkeeping), Perth UTC+8, Digital Ocean precedent, Anthropic/Resend key rotation dates
-- Resend API reference (resend.com/docs/api-reference/emails/send-email) — bearer auth, JSON body, 200/2xx semantics
-- Chart.js v4 CDN discussion (github.com/chartjs/Chart.js/discussions/11219) — UMD vs ESM pitfall
-- GitHub Actions workflow permissions docs — `permissions: contents: write` requirement
-- Python stdlib — `tempfile.mkstemp` + `os.replace` atomic-write idiom (POSIX)
-- Wilder, J. Welles — "New Concepts in Technical Trading Systems" (1978) — canonical ATR/ADX `alpha = 1/period`
+### Primary research files (HIGH confidence — internal)
+- `.planning/research/STACK.md`, `FEATURES.md`, `ARCHITECTURE.md`, `PITFALLS.md`
+- `.planning/research/v1.0-archive/` (still in force; v1.3 is incremental)
 
-### Secondary (MEDIUM confidence)
-- yfinance issues #2567 (2025 rate-limit), #2496 (session breaking change) — informed `>=0.2.65` pin
-- yfinance release notes — `auto_adjust` default flipped in 0.2.51
-- Replit Reserved VM / Autoscale / Scheduled Deployments docs — filesystem persistence warning, scale-to-zero mismatch with schedulers
-- GitHub Actions cron drift discussions — up to ~30 min delay, inactive-repo pause behaviour
-- `stefanzweifel/git-auto-commit-action@v5` — standard pattern for state commit-back
-- pandas-ta fork landscape (PyPI + GitHub forks) — informed hand-roll decision
-- Leapcell blog: "Scheduling Tasks in Python: APScheduler vs Schedule" — confirmed `schedule` suitability for single-job daemons
+### Project-internal (HIGH confidence)
+- `.planning/PROJECT.md` (v1.3 scope, hard constraints — see Gap #1)
+- `.planning/MILESTONES.md` (Phase 27 D-09 cap, deploy-key history)
+- Codebase: `state_manager.py`, `auth_store.py`, `web/middleware/auth.py`, `web/routes/*`, `daily_run.py`, `daily_loop.py`, `tests/test_signal_engine.py::TestDeterminism`, `system_params.py`
+- `~/.claude/LEARNINGS.md` G-20 (tenant filter), G-23 (header tenant trust), G-36 (defensive-read partial migrations), G-46 (schema-version assertions stale), G-51 (FastAPI route ordering), G-53 (regex + allowlist), CSRF-after-session-regen, SSRF protection
 
-### Tertiary (LOW confidence — validate during planning)
-- Specific Replit Autoscale/Reserved VM pricing and feature set — Replit's product lineup shifts quarterly; re-verify in Phase 6
-- Exact Resend SDK feature set at build time — re-verify before Phase 5 in case webhook/batch features arrive that change the "use requests" call
-- Yahoo Finance `^AXJO` and `AUDUSD=X` symbol stability — informal/scraped, no SLA; first Phase 3 runs will confirm
+### External (MIXED confidence)
+- yfinance Ticker.news API + issue #1956 (HIGH — importance hint absent)
+- Shepherd.js npm + jsDelivr (HIGH)
+- Microtip GitHub (HIGH)
+- Resend account quotas (HIGH — verify at plan time, threshold has changed)
+- FastAPI dependency-injection RBAC (MEDIUM — vendor blog, cross-checked)
+- W3C ARIA Tooltip + Dialog Patterns (HIGH)
+- Chameleon onboarding benchmark (MEDIUM) — 3-step tours: 72% completion vs 16% at 7 steps
+- RFC 8058 — One-Click Unsubscribe (HIGH)
+- OWASP CWE-639 — Authorization Bypass Through User-Controlled Key (HIGH)
 
 ---
-*Research completed: 2026-04-20*
+
+*Research synthesis completed: 2026-05-10*
 *Ready for roadmap: yes*
+*Plan-time verification items: schema version (v11 not v9), state-layout flock interaction, Resend rate limit, yfinance news fixtures, Shepherd license, pre-existing 500-LOC violations as Phase-0 work.*

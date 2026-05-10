@@ -1,227 +1,283 @@
-# Feature Research
+# Feature Research — v1.3 Multi-Tenant Friends & Family
 
-**Domain:** Mechanical trading signal apps (personal/operator tools — daily signals, email notification, lightweight dashboard)
-**Researched:** 2026-04-20
-**Confidence:** HIGH (scope is narrow, SPEC.md is already thorough, and the target user is a single operator with a defined backtested system)
+**Domain:** Invite-only multi-tenant trading-signal SaaS (single admin, ≤dozens of trusted F&F users; signal-only, no live trading; Python + FastAPI + HTMX + JSON state)
+**Researched:** 2026-05-10
+**Confidence:** HIGH on RBAC + tour + tooltip patterns, MEDIUM on yfinance news schema (no native importance flag — keyword fallback is mandatory), HIGH on the anti-feature list (constrained by existing v1.0 hard rules)
+
+**Scope note:** This document is the **v1.3 delta only**. All v1.0/v1.1/v1.2 table-stakes features (signal compute, paper ledger, alerts, drift sentinels, trace panels, two-axis nav, auth UX) are already shipped — see `.planning/research/v1.0-archive/FEATURES.md` for that baseline. Do not re-litigate it here.
+
+**Existing modules referenced (dependencies for new features):**
+
+- `state_manager.py` — single `state.json`, atomic writes, schema chain v1→v9 (Decimal money). v1.3 adds v9→v10 (per-user namespace).
+- `notifier/` package — Resend HTTPS dispatch, two-tier banners, `[!stop]` alert dedup. v1.3 adds per-user fan-out.
+- `dashboard_legacy/` package — static HTML, two-axis market×function nav, cookie + URL persistence. v1.3 adds tooltip layer + tour.
+- `auth/` (Phase 13 + 16.1) — cookie session, TOTP, trusted-device, magic-link. v1.3 adds invite-acceptance + admin user-list routes.
+- `main.py` — sole orchestrator, daily 08:00 Sydney systemd cycle. v1.3 adds per-user loop after the shared signal compute.
+- `backtest/` — pure compute, hex-boundary respected. **Unchanged in v1.3.**
+- `signal_engine` / `sizing_engine` / `system_params` — pure-math, signals are SHARED & deterministic across all users. **Unchanged in v1.3.**
+
+---
 
 ## Feature Landscape
 
-### Table Stakes (Operator Expects These)
+### Table Stakes (Users Expect These)
 
-Features the operator will assume exist. Missing these = the operator stops trusting the output, ignores the email, or can't reproduce a trade decision.
+These are the features any invited F&F user will assume work on day one. Missing any of these = they bounce or admin gets a phone call.
 
-| Feature | Why Expected | Complexity | In SPEC? | Notes |
-|---------|--------------|------------|----------|-------|
-| Accurate daily signal computation (ATR/ADX/Mom, 2-of-3 gate) | Core product — wrong signals = worthless app | MEDIUM | Yes | SPEC.md lines 15-41. Wilder smoothing is the main correctness trap; pin indicator formulas to backtest reference values. |
-| Yahoo Finance data fetch with retry | yfinance is flaky; single-fetch failure cannot kill the daily run | SMALL | Yes | SPEC 19, 440. 3x retry w/ 10s delay. Must detect stale data (last bar not = yesterday's close). |
-| Persistent state (`state.json`) across runs | Account, open positions, trade log, equity history all must survive restarts or the app is useless | MEDIUM | Yes | SPEC 119-163. Schema is fixed. Atomic writes (temp+rename), backup on corruption, schema version field is a must-add. |
-| Deterministic signal output for a given date + state | Operator must be able to reproduce yesterday's decision to audit it | MEDIUM | Yes | Listed in Constraints. Requires no RNG, no clock-dependence inside compute, and snapshotting the OHLCV row used. |
-| Daily email via Resend (HTML, mobile-safe, inline CSS) | Daily email IS the product — it's how the operator gets the signal | MEDIUM | Yes | SPEC 174-226. Verified sender already set up. Inline CSS only; test in Gmail iOS, Gmail web, Outlook. |
-| Clear ACTION REQUIRED block on signal change | A signal change = a manual trade. If that's buried, the operator misses it | SMALL | Yes | SPEC 393-408. Red border, bold header, explicit CLOSE/OPEN instructions with size + stop. |
-| Unchanged-signal "no action" email | If email stops arriving, operator can't tell "no change" from "app broken" — must confirm heartbeat daily | SMALL | Yes | SPEC line 382. Send every weekday regardless of signal change. |
-| Position sizing (ATR + vol target) | Sizing is part of the signal — without it, the operator has to compute n_contracts manually and will get it wrong | MEDIUM | Yes | SPEC 44-52. Vol scale clipped [0.3, 2.0]. Must match backtest. |
-| Exit rules (reversal, ADX<20, trailing stop) | Entries without exits = open trades never close = fake equity curve | MEDIUM | Yes | SPEC 58-62. Stop checked against high/low of today's candle, not close. |
-| Trade history / trade log | Operator needs audit trail, P&L reconciliation vs broker statement, tax records | SMALL | Yes | SPEC 146-157. Append-only list in state.json. Include exit_reason. |
-| Equity history & running P&L | Trust — operator needs to see equity curve match expectation | SMALL | Yes | SPEC 159-163. One point per run. |
-| Error handling that never crashes silently | Silent failure = operator makes decisions on stale data and loses real money | MEDIUM | Yes | SPEC 438-444. Catch all exceptions, email warning on next run, never exit with unhandled error. |
-| Test mode (`--test` flag) | Operator needs to verify the wiring without touching state or sending real-looking emails | SMALL | Yes | SPEC 414-421. `[TEST]` subject prefix, read-only state, prints signal report. |
-| Force email (`--force-email`) | When things look wrong, operator needs to trigger a send without waiting for the scheduler | SMALL | Yes | SPEC 432-434. Single flag — runs compute + sends immediately. |
-| State reset (`--reset`) | After a big bug, operator needs a clean slate without hand-editing JSON | SMALL | Yes | SPEC 424-428. Backs up existing file before reset (add this — not in SPEC). |
-| Structured console logs | Replit/GHA logs are the only visibility when running unattended | SMALL | Yes | SPEC 449-476. Prefix tags, timestamps, ✓/✗ status per step. |
-| Scheduled daily run at 08:00 AWST | The whole point is "every weekday morning" — missing the schedule = missing the product | SMALL | Yes | SPEC 64. `schedule.every().day.at("00:00")` UTC. GHA cron `0 0 * * 1-5` is the free path. |
-| Subject line that tells the whole story | Operator reads the subject in the notification bar — if it doesn't surface signal + action flag, they'll miss changes | SMALL | Yes | SPEC 359-360. Must include 🔴 emoji on action days, plain 📊 on no-change days. |
-| Weekday-only execution | Markets closed on weekends — signals on weekends are meaningless and create duplicate stop alerts | SMALL | Partial | Cron handles this on GHA. In `schedule`-based loop, must check `datetime.weekday() < 5` before running. |
-| Dashboard HTML file | Operator wants to look at the equity curve without opening email | SMALL | Yes | SPEC 230-249. Self-contained, Chart.js CDN, auto-refresh. |
+| # | Feature | Why Expected | Complexity | Existing modules touched | Notes |
+|---|---------|--------------|------------|---------------------------|-------|
+| **RBAC** ||||||
+| 1 | Admin issues invite via dashboard form | Admin needs a one-click "invite Mum" path; manual SQL/JSON edits don't scale beyond 0 users | S | `auth/`, `dashboard_legacy/`, `state_manager` | Form: invitee email + display name. Generates token, returns shareable link. |
+| 2 | Invite token: signed, single-use, time-bounded | Token in URL is the only thing standing between F&F and account creation; must not be guessable, replayable, or perpetual | S | `auth/` (new `invite.py`) | `itsdangerous.URLSafeTimedSerializer` + state-tracked redemption flag. **Don't roll your own JWT — use stdlib + signed-token lib.** Recommended: 7-day expiry, single-use (consumed on TOTP enrol), bound to invitee email so a stolen link still needs the right inbox. |
+| 3 | Invite link delivers via email (not just copied link) | Out-of-band proof-of-email; admin stops being a manual copy/paste relay | S | `notifier/` | Reuse Resend transport. Subject: "You're invited to [app]". Body: link + 7-day expiry callout. |
+| 4 | Invitee proves identity by clicking link + setting password + enrolling TOTP | F&F have no SSO; password + TOTP is the v1.1 pattern, must extend not replace | M | `auth/` | Existing TOTP enrol flow (Phase 16.1) reused with `invite_token` query param prefilling email. |
+| 5 | Admin sees user list with status (active / disabled / pending invite) | Admin needs "did Mum accept the invite yet?" answer at a glance; otherwise admin ends up DMing each user | S | `dashboard_legacy/` (new admin route) | `/admin/users` HTMX panel. Columns: email, display name, status, invited_at, last_login_at, # paper trades. Admin-only middleware gate. |
+| 6 | Admin can **disable** (reversible) and **delete** (terminal) users — distinct verbs | These are different operations with different audit semantics; conflating them is how data loss happens | S | `state_manager`, `auth/` | **Disable:** flips `status=disabled`, kills sessions, blocks future login, preserves user's paper-trade history & journal (so re-enable restores everything). **Delete:** purges user_id namespace from `state.json`; one-way; requires confirm-by-typing-email modal. **Recommend ship disable in v1.3 + ship delete behind feature flag** — disabling is enough for mistake-recovery; deletion is GDPR-right-to-erasure territory and easy to footgun. |
+| 7 | Admin can revoke an unaccepted invite | Admin sent invite to wrong email; needs an undo before token expires | S | `state_manager` | Mark invite token as revoked in state; redemption check rejects revoked tokens before signature check (cheap, also avoids constant-time games). |
+| 8 | F&F users **cannot** see admin or each other (privacy boundary) | Hard requirement from PROJECT.md; failure here = the whole tenancy story collapses | M | `state_manager`, all read routes | Every read path goes through `get_user_state(user_id)` — no `state.json` global reads survive. Admin's data lives under the admin namespace; F&F under per-user namespaces. **Admin user-list view never embeds F&F trade content** — only status metadata. |
+| **Per-user state isolation** ||||||
+| 9 | Per-user paper-trade ledger | Each F&F runs their own paper account; sharing trades would be confusing AND a privacy leak | M | `state_manager` (LEDGER schema), `dashboard_legacy/` | Existing `paper_trades` table becomes `paper_trades[user_id]`. Trade entry forms scope by `request.user.id`. |
+| 10 | Per-user equity history & starting account | Marc may run $100k; Mum may want to see what $10k looks like; without per-user starting balance the dashboard is meaningless | M | `state_manager`, `dashboard_legacy/` | Per-user `starting_account`, `equity_history`. Default $100k; first-run modal lets user pick (see Tour Step 2). |
+| 11 | Per-user stop-loss alert dedup state (`last_alert_state`) | Without per-user dedup, one user's "ALERT HIT" event would silence everyone else's alert; or worse, send N copies | S | `state_manager` (ALERT schema), `notifier/` | `last_alert_state[user_id][market]`. Existing CLEAR/APPROACHING/HIT state machine (Phase 20) re-keyed. |
+| 12 | Per-user journal entries / position drift annotations | Journal is private notes; cross-user visibility is a privacy fail | S | `state_manager`, `dashboard_legacy/` | Existing trade-journal table re-keyed by user_id. |
+| 13 | Per-user trusted-device cookie pool | TOTP trusted-device must not let user A skip 2FA on user B's account because cookies got mixed | S | `auth/` | Existing trusted-device cookie (Phase 16.1) already keyed to user; verify keying survives the multi-tenant refactor. **Greppable risk** — call this out in the Phase 28+ test plan. |
+| 14 | **Shared** signal compute (one yfinance fetch, one signal calc per market per day) | Signals are deterministic and identical for every user — re-running for each user wastes API calls + invites determinism drift | S | `main.py`, `signal_engine` | Compute signal ONCE per market per day; fan out per-user state updates (alerts, equity, drift) downstream. **Critical:** keep the hex-boundary clean — signal_engine still pure, no user_id leaks into signal logic. |
+| **Per-user email** ||||||
+| 15 | Each user receives their own 08:00 Sydney email | The whole point of per-user state is per-user actionable output; sharing one email defeats the purpose | M | `notifier/`, `main.py` | Loop after shared signal compute: `for user in active_users: send_user_email(user, signal)`. **Subject still flags signal change** (existing two-tier banner from Phase 8). Per-user content: their alerts, their P&L, their open positions. Shared content: the signal itself, market news. |
+| 16 | Email opt-out / pause (per user) | Some F&F will want to "watch the dashboard but stop the daily email"; without an opt-out they unsubscribe externally and break the engagement | S | `state_manager`, `notifier/` | Per-user `email_enabled: bool` + `paused_until: date` (for vacations). Dashboard toggle + "Pause until [date]" picker. Admin retains override. **Don't add CAN-SPAM unsubscribe footer** — these are transactional, US CAN-SPAM exempts them, and an unsubscribe footer would let users break the product without realising it. Use the dashboard toggle as the single explicit control. |
+| 17 | Failed-delivery handling per user | Resend bounces on a user's address must NOT block the loop or break other users' emails | S | `notifier/`, `main.py` | Wrap each per-user send in try/except; log + warn admin via admin's email banner. **Anti-pattern:** crashing main.py because user 5's mailbox is full — every user must be independent. |
+| **News integration** ||||||
+| 18 | News panel per market on dashboard (SPI 200 + AUD/USD) | The brainstorm says "news context" is part of v1.3; it's the headline differentiator vs the v1.2 dashboard | M | `dashboard_legacy/`, new `news_fetcher.py` | `yfinance.Ticker.news` per ticker. Render top N headlines with publisher + relative-time. **Recommended N=5** — enough context, not enough to scroll-bury the signal panels. |
+| 19 | Headline deduplication (same story across publishers) | yfinance returns the same Reuters story syndicated by 4 publishers; uncuratedlooks broken | S | `news_fetcher.py` | Dedup on normalised title (lowercase, strip punctuation) within last 24h. Keep most-recent timestamp. |
+| 20 | Refresh cadence: piggyback on daily 08:00 cycle | News fetch is not free (yfinance unofficial endpoint, rate limits); a separate refresh loop is over-engineering | S | `main.py` | Fetch news in the same daily run, cache in `state.json` under `market_news[market]` with `fetched_at` timestamp. Dashboard renders from cache. **Decision:** stale news (>24h) shows "as of [time]" rather than hiding — operator sees the cache age. |
+| 21 | Critical-event banner with **keyword-based** classifier | yfinance.Ticker.news has NO native importance/severity field (verified — schema is `uuid/title/publisher/link/providerPublishTime/type/thumbnail/relatedTickers`); without a heuristic, every story looks the same | M | `news_fetcher.py` | **Use a hand-curated keyword list per market** (FOMC, RBA, rate decision, NFP, CPI, war, crash, halt, suspended, intervention, …). Match case-insensitive against title. Banner: "Possible market-moving news — review before trading." **Be explicit in the banner that this is a heuristic** ("Keyword-flagged headline detected"), not a Reuters-grade severity score. |
+| 22 | News panel does NOT influence signal compute | Hard constraint inherited from v1.0 anti-feature: "No news / sentiment / social signals" | — | `signal_engine` | AST-enforced forbidden-import (existing `TestDeterminism::test_forbidden_imports_absent`) extends to `news_fetcher` — `signal_engine` may not import it. Add to the AST blocklist as part of Phase 21 work. |
+| **Guide UI** ||||||
+| 23 | First-run walkthrough modal for new users | Without it, F&F see the unfamiliar dashboard and bounce; the tour is the activation event | M | `dashboard_legacy/`, `state_manager` | **3-step tour** (research: 3-step tours hit 72% completion vs 16% at 7 steps). Steps: (1) "Here's today's signal — read top to bottom", (2) "Set your starting paper account", (3) "Enable daily email or pause it from the toggle". `tour_completed: bool` per user; bypass on subsequent loads. |
+| 24 | Inline tooltips on every panel | F&F don't know what ATR/ADX/Mom/RVol mean; without inline help, the trace panels (Phase 17 differentiator) are wasted on them | M | `dashboard_legacy/` | Pattern: small `?` icon adjacent to each panel header. Click/tap (mobile-safe — NOT hover-only). `role="tooltip"` + `aria-describedby` (per WAI-ARIA tooltip pattern). Content: 1-2 sentences max. Don't repeat what's visible; explain what the panel means. |
+| 25 | Tour skip + replay-from-help | Power users (Marc, returning F&F) skip; new users mid-tour get interrupted — both must work | S | `dashboard_legacy/` | "Skip" button on every step. Help icon in header → "Restart tour". State: `tour_completed` + `tour_dismissed_at`. **Eloquent locality:** tour state lives in `state.json` per user (not localStorage) so it persists across devices — F&F user starts on phone, finishes on desktop. |
+| 26 | Tooltip mobile UX: tap-to-toggle, tap-outside-to-close | F&F use phones; hover-only tooltips are invisible on touch | S | `dashboard_legacy/` | Same pattern as Phase 17 trace-panel toggle (which already shipped iOS Safari fix). Reuse, don't reinvent. |
 
-### Differentiators (Quality-of-Life / Trust-Building)
+---
 
-Features that are not strictly required but elevate the app from "a script" to "a tool the operator actually trusts for years."
+### Differentiators (Quality-of-Life — Ship If Cheap)
 
-| Feature | Value Proposition | Complexity | In SPEC? | Notes |
-|---------|-------------------|------------|----------|-------|
-| Pyramiding (add at +1×ATR and +2×ATR) | Core part of the backtested edge — without it, live system under-performs the backtest | MEDIUM | Yes | SPEC 64-67. State has `pyramid_level`. Edge case: don't pyramid on the same bar as entry. |
-| Volatility-targeted sizing (vol_scale clip 0.3-2.0) | Keeps risk constant when markets change regime — differentiates from naive "fixed contracts" signal apps | SMALL | Yes | SPEC 50. Already specified. |
-| Trailing stop (3×ATR long / 2×ATR short) with peak tracking | Lets winners run but locks in gains. Most amateur signal apps use fixed % stops. | MEDIUM | Yes | SPEC 61. Must update peak_price daily, re-check stop against daily high/low. |
-| Dashboard equity curve (Chart.js) | Visual P&L lets the operator eyeball regime changes faster than a table | SMALL | Yes | SPEC 234-238. |
-| Signal-change highlighting in email (red border) | Reduces the chance of missing an actionable day | SMALL | Yes | Part of ACTION REQUIRED block. |
-| CLI flags for test/reset/force-email | Enables debug-by-flag without editing code | SMALL | Yes | SPEC 414-434. Use `argparse`. |
-| Deterministic replay (same state + same OHLCV → same signal) | Operator can audit "why did I go short on 12 April?" by replaying | MEDIUM | Yes | Constraint already. Achieved by pinning indicator formulas + avoiding now()-based logic in compute. |
-| Health-check warning if last_run > 2 days old | Catches silent scheduler failure — email includes "⚠ stale run" banner | SMALL | Yes | SPEC line 444. Compare `state.last_run` to today; flag in next email. |
-| Stats block in dashboard (total return, Sharpe, max DD, win rate) | One-glance performance vs backtest | SMALL | Yes | SPEC 235. Computed from equity_history + trade_log. |
-| Mobile-responsive email with dark theme matching backtests | Operator reads email on phone; consistent aesthetic = less context-switch | SMALL | Yes | SPEC 222-225. Inline CSS, max-width 600px, colour tokens `#22c55e / #ef4444 / #eab308 / #0f1117`. |
-| Last-5-trades table in email | Reinforces equity number with recent history — builds trust | SMALL | Yes | SPEC 386. |
-| Last-20-trades table in dashboard | Deeper audit trail without opening state.json | SMALL | Yes | SPEC 234. |
-| Per-instrument signal card (price, ATR, ADX, Mom breakdown) | Shows the *why* behind the signal, not just the verdict | SMALL | Yes | Console + email already show this. |
-| Explicit "signal checked Friday, execute Monday" weekly cadence option | Matches backtested cadence exactly — daily checks give slightly different entries | MEDIUM | Yes (partial) | SPEC 43. Daily version is spec'd as primary; weekly-only mode could be a v1.x switch. |
-| State schema versioning | Lets the app migrate `state.json` when the schema changes instead of breaking on load | SMALL | No — ADD | Recommend adding a `schema_version: 1` field to state.json from day one. Cheap insurance. |
-| Atomic `state.json` writes (temp + rename) | Prevents half-written state if process killed mid-write | SMALL | No — ADD | Write to `state.json.tmp`, `os.replace()` to target. Standard pattern. |
-| State backup on corruption | SPEC says "backup the file, reinitialise from scratch" — differentiator is restoring from backup, not silently reinitialising | SMALL | Partial | SPEC 442. Recommend timestamped backup (e.g. `state.json.bak-2026-04-20`) and a `--restore` flag to pick one. |
-| `--dry-run` flag (compute + print, no email, no state write) | Faster than `--test` for local iteration — no network send at all | SMALL | No — ADD | Trivial addition; overlaps partially with `--test`. Useful for CI smoke tests. |
-| Slack/Discord webhook as alternative channel | Operator might prefer push over email for action-required days | SMALL | No — DEFER | Resend + email is already the primary. Second channel is v2 territory. |
+Features that lift v1.3 from "works for F&F" to "F&F use it without prompting." Ship when LOC is small; defer otherwise.
 
-### Anti-Features (Things This App Deliberately Does NOT Do)
+| # | Feature | Value Proposition | Complexity | Existing modules touched | Notes |
+|---|---------|-------------------|------------|---------------------------|-------|
+| 27 | Per-user "starting account" wizard on first login | Lets F&F right-size paper trades to what feels real; default $100k is meaningless to someone with $5k savings | S | `dashboard_legacy/`, `state_manager` | Step 2 of the tour. Slider + presets: $10k / $50k / $100k / custom. Stored per user. |
+| 28 | Admin user-list shows last-login + last-paper-trade timestamps | Admin's only governance signal: "is Mum still using it?" Without this, admin has no idea if F&F have churned | S | `state_manager`, `dashboard_legacy/` | Cheap: data already exists. New columns in admin user-list view. |
+| 29 | Per-user email "pause until" (date-bounded) | Better than binary opt-out — "pause for 2 weeks while I'm camping" matches how people actually want to control inbox volume | S | `state_manager`, `notifier/` | Already noted in #16. Listed here separately because it's the **eloquent** form of opt-out (preserves intent to re-engage). |
+| 30 | News panel: "View on Yahoo Finance" link per headline | Headline alone isn't actionable; one-click to full story is the obvious next step | S | `dashboard_legacy/` | yfinance returns `link` field. Open in new tab. **Add `rel="noopener noreferrer"`** to every news link — third-party content. |
+| 31 | News critical-event banner appears in the daily email too | If the heuristic flags a critical story, the email subject should say so — F&F may not check the dashboard | S | `notifier/` | `[!news]` subject prefix on critical-event days, alongside existing `[!]` for stop-alerts. |
+| 32 | Tooltip content shows "what to do with this" not just "what this is" | Users learn faster from "When ATR is high, the system trades smaller" than from "ATR = Average True Range, a volatility measure" | S | `dashboard_legacy/` | Content discipline, not engineering. **Eloquent:** ties tooltips to the trace-panel narrative — operator-facing transparency Phase 17 already established. |
+| 33 | Admin sees aggregate "F&F email open rate / paused user count" | Future-proof: helps admin decide if v1.4 onboarding tweaks are working | S | `state_manager`, `notifier/` | **Defer if cheap-to-add later.** Resend doesn't expose open-rate without webhooks; the open-rate side is a v1.4+ webhook integration. Pause-count is trivial — show that now. |
+| 34 | First-run tour highlights the **trace panel** specifically | The trace panel (Phase 17) is the v1.2 differentiator; F&F won't notice it without prompting | S | `dashboard_legacy/` | Extend tour Step 1 with "Tap to see exactly why the system says what it says." Sells the existing investment. |
+| 35 | Per-user timezone for the daily-email send time | All users currently get 08:00 Sydney; international F&F may want their local 08:00 | M | `main.py`, `state_manager` | **Carry-forward from v1.4 candidate (Phase 23.5).** Listed here because multi-tenancy makes it newly relevant — but ship in v1.4 not v1.3. |
 
-Features that sound like progress but add risk, scope, or regulatory exposure. Document them to resist scope creep.
+---
 
-| Anti-Feature | Why Requested | Why Problematic | Alternative |
-|--------------|---------------|-----------------|-------------|
-| Live order execution / broker API | "Why make me place the trade manually?" | Turns a signal tool into a trading system with order-management bugs, reconciliation failures, regulatory obligations, and real money at risk. Hard constraint in PROJECT.md. | Keep ACTION REQUIRED block explicit; operator places the trade. |
-| Intraday / tick-level signals | More data = better signals, right? | The backtested system is daily-close-only. Intraday signals require different infra (data feed, minute-level state), a different signal rule, and a re-validated edge. Different product. | Daily close only. If intraday ever becomes interesting, it's a new project. |
-| Multi-user accounts / auth | "What if my partner wants to see it too?" | Adds login, password reset, session management, multi-tenant data separation — all for one extra reader. Operator can forward the email. | Single-operator, Resend API key and Replit Secrets are the only gate. Share via email forward. |
-| Backtesting UI | "Let me tune the params in the browser" | Backtests were already done in a separate notebook. A UI invites re-optimising the strategy on fresh data, which is how most operators overfit. | Backtest code stays external; any re-parameterisation is a deliberate, logged change to the signal module. |
-| Chart overlays (MA, Bollinger, candlesticks) in dashboard | "I want to see what the market is doing" | Dashboard is for P&L monitoring, not chart analysis. Adding charting pulls in a full TA chart library and tempts discretion. | Dashboard shows equity curve only. For market charts, open TradingView/Yahoo in a browser. |
-| News / sentiment / social signals | "What if Twitter is saying something?" | Mechanical system; adding sentiment breaks determinism and the backtested edge. Invites discretionary overrides. | No news. If the signal says FLAT and the news says otherwise, the system says FLAT. |
-| Additional instruments beyond SPI 200 & AUD/USD | "Add oil, gold, S&P" | Each new instrument needs its own contract specs, backtested params, and nexus in the state schema. Out of scope per PROJECT.md. | New instrument = new milestone with fresh backtest + validation. |
-| SPA dashboard (React/Vue/Svelte) | "A static HTML file feels dated" | Build step, bundler, npm dependencies — all for a single-page read-only dashboard. Zero user value. | Vanilla HTML + Chart.js CDN, matches existing backtest aesthetic. |
-| Database (SQLite / Postgres) | "What if `state.json` gets big?" | `state.json` at 10 years of daily runs + a few thousand trades = <5MB. SQLite adds a dependency and deployment complexity for zero gain. | Single `state.json`; atomic writes + schema versioning are enough. |
-| Push notifications (APNs / FCM) | "Email is slow" | Requires app store registration, device tokens, push-service credentials. Operator reads email within minutes anyway. | Resend email + subject-line urgency on action days. Slack webhook is the fallback if needed. |
-| SMS alerts | "I want it on my phone" | Twilio costs per message, requires phone-number verification, international AU SMS is expensive. Email push notifications give same latency for free. | Email with mobile-responsive design. |
-| "Train on my data" / auto-tuning params | "Maybe the thresholds should adapt" | Walk-forward optimisation is a research problem, not a daily-run feature. Auto-tuning breaks determinism and edge. | Params are code constants. Re-tuning is a deliberate, versioned change. |
-| Financial advice disclaimers beyond footer note | "Is this legal?" | Over-disclaiming signals "this is a product" when it's a personal tool. Single-line footer is sufficient. | Footer: "Automated signal — not financial advice." Nothing more. |
-| Regulatory / audit trails for external parties | "What if someone asks?" | This is a personal signal tool for one operator; no external consumers = no audit-report feature needed. | State.json + trade_log is the audit trail. Export-to-CSV is a v2 if ever needed. |
-| Real-time price ticker in dashboard | "I want to see prices updating live" | Requires a websocket feed, breaks the daily-close-only model, pulls dashboard into a different product category. | Dashboard shows last-close prices with timestamp. Refresh on reload. |
-| Multiple simultaneous strategies / signal ensembles | "What if we ran another rule alongside?" | Increases state complexity, email layout complexity, and tempts cherry-picking whichever strategy looks good. | One system, one set of signals, one email. |
+### Anti-Features (Explicitly NOT in v1.3)
+
+Things F&F (or admin) might ask for that would break the product. Document so scope creep dies on contact.
+
+| # | Anti-Feature | Why Requested | Why Problematic | Alternative |
+|---|--------------|---------------|-----------------|-------------|
+| 36 | **Public signup** | "Why can't I just send a Twitter link?" | Public signup turns a F&F tool into a SaaS with abuse-vector mitigation, CAPTCHAs, anti-spam, billing infrastructure, support load. Scope creep that swallows the product. | **Invite-only forever.** Admin issues invites by hand. Capacity ceiling is a feature, not a bug. |
+| 37 | **Real-time chat / messaging between users** | "Wouldn't it be cool if Mum could ask me a question through the app?" | Adds websockets, notifications, moderation, retention/deletion compliance, and turns the app into a social product. Marc → Mum chat already works in WhatsApp. | **No in-app comms.** Use existing channels (text, email). Optional: per-user "admin notes" the admin can leave on a user's dashboard, NOT cross-user. |
+| 38 | **Live trading / broker API** | "If we know the signal, why am I still placing trades manually?" | Inherited v1.0 hard constraint. Live exec → reconciliation, order-management, regulatory exposure. F&F amplifies this 10x — now there are N people whose accounts can blow up because of one bug. | **Signal-only. F&F inherit the same constraint.** Footer disclaimer remains: "Automated signal — not financial advice." |
+| 39 | **News-driven signal influence** | "If the news is bad, the system should go FLAT, right?" | Mechanical system; news inputs break determinism + the backtested edge. AST-enforced forbidden-import already blocks `news_fetcher` from `signal_engine`. | News is **context only**. Banner says "review before trading," does not modify signal or sizing. Operator owns the discretionary override. |
+| 40 | **Account funding / billing / subscriptions** | "If I'm offering this to F&F, should I charge a token amount?" | Adds Stripe, invoices, dunning, refunds, Aussie GST, financial-services regulatory questions ("are you taking deposits?"), and turns the product into a regulated entity. | **Free for F&F forever.** If commercialising ever becomes interesting, that's a v3 with a different legal structure (and probably not the same product). |
+| 41 | **Third-party data brokering / sharing aggregated F&F data** | "Could we sell aggregate F&F trading patterns?" | Privacy boundary collapse + financial-data regulatory minefield (APRA, CDR). Anti-feature with regulatory teeth. | **Never.** Document as out-of-scope. Per-user data is sacrosanct. |
+| 42 | **Exposing yfinance "API key" or any market-data credential to F&F** | "Let users plug in their own data feed" | yfinance has no API key (it's the unofficial Yahoo Finance scraper); but Resend, the droplet's deploy key, and any future paid feed do have credentials. F&F must never see them. | All credentials live in `.env` on the droplet. F&F see render output only. **Add to Phase 27's existing API-key redaction sweep**: confirm no env var ever reaches the dashboard render or email body. |
+| 43 | **In-dashboard charting (candlesticks / TA overlays / drawing tools)** | "Can I see the SPI chart with my own MAs?" | Pulls in TradingView Lightweight Charts or full chart library. Tempts discretion. F&F who want charts use TradingView. | Dashboard remains equity-curve-only (existing v1.0 anti-feature, reaffirmed). |
+| 44 | **Cross-user leaderboard / "best paper trader this week"** | "Could be fun!" | Gamification breaks the privacy boundary AND nudges F&F toward riskier paper-trading behaviour to "win." Anti-pattern for a tool whose whole point is risk discipline. | **No leaderboards.** Everyone sees their own equity curve only. |
+| 45 | **Per-user signal customisation (different ATR window for different F&F)** | "What if I want a more aggressive setup?" | Breaks "one system, one signal" + breaks the shared-compute optimisation in #14 + invalidates the 5-year backtest gate (Phase 23) per user. | Signal is shared and immutable. F&F who want custom signals are running a different product. v1.4+ "what-if" calculator is acceptable; per-user *live* signal is not. |
+| 46 | **Web push / browser notifications for stop-alerts** | "Email is slow when the market is moving" | Requires service worker, push subscription management, browser permissions UX, fallback paths. Marginal value over email. | Stop-alerts already use `[!stop]`-prefixed Resend emails (Phase 20). Subject + push notification on phone gets within seconds. Defer push to v2. |
+| 47 | **F&F-visible drift sentinel for admin** | "Why does Marc's drift look different from mine?" | Admin's drift is per-admin; exposing it leaks Marc's actual position. Privacy boundary. | Drift is per-user. Admin's drift visible to admin only. Existing v1.1 sentinel architecture already supports this once the user-id keying is in place. |
+| 48 | **Bulk-invite CSV upload for admin** | "I want to invite 20 people at once" | F&F target is "≤dozens"; bulk invite over-invests for ≤dozens. The form-per-invite friction is also a useful brake — it forces admin to think about each invite. | Single-invite form, ship in v1.3. If admin ever hits 30+ users, bulk is a v1.4 candidate. |
+
+---
 
 ## Feature Dependencies
 
 ```
-Yahoo Finance fetch
-    └──feeds──> Indicator computation (ATR/ADX/Mom/RVol)
-                    └──feeds──> Signal generation (2-of-3 + ADX gate)
-                                    ├──feeds──> Position sizing (vol-target)
-                                    │               └──feeds──> Pyramiding logic
-                                    └──feeds──> Exit rules (reversal / ADX drop / stop)
-                                                    └──feeds──> Trade log append
+Multi-tenant refactor (state_manager v9→v10 schema)
+    ├──blocks──> Per-user paper ledger (#9)
+    ├──blocks──> Per-user equity history (#10)
+    ├──blocks──> Per-user alert dedup (#11)
+    ├──blocks──> Per-user journal (#12)
+    ├──blocks──> Per-user email (#15)
+    ├──blocks──> Per-user email opt-out (#16, #29)
+    └──blocks──> Per-user tour state (#23, #25)
 
-State load ──> Compute step ──> State save ──> Dashboard render
-                                            └──> Email send
+Invite token plumbing (#2)
+    └──blocks──> Admin invite form (#1)
+                     └──blocks──> Invite email send (#3)
+                                      └──blocks──> Invitee acceptance flow (#4)
+                                                       └──blocks──> Admin user-list (#5, #28)
+                                                                        └──blocks──> Disable / delete (#6)
+                                                                        └──blocks──> Revoke unaccepted invite (#7)
 
-CLI flags (--test / --reset / --force-email / --dry-run)
-    └──gate──> State writes / email send / scheduler
+Shared signal compute refactor (#14)
+    └──blocks──> Per-user email fan-out (#15)
+    └──blocks──> Per-user alert evaluation (#11)
 
-Schedule loop ──> run_daily_check (= above pipeline)
-Error handling ──wraps──> every external call (yfinance, Resend, file I/O)
-Health check ──reads──> state.last_run ──injects──> next email
+News fetcher (#18)
+    ├──feeds──> Headline dedup (#19)
+    ├──feeds──> Critical-event keyword classifier (#21)
+    │              └──feeds──> Email banner (#31, differentiator)
+    └──forbidden_import──< signal_engine (#22 — AST-enforced)
+
+Tour state per user (#23)
+    └──depends──> Multi-tenant refactor
+    └──enhanced_by──> Trace-panel highlight (#34)
+    └──orthogonal──> Tooltips (#24, #26) — tooltips work standalone
+
+Tooltips (#24, #26)
+    └──depends──> No new state; pure dashboard_legacy/ render layer
+
+Privacy boundary (#8)
+    ├──enforced_by──> get_user_state(user_id) wrapper (state_manager refactor)
+    ├──enforced_by──> Admin route middleware (auth/)
+    └──tested_by──> New test class — TestTenantIsolation
 ```
 
 ### Dependency Notes
 
-- **Indicators require 400-day history:** if yfinance returns <252 bars, Mom12 is NaN and the signal will be FLAT by default. Flag this condition explicitly in the email rather than silently defaulting.
-- **Pyramiding requires position sizing + state (`pyramid_level`, `atr_entry`):** pyramid check must compare `(current_price - entry_price) / atr_entry` against thresholds that use the ATR at entry, not today's ATR.
-- **Exit rules require trailing stop → requires `peak_price` tracking in state:** peak_price must be updated on every run before the stop check, or the stop is stale.
-- **Email send depends on state save (for reproducibility):** if email sends before state saves and state save fails, the next run re-sends the same email. Save state first, then email.
-- **Dashboard conflicts with real-time price** (anti-feature): dashboard must always be generated from `state.json` snapshot + today's fetched bar only — no live feed.
-- **`--test` conflicts with state writes:** test mode must load state in read-only mode; any accidental `save_state()` call under `--test` is a bug.
-- **Weekday-only execution depends on schedule:** cron `* * * * 1-5` handles weekdays on GHA; in-process `schedule` loop needs an explicit `if today.weekday() < 5` gate inside `run_daily_check`, or it will fire on weekends when Always-On reboots the process.
+- **Multi-tenant refactor is the v1.3 critical path.** Items #9–13, #15–17, #23, #25 all block on `state.json` schema v9→v10 with per-user namespaces. Phase ordering: refactor first, features second.
+- **Shared-signal-compute optimisation (#14) is a refactor, not a feature.** It saves yfinance fetches and guarantees signal-determinism-across-users. Must land before per-user fan-out (#15) or the daily run hits Yahoo N times.
+- **News module isolation is AST-enforced (#22).** `signal_engine` cannot import `news_fetcher`. Existing `TestDeterminism::test_forbidden_imports_absent` already walks the AST blocklist — extend it. **Eloquent locality:** the rule lives where it's owned (the test), not in human-review discipline.
+- **Privacy boundary (#8) is a cross-cutting concern.** Add a `TestTenantIsolation` class that asserts: (a) `get_user_state(user_A)` never surfaces user_B's data, (b) admin routes refuse F&F sessions, (c) F&F routes never read the admin namespace. **This is the test that makes the multi-tenant refactor safe to ship.**
+- **Tour replay state lives server-side (#25), not localStorage.** Persists across devices. Single source of truth. Anti-pattern: localStorage tour state because then the user finishes on phone, opens on desktop, sees the tour again — feels broken.
+- **Tooltips have zero dependencies on the multi-tenant refactor.** They're a pure render-layer addition. Could ship in a hotfix v1.2.x if multi-tenant slips. **Suggests phasing:** Tooltip phase can run in parallel with multi-tenant phase.
 
-## MVP Definition
+---
 
-### Launch With (v1) — the ship-to-validate set
+## MVP Definition (v1.3 Scope)
 
-Everything needed for the operator to actually use it as their morning signal. Matches the 13 SPEC.md Active Requirements.
+### Launch With (v1.3) — Must Ship
 
-- [x] Fetch daily OHLCV via yfinance with retry — **why essential:** no data = no signal
-- [x] Compute ATR(14), ADX(20), Mom1/3/12, RVol(20) with Wilder smoothing — **why essential:** core signal
-- [x] 2-of-3 momentum vote + ADX≥25 gate → LONG/SHORT/FLAT — **why essential:** the product IS the signal
-- [x] ATR-based position sizing with vol targeting (risk 1.0% LONG / 0.5% SHORT) — **why essential:** sizing is part of the actionable output
-- [x] Contract specs honoured (SPI $25/pt $30 RT; AUD/USD $10k notional $5 RT) — **why essential:** P&L is wrong without this
-- [x] Exit rules: signal reversal / ADX<20 / trailing stop (3×/2× ATR) — **why essential:** entries without exits = fake P&L
-- [x] Pyramiding to 3 contracts at +1×/+2×ATR — **why essential:** part of the backtested edge
-- [x] `state.json` persistence (account, positions, signals, trade_log, equity_history) — **why essential:** next run can't function without it
-- [x] Resend HTML email with ACTION REQUIRED block on signal change — **why essential:** email is the delivery channel
-- [x] `dashboard.html` with equity curve, positions, last 20 trades, stats — **why essential:** spec'd as part of the daily output
-- [x] Daily weekday schedule at 08:00 AWST — **why essential:** "every weekday morning" is the cadence
-- [x] `--test`, `--reset`, `--force-email` CLI flags — **why essential:** ops and debugging
-- [x] Graceful handling of yfinance / Resend / corrupt-state failures — **why essential:** "never crash silently" is a hard constraint
-- [x] Structured console logs — **why essential:** only visibility in Replit/GHA unattended mode
-- [x] Footer disclaimer on emails — **why essential:** minimal legal hygiene
-- [x] **ADD: `state.json` schema_version field + atomic writes (temp+rename)** — **why essential:** prevents data loss on crash mid-write; v1 cost is ~10 lines
-- [x] **ADD: Stale-run banner in email if `last_run` > 2 days old** — **why essential:** SPEC already calls for it; operator's only signal that the scheduler died
-- [x] **ADD: Weekday gate inside `run_daily_check` (even when using `schedule`)** — **why essential:** Always-On restarts can land on a weekend and fire duplicate runs
+Without these, v1.3 is not a credible "open it to F&F" milestone.
 
-### Add After Validation (v1.x) — post-shipping polish
+- [ ] **Multi-tenant `state.json` refactor (schema v9→v10)** — every read/write goes through `get_user_state(user_id)`; admin namespace preserved. Test: `TestTenantIsolation`. **Why essential:** prerequisite for everything else.
+- [ ] **Invite token plumbing + admin invite form** (#1, #2, #3) — admin can issue invites without editing JSON.
+- [ ] **Invitee acceptance flow** (#4) — clicks link, sets password, enrols TOTP, lands on dashboard with their own state.
+- [ ] **Admin user-list with disable + revoke** (#5, #6 disable-only, #7) — admin can manage the user pool. **Defer #6 delete to v1.4** behind feature flag.
+- [ ] **Privacy boundary tests** (#8) — F&F cannot see admin or each other; admin sees user list, not F&F trade content.
+- [ ] **Per-user paper ledger / equity / alerts / journal** (#9–13) — per-user state isolation is the whole point of v1.3.
+- [ ] **Shared signal compute** (#14) — one yfinance fetch, one signal calc per market per day.
+- [ ] **Per-user 08:00 Sydney email** (#15) — each F&F user gets their own.
+- [ ] **Failed-delivery isolation** (#17) — one bouncing user doesn't break the loop.
+- [ ] **Per-user email enable/disable + pause-until** (#16, #29) — F&F can mute without admin involvement.
+- [ ] **News panel + headline dedup + cached fetch** (#18, #19, #20) — daily news context per market.
+- [ ] **Critical-event keyword classifier** (#21) — explicit-heuristic banner.
+- [ ] **AST forbidden-import for news → signal_engine** (#22) — signal stays mechanical.
+- [ ] **First-run tour: 3 steps + skip + replay** (#23, #25) — activation event for new F&F.
+- [ ] **Inline tooltips on every panel, mobile-safe, WAI-ARIA** (#24, #26) — F&F learn the dashboard without phoning admin.
+- [ ] **Phase 28 v1.2 UAT closure** — 8 deferred items (per PROJECT.md).
+- [ ] **v1.2.1 retroactive patch wrap + retroactive validation sweep** — close v1.2 debt before opening v1.3 surface area.
+- [ ] **`.planning/backtests` path bug fix** — project-root-anchored.
 
-Add these only after the daily email is landing reliably for ~4 weeks.
+### Add After Validation (v1.3.x)
 
-- [ ] **Timestamped state backups before each run** — trigger: first time state gets corrupted or a bug causes a bad write
-- [ ] **`--restore` flag to pick a backup** — trigger: after the first backup saves an ops headache
-- [ ] **`--dry-run` flag (compute + print, no write, no email)** — trigger: when CI smoke tests or local iteration feel slow
-- [ ] **Signal history panel in dashboard (last N signals per instrument with dates)** — trigger: first time operator asks "when did I last flip to short?"
-- [ ] **Per-instrument ADX/Mom chart in dashboard** — trigger: operator wants to see *why* the signal is where it is without reading the email
-- [ ] **Export trade_log to CSV via `--export-trades`** — trigger: tax time
-- [ ] **Weekly-cadence mode toggle (Friday-close check, Monday-open execution only)** — trigger: if daily-cadence results diverge noticeably from backtest
-- [ ] **Slack webhook as secondary channel for action-required days** — trigger: if an action-day email ever gets missed
+- [ ] **News critical-event banner in email subject (#31)** — trigger: first time admin notices a critical-event was on the dashboard but missed in the email.
+- [ ] **Tour Step 1 highlights trace panel (#34)** — trigger: admin observes F&F never click the trace toggles.
+- [ ] **Admin user-list shows last-login + last-paper-trade (#28)** — trigger: admin asks "who's still using this?"
+- [ ] **Admin "delete user" with confirm-by-typing (#6 delete branch)** — trigger: GDPR-style erasure request OR a mistakenly-invited user wants a hard wipe.
+- [ ] **Pause-count surfaced in admin view (#33 partial)** — trigger: trivial cost; only deferred because not blocking v1.3 ship.
 
-### Future Consideration (v2+) — only if the core is validated and stable
+### Future Consideration (v1.4+)
 
-- [ ] **More instruments (oil, gold, S&P)** — defer because: each needs a fresh backtest and contract-spec block. New instrument is a milestone.
-- [ ] **PostgreSQL/SQLite storage** — defer because: state.json is fine until it genuinely isn't. Likely never.
-- [ ] **A proper web dashboard (auth + multi-session)** — defer because: contradicts single-operator design; anti-feature unless the product changes.
-- [ ] **Broker integration / live execution** — defer because: explicitly out of scope (hard constraint).
-- [ ] **Strategy ensemble / alternative signal rules** — defer because: anti-feature per "one system, one signal" principle.
+- [ ] **Per-user timezone (#35)** — defer because: international F&F is hypothetical until first international invite. Current users all in AU.
+- [ ] **Resend webhook open-rate tracking (#33 full)** — defer because: webhooks need extra infra (HMAC verify, replay protection); only worth it if engagement is in question.
+- [ ] **Web push for stop-alerts (#46)** — defer because: anti-feature unless email-latency complaints surface.
+- [ ] **Bulk invite CSV (#48)** — defer because: F&F target is ≤dozens.
+- [ ] **F1 full-chain integration test harness completion** — carried from v1.0/v1.1 known-deferred.
+
+---
 
 ## Feature Prioritization Matrix
 
-Operator-facing value, not technical complexity.
+Prioritised by user-facing value and how much of v1.3's "open to F&F" promise depends on each.
 
-| Feature | Operator Value | Implementation Cost | Priority |
-|---------|----------------|---------------------|----------|
-| Accurate signals (indicators + gate) | HIGH | MEDIUM | P1 |
-| Daily email with ACTION REQUIRED block | HIGH | MEDIUM | P1 |
-| Persistent `state.json` | HIGH | LOW | P1 |
-| Retry logic on yfinance failure | HIGH | LOW | P1 |
-| Position sizing + pyramiding | HIGH | MEDIUM | P1 |
-| Exit rules (reversal / ADX / stop) | HIGH | MEDIUM | P1 |
-| Scheduler (weekday 08:00 AWST) | HIGH | LOW | P1 |
-| Graceful error handling + warning email | HIGH | LOW | P1 |
-| Structured console logs | MEDIUM | LOW | P1 |
-| CLI `--test` / `--reset` / `--force-email` | MEDIUM | LOW | P1 |
-| Dashboard with equity curve | MEDIUM | LOW | P1 |
-| Atomic state writes + schema_version | MEDIUM | LOW | P1 |
-| Stale-run warning banner | HIGH | LOW | P1 |
-| Weekday gate in schedule loop | HIGH | LOW | P1 |
-| Timestamped state backups | MEDIUM | LOW | P2 |
-| `--dry-run` flag | LOW | LOW | P2 |
-| `--restore` backup picker | MEDIUM | LOW | P2 |
-| CSV trade export | LOW | LOW | P2 |
-| Slack webhook fallback | LOW | LOW | P2 |
-| Weekly-cadence mode switch | LOW | MEDIUM | P2 |
-| Per-instrument chart in dashboard | LOW | MEDIUM | P3 |
-| Signal history panel | LOW | LOW | P3 |
-| More instruments | LOW (big later) | HIGH | P3 |
-| SQLite/Postgres migration | NONE | HIGH | never |
-| Live execution | NEGATIVE | HIGH | never |
+| # | Feature | User Value | Implementation Cost | Priority |
+|---|---------|------------|---------------------|----------|
+| Multi-tenant refactor + privacy tests | HIGH | MEDIUM | **P1** |
+| Invite plumbing + acceptance flow | HIGH | MEDIUM | **P1** |
+| Admin user-list + disable + revoke | HIGH | LOW | **P1** |
+| Per-user state isolation (#9–13) | HIGH | MEDIUM | **P1** |
+| Shared signal compute (#14) | HIGH | LOW | **P1** |
+| Per-user email + opt-out + failed-delivery isolation | HIGH | MEDIUM | **P1** |
+| News panel + dedup + cached fetch | HIGH | MEDIUM | **P1** |
+| Critical-event keyword banner | MEDIUM | LOW | **P1** |
+| AST forbidden-import for news | HIGH | LOW | **P1** |
+| First-run tour (3 steps) | HIGH | MEDIUM | **P1** |
+| Inline tooltips, WAI-ARIA, mobile-safe | HIGH | MEDIUM | **P1** |
+| Tour replay-from-help | MEDIUM | LOW | **P1** |
+| Email "pause until [date]" | MEDIUM | LOW | **P1** |
+| Phase 28 v1.2 UAT closure | HIGH | LOW | **P1** (debt) |
+| v1.2.1 retroactive wrap + validation sweep | MEDIUM | LOW | **P1** (debt) |
+| News critical-event email subject prefix | MEDIUM | LOW | **P2** |
+| Tour highlights trace panel | MEDIUM | LOW | **P2** |
+| Admin user-list timestamps | MEDIUM | LOW | **P2** |
+| Admin delete user (terminal) | LOW | MEDIUM | **P2** |
+| Per-user starting-account wizard | MEDIUM | LOW | **P2** (folds into tour Step 2) |
+| News "View on Yahoo" link + rel=noopener | LOW | LOW | **P2** |
+| Tooltip "what to do" content discipline | MEDIUM | LOW | **P2** (writing, not engineering) |
+| Per-user timezone | LOW | MEDIUM | **P3** |
+| Resend webhook open-rate | LOW | HIGH | **P3** |
+| Web push notifications | LOW | HIGH | **never** (anti) |
+| Bulk invite CSV | LOW | LOW | **P3** |
+| Public signup | NEGATIVE | HIGH | **never** (anti) |
+| Live trading | NEGATIVE | HIGH | **never** (anti, hard constraint) |
+| News-driven signal influence | NEGATIVE | MEDIUM | **never** (anti, AST-enforced) |
+| Cross-user leaderboard | NEGATIVE | MEDIUM | **never** (anti) |
 
 **Priority key:**
-- **P1** — must ship in v1; operator can't use the tool without it
-- **P2** — ship in v1.x after the core runs reliably for a few weeks
-- **P3** — defer to v2; only if there's a concrete trigger
-- **never** — explicit anti-features / out-of-scope
+- **P1** — must ship in v1.3; v1.3 is incomplete without it
+- **P2** — ship in v1.3 if cheap (≤1 day each); else v1.3.x
+- **P3** — defer to v1.4+ unless a concrete trigger fires
+- **never** — anti-feature; document so it stays out
 
-## Competitor Feature Analysis
+---
 
-There is no direct competitor — this is a personal operator tool, not a product. But for orientation, here's how the design choices compare to adjacent tools the operator might have seen.
+## Competitor / Adjacent-Tool Feature Analysis
 
-| Feature | TradingView alerts | Commercial signal services (e.g. Trade Ideas) | QuantConnect live paper trading | **This app** |
-|---------|---------------------|-------------------------------------------------|----------------------------------|--------------|
-| Delivery channel | In-app + email/SMS + webhook | In-app dashboard | Web dashboard | **Daily email + static HTML dashboard** |
-| Signal determinism | Depends on Pine script + server time | Proprietary, not reproducible | Reproducible with replay | **Fully deterministic from state + OHLCV** |
-| Position sizing | None (alert only) | Some offer % risk sizing | Yes (in algo) | **ATR + vol-target sizing baked in** |
-| P&L tracking | None | Paper account | Full equity curve | **State.json + dashboard equity curve** |
-| Customisability | High (Pine script) | Low | High (C#/Python) | **Code-owned — anything goes** |
-| Cost | ~$15-60/mo | $100-200+/mo | Free tier + paid | **Resend free tier + Replit or GHA free** |
-| Scope | General purpose | General purpose | General purpose | **Two instruments, one edge, one operator** |
-| Anti-features avoided | — | — | — | **No live exec, no intraday, no auth, no news, no backtest UI** |
+Limited direct comparators (this is a personal F&F tool, not a product). Adjacent reference points for the v1.3-specific patterns:
 
-The app's entire differentiation is being *narrow on purpose*: one system, two instruments, one operator, daily cadence, signal-only. Every feature decision leans into that.
+| Feature | Auth0 / WorkOS multi-tenant | Resend transactional | TradingView paid signal services | yfinance retail tools (e.g. Yahoo Finance app) | **This app v1.3** |
+|---------|-----------------------------|----------------------|----------------------------------|------------------------------------------------|-------------------|
+| Invite token format | Signed JWT, 7-day expiry, single-use, email-bound | n/a | n/a | n/a | **`itsdangerous` signed token, 7-day expiry, single-use, email-bound** |
+| Disable vs delete | Distinct, soft-delete + audit log | n/a | n/a | n/a | **Disable in v1.3, delete deferred to v1.3.x with confirm-by-typing** |
+| Per-user email opt-out | Marketing/transactional split, granular categories | One-click List-Unsubscribe header, transactional exempt | Email + push + in-app, all per-user | App-level notification toggle | **Dashboard toggle + pause-until; transactional, no CAN-SPAM footer** |
+| News with importance flag | n/a | n/a | Reuters / Bloomberg severity score (paid feed) | Editorial curation | **yfinance has NO importance field — keyword-heuristic fallback w/ explicit "heuristic" banner** |
+| First-run tour | Embedded SDK (Auth0 Universal Login does its own) | n/a | Long product tours, drop-off at 5+ steps | Skip-by-default, learn-by-doing | **3-step tour, server-side state, skip + replay** |
+| Inline tooltips | n/a | n/a | Hover-only desktop, none on mobile | None — assumes user already knows | **Click/tap, WAI-ARIA `role=tooltip`, mobile-safe** |
+
+The v1.3 differentiation is still being **narrow on purpose**: invite-only (not public), per-user state (but shared signal), news as context (not signal input), tour because F&F are not Marc, tooltips because the trace panel is the v1.2 differentiator and F&F won't notice it without help.
+
+---
 
 ## Sources
 
-- `/Users/marcwiriadisastra/Documents/Work/Apps/trading-signals/.planning/PROJECT.md` — validated requirements, constraints, and key decisions
-- `/Users/marcwiriadisastra/Documents/Work/Apps/trading-signals/SPEC.md` — full functional spec (signal rules, email format, CLI flags, error handling)
-- Prior backtest work referenced in PROJECT.md (dark aesthetic, Chart.js, colour palette) — establishes dashboard design language
-- Global patterns (`~/.claude/CLAUDE.md`) — async/await discipline, atomic file writes, error-never-silent convention
+- `/Users/marcwiriadisastra/Documents/Work/Apps/trading-signals/.planning/PROJECT.md` — v1.3 target features, hard constraints, schema state
+- `/Users/marcwiriadisastra/Documents/Work/Apps/trading-signals/.planning/MILESTONES.md` — v1.0/v1.1/v1.2 shipped scope
+- `/Users/marcwiriadisastra/Documents/Work/Apps/trading-signals/.planning/research/v1.0-archive/FEATURES.md` — baseline single-operator features (do not re-research)
+- [yfinance Ticker docs](https://ranaroussi.github.io/yfinance/reference/yfinance.ticker_tickers.html) — `news` field schema (no native importance flag confirmed)
+- [yfinance/issues/1956](https://github.com/ranaroussi/yfinance/issues/1956) — community discussion of `get_news()` shape
+- [W3C ARIA Authoring Practices: Tooltip Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/tooltip/) — `role=tooltip` + `aria-describedby` keyboard/focus rules
+- [MDN: ARIA tooltip role](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles/tooltip_role) — mobile/touch caveats
+- [Chameleon onboarding benchmark report](https://www.chameleon.io/benchmark-report) — 3-step tours: 72% completion; 7-step: 16%
+- [Guideflow product tour best practices](https://www.guideflow.com/blog/product-tour-best-practices) — 3–5 step optimal range
+- [Postmark transactional email best practices](https://postmarkapp.com/guides/transactional-email-best-practices) — per-user preference UX
+- [Resend: unsubscribe links on transactional](https://resend.com/docs/dashboard/emails/add-unsubscribe-to-transactional-emails) — CAN-SPAM exempt; dashboard toggle preferred
+- [Auth0 multi-tenant best practices](https://auth0.com/docs/get-started/auth0-overview/create-tenants/multi-tenant-apps-best-practices) — invite + tenant-scoped tokens
+- [WorkOS developer guide to SaaS multi-tenant architecture](https://workos.com/blog/developers-guide-saas-multi-tenant-architecture) — invitation workflows + auth re-check at acceptance
+- [itsdangerous PyPI](https://pypi.org/project/itsdangerous/) — signed-token primitive (timestamped, tamper-evident; pairs with state-tracked single-use redemption flag)
+- Global patterns (`~/.claude/CLAUDE.md`) — atomic file writes, async/await discipline, Most-Eloquent labelling, post-milestone codemoot gate
 
 ---
-*Feature research for: mechanical trading signal apps (personal/operator tooling)*
-*Researched: 2026-04-20*
+*Feature research for: v1.3 Multi-Tenant Friends & Family — invite-only RBAC, per-user state isolation, per-user email, news context, guide UI*
+*Researched: 2026-05-10*

@@ -1,608 +1,639 @@
-# Architecture Research
+# Architecture Research — v1.3 Multi-Tenant Friends & Family
 
-**Domain:** Single-operator mechanical trading signal generator (Python, file-backed state, email-delivered)
-**Researched:** 2026-04-20
-**Confidence:** HIGH — stack, file layout, and workflow are fully pinned by SPEC.md; architectural recommendations are drawn from standard Python patterns for small scheduled jobs and verified against the constraints in PROJECT.md.
+**Domain:** Multi-tenant retrofit of a single-operator FastAPI + file-state trading signal app
+**Researched:** 2026-05-10
+**Confidence:** HIGH on integration shape (every existing seam was read at the file level); MEDIUM on the migration semantics for `state.json` v9→v10 (locked at the level of "what fields move where"; exact key names belong in the phase plan)
 
-## Standard Architecture
+---
+
+## Standard Architecture (v1.3 target)
 
 ### System Overview
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│                          ENTRY POINT LAYER                             │
-│  ┌──────────────────────────────────────────────────────────────┐     │
-│  │  main.py                                                      │     │
-│  │  - CLI parsing (--test, --reset, --force-email)               │     │
-│  │  - dotenv loading                                             │     │
-│  │  - Scheduler loop OR one-shot execution                       │     │
-│  │  - Orchestrates the daily run workflow                        │     │
-│  │  - Top-level try/except error boundary                        │     │
-│  └──────────────────────────────────────────────────────────────┘     │
-├───────────────────────────────────────────────────────────────────────┤
-│                       ORCHESTRATION LAYER                              │
-│  ┌──────────────────────────────────────────────────────────────┐     │
-│  │  run_daily_check()  (lives in main.py)                        │     │
-│  │  Pulls from I/O adapters, calls pure logic, writes results    │     │
-│  └──────────────────────────────────────────────────────────────┘     │
-├───────────────────────────────────────────────────────────────────────┤
-│                    PURE DOMAIN LOGIC (no I/O)                          │
-│  ┌───────────────────────┐  ┌──────────────────────────────────┐      │
-│  │  signal_engine.py     │  │  (internal helpers)              │      │
-│  │  - compute_indicators │  │  - position sizing               │      │
-│  │  - get_signal         │  │  - stop calc                     │      │
-│  │  - check_stop_hit     │  │  - pyramid check                 │      │
-│  │  - calc_position_size │  │  - unrealised P&L                │      │
-│  └───────────────────────┘  └──────────────────────────────────┘      │
-├───────────────────────────────────────────────────────────────────────┤
-│                        I/O ADAPTER LAYER                               │
-│  ┌────────────────┐ ┌──────────────────┐ ┌──────────────────────┐     │
-│  │ signal_engine  │ │ state_manager.py │ │    notifier.py       │     │
-│  │   .fetch_data  │ │  load_state      │ │  send_signal_email   │     │
-│  │  (yfinance)    │ │  save_state      │ │  (Resend HTTPS API)  │     │
-│  │                │ │  atomic write    │ │                      │     │
-│  └────────────────┘ └──────────────────┘ └──────────────────────┘     │
-│  ┌────────────────────────────────────────────────────────────┐       │
-│  │  dashboard.py  —  generate_dashboard → write dashboard.html │       │
-│  └────────────────────────────────────────────────────────────┘       │
-├───────────────────────────────────────────────────────────────────────┤
-│                      PERSISTENCE / OUTPUT                              │
-│  ┌──────────────┐  ┌────────────────┐  ┌───────────────────────┐      │
-│  │  state.json  │  │ dashboard.html │  │ Resend API (outbound) │      │
-│  │  (on disk)   │  │ (on disk)      │  │ Yahoo Finance (in)    │      │
-│  └──────────────┘  └────────────────┘  └───────────────────────┘      │
-└───────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                               ENTRY POINTS                                │
+│  ┌──────────────┐  ┌──────────────────────────┐  ┌────────────────────┐  │
+│  │  main.py     │  │  uvicorn web.app:app     │  │  systemd unit      │  │
+│  │  (CLI shim)  │  │  (FastAPI server)        │  │  (08:00 Sydney)    │  │
+│  └──────┬───────┘  └────────────┬─────────────┘  └─────────┬──────────┘  │
+├─────────┼──────────────────────┼──────────────────────────┼──────────────┤
+│         ▼                      ▼                          ▼              │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │             ORCHESTRATION LAYER (sole wall-clock readers)          │  │
+│  │  daily_loop / daily_run / scheduler_driver / crash_boundary        │  │
+│  │  + NEW v1.3: per_user_fanout (orchestrates N user emails / run)    │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────────────────┤
+│   PURE-MATH HEX (AST-guarded — must NOT change for v1.3)                 │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │ signal_engine, sizing_engine, system_params,                     │    │
+│  │ pnl_engine, alert_engine, backtest/{simulator,metrics,render}    │    │
+│  │ Inputs: floats, dicts, DataFrames. NO state, NO net, NO clock.   │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+├──────────────────────────────────────────────────────────────────────────┤
+│   I/O ADAPTERS (peers — no cross-imports between them)                   │
+│  ┌─────────────┐ ┌──────────────┐ ┌────────────┐ ┌───────────────────┐   │
+│  │state_manager│ │auth_store    │ │data_fetcher│ │notifier/          │   │
+│  │+ NEW user_  │ │+ NEW users[]│ │(yfinance)  │ │ (Resend HTTPS)    │   │
+│  │  scoping    │ │+ NEW invites│ │+ NEW news  │ │                   │   │
+│  └─────────────┘ └──────────────┘ └────────────┘ └───────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────┐     │
+│  │ web/ (FastAPI app, routes/, middleware/, services/)             │     │
+│  │  + NEW current_user dependency, RBAC dependencies               │     │
+│  │  + NEW admin/* routes (invite, user list, revoke)               │     │
+│  │  + NEW /tour, /news per-market panels                           │     │
+│  └─────────────────────────────────────────────────────────────────┘     │
+│  ┌─────────────────────────────────────────────────────────────────┐     │
+│  │ dashboard / dashboard_legacy/ (HTML render)                      │     │
+│  │  + NEW user-scoped tables; SHARED signal panels                  │     │
+│  │  + NEW news panel + tooltip overlay + first-run tour modal       │     │
+│  └─────────────────────────────────────────────────────────────────┘     │
+├──────────────────────────────────────────────────────────────────────────┤
+│   PERSISTENCE                                                             │
+│  ┌──────────────────┐ ┌──────────────────────┐ ┌─────────────────────┐   │
+│  │ state.json (v10) │ │ auth.json + invites  │ │ news cache (in mem) │   │
+│  │ admin namespace  │ │ users[], pending[]   │ │ per-market 1h TTL   │   │
+│  │ + users{id:...}  │ │ trusted_devices/user │ │                     │   │
+│  └──────────────────┘ └──────────────────────┘ └─────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | What does NOT belong here |
-|-----------|----------------|---------------------------|
-| `main.py` | CLI parsing, env loading, scheduler vs. one-shot dispatch, orchestration of the daily workflow, top-level error boundary, console summary printing | No indicator math, no Resend request, no yfinance call inline, no JSON parsing of state |
-| `signal_engine.py` | Pure math on DataFrames + the one yfinance I/O call (kept here for cohesion with the data contract). Indicators, signal vote, position sizing, stop math, pyramid math, unrealised P&L, stop-hit check | No state I/O, no email, no dashboard rendering, no scheduler, no `datetime.now()` for business dates (pass `as_of` in) |
-| `state_manager.py` | Load/save/migrate `state.json`, atomic write, corruption recovery (backup + reinit), schema invariants, helpers: `record_trade`, `update_equity_history`, `reset_state`, `get_position`, `set_position` | No signal computation, no email, no network I/O |
-| `notifier.py` | Render HTML email body (inline CSS), build subject line, POST to Resend, handle 429/5xx, degrade to test mode when `RESEND_API_KEY` is missing | No state mutations, no signal computation, no file writes other than maybe a debug dump of HTML |
-| `dashboard.py` | Render `dashboard.html` from state + today's indicator snapshot, embed state JSON for Chart.js, write file atomically | No network I/O, no email, no mutation of state |
-| `state.json` | Single source of truth for account, open positions, last signal per instrument, trade log, equity history, last_run timestamp, schema_version | Never hand-edited during normal operation; only written by `state_manager.save_state` |
-| `dashboard.html` | Static output artefact — regenerated every run, never read back by the app | N/A |
+| Component | Responsibility (v1.3 delta in **bold**) | Notes |
+|-----------|----------------------------------------|-------|
+| `state_manager.py` (1293 LOC) | load/save/migrate `state.json`; atomic write via `mutate_state(mutator)` under `fcntl.LOCK_EX`; **new helpers: `mutate_user_state(user_id, mutator)`, `load_user_view(user_id)`, `iter_user_ids()`** | New helpers wrap existing `mutate_state` — single chokepoint preserved |
+| `auth_store.py` (520 LOC) | Atomic JSON for `auth.json`: TOTP secret, trusted devices, magic links. **Extended to hold `users[]` + `pending_invites[]`** | Same atomic-write contract; keeps `users` co-located with `trusted_devices` because they share lifecycle (user delete → revoke devices) |
+| `web/middleware/auth.py` (349 LOC) | Cookie+TOTP+trusted-device+header auth. **Now resolves `request.state.user_id`** from validated cookie payload; exempt + public paths unchanged | The cookie payload moves from "no payload" to `{"uid": "<user_id>"}` — backward-compat shim accepts cookies without `uid` and treats them as admin during migration grace |
+| `web/dependencies.py` (NEW, ~80 LOC) | FastAPI `Depends(current_user)` and `Depends(require_admin)` factories; reads `request.state.user_id` set by middleware | Single source of truth for "who is the caller"; routes import these and never touch the cookie directly |
+| `web/routes/admin/*` (NEW package) | `/admin/users` (list), `/admin/invite` (POST issue), `/admin/users/{id}` (DELETE revoke) | Gated by `Depends(require_admin)` — never imported into other route modules |
+| `web/routes/markets.py`, `dashboard.py`, `paper_trades.py`, `trades.py` | Existing surfaces. **Each gains an injected `user_id` arg via dependency**; SHARED signal-display routes read from admin namespace; per-user routes (paper trades, trades, equity, alerts, market preferences) scope by `user_id` | LOC pressure: trades.py is already 746, paper_trades 493, totp 614, login 608, dashboard 644 — all already exceed the 500-LOC D-09 cap, so v1.3 forces splits (see §File-Size Hygiene below) |
+| `daily_loop.py` / `daily_run.py` | 9-step orchestration. **Step 9.6 (alerts) becomes a fan-out loop**: `for user_id in iter_user_ids(): evaluate_user_alerts(state, user_id); send_user_email(report, user_id)`. Signal compute (steps 3.a–3.o) runs ONCE per market, unchanged | Determinism preserved — every user gets the same signals computed from the same yfinance pull |
+| `notifier/dispatch.py` (414 LOC) | Resend HTTPS POST. **`send_signal_email(report, recipient_email, user_view)`** — `user_view` carries that user's positions/alerts/equity; signal block stays shared | Fan-out lives in `daily_loop`, not here — `notifier` stays a transport |
+| `news_fetcher.py` (NEW, ~120 LOC) | I/O hex peer of `data_fetcher.py`: `fetch_news(yfinance_symbol) -> list[NewsItem]`; in-process LRU cache with 1h TTL keyed by symbol | Lives outside the AST hex (it's I/O, like `data_fetcher`); imports `yfinance` only |
+| `news_filter.py` (NEW pure module, ~60 LOC) | `is_critical(news_item, market) -> bool` — keyword + yfinance importance hint check. Pure, deterministic, AST-hex-eligible | Added to `_HEX_PATHS_STDLIB_ONLY` test list so the boundary stays enforced |
+| `dashboard_legacy/tour_panel.py` (NEW, ~80 LOC) | First-run tour modal renderer; reads `user_view['tour_completed']` to short-circuit render | Sibling of existing `account_section.py` etc; no new packages |
+| `web/routes/tour.py` (NEW, ~40 LOC) | `POST /tour/complete` — flips `tour_completed=True` for current user via `mutate_user_state` | Smallest possible new route module |
 
-**Where position sizing and stop calcs live — answer:** both belong in `signal_engine.py` as pure functions. They are deterministic math over `(account, signal, atr, rvol, multiplier)` and `(position, price, atr)`. Keeping them in `signal_engine` means `main.py` stays thin and tests can cover sizing/stops without any I/O.
+---
 
-**Key separation rule:** every function in `signal_engine.py` takes plain arguments (floats, dicts, DataFrames) and returns plain values. The only exception is `fetch_data`, which is the one network call — we keep it in `signal_engine` because the DataFrame contract it produces is the input shape the rest of the module expects. Consider splitting it into `signal_engine_io.py` if testing pressure grows, but for a file-count-minimal app it's acceptable.
-
-## Recommended Project Structure
-
-The SPEC has already fixed the top-level layout. The recommendation is to keep it flat and resist creating packages:
+## Recommended Project Structure (v1.3 deltas only)
 
 ```
 trading-signals/
-├── main.py                  # Entry point — CLI + scheduler + orchestration
-├── signal_engine.py         # Pure math + yfinance fetch
-├── state_manager.py         # state.json persistence + recovery
-├── notifier.py              # Resend HTML email
-├── dashboard.py             # dashboard.html renderer
-├── requirements.txt
-├── .env.example
-├── .env                     # gitignored
-├── .gitignore               # state.json (local), .env, __pycache__/, dashboard.html
-├── state.json               # auto-created; committed only in GitHub Actions mode
-├── dashboard.html           # auto-generated
-├── tests/                   # pytest — pure functions only
-│   ├── test_signal_engine.py
-│   ├── test_state_manager.py
-│   └── fixtures/
-│       └── sample_ohlcv.csv
-└── .github/
-    └── workflows/
-        └── daily.yml        # cron: "0 0 * * 1-5" (08:00 AWST weekdays)
+├── auth_store.py                  # MODIFIED: + users[], pending_invites[], invite helpers
+├── state_manager.py               # MODIFIED: + mutate_user_state, load_user_view, _migrate_v9_to_v10
+├── news_fetcher.py                # NEW: I/O hex (yfinance.Ticker.news + 1h cache)
+├── news_filter.py                 # NEW: pure-math hex (critical-event keyword check)
+├── per_user_fanout.py             # NEW: orchestrator seam — fan-out alerts + email per user
+├── web/
+│   ├── app.py                     # MODIFIED: register admin + tour + news routes
+│   ├── dependencies.py            # NEW: current_user, require_admin Depends factories
+│   ├── middleware/
+│   │   └── auth.py                # MODIFIED: cookie payload now {"uid": ...}; sets request.state.user_id
+│   ├── routes/
+│   │   ├── admin/
+│   │   │   ├── __init__.py        # NEW
+│   │   │   ├── users.py           # NEW: list / revoke
+│   │   │   └── invites.py         # NEW: issue / consume
+│   │   ├── tour.py                # NEW: POST /tour/complete
+│   │   ├── news.py                # NEW: HTMX panel GET /markets/{m}/news
+│   │   ├── trades.py              # SPLIT: trades_open.py + trades_close.py + trades_modify.py
+│   │   ├── paper_trades.py        # SPLIT: paper_open.py + paper_modify.py + paper_close.py
+│   │   ├── totp.py                # SPLIT: totp_enroll.py + totp_verify.py
+│   │   └── login.py               # SPLIT: login_form.py + login_post.py
+│   └── services/
+│       └── invite_service.py      # NEW: invite token mint/consume — uses URLSafeTimedSerializer
+└── dashboard_legacy/
+    ├── tour_panel.py              # NEW
+    └── tooltip_data.py            # NEW: tooltip content as Python dict (NOT JSON file — see §Guide UI)
 ```
 
 ### Structure Rationale
 
-- **Flat layout (no `src/` package):** this is a 5-file app with no reuse surface. A package adds import ceremony for zero benefit. Python's `sys.path` behaviour on Replit and GitHub Actions is simpler when `main.py` lives at the repo root.
-- **`tests/` present from day one:** the pure-function core (indicators, signal vote, sizing, stop-hit) is exactly the kind of code that benefits from unit tests, and the deterministic nature of the system (same inputs → same outputs) makes testing cheap. Feed fixed CSV fixtures in, assert on indicator values.
-- **`.github/workflows/daily.yml` is first-class:** the SPEC explicitly names GitHub Actions as the free fallback. Ship the workflow file alongside the code — not as an afterthought — because deployment topology drives entry-point behaviour (see below).
-- **`state.json` gitignored locally, committed in Actions:** the `.gitignore` should list `state.json`, and the Actions workflow uses `git add -f state.json && git commit && git push` after the run. The local dev loop stays clean; the Actions loop has durable state.
-- **No `utils.py` / `helpers.py`:** put helpers next to their callers. Cross-module helpers (date formatting, AWST now) can live at the top of whichever module uses them most; if they start being imported from three places, extract to a `util.py` at that point, not before.
+- **`admin/` is a route subpackage**, not a flag. Gives a single import locus that can be `Depends(require_admin)`-decorated at the router level — no per-route boilerplate.
+- **`per_user_fanout.py` is a top-level seam, not buried in `daily_run.py`.** Phase 27 D-09 capped production source at 500 LOC; `daily_run.py` is already at 530 and an in-line fan-out loop would push it over. The seam is also testable in isolation: feed it a state + user list, assert N email dispatches.
+- **News splits into two modules.** `news_fetcher.py` does I/O (yfinance + cache), `news_filter.py` is the pure critical-event check. Keeping the filter pure means it goes into the AST hex test alongside `alert_engine` and `pnl_engine` — protects the determinism contract.
+- **No `users/` directory of per-user state files.** See §State Layout below — single `state.json` with a `users{}` map is cheaper, atomic, and matches the schema-migration habits already in place.
+- **Tooltip content is a Python dict, not a JSON content file.** `dashboard_legacy/` already renders Python → HTML; importing a static dict is one fewer disk read per request and the content is too small (~40 strings) to warrant separate-file management.
+
+---
 
 ## Architectural Patterns
 
-### Pattern 1: Ports-and-Adapters at a Single-File Scale (Hexagonal-lite)
+### Pattern 1: Single-File Multi-Tenant State with `users{}` Map (RECOMMENDED)
 
-**What:** Keep one file with pure functions that take data and return data. Keep another file that does I/O. The orchestrator (`main.py`) wires them together.
+**What:** `state.json` stays a single file. Schema v10 adds a top-level `users` dict keyed by `user_id`, plus a top-level `admin_user_id` pointer. Existing top-level keys (`positions`, `signals`, `trade_log`, `paper_trades`, `equity_history`, `alerts`, `markets`) are split: shared/computed values stay top-level (signals, ohlc_window, indicator_scalars, news cache); per-user values move under `state['users'][user_id]`.
 
-**When to use:** always, even for 500-LOC apps. The payoff is test speed and the ability to reason about the signal output as a pure function of market data + prior state.
+**Schema v10 shape:**
 
-**Trade-offs:** forces `main.py` to do the "messy glue" work. That's fine — it's a small file dedicated to that job.
-
-**Example:**
-
-```python
-# signal_engine.py — pure
-def get_signal(df: pd.DataFrame) -> int:
-    """Returns 1, -1, or 0 from the latest row of an indicator-enriched df."""
-    row = df.iloc[-1]
-    if row["ADX"] < 25:
-        return 0
-    up = sum(row[c] > 0.02 for c in ("Mom1", "Mom3", "Mom12"))
-    dn = sum(row[c] < -0.02 for c in ("Mom1", "Mom3", "Mom12"))
-    if up >= 2: return 1
-    if dn >= 2: return -1
-    return 0
-
-# main.py — impure glue
-def run_daily_check():
-    state = state_manager.load_state()
-    for sym, ticker in INSTRUMENTS.items():
-        df = signal_engine.fetch_data(ticker)          # I/O
-        df = signal_engine.compute_indicators(df)      # pure
-        new_signal = signal_engine.get_signal(df)      # pure
-        state = apply_signal(state, sym, new_signal, df)  # pure reducer
-    state_manager.save_state(state)                    # I/O
-    notifier.send_signal_email(build_report(state))    # I/O
+```json
+{
+  "schema_version": 10,
+  "admin_user_id": "u_admin_marc",
+  "last_run": "2026-05-12",
+  "signals": { "SPI200": {...}, "AUDUSD": {...} },          // SHARED (deterministic)
+  "markets":  { "SPI200": {...}, "AUDUSD": {...} },         // SHARED (admin curates)
+  "strategy_settings": { ... },                              // SHARED
+  "_resolved_contracts": { ... },                            // SHARED runtime cache
+  "warnings": [...],                                         // SHARED (system-level)
+  "users": {
+    "u_admin_marc": {
+      "email": "mwiriadi@gmail.com",
+      "role": "admin",
+      "positions": {"SPI200": {...}, "AUDUSD": null},
+      "trade_log": [...],
+      "paper_trades": [...],
+      "equity_history": [...],
+      "account": 100000.00,
+      "initial_account": 100000.00,
+      "contracts": {...},
+      "alerts": { "last_alert_state": {...} },
+      "ui_prefs": { "active_market": "SPI200", "tour_completed": true }
+    },
+    "u_ff_alice_a1b2": {
+      "email": "alice@example.com",
+      "role": "friend_family",
+      "positions": {...}, "trade_log": [...], ...
+      "ui_prefs": { "tour_completed": false }
+    }
+  }
+}
 ```
 
-### Pattern 2: Single Orchestrator Function as the Workflow Spine
+**When to use:** when (a) operator count is bounded (PROJECT.md says invite-only F&F, expected <20 users), (b) the existing atomic-write infrastructure is excellent and rewriting it for per-file is high-risk for low gain, (c) admin needs to enumerate all users in O(1) for the daily fan-out loop.
 
-**What:** `run_daily_check()` in `main.py` is the canonical, step-by-step expression of the daily workflow. Every step is a line of code at the same indentation level. No callbacks, no middleware, no "pipeline" abstraction.
+**Trade-offs:**
 
-**When to use:** when the workflow is linear, one-user, and you want the flow to be readable top-to-bottom without tracing through abstractions.
+| Pro | Con |
+|-----|-----|
+| One `mutate_state` call still serializes all writers via the existing `fcntl.LOCK_EX` | All users contend for the same lock — but daily-cycle is once/day and HTMX edits are infrequent; lock-hold times are sub-millisecond |
+| Schema migration is one `_migrate_v9_to_v10` step (rebucket fields under `users[admin_user_id]`) | One corrupt write affects everyone — mitigated by existing backup-on-corruption recovery |
+| File size grows linearly with users — at 20 users × ~50KB each = 1MB. JSON parse is ~10ms. Acceptable | Above 100 users, parse time matters — but that's out of scope (PROJECT.md: F&F only) |
+| Single-source enumeration: `state['users'].keys()` for fan-out, no directory scan | Backups must be coordinated — but a single-file backup is exactly what the existing `_backup_corrupt_file` already does |
 
-**Trade-offs:** if the workflow grows many branches, this becomes unwieldy. For this app it won't — the spec freezes the step list.
+**Why not per-user files (`users/{user_id}/state.json`):** would require N-fold extension of the atomic-write contract (tempfile + fsync + os.replace + dir-fsync + lock acquisition × N), break the existing `mutate_state(mutator)` chokepoint, and the daily fan-out would need a directory scan. The complexity multiplier is not justified by the gain (which is "blast radius of one corrupt file") — and corruption is already vanishingly rare with the current contract.
 
-**Example:**
+**Why not hybrid (admin in master, F&F in per-user):** asymmetric writes are a known foot-gun; admin and F&F end up with different invariants. Better to commit to one shape.
 
-```python
-def run_daily_check(args):
-    state = state_manager.load_state()
-    report = {"date": today_awst(), "instruments": {}, "warnings": []}
+### Pattern 2: Cookie-Carries-`uid` + `Depends(current_user)` for Route Scoping
 
-    for sym, ticker in INSTRUMENTS.items():
-        df = safe_fetch(ticker, report)                        # step 1
-        if df is None: continue
-        df = signal_engine.compute_indicators(df)              # step 2
-        new_signal = signal_engine.get_signal(df)              # step 3
-        state = resolve_stop_hits(state, sym, df)              # step 4
-        state = apply_signal_change(state, sym, new_signal, df)# step 5
-        state = apply_pyramid(state, sym, df)                  # step 6
-        state = update_unrealised_pnl(state, sym, df)          # step 7
-        report["instruments"][sym] = build_instrument_report(state, sym, df)
-
-    state = state_manager.update_equity_history(state, today_str())  # step 8
-    if not args.test:
-        state_manager.save_state(state)                              # step 9
-    dashboard.write_dashboard(state, report)                         # step 10
-    notifier.send_signal_email(report)                               # step 11
-    print_console_summary(report)                                    # step 12
-```
-
-Each "step N" is a named function that takes the state and returns a new state (or mutates and returns the same dict). Readable top-to-bottom; each step is individually unit-testable.
-
-### Pattern 3: State-as-Reducer with Atomic Write
-
-**What:** `state_manager` exposes `load_state` and `save_state`. All in-run mutations happen in memory on the loaded dict. At the end of the run, `save_state` writes atomically (write to `state.json.tmp`, then `os.replace` to `state.json`). Readers never see a partial file.
-
-**When to use:** whenever you have one-writer, many-readers against a JSON file (here: dashboard embeds the JSON, external tools may scrape it).
-
-**Trade-offs:** a crash mid-run loses all intra-run mutations — which is exactly what you want, because a crash mid-workflow leaves the state in an inconsistent intermediate shape. Atomic write = crash-safe "all-or-nothing" semantics.
-
-**Example:**
+**What:** Extend the existing cookie payload. Today `tsi_session` is a signed-empty-string. v1.3 changes it to a signed JSON object: `{"uid": "u_admin_marc"}`. The middleware (`web/middleware/auth.py::AuthMiddleware._try_cookie`) decodes the payload and sets `request.state.user_id`. Routes consume it via:
 
 ```python
-# state_manager.py
-import json, os, shutil, tempfile
+# web/dependencies.py (NEW)
+from fastapi import Request, HTTPException
 
-def save_state(state: dict, path: str = "state.json") -> None:
-    state["schema_version"] = SCHEMA_VERSION
-    state["last_saved_utc"] = datetime.utcnow().isoformat()
-    dirpath = os.path.dirname(os.path.abspath(path)) or "."
-    fd, tmp = tempfile.mkstemp(dir=dirpath, prefix=".state.", suffix=".json.tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(state, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except Exception:
-        if os.path.exists(tmp): os.remove(tmp)
-        raise
+def current_user_id(request: Request) -> str:
+    uid = getattr(request.state, 'user_id', None)
+    if uid is None:
+        raise HTTPException(status_code=401, detail='unauthenticated')
+    return uid
 
-def load_state(path: str = "state.json") -> dict:
-    if not os.path.exists(path):
-        return _initial_state()
-    try:
-        with open(path) as f:
-            state = json.load(f)
-        _validate_schema(state)
-        return _migrate_if_needed(state)
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        _backup_corrupt_file(path, reason=str(e))
-        print(f"[state] CORRUPT state.json: {e} — backed up and reinitialised")
-        return _initial_state(warning=f"state.json was corrupt: {e}")
+def require_admin(request: Request) -> str:
+    uid = current_user_id(request)
+    # Cheap admin check — read auth_store.users (cached at app.state level) once per request.
+    from auth_store import get_user_role
+    if get_user_role(uid) != 'admin':
+        raise HTTPException(status_code=403, detail='admin only')
+    return uid
 ```
 
-### Pattern 4: Graceful Degradation for Optional Collaborators
-
-**What:** `notifier.py` checks for `RESEND_API_KEY` at send time. If it's missing or empty, it does not raise — it logs "test mode: email not sent" and returns `False`. The orchestrator treats email-send failure as a warning in next-run's report, not a workflow-killer.
-
-**When to use:** when the collaborator is important-but-not-critical. The signal must be computed and persisted even if email fails.
-
-**Trade-offs:** risk of silent failure — mitigated by (a) console log always saying whether email was sent, (b) a `warnings` list in `state.json` that the next email surfaces, (c) a health check that flags `last_run` age.
-
-**Example:**
+Routes:
 
 ```python
-# notifier.py
-def send_signal_email(report: dict) -> bool:
-    api_key = os.environ.get("RESEND_API_KEY")
-    if not api_key:
-        print("[notifier] RESEND_API_KEY missing — skipping email (test mode)")
-        report.setdefault("warnings", []).append("email not sent: no API key")
-        return False
-    try:
-        resp = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {api_key}",
-                     "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": [TO_EMAIL],
-                  "subject": build_subject(report),
-                  "html":    build_email_html(report)},
-            timeout=15,
-        )
-        if 200 <= resp.status_code < 300:
-            return True
-        print(f"[notifier] Resend {resp.status_code}: {resp.text[:200]}")
-        report.setdefault("warnings", []).append(f"email failed: HTTP {resp.status_code}")
-        return False
-    except requests.RequestException as e:
-        print(f"[notifier] Resend network error: {e}")
-        report.setdefault("warnings", []).append(f"email failed: {type(e).__name__}")
-        return False
+# web/routes/paper_trades.py — minimal diff
+@app.post('/paper-trade/open')
+async def paper_open(req: PaperOpenReq, user_id: str = Depends(current_user_id)):
+    state_manager.mutate_user_state(user_id, lambda u: u['paper_trades'].append(...))
+    ...
 ```
 
-### Pattern 5: Dual Entry Paths, Single Workflow
+**When to use:** when you want every route handler to receive the user identity declaratively, with FastAPI's dependency-injection doing the wiring, and zero per-route boilerplate.
 
-**What:** the same `run_daily_check()` function is called two different ways depending on deployment:
+**Trade-offs:** middleware-set request.state + Depends is the FastAPI-idiomatic pattern; alternatives are worse:
+- **Per-route decorator:** N decorators × M routes = touching every file; high diff, easy to forget one.
+- **Middleware that injects directly into kwargs:** doesn't work with FastAPI's signature-based DI; would require monkeypatching the route function.
+- **Reading `request.cookies` in each handler:** duplicates the cookie validation logic; bypasses `Depends` testing surface.
 
-- **Replit Always On:** `main()` uses `schedule.every().day.at("00:00").do(run_daily_check)` and sits in a `while True` loop. Process lives forever, scheduler wakes it up.
-- **GitHub Actions:** `main()` detects a CLI flag (e.g. `--once` or env var `CI=true`), calls `run_daily_check()` exactly once, and exits with code 0 or non-zero.
+**Why this works for "shared display, per-user mutation":** Display routes (e.g. `GET /` rendering the dashboard) take `user_id: str = Depends(current_user_id)` and pass it through to the dashboard renderer. The renderer reads SHARED `state['signals']` for the signal panel and PER-USER `state['users'][user_id]` for positions/trades. One DI param, two scopings — controlled at the renderer, not duplicated across routes.
 
-**When to use:** when the SPEC mandates multiple hosts with different lifecycle models but you don't want the business logic duplicated.
+### Pattern 3: Daily-Cycle Fan-Out — Compute-Once, Distribute-Many
 
-**Trade-offs:** `main()` has two branches. That's fine — both branches call the same `run_daily_check()`.
-
-**Example:**
+**What:** The existing 9-step daily orchestration in `daily_run.py::_run_daily_check_impl` does signal compute (steps 1–7) ONCE per market. v1.3 keeps that intact and changes only Step 9.6 (alerts) and a NEW Step 9.7 (per-user email):
 
 ```python
-def main():
-    args = parse_args()
-    load_dotenv()
-
-    if args.reset:
-        state_manager.reset_state(); return
-
-    if args.once or os.environ.get("GITHUB_ACTIONS") == "true":
-        run_daily_check(args); return
-
-    # Replit / local dev: scheduler mode
-    run_daily_check(args)  # first-run-on-start
-    schedule.every().day.at("00:00").do(lambda: run_daily_check(args))
-    print("[main] Scheduler running; 08:00 AWST daily.")
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
+# per_user_fanout.py (NEW)
+def fanout_alerts_and_emails(state, run_date, dashboard_url):
+    """Step 9.6+9.7 replacement. Called once after mutate_state in daily_run."""
+    for user_id, user_view in state['users'].items():
+        # Per-user alert evaluation (uses SHARED signals, PER-USER positions)
+        evaluate_user_alerts(state, user_id, dashboard_url)
+        # Per-user email — same shared signal block, user-scoped P&L block
+        send_user_email(state, user_id, run_date)
 ```
+
+**Critical invariants preserved:**
+
+- **No re-fetch:** yfinance is hit ONCE per market in step 3 (already true). The fan-out only reads the already-computed `state['signals']` and the per-user `state['users'][uid]`.
+- **W3 invariant (exactly 2 `mutate_state` calls per run):** the alert-state commit was already a second `mutate_state` in `_evaluate_paper_trade_alerts_impl`. v1.3 batches it: ONE `mutate_state` per fan-out iteration would explode to 1+N saves. The eloquent fix is to BATCH all per-user alert state changes into a single `mutate_state` at the end of the fan-out — the function builds an in-memory dict of `{user_id: new_alert_state}` and applies them in one mutator. W3 stays at exactly 2.
+
+> **Most eloquent:** batched-mutator fan-out. The fan-out loop builds an updates dict in memory; one terminal `mutate_state(lambda s: apply_all(s, updates))` writes everyone. Locality (the rule "we save once per run" stays in `state_manager`), no contract change to `mutate_state`, composes naturally with the existing 2-saves contract.
+
+**Where fan-out lives:** `per_user_fanout.py` (new), called by `daily_run._run_daily_check_impl` between steps 9 and 9.5. NOT inside `daily_loop.py` (that's pure service-wiring) and NOT inside `notifier/` (that's transport). The orchestration belongs in an orchestrator-tier module.
+
+### Pattern 4: News as a Dashboard-Render-Time Read with In-Process Cache
+
+**What:** News fetch happens at HTTP request time via a 1h TTL in-process cache, NOT at daily-cycle time.
+
+```python
+# news_fetcher.py (NEW)
+_NEWS_CACHE: dict[str, tuple[float, list[dict]]] = {}  # symbol -> (fetched_at, items)
+
+def get_news(yfinance_symbol: str, ttl_seconds: int = 3600) -> list[dict]:
+    now = time.monotonic()
+    cached = _NEWS_CACHE.get(yfinance_symbol)
+    if cached and (now - cached[0]) < ttl_seconds:
+        return cached[1]
+    items = _fetch_news(yfinance_symbol)  # yfinance.Ticker(s).news
+    _NEWS_CACHE[yfinance_symbol] = (now, items)
+    return items
+```
+
+**Why request-time, not daily-cycle:**
+1. News goes stale faster than once a day; users hit dashboard at any time.
+2. Request-time cache amortizes — first user pays the fetch cost (~500ms), rest see cache.
+3. Daily cycle is already CPU-bound on indicator math; adding a network call would extend the run.
+4. Crucially: news must NOT influence the signal — keeping it out of the daily cycle prevents accidental coupling.
+
+**Critical-event keyword check (`news_filter.py`):** pure module, AST-hex-eligible. Reads (1) yfinance's `relatedTickers`/importance hint if present, (2) hand-curated keyword list (`['recession', 'rate cut', 'rate hike', 'crash', 'bankruptcy', 'fed', ...]`). Returns boolean. Tested with golden fixtures (a JSON of sample yfinance news rows + expected critical/not-critical labels) — same approach as the indicator oracle tests.
+
+**HTMX panel route:** `GET /markets/{m}/news` → renders an HTML fragment (no full-page reload). Sits in `web/routes/news.py`, ~50 LOC. The dashboard's market panel does `<div hx-get="/markets/SPI200/news" hx-trigger="load">` — lazy load so a slow news fetch doesn't block the main dashboard render.
+
+### Pattern 5: User Registry Co-Located in `auth.json`, Not a Separate File
+
+**What:** `auth.json` already holds `trusted_devices[]`, `pending_magic_links[]`, and TOTP state. v1.3 adds two arrays:
+
+```json
+{
+  "schema_version": 2,
+  "users": [
+    { "user_id": "u_admin_marc", "email": "mwiriadi@gmail.com", "role": "admin",
+      "totp_secret": "...", "totp_enrolled": true, "created_at": "..." },
+    { "user_id": "u_ff_alice_a1b2", "email": "alice@example.com", "role": "friend_family",
+      "totp_secret": "...", "totp_enrolled": true, "invited_by": "u_admin_marc",
+      "consumed_invite_token_hash": "sha256...", "created_at": "..." }
+  ],
+  "pending_invites": [
+    { "token_hash": "sha256...", "issued_by": "u_admin_marc", "email": "alice@example.com",
+      "created_at": "...", "expires_at": "...", "consumed": false }
+  ],
+  "trusted_devices": [
+    { "uuid": "...", "user_id": "u_admin_marc", "label": "iPhone", ... }   // user_id added
+  ],
+  "pending_magic_links": [ ... ]   // user_id added per row
+}
+```
+
+**Why not a separate `users.json`:** four reasons.
+1. **Atomic-with-trust-state.** Adding a user and revoking their devices on delete are one transaction — keeping them in one file means one `save_auth` covers both.
+2. **One atomic-write contract to maintain.** A second file means a second `_atomic_write` clone, a second corruption-recovery story, a second test.
+3. **Invite-token storage MUST be transactional with user creation** — when consuming a magic-link invite, the same `mutate(auth)` flips `pending_invites[i].consumed=True` and pushes to `users[]`. A two-file split would mean two separate atomic writes with no cross-file transaction → race window where the invite is consumed but the user isn't created (or vice versa).
+4. **`auth.json` already TypedDict-models its shape** (`AuthData`); adding `users` and `pending_invites` to that TypedDict is a small extension.
+
+**When you'd split:** if `auth.json` exceeded ~100KB or if the user list became hot-read (multiple times per request). Neither is true at F&F scale.
+
+**Hex boundary preserved:** `auth_store.py` already enforces "stdlib only — NOT itsdangerous, NOT pyotp." Invite token *minting* (signing) belongs in `web/services/invite_service.py` (which can use `itsdangerous.URLSafeTimedSerializer` like the cookie path); `auth_store` only stores the sha256 hash and the metadata.
+
+### Pattern 6: Schema Migration v9 → v10 — Bucket Existing State Under `admin_user_id`
+
+**What:** A single `_migrate_v9_to_v10(s: dict) -> dict` function in `state_manager.py` that:
+
+1. Generates a deterministic admin user_id (`u_admin_marc` — locked in code).
+2. Creates `s['users'] = {admin_user_id: {...}}`.
+3. Moves these existing top-level keys into `s['users'][admin_user_id]`:
+   - `positions`, `trade_log`, `paper_trades`, `equity_history`, `account`, `initial_account`, `contracts`, `alerts`, and any `ui_prefs`-shaped keys (e.g. `active_market_cookie_default`).
+4. Leaves these top-level (SHARED): `signals`, `markets`, `strategy_settings`, `_resolved_contracts`, `warnings`, `last_run`, `schema_version`.
+5. Stamps `s['admin_user_id'] = 'u_admin_marc'`.
+6. Initializes `users[admin_user_id]['ui_prefs']['tour_completed'] = True` (admin has lived without the tour).
+
+**Idempotency:** `_migrate_v9_to_v10` reads source keys with `.get()` and never mutates a key it has already moved. Re-running it on a v10 dict is a no-op.
+
+**Migration chain contiguity gate** (`state_manager` module-load assert that `MIGRATIONS[2..STATE_SCHEMA_VERSION]` is gap-free) catches any drift — extending to v10 means adding `10: _migrate_v9_to_v10` to the dict and bumping `STATE_SCHEMA_VERSION = 10`.
+
+**Pre-existing v11 in `system_params.py`:** the codebase already has `STATE_SCHEMA_VERSION: int = 11` and a `_migrate_v9_to_v10` + `_migrate_v10_to_v11` (per-market contract_type / financing_rate). v1.3's multi-tenant migration must therefore be `_migrate_v11_to_v12` (or higher — re-check at plan time). The shape of the migration is identical; only the version number changes. **Confirm at plan time, not now.**
+
+### Pattern 7: Guide UI — HTML data-attributes for Tooltips, Cookie+state for Tour
+
+**What:**
+
+| Concern | Storage | Reason |
+|---------|---------|--------|
+| Tooltip content (per-panel help text) | Python dict in `dashboard_legacy/tooltip_data.py`, rendered into `<button data-tip="..." aria-describedby="...">` | Static content; ships with the binary; one fewer file to keep in sync; XSS-safe via `html.escape` at render time |
+| Tour shown/hidden | Per-user `state['users'][uid]['ui_prefs']['tour_completed']` (boolean) | The tour is a one-time ceremony; needs to persist across logins, devices, and browsers — a cookie would re-show it on every fresh device |
+| Tour modal open state mid-session | Hidden form field / HTMX swap target — no persistence | Ephemeral UI state |
+
+**Why not cookie-only for tour:** F&F users may log in from phone+laptop; a cookie-only flag re-triggers the tour on each device. Per-user flag in `state.json` is correct.
+
+**Why not separate JSON content file for tooltips:** for ~40 short strings, the file maintenance cost > the benefit. If marketing/copy ever wants to edit without a deploy, revisit — but that's a v1.4 concern.
+
+**`POST /tour/complete` flow:**
+
+```python
+# web/routes/tour.py (NEW)
+@app.post('/tour/complete')
+async def complete_tour(user_id: str = Depends(current_user_id)):
+    def _flip(u):
+        u.setdefault('ui_prefs', {})['tour_completed'] = True
+    state_manager.mutate_user_state(user_id, _flip)
+    return Response(status_code=204)
+```
+
+`mutate_user_state` is a thin wrapper around `mutate_state` that ensures `users[uid]` exists and applies the mutator only to that subdict — single chokepoint preserved.
+
+---
 
 ## Data Flow
 
-### Daily Run Flow (the canonical workflow)
+### Per-user Daily Cycle Flow (replaces v1.2 single-user flow)
 
 ```
-[Scheduler / GH Actions trigger]
+[systemd 08:00 Sydney trigger]
         ↓
-main.py: parse_args, load_dotenv
+main.py → daily_loop.run_daily_check
         ↓
-state_manager.load_state()   →  state: dict (from state.json, or fresh, or recovered)
+daily_run._run_daily_check_impl
         ↓
-FOR EACH instrument (SPI200, AUDUSD):
-  │
-  ├─ signal_engine.fetch_data(ticker, 400)      ← yfinance (retry 3x)
-  ├─ signal_engine.compute_indicators(df)        ← pure
-  ├─ new_signal = signal_engine.get_signal(df)   ← pure
-  │
-  ├─ IF state.positions[sym].active:
-  │     stop_hit = check_stop_hit(pos, today_high, today_low, atr)   ← pure
-  │     IF stop_hit OR adx < 20 OR signal_reversed:
-  │         trade = close_position(state, sym, reason, fill_price)
-  │         state_manager.record_trade(state, trade)
-  │
-  ├─ IF new_signal != 0 AND no active pos in that direction:
-  │     open_position(state, sym, new_signal, size, atr, price)
-  │
-  ├─ IF state.positions[sym].active:  # pyramid check AFTER open
-  │     n_add = signal_engine.check_pyramid(pos, price, atr_entry)
-  │     IF n_add > 0: add_contracts(state, sym, n_add)
-  │
-  └─ pos.unrealised_pnl = signal_engine.compute_unrealised_pnl(pos, price, mult)
-  
+state_manager.load_state()                  # ONE read of state.json
+        ↓
+FOR EACH market (SPI200, AUDUSD):           # SHARED COMPUTE — exactly as v1.2
+  data_fetcher.fetch_ohlcv()                # ONE yfinance call per market
+  signal_engine.compute_indicators()        # PURE
+  signal_engine.get_signal()                # PURE
+  sizing_engine.step(...)                   # PURE  (uses ADMIN positions for now —
+                                            #  see "Pyramid/exit semantics" below)
 END FOR
         ↓
-state_manager.update_equity_history(state, today_str)
+state_manager.mutate_state(_apply_daily_run)   # SAVE #1 (W3 invariant)
         ↓
-state_manager.save_state(state)          ← atomic write to state.json
+per_user_fanout.fanout_alerts_and_emails(state, run_date, dashboard_url):
+  updates = {}
+  FOR uid in state['users']:
+    user_view = state['users'][uid]
+    user_alerts = alert_engine.compute_user_alerts(  # PURE, takes shared signals + user positions
+        state['signals'], user_view['positions'], user_view['alerts']['last_alert_state']
+    )
+    updates[uid] = user_alerts
+    notifier.send_user_email(                # I/O: Resend HTTPS, per-user HTML
+        state['signals'], user_view, run_date,
+        recipient=user_view['email']
+    )
+  state_manager.mutate_state(_apply_alert_updates(updates))  # SAVE #2 — batched
         ↓
-dashboard.generate_dashboard(state, ind_data) → write dashboard.html
+dashboard.render() → write dashboard.html       # admin-namespace dashboard for legacy URL
         ↓
-notifier.send_signal_email(report)       ← Resend HTTPS POST (degrades if no key)
-        ↓
-print_console_summary(report)
-        ↓
-[return to scheduler loop OR exit (GH Actions)]
+_push_state_to_git(state, run_date)             # unchanged
 ```
 
-### State Mutation Ordering — when each field gets updated
+**Key invariants:**
+- yfinance hit count: still **exactly 2 per cycle** (one per market). Independent of N users.
+- `mutate_state` call count: still **exactly 2 per cycle**. Fan-out batches alert updates.
+- Signal determinism: SHARED. `state['signals']` is computed once and read N times — every user sees the same bytes.
 
-Relative to one daily run, fields in `state.json` change in this order. Nothing changes until the end (atomic save), but the in-memory `state` dict mutates as follows:
+### Pyramid/Exit Semantics — Critical Open Question
 
-| Step | Field | Change |
-|------|-------|--------|
-| 1 | `state.last_run` | set to today's AWST date string (set early so error paths still persist it) |
-| 2 | `state.positions[sym].unrealised_pnl` | recomputed from today's close (even before stop checks — so stop-hit emails carry accurate numbers) |
-| 3 | `state.positions[sym].peak_price` | updated to today's intra-bar high/low if it exceeds the current peak (required before stop calc) |
-| 4 | `state.positions[sym].trail_stop` | recomputed from new peak |
-| 5 | `state.positions[sym]` | set to `{"active": false}` if stop hit / reversal / ADX drop-out |
-| 6 | `state.trade_log` | append trade record on close |
-| 7 | `state.account` | decremented by round-trip cost, credited with realised P&L |
-| 8 | `state.positions[sym]` | set to new active position if a new entry fires (after close) |
-| 9 | `state.positions[sym].n_contracts`, `pyramid_level` | incremented if pyramid threshold hit |
-| 10 | `state.signals[sym]` | replaced with today's signal (kept even when FLAT so next-run change detection works) |
-| 11 | `state.equity_history` | append `{date, equity}` — equity = account + sum of unrealised P&L |
-| 12 | `state.last_saved_utc`, `state.schema_version` | stamped by `save_state` |
+**v1.2 reality:** the orchestrator's per-symbol loop calls `sizing_engine.step()` with the operator's position and updates `state['positions'][market]`. There is ONE position per market.
 
-**Invariant 1:** `state.signals[sym]` reflects the latest computed signal, regardless of whether it matches the current position. This is what allows "signal change" detection on the next run.
+**v1.3 dilemma:** if every user has their own `positions`, do we run `sizing_engine.step()` N times per market (once per user), or once for the admin and let users' "real" positions drift?
 
-**Invariant 2:** `state.positions[sym].active == false` ⇒ all other fields under that position are either absent or stale; downstream code must never read them when `active == false`.
+**Recommendation:** run `sizing_engine.step()` ONCE per market with **NO position context** (treat it as a pure signal-direction-only decision), then have `per_user_fanout` recompute per-user pyramid/exit decisions as a pure function of `(shared signal, shared indicators, this user's positions)`.
 
-**Invariant 3:** `state.trade_log` entries are append-only. Never mutate a historical entry.
+This means:
+- The daily cycle's per-symbol loop changes shape: `sizing_engine.step` is called only to derive the *signal change* (LONG/FLAT/SHORT transition) and the *trailing stop level* — both deterministic from market data. Per-user position management moves to the fan-out.
+- `sizing_engine.step` is already pure; the change is at the orchestrator level (which `position` to pass).
+- Closed trades become per-user — `record_trade` becomes `record_user_trade(state, user_id, trade)`.
 
-**Invariant 4:** `state.equity_history` has one entry per run (idempotent if run twice on same date — replace rather than append to prevent drift).
+**Why this is hex-safe:** `sizing_engine` doesn't change. Only the orchestrator's call sites move from "one call per market" to "one signal-derive call per market + N position-resolve calls in the fan-out." Both are still pure-math calls; the AST guard sees no new imports.
 
-**Invariant 5:** `state.account` represents closed-trade equity only. Unrealised P&L is never folded into `account` — it lives on `positions[sym].unrealised_pnl`. Dashboard/email "equity" = `account + sum(unrealised_pnl)`.
+**Trade-off:** a real change to the per-symbol loop in `daily_run.py`. Expect the diff to be ~50 LOC re-shape. Codecov risk: existing tests assume `state['positions']` lives at the top level — they need rewrite. This is the largest test-touch surface in v1.3.
 
-### Config / Env-Var Loading
+### Request Flow — Authenticated Dashboard Hit
 
-- **Single point of load:** `main.py` calls `load_dotenv()` once at startup, before any other imports that read env vars. Other modules read `os.environ.get(...)` at call time, never at import time. That way test fixtures can monkeypatch `os.environ` between tests.
-- **Required vs optional:**
-  - **Required in production:** `TO_EMAIL` — without a recipient, the app is useless. Fail fast with a clear error if missing at startup.
-  - **Required for email:** `RESEND_API_KEY` — missing triggers graceful degradation (email skipped, warning logged, workflow continues).
-  - **Optional with defaults:** `FROM_EMAIL` (default `signals@carbonbookkeeping.com.au`), `ACCOUNT_START` (default `100000`), `SEND_TEST_ON_START` (default `false`).
-- **Defaults for test mode:** if `--test` is passed OR if `RESEND_API_KEY` is absent, the notifier writes the HTML email to `last_email.html` in the working directory instead of calling Resend. This gives the operator something to eyeball when debugging locally.
-- **Starting account:** loaded once at `_initial_state()` from `ACCOUNT_START`. After that, `state.account` is the source of truth and the env var is ignored — otherwise restarting with a different env would silently overwrite equity.
+```
+GET /  (HTTP request)
+    ↓
+nginx → uvicorn → FastAPI
+    ↓
+AuthMiddleware.dispatch
+    ├─ EXEMPT_PATHS check (no)
+    ├─ rate-limit check (no rule for GET /)
+    ├─ PUBLIC_PATHS check (no)
+    ├─ _try_cookie:
+    │     decode tsi_session  → payload {"uid": "u_admin_marc"}
+    │     request.state.user_id = "u_admin_marc"
+    │     return True
+    └─ call_next(request)
+    ↓
+web/routes/dashboard.py::dashboard_handler(user_id = Depends(current_user_id))
+    ↓
+DashboardService.render(user_id)
+    ↓
+state_manager.load_user_view(user_id)
+    → returns {"signals": shared_signals, "user": state['users'][user_id]}
+    ↓
+dashboard_legacy.render(user_view)
+    → composes HTML: SHARED signal panels + USER positions/trades/equity + tour modal
+    ↓
+HTTPResponse(html, 200)
+```
 
-### Error Boundary Design
-
-| Failure | Caught in | Behaviour |
-|---------|-----------|-----------|
-| yfinance timeout / 429 / empty frame | `signal_engine.fetch_data` (retry loop) → bubbles `DataFetchError` to `main.run_daily_check` | retry 3x with 10s delay; if still failing, skip that instrument for this run, add to `report.warnings`, continue with the other instrument, state still saves |
-| Both instruments fail to fetch | `main.run_daily_check` | still save state (just with warnings), still send email explaining the outage, exit non-zero in GH Actions mode so the cron shows red |
-| Resend 4xx/5xx or network | `notifier.send_signal_email` | log, append to `report.warnings`, return `False`; workflow continues, state still saves. Next run's email will surface "previous email failed" via `warnings` from state |
-| `state.json` corrupt (invalid JSON / schema mismatch) | `state_manager.load_state` | copy to `state.json.corrupt.<timestamp>`, reinitialise with `_initial_state(warning=...)`, continue. Next email flags "state was reinitialised — review trade history manually" |
-| `state.json` missing | `state_manager.load_state` | silently initialise (first-run case) |
-| Schema version drift | `state_manager._migrate_if_needed` | run forward migrations; if unknown version, refuse to overwrite and raise `StateSchemaError` that `main` catches and turns into a loud email |
-| Indicator NaN (insufficient history) | `signal_engine.get_signal` | return `0` (FLAT) and add a per-instrument warning; don't crash |
-| Missing `TO_EMAIL` at startup | `main.main()` | log clear error, exit 1 — this is a configuration error, not a runtime one |
-| Any uncaught exception | `main.main()` top-level `try/except` | print full traceback, attempt a "crash email" if Resend creds are available, exit 1 (so GH Actions goes red, Replit logs the traceback) |
-
-The golden rule from the SPEC: **"App must never crash silently. All errors caught, logged, and surfaced in the next email as a warning."** Our boundary design achieves this by keeping `warnings` as a first-class field in both `report` (current run) and `state` (for next run to surface).
-
-## State.json Schema Invariants
-
-Beyond the mutation ordering above, these structural invariants hold:
-
-- **`schema_version`** is always present. Default `1`. Bump on breaking changes; migrations live in `state_manager._migrate_if_needed`.
-- **`account`** is always a float >= 0. A negative account implies a blown-up hypothetical — don't silently clamp; surface as a warning.
-- **`positions`** always contains keys `"SPI200"` and `"AUDUSD"`, even when both are inactive (`{"active": false}`). Absence of a key means first-run hasn't completed; presence with `active: false` is the normal "flat" state.
-- **`signals`** always contains keys `"SPI200"` and `"AUDUSD"`, values in `{-1, 0, 1}`. This is the "previous signal" used for change detection next run.
-- **`trade_log`** is an array, append-only, unbounded (dashboard truncates to last 20; emails to last 5). At scale, if this ever exceeds ~10k entries, add a rotation helper — but that's ~40 years away.
-- **`equity_history`** is an array of `{date, equity}`, one entry per run date. If the same date is written twice, the later entry replaces the earlier (idempotency under same-day re-runs).
-- **`last_run`** is an AWST date string (`YYYY-MM-DD`). Used by the "stale state" health check (warn if > 2 days old).
-- **`last_saved_utc`** is an ISO timestamp. Used by dashboard "last updated" and debugging.
-- **`warnings`** (optional) is a list of strings carried over from the previous run — cleared at the start of each successful run, repopulated as new warnings occur.
+---
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 1 user, 2 instruments, daily (current) | Current architecture — flat Python, JSON file, single process |
-| 1 user, 5–10 instruments | Still fine. `INSTRUMENTS` dict grows; the `for` loop handles more items. Email template becomes a scroll-able table. `state.json` grows but remains < 1MB. |
-| Multiple users OR intraday | This is a different product. Move to a real DB (SQLite → Postgres), put the scheduler behind a queue, split the signal engine into a service. Explicitly out of scope per PROJECT.md. |
+| 1 admin (current) | Today's architecture works as-is once v10 migration runs |
+| 1 admin + ≤20 F&F (v1.3 target) | Single `state.json`, fan-out fine, lock-contention sub-millisecond |
+| 1 admin + 100 F&F | `state.json` parse cost ~50ms — still fine; fan-out is N×100ms email send → 10s total — well under cycle budget |
+| 1 admin + 1000+ users | Out of scope. Move to SQLite (auth.json TypedDict already noted "Phase 18 will migrate to SQLite"); split state.json into per-user files OR move to Postgres |
 
 ### Scaling Priorities
 
-1. **First bottleneck (if instruments grow):** the yfinance fetch is serial and sometimes slow. If you add more instruments, parallelise `fetch_data` calls with `concurrent.futures.ThreadPoolExecutor(max_workers=4)` — but keep the rest of the workflow serial. There is no meaningful second bottleneck until you hit 50+ instruments.
-2. **Second bottleneck (trade log growth):** dashboard rendering will slow once `trade_log` exceeds a few thousand entries because it's embedded in the HTML. At that point, only embed the last 200 in the dashboard and keep the full log in a separate `trade_log.jsonl` file. Not a concern in year 1.
+1. **First bottleneck:** Resend rate limit (10 req/sec). Even 100 users serialized is 10s of email send time — fine for daily cycle. If it ever matters, parallelise sends with `concurrent.futures.ThreadPoolExecutor(max_workers=4)` inside `per_user_fanout` — BUT keep the `mutate_state` call serial.
+2. **Second bottleneck:** `state.json` write contention if web traffic spikes. The `fcntl.LOCK_EX` is process-global; concurrent HTMX edits queue. At F&F scale this is invisible.
 
-**Explicit non-concerns:** concurrent writers, rate limits (daily cadence is well under Yahoo's and Resend's limits), memory, CPU. This is a 30-second Python script that runs once a day.
+**Explicit non-concerns:** memory (state.json fits in RAM), CPU (signal compute is the same whether 1 or 100 users), yfinance rate limit (still 1 fetch per market per day).
+
+---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Computing signals inside a route/CLI handler
+### Anti-Pattern 1: Per-Route `if user.role == 'admin':` Checks
 
-**What people do:** put indicator math, state mutation, and email sending all inside `run_daily_check()` as one 300-line function.
+**What people do:** add an `if` guard at the top of every admin route handler.
+**Why it's wrong:** N copies of the check; one missed file = privilege escalation. Doesn't compose with FastAPI's docs/dependency-tree.
+**Do this instead:** `Depends(require_admin)` at the route definition. Single chokepoint. Tested once.
 
-**Why it's wrong:** impossible to unit-test. One change to the email template forces a run through the full workflow. Bugs in indicator math can only be caught by observation on live data.
+### Anti-Pattern 2: Re-Fetching yfinance Per User
 
-**Do this instead:** `signal_engine` has pure functions. `run_daily_check` is glue. Tests cover `signal_engine.get_signal(fixture_df) == 1` without any network.
+**What people do:** in the fan-out loop, re-call `data_fetcher.fetch_ohlcv` per user "to get latest prices."
+**Why it's wrong:** breaks determinism (different users see different prices if Yahoo updates between fetches), 100× the network cost, blows yfinance rate limits at scale.
+**Do this instead:** fan-out reads from `state['signals']` exclusively. The single per-market fetch in step 3 is the ONLY yfinance call per cycle.
 
-### Anti-Pattern 2: Reading env vars at import time
+### Anti-Pattern 3: Signal Compute Inside the Fan-Out
 
-**What people do:** `RESEND_API_KEY = os.environ["RESEND_API_KEY"]` at the top of `notifier.py`.
+**What people do:** call `signal_engine.get_signal` inside the per-user loop "for clarity."
+**Why it's wrong:** N× the CPU for identical output; the determinism contract reads "compute once, distribute many"; hex-boundary signature (one signal per market per day) becomes muddier.
+**Do this instead:** signal compute stays in step 3. Fan-out reads `state['signals']` and only resolves per-user position deltas (which are pure too — `sizing_engine.compute_unrealised_pnl` etc.).
 
-**Why it's wrong:** the import fails hard at startup if the key is missing (breaks test mode). Tests can't monkeypatch because the value is baked in at import.
+### Anti-Pattern 4: News in the Pure-Math Hex
 
-**Do this instead:** read env vars at call time inside `send_signal_email()`. Keep the top of `notifier.py` clean of side effects.
+**What people do:** put `news_fetcher` next to `signal_engine` "because it's about markets."
+**Why it's wrong:** `news_fetcher` does network I/O — putting it in the hex breaks the AST-blocklist test (yfinance import). Once it's in, the temptation to "let news influence the signal" is one line away.
+**Do this instead:** `news_fetcher` is a peer of `data_fetcher.py` (I/O hex). Only `news_filter.py` (pure keyword check) sits in the hex.
 
-### Anti-Pattern 3: Non-atomic state writes
+### Anti-Pattern 5: Per-User State as a Separate Filesystem Tree
 
-**What people do:** `open("state.json", "w").write(json.dumps(state))`.
+**What people do:** `users/{user_id}/state.json` because "isolation feels safer."
+**Why it's wrong:** N atomic-write contracts to maintain; daily fan-out becomes a directory scan; backup/restore is now a multi-file dance; existing `mutate_state(mutator)` chokepoint cannot serialise cross-user invariants.
+**Do this instead:** single `state.json` with a `users{}` map. Existing atomic-write covers all users.
 
-**Why it's wrong:** a crash mid-write (power loss, Replit redeploy) leaves a truncated JSON file, which crashes the next run.
+### Anti-Pattern 6: Cookie-Only Tour-Completion Flag
 
-**Do this instead:** write to `state.json.tmp`, `fsync`, `os.replace` → `state.json`. This is what `save_state` does. On POSIX `os.replace` is atomic.
+**What people do:** set `tour_completed=true` cookie, done.
+**Why it's wrong:** cookie is per-device per-browser. F&F user logs in from phone next day → re-sees the tour. Looks broken.
+**Do this instead:** flag lives in `state['users'][uid]['ui_prefs']['tour_completed']`. Single source of truth for "have they seen this once."
 
-### Anti-Pattern 4: Catching exceptions too narrowly at the top level
+### Anti-Pattern 7: Invite Token Stored Plaintext in `auth.json`
 
-**What people do:** `except requests.RequestException` at the top of `run_daily_check`.
+**What people do:** `pending_invites[i].token = "raw_token_string"`.
+**Why it's wrong:** leaked auth.json reveals live invite tokens; attacker can claim invites meant for someone else.
+**Do this instead:** mirror the existing `pending_magic_links` pattern — store `sha256(unhashed_token).hexdigest()`, never the raw token. This is already the established pattern in `auth_store.add_magic_link` / `consume_magic_link`. The invite path is structurally identical.
 
-**Why it's wrong:** the workflow has many failure modes (KeyError on state schema, pandas IndexError on empty df, ValueError in indicator math). Narrow catches let crashes escape.
+### Anti-Pattern 8: Synchronously Awaiting a 5xx Resend in the Fan-Out
 
-**Do this instead:** narrow catches inside each I/O helper (`fetch_data`, `send_signal_email`, `load_state`), a broad `except Exception` at `main()` top level that logs traceback + attempts a crash email + exits non-zero.
+**What people do:** if user N's email Resend POST fails, abort the fan-out.
+**Why it's wrong:** users N+1..M never get their emails because user N's Gmail had a hiccup.
+**Do this instead:** `notifier/transport.py` already returns `(success, errmsg)` and never raises. Fan-out catches the failure tuple, appends to `state['users'][uid]['warnings']` (so next email surfaces it), continues.
 
-### Anti-Pattern 5: Using `datetime.now()` without a timezone inside pure functions
-
-**What people do:** sprinkle `datetime.now()` calls throughout `signal_engine` to timestamp computations.
-
-**Why it's wrong:** makes the function impure (different output every call), breaks testing, and on Replit (UTC server) produces a different "today" than the operator in Perth.
-
-**Do this instead:** compute `today_awst = datetime.now(pytz.timezone("Australia/Perth")).date()` once in `main.py` and pass it down as `as_of_date` to any function that needs it. Pure functions stay pure.
-
-### Anti-Pattern 6: Folding unrealised P&L into `account`
-
-**What people do:** update `state.account += unrealised_pnl_today` at each run.
-
-**Why it's wrong:** double-counts when the trade closes; produces a drifting, incorrect equity figure; makes "closed-trade equity" impossible to reconstruct.
-
-**Do this instead:** `account` = closed-trade cash only. `equity_today = account + sum(positions[sym].unrealised_pnl)`. Compute this in the view layer (dashboard, email) on the fly.
-
-### Anti-Pattern 7: Hiding the deployment differences across GHA and Replit
-
-**What people do:** try to make `main.py` auto-detect which environment it's in and behave magically.
-
-**Why it's wrong:** obscures bugs (Replit scheduler silently runs in Actions; Actions re-exits while Replit idles). Hard to test the Actions path locally.
-
-**Do this instead:** an explicit `--once` flag. Actions workflow passes `--once`. Replit omits it. Auto-detection via `GITHUB_ACTIONS=true` is fine as a fallback but `--once` is the primary signal.
+---
 
 ## Integration Points
 
-### External Services
+### External Services (v1.3 deltas)
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| Yahoo Finance (via yfinance) | Library call, unauthenticated, cache-poor, occasionally flaky | Wrap in retry-with-backoff (3 attempts, 10s delay). Validate DataFrame shape before returning (non-empty, has `Close`, has >= 252 rows for Mom12). yfinance has changed behaviour between versions — pin `>=0.2.40`. |
-| Resend HTTPS API | `requests.post` with bearer auth, JSON body | Timeout 15s. 429 means slow down — for a once-per-day app this should never happen, but handle it anyway by logging and not retrying. `from` must be a verified sender (`signals@carbonbookkeeping.com.au` already is per PROJECT.md). |
-| Replit filesystem | Direct file I/O | Persistent with Always On; ephemeral without. Design assumes persistence but degrades safely if state is lost (first-run reinit). |
-| GitHub Actions runner | Shell invocation of `python main.py --once`, then `git commit state.json` | Runner filesystem is ephemeral per run — state persistence relies on the git push step. If push fails (concurrent runs, auth), next run rebuilds from the last committed state, losing one day of trade log. Acceptable. |
+| yfinance — news | `yfinance.Ticker(symbol).news` (no auth) — module-local in-process LRU cache, 1h TTL | Lazy-load at request time, not daily-cycle. yfinance returns `[{title, link, providerPublishTime, ...}, ...]`. May return `[]` silently — handle empty list as "no news available" panel state. |
+| Resend — multi-recipient | Existing single-recipient POST per user; sequential in fan-out | Per-user emails go to per-user `email` field from `auth.json::users[]`. From-address remains `signals@carbonbookkeeping.com.au` (one verified sender). |
+| Email reply-handling | None — outbound only | F&F users CANNOT reply to the email. If they need to opt out, dashboard has a toggle (admin-revocable). |
 
-### Internal Boundaries
+### Internal Boundaries (v1.3 deltas)
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `main` ↔ `signal_engine` | Function calls with `(ticker, as_of_date, config)` in, `pd.DataFrame` or scalar out | `main` owns time; `signal_engine` never looks at the clock |
-| `main` ↔ `state_manager` | `load_state() -> dict`, mutate dict, `save_state(dict)` | State is a plain dict everywhere — no custom class — so dashboard/email can JSON-serialise trivially |
-| `main` ↔ `notifier` | `send_signal_email(report) -> bool` where `report` is a plain dict | `report` ≠ `state` — `report` is a view-model built from state + today's indicators, shaped for email rendering |
-| `main` ↔ `dashboard` | `generate_dashboard(state, indicator_data) -> html_str` (or writes file directly) | Reads state, does not mutate. Takes today's indicator snapshot as a second argument so it doesn't have to re-fetch |
-| `signal_engine` ↔ `state_manager` | **No direct link.** Deliberate. | If they imported each other, testing becomes tangled. All interaction goes through `main` |
-| `notifier` ↔ `dashboard` | **No direct link.** | Both are output-only views over state |
+| `web/middleware/auth.py` ↔ `web/dependencies.py` | `request.state.user_id` set by middleware, read by `Depends(current_user_id)` | One write site, one read site — testable at both ends |
+| `web/routes/admin/*` ↔ `auth_store` (user list) | direct imports — `auth_store.list_users()`, `auth_store.add_user(...)`, `auth_store.revoke_user(uid)` | Admin routes are the only place that reads the full user list; F&F routes never enumerate users |
+| `daily_run.py` ↔ `per_user_fanout.py` | `per_user_fanout.fanout_alerts_and_emails(state, run_date, dashboard_url)` | One call site (between step 9 and 9.5) — the entire multi-tenant fan-out is one function call |
+| `per_user_fanout.py` ↔ `notifier/dispatch.py` | `notifier.send_user_email(state, user_view, run_date, recipient)` | New signature; the existing `send_signal_email` becomes a thin wrapper for backward compat |
+| `state_manager.py` ↔ web routes | EXISTING `mutate_state(mutator)` + NEW `mutate_user_state(user_id, mutator)` | New helper is a 6-line wrapper around `mutate_state` — no new lock contract |
+| `news_filter.py` ↔ AST hex test | `_HEX_PATHS_STDLIB_ONLY` extended to include `news_filter.py` | Test is a parametrized list — adding the path is a one-line extension |
+| `news_fetcher.py` ↔ AST hex test | NOT in the hex list (it imports yfinance, by design) | Mirrors the existing `data_fetcher.py` carve-out — has its own `test_data_fetcher_no_forbidden_imports` test pattern |
 
-## Recommended Build Order
+### File-Size Hygiene (Phase 27 D-09 — 500 LOC cap)
 
-Order chosen so (a) each phase produces something testable on its own, (b) downstream phases depend only on stable upstream contracts, and (c) the end-to-end "skeleton" ships in the first milestone so deployment can be validated early.
+**Already over-cap pre-v1.3, MUST split before adding scoping:**
 
-### Phase 1 — Stable core with deterministic signal from fixture data
-Goal: prove the math, no network, no state, no email.
+| File | Current LOC | v1.3 Pressure | Recommended Split |
+|------|------------|---------------|-------------------|
+| `web/routes/trades.py` | 746 | + `user_id` injection in 3 POST routes + 3 GET helpers | `trades_open.py` + `trades_close.py` + `trades_modify.py` + `trades_helpers.py` (form GETs) |
+| `web/routes/dashboard.py` | 644 | + per-user dashboard rendering | Split request handlers vs HTML composition: `dashboard_routes.py` (handlers) + already-existing `dashboard_legacy/` (composition) |
+| `web/routes/totp.py` | 614 | + per-user TOTP state lookup (already by `user_id` since `auth_store` extension) | `totp_enroll.py` + `totp_verify.py` |
+| `web/routes/login.py` | 608 | + invite-token consumption flow | `login_form.py` + `login_post.py` + `login_invite.py` |
+| `web/routes/paper_trades.py` | 493 | + `user_id` injection in 4 mutation routes | Stays just-under unless invite UI lands here. Likely keeps |
+| `state_manager.py` | 1293 | + `mutate_user_state`, `load_user_view`, `_migrate_v11_to_v12` | Already split-pressure pre-v1.3 — see `state_actions.py`. v1.3 may need a `state_manager_users.py` daughter for the new helpers if total grows past 1500 |
 
-- `signal_engine.py`: `compute_indicators`, `get_signal`, `calc_position_size`, `get_trailing_stop`, `check_stop_hit`, `compute_unrealised_pnl`, `check_pyramid`
-- `tests/test_signal_engine.py` with one CSV fixture per instrument
-- No `main.py` yet; drive from pytest
-
-**Ships:** a pure-function library whose outputs match the backtest.
-
-### Phase 2 — State persistence with recovery
-Goal: round-trip state reliably.
-
-- `state_manager.py`: `load_state`, `save_state` (atomic), `_initial_state`, `_migrate_if_needed`, `_backup_corrupt_file`, `record_trade`, `update_equity_history`, `reset_state`
-- `tests/test_state_manager.py`: tests for atomic write, corrupt-recovery, schema migration, idempotent equity history
-
-**Ships:** a storage layer with known invariants.
-
-### Phase 3 — End-to-end skeleton (no scheduler, no email)
-Goal: wire everything together with `--once` semantics. This is the first point where the app actually runs against live data.
-
-- `signal_engine.fetch_data` (yfinance, with retry)
-- `main.py`: `run_daily_check`, CLI parsing for `--test`, `--reset`, `--once`, env loading via `python-dotenv`
-- Console summary output
-- Error boundary at `main()` top level
-
-**Ships:** `python main.py --once` reads Yahoo, computes signals, updates state.json, prints summary. No email yet. No dashboard yet.
-
-**Why this order:** after phase 3 you can verify the core behaviour daily-by-hand for a week before adding outputs. If the signal logic is wrong, you'd rather discover it before it's buried under email formatting.
-
-### Phase 4 — Dashboard output
-Goal: visual verification.
-
-- `dashboard.py`: HTML template with inline CSS, Chart.js from CDN, equity curve, positions table, recent trades, key stats
-- Called from the orchestrator after `save_state`
-
-**Ships:** `dashboard.html` regenerates every run; open in browser to confirm state looks right.
-
-### Phase 5 — Email notification
-Goal: the one-user-facing output.
-
-- `notifier.py`: `build_subject`, `build_email_html` (inline CSS, mobile-responsive, ACTION REQUIRED block on signal change), `send_signal_email` with Resend, graceful degradation when API key missing
-- `--force-email` flag support
-- "Test mode" writes `last_email.html` to disk instead of sending
-
-**Ships:** every run sends an email (or skips cleanly in test mode). Signal-change detection drives the ACTION block.
-
-### Phase 6 — Scheduler + deployment paths
-Goal: lights-out operation.
-
-- Scheduler loop in `main.main()` for Replit Always On
-- `--once` branch for GitHub Actions
-- `.github/workflows/daily.yml` with cron `0 0 * * 1-5`, checkout, setup-python, install, run, `git commit state.json && git push` (with `GITHUB_TOKEN` perms set appropriately)
-- `.env.example` finalised
-- Replit setup notes in `main.py` module docstring
-- First-run-on-start behaviour verified
-
-**Ships:** live deployment on at least one of the two targets (Replit preferred for first live email; GitHub Actions as redundancy).
-
-### Phase 7 — Hardening
-Goal: handle the long tail of real-world failures.
-
-- Observed-in-production retry tuning (yfinance occasionally 200s with empty frame)
-- Warning carry-over from state `warnings` into the email header
-- Stale-state health check ("last run > 2 days ago" warning)
-- Schema migration path exercised with at least one version bump (even a no-op migration) so the code path is real, not theoretical
-- Crash-email path tested by deliberately breaking something
-- Optional: lightweight log file (`signals.log`) rolled daily, to complement stdout on GH Actions
-
-**Ships:** a system that survives yfinance outages, Resend outages, corrupt state, and schema drift without operator intervention.
+**Strategy:** complete the splits in their own phase BEFORE adding `user_id` scoping. Splitting an over-cap file while changing its semantics simultaneously courts merge-conflict pain (per global LEARNINGS on parallel worktrees + file scope).
 
 ---
 
-**Build-order rationale summary:**
+## Build Order (Dependency-Respecting Phase Sequence)
 
-| Phase | Depends on | Unblocks |
-|-------|-----------|----------|
-| 1 Signal engine (pure) | nothing | tests, then 3 |
-| 2 State manager | nothing | 3 |
-| 3 E2E skeleton | 1, 2 | 4, 5, 6 |
-| 4 Dashboard | 2, 3 | visual QA |
-| 5 Email | 2, 3 | operator consumption |
-| 6 Scheduler + deploy | 3 (4, 5 optional to deploy) | live runs |
-| 7 Hardening | all | production-readiness |
+Order chosen so each phase produces something testable, downstream phases depend only on stable upstream contracts, and the AST guard + atomic-write contract are never broken in between.
 
-Phases 4 and 5 can run in parallel after phase 3; they share no code.
+| Order | Phase | Rationale | Unblocks |
+|-------|-------|-----------|----------|
+| 1 | **File-size pre-split** (trades.py, login.py, totp.py, dashboard.py route) | Touch over-cap files BEFORE multi-tenant changes; merge surface stays clean. Behaviour-preserving — no semantics change | All later phases that diff these files |
+| 2 | **Schema migration v9→v10 (or v11→v12) + admin namespace** | Foundational — every later phase reads `state['users']`. Zero behaviour change for the admin (their data is still there, one level down). 1880+ tests rerun against migrated state. | Phases 3–7 |
+| 3 | **User registry + invite-token storage in `auth.json`** | `auth_store.users[]` + `pending_invites[]` + invite mint/consume helpers. No routes yet — pure storage layer | Phases 4, 5 |
+| 4 | **Cookie payload + `current_user` Depends + admin-detection** | Middleware sets `request.state.user_id`; new `web/dependencies.py`. ALL existing routes get `Depends(current_user_id)` injected — but during this phase admin is still the only user, so observable behaviour is identical | Phase 5 |
+| 5 | **RBAC + admin routes** (`/admin/users`, `/admin/invite`, revoke) + invite-acceptance flow | Admin can now invite; new users can claim invites via magic-link-style flow. F&F users land in `auth.json::users[]` and `state['users'][uid]` skeleton | Phase 6 |
+| 6 | **Per-user route scoping** — `paper_trades`, `trades`, `markets` (mutations + display) read SHARED signals, write PER-USER positions | Now real multi-tenancy. Tests rewrite to confirm cross-user isolation. **Pyramid/exit semantics shift here** (see §Pyramid/Exit) — the largest semantic diff | Phase 7 |
+| 7 | **Per-user email fan-out** (`per_user_fanout.py`) + admin-vs-F&F email shape | Daily cycle sends N emails. Admin email is "main email"; F&F email is leaner (positions + alerts + signal block, no admin sentinels) | Phase 8 |
+| 8 | **News integration** (`news_fetcher.py`, `news_filter.py`, `/markets/{m}/news` HTMX panel) | Independent of multi-tenancy — could ship anywhere after phase 1, but ordering after 7 keeps the email-fan-out review window simple | Phase 9 |
+| 9 | **Guide UI** (tooltips + first-run tour) | Frontend-leaning; backend touch is one route + one user_id flag | — |
+| 10 | **Codemoot + Nyquist gate** | Per CLAUDE.md milestone gate. Backfill VALIDATION + SECURITY for any phase missing one | — |
+
+**Why this order:**
+- Schema before routes: routes need `state['users'][uid]` to exist. Reverse order → routes write to undefined keys.
+- Auth-store users before middleware: middleware needs to look up role; lookup needs the store.
+- Middleware before RBAC routes: admin gate is a `Depends` chained on `current_user`; need the dependency first.
+- RBAC before per-user scoping: the "is this F&F or admin?" check determines what the dashboard should render — needs role available.
+- Per-user scoping before email fan-out: fan-out reads `state['users']` — that has to be populated by working routes first.
+- News and Guide UI come last: they're additive, not tangled with the auth/state changes.
+
+---
+
+## AST Hex Boundary — What Survives v1.3 Unchanged
+
+| AST Test | Modules Locked | v1.3 Change |
+|----------|---------------|-------------|
+| `test_forbidden_imports_absent` (`_HEX_PATHS_ALL`) | `signal_engine`, `sizing_engine`, `system_params`, `pnl_engine`, `alert_engine`, `backtest/simulator`, `backtest/metrics` | None. No new imports. `news_filter.py` joins `_HEX_PATHS_STDLIB_ONLY`. |
+| `test_phase2_hex_modules_no_numpy_pandas` (`_HEX_PATHS_STDLIB_ONLY`) | `sizing_engine`, `system_params`, `pnl_engine`, `alert_engine` | + `news_filter.py` |
+| `test_state_manager_no_forbidden_imports` | `state_manager.py` | None. New helpers (`mutate_user_state`, `load_user_view`) use only existing imports |
+| `test_data_fetcher_no_forbidden_imports` | `data_fetcher.py` | None. `news_fetcher.py` is a peer with its OWN test (mirroring this one) |
+| `TestWebHexBoundary.FORBIDDEN_FOR_WEB` | web/* | Unchanged set. New web/dependencies.py and admin routes use only `fastapi`, `starlette`, `auth_store`, `state_manager` (already allowed) |
+
+**The AST guard does not need to change.** Every new module either lives outside the guarded paths or imports only stdlib + already-allowed modules.
+
+---
+
+## Atomic-Write Contract — Preserved Verbatim
+
+`state_manager._atomic_write` (tempfile + fsync + os.replace + dir-fsync, with `fcntl.LOCK_EX` cross-process) is the chokepoint for all `state.json` writes. v1.3 does NOT modify it.
+
+`mutate_user_state(user_id, mutator)`:
+
+```python
+def mutate_user_state(user_id: str, mutator: Callable[[dict], None],
+                     path: Path | None = None) -> dict:
+    """Wrap mutator so it runs against state['users'][user_id] only.
+    Single chokepoint preserved — delegates to existing mutate_state.
+    """
+    def _inner(s: dict) -> None:
+        if user_id not in s.get('users', {}):
+            raise ValueError(f'unknown user_id: {user_id}')
+        mutator(s['users'][user_id])
+    return mutate_state(_inner, path=path)
+```
+
+Lock semantics, fsync ordering, corruption recovery — all inherited unchanged.
+
+---
 
 ## Sources
 
-- SPEC.md in this repository (lines 1–513) — module signatures, file layout, workflow steps, deployment targets, env vars, error handling requirements
-- PROJECT.md in this repository — constraints (Python 3.11+, no Flask, single `state.json`, signal-only), deployment targets, Perth AWST schedule
-- Standard Python patterns for scheduled jobs: `schedule` library docs (readthedocs), dotenv loading best practices, atomic file write idiom (`os.replace` + `fsync`) — these are stable, training-data confidence HIGH
-- Hexagonal / ports-and-adapters pattern at single-file scale — standard Python architectural pattern, widely documented
-- Resend API reference (https://resend.com/docs/api-reference/emails/send-email) — bearer auth, JSON body, 200/2xx success response shape
-- yfinance behaviour notes — library known to return empty DataFrames on rate-limiting rather than raising; retry-with-validation pattern addresses this
+- `.planning/PROJECT.md` (project root) — v1.3 scope, F&F constraint, schema-migration policy
+- `.planning/MILESTONES.md` — v1.0/v1.1/v1.2 architecture additions; Phase 27 file-size cap
+- `.planning/research/v1.0-archive/ARCHITECTURE.md` — v1.0-era hex-lite blueprint (still authoritative)
+- `state_manager.py` — read end-to-end: atomic-write, MIGRATIONS dict, mutate_state contract
+- `auth_store.py` — read end-to-end: TypedDict shape, magic-link sha256 pattern, atomic-write parity with state_manager
+- `web/app.py`, `web/middleware/auth.py`, `web/routes/*` — read for current cookie/auth/route patterns
+- `daily_run.py`, `daily_loop.py` — read for the 9-step orchestration sequence and the 2-saves-per-run W3 invariant
+- `tests/test_signal_engine.py::TestDeterminism` — read for AST guard structure and forbidden-imports lists
 
 ---
-*Architecture research for: single-operator mechanical trading signal generator (Python, yfinance, JSON state, Resend email)*
-*Researched: 2026-04-20*
+*Architecture research for: v1.3 multi-tenant retrofit of FastAPI + file-state trading signal app*
+*Researched: 2026-05-10*
