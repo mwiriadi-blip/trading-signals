@@ -43,3 +43,13 @@ adapters in `state_manager.py`, `notifier/`, `dashboard.py`,
 - **Primary:** DigitalOcean droplet + systemd. See [SETUP-DROPLET.md](SETUP-DROPLET.md) for the one-time bring-up runbook (web unit + sudoers + auth secrets + nginx wiring per Phase 11–13).
 - **Routine deploys:** SSH to the droplet and run `bash deploy.sh` — fast-forward pull from `origin/main`, refresh deps, restart `trading-signals` + `trading-signals-web` units, healthz-gated.
 - **Operator runbook:** [docs/DEPLOY.md](docs/DEPLOY.md) — env vars, daily-run schedule, troubleshooting.
+
+## Claude Code Setup
+
+```bash
+claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
+npx @claude-flow/cli@latest daemon start
+npx @claude-flow/cli@latest doctor --fix
+```
+
+26 commands, 140+ subcommands. Run `--help` on any command for details.
