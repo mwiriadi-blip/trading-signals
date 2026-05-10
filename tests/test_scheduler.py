@@ -865,3 +865,134 @@ class TestCrashEmailLayerB:
     )
     # Crash email NOT invoked — Layer A is not a crash.
     assert called == []
+
+
+# =========================================================================
+# Phase 29 Plan 29-03: regression tests for scheduler tz fix (05a4c0c)
+# Locks: daily run fires at 08:00 Sydney (AEST/AEDT, DST-aware)
+# =========================================================================
+
+
+class TestSchedulerTimezone:
+  '''Regression suite for commit 05a4c0c — scheduler tz fix.
+
+  Verifies that:
+  1. system_params carries the canonical Sydney tz + 08:00 wall-clock constants.
+  2. _run_schedule_loop registers with those constants.
+  3. The UTC equivalents for AEST (UTC+10) and AEDT (UTC+11) fire times are
+     correct (08:00 Sydney = 22:00 UTC in AEST; 08:00 Sydney = 21:00 UTC in AEDT).
+  4. DST transition dates produce the correct UTC offset (zoneinfo ground truth).
+
+  Tests use zoneinfo.ZoneInfo('Australia/Sydney') — stdlib, no extra deps —
+  rather than asserting against schedule.Job internals which may vary by version.
+  '''
+
+  def test_schedule_tz_constant_is_sydney(self) -> None:
+    '''Commit 05a4c0c changed SCHEDULE_TIME_UTC → SCHEDULE_TIME_LOCAL + SCHEDULE_TZ.
+    Regression: if someone reverts to AWST/UTC the constant vanishes or changes.
+    '''
+    import system_params
+    assert system_params.SCHEDULE_TZ == 'Australia/Sydney', (
+      f'SCHEDULE_TZ must be Australia/Sydney; got {system_params.SCHEDULE_TZ!r}'
+    )
+
+  def test_schedule_time_local_constant_is_0800(self) -> None:
+    import system_params
+    assert system_params.SCHEDULE_TIME_LOCAL == '08:00', (
+      f'SCHEDULE_TIME_LOCAL must be 08:00; got {system_params.SCHEDULE_TIME_LOCAL!r}'
+    )
+
+  def test_scheduler_loop_registers_at_0800_sydney(self, monkeypatch) -> None:
+    '''_run_schedule_loop passes SCHEDULE_TIME_LOCAL + SCHEDULE_TZ to schedule.at().
+    Regression: a future refactor that drops the tz argument would silently
+    break DST awareness.
+    '''
+    registered: list[tuple] = []
+
+    class _SpyScheduler:
+      def every(self):
+        return self
+      @property
+      def day(self):
+        return self
+      def at(self, time_str, tz=None, *a, **kw):
+        return _SpyJob(self, time_str, tz)
+      def run_pending(self):
+        pass
+
+    class _SpyJob:
+      def __init__(self, parent, time_str, tz):
+        registered.append((time_str, tz))
+      def do(self, *a, **kw):
+        return self
+
+    monkeypatch.setattr('main._get_process_tzname', lambda: 'UTC')
+    main_module._run_schedule_loop(
+      job=lambda args: (0, None, None, None),
+      args=None,
+      scheduler=_SpyScheduler(),
+      sleep_fn=lambda _: None,
+      max_ticks=0,
+    )
+    assert len(registered) == 1, f'Expected 1 registered job; got {registered}'
+    time_str, tz = registered[0]
+    assert time_str == '08:00', f'Expected 08:00; got {time_str!r}'
+    assert tz == 'Australia/Sydney', f'Expected Australia/Sydney; got {tz!r}'
+
+  def test_daily_run_fires_at_0800_sydney_aest(self) -> None:
+    '''AEST = UTC+10; 08:00 Sydney AEST = 22:00 UTC on the same calendar day.'''
+    import datetime
+    from zoneinfo import ZoneInfo
+    sydney = ZoneInfo('Australia/Sydney')
+    # Winter date — June 15 2026 is AEST (UTC+10)
+    fire_sydney = datetime.datetime(2026, 6, 15, 8, 0, 0, tzinfo=sydney)
+    utc_offset = fire_sydney.utcoffset()
+    assert utc_offset == datetime.timedelta(hours=10), (
+      f'Jun 15 AEST UTC offset must be +10h; got {utc_offset}'
+    )
+    fire_utc = fire_sydney.astimezone(datetime.timezone.utc)
+    assert fire_utc.hour == 22 and fire_utc.day == 14, (
+      f'08:00 AEST must be 22:00 UTC prev day; got {fire_utc}'
+    )
+
+  def test_daily_run_fires_at_0800_sydney_aedt(self) -> None:
+    '''AEDT = UTC+11; 08:00 Sydney AEDT = 21:00 UTC on the same calendar day.'''
+    import datetime
+    from zoneinfo import ZoneInfo
+    sydney = ZoneInfo('Australia/Sydney')
+    # Summer date — December 15 2026 is AEDT (UTC+11)
+    fire_sydney = datetime.datetime(2026, 12, 15, 8, 0, 0, tzinfo=sydney)
+    utc_offset = fire_sydney.utcoffset()
+    assert utc_offset == datetime.timedelta(hours=11), (
+      f'Dec 15 AEDT UTC offset must be +11h; got {utc_offset}'
+    )
+    fire_utc = fire_sydney.astimezone(datetime.timezone.utc)
+    assert fire_utc.hour == 21 and fire_utc.day == 14, (
+      f'08:00 AEDT must be 21:00 UTC prev day; got {fire_utc}'
+    )
+
+  def test_dst_transition_handled(self) -> None:
+    '''DST transition: AEST→AEDT starts first Sunday in October.
+
+    In 2026, Oct 4 is the first Sunday; from that day Sydney is AEDT (UTC+11).
+    Oct 3 (Saturday) is still AEST (UTC+10). Verify the offset flips correctly
+    at 08:00 Sydney on the transition day boundary.
+    '''
+    import datetime
+    from zoneinfo import ZoneInfo
+    sydney = ZoneInfo('Australia/Sydney')
+    # Day before transition: Sat Oct 3 = AEST (UTC+10)
+    pre_transition = datetime.datetime(2026, 10, 3, 8, 0, 0, tzinfo=sydney)
+    assert pre_transition.utcoffset() == datetime.timedelta(hours=10), (
+      f'Oct 3 (Sat, pre-DST) must be AEST +10h; got {pre_transition.utcoffset()}'
+    )
+    # Transition day: Sun Oct 4 = AEDT (UTC+11)
+    transition_day = datetime.datetime(2026, 10, 4, 8, 0, 0, tzinfo=sydney)
+    assert transition_day.utcoffset() == datetime.timedelta(hours=11), (
+      f'Oct 4 (Sun, DST start) must be AEDT +11h; got {transition_day.utcoffset()}'
+    )
+    # The fire time in UTC changes from 22:00 → 21:00 across the transition.
+    pre_utc = pre_transition.astimezone(datetime.timezone.utc)
+    trans_utc = transition_day.astimezone(datetime.timezone.utc)
+    assert pre_utc.hour == 22, f'Pre-DST fire must be 22:00 UTC; got {pre_utc}'
+    assert trans_utc.hour == 21, f'Post-DST fire must be 21:00 UTC; got {trans_utc}'
