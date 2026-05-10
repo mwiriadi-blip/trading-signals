@@ -6,9 +6,9 @@ status: planning
 last_updated: "2026-05-10T02:21:14.924Z"
 last_activity: 2026-05-10
 progress:
-  total_phases: 0
+  total_phases: 11
   completed_phases: 0
-  total_plans: 0
+  total_plans: 0  # plans assigned per-phase via /gsd-plan-phase
   completed_plans: 0
   percent: 0
 ---
@@ -23,14 +23,14 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 1880+ tests green)
-- **Current focus:** v1.3 milestone scope undefined — run `/gsd-new-milestone`
+- **Current focus:** v1.3 roadmap created (11 phases 28..38, 28/28 REQs mapped) — ready for `/gsd-discuss-phase 28`.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 28 (v1.2 UAT Closure) — entry point, no infrastructure prerequisites
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-10 — Milestone v1.3 started
+Status: Roadmap drafted, awaiting plan-phase
+Last activity: 2026-05-10 — `/gsd-roadmapper` wrote v1.3 roadmap (Phases 28..38)
 
 ### Resume instructions for cloud Claude / fresh clone
 

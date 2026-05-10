@@ -91,34 +91,34 @@
 
 | REQ-ID | Phase | Plan | Status |
 |--------|-------|------|--------|
-| DEBT-01 | TBD | TBD | Pending roadmap |
-| DEBT-02 | TBD | TBD | Pending roadmap |
-| DEBT-03 | TBD | TBD | Pending roadmap |
-| DEBT-04 | TBD | TBD | Pending roadmap |
-| OPS-01  | TBD | TBD | Pending roadmap |
-| OPS-02  | TBD | TBD | Pending roadmap |
-| OPS-03  | TBD | TBD | Pending roadmap |
-| OPS-04  | TBD | TBD | Pending roadmap |
-| TENANT-01 | TBD | TBD | Pending roadmap |
-| TENANT-02 | TBD | TBD | Pending roadmap |
-| TENANT-03 | TBD | TBD | Pending roadmap |
-| TENANT-04 | TBD | TBD | Pending roadmap |
-| RBAC-01 | TBD | TBD | Pending roadmap |
-| RBAC-02 | TBD | TBD | Pending roadmap |
-| RBAC-03 | TBD | TBD | Pending roadmap |
-| RBAC-04 | TBD | TBD | Pending roadmap |
-| UMAIL-01 | TBD | TBD | Pending roadmap |
-| UMAIL-02 | TBD | TBD | Pending roadmap |
-| UMAIL-03 | TBD | TBD | Pending roadmap |
-| UMAIL-04 | TBD | TBD | Pending roadmap |
-| NEWS-01 | TBD | TBD | Pending roadmap |
-| NEWS-02 | TBD | TBD | Pending roadmap |
-| NEWS-03 | TBD | TBD | Pending roadmap |
-| NEWS-04 | TBD | TBD | Pending roadmap |
-| GUIDE-01 | TBD | TBD | Pending roadmap |
-| GUIDE-02 | TBD | TBD | Pending roadmap |
-| GUIDE-03 | TBD | TBD | Pending roadmap |
-| GUIDE-04 | TBD | TBD | Pending roadmap |
+| DEBT-01 | Phase 28 | TBD | Mapped |
+| DEBT-02 | Phase 29 | TBD | Mapped |
+| DEBT-03 | Phase 29 | TBD | Mapped |
+| DEBT-04 | Phase 29 | TBD | Mapped |
+| OPS-01 | Phase 30 | TBD | Mapped |
+| OPS-02 | Phase 29 | TBD | Mapped |
+| OPS-03 | Phase 30 | TBD | Mapped |
+| OPS-04 | Phase 38 | TBD | Mapped |
+| TENANT-01 | Phase 31 | TBD | Mapped |
+| TENANT-02 | Phase 34 | TBD | Mapped |
+| TENANT-03 | Phase 34 | TBD | Mapped |
+| TENANT-04 | Phase 31 | TBD | Mapped |
+| RBAC-01 | Phase 33 | TBD | Mapped |
+| RBAC-02 | Phase 33 | TBD | Mapped |
+| RBAC-03 | Phase 32+35 | TBD | Mapped |
+| RBAC-04 | Phase 34 | TBD | Mapped |
+| UMAIL-01 | Phase 35 | TBD | Mapped |
+| UMAIL-02 | Phase 35 | TBD | Mapped |
+| UMAIL-03 | Phase 35 | TBD | Mapped |
+| UMAIL-04 | Phase 35 | TBD | Mapped |
+| NEWS-01 | Phase 36 | TBD | Mapped |
+| NEWS-02 | Phase 36 | TBD | Mapped |
+| NEWS-03 | Phase 36 | TBD | Mapped |
+| NEWS-04 | Phase 36 | TBD | Mapped |
+| GUIDE-01 | Phase 37 | TBD | Mapped |
+| GUIDE-02 | Phase 37 | TBD | Mapped |
+| GUIDE-03 | Phase 37 | TBD | Mapped |
+| GUIDE-04 | Phase 37 | TBD | Mapped |
 
 **Total: 28 requirements** across 7 categories (DEBT 4, OPS 4, TENANT 4, RBAC 4, UMAIL 4, NEWS 4, GUIDE 4).
 
