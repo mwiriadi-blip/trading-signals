@@ -86,7 +86,7 @@ def _render_open_form(state: dict | None = None) -> str:
     '      <div class="field">\n'
     '        <label for="open-form-executed-at">Executed at</label>\n'
     '        <input id="open-form-executed-at" name="executed_at" type="date">\n'
-    '        <small>Optional. Defaults to today (AWST).</small>\n'
+    '        <small>Optional. Defaults to today (AEST).</small>\n'
     '      </div>\n'
     '      <div class="field">\n'
     '        <label for="open-form-peak-price">Peak price</label>\n'

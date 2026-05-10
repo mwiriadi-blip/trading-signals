@@ -32,7 +32,7 @@ def _render_trace_inputs(ohlc_window: list) -> str:
     return (
       '<section class="trace-panel">\n'
       '  <p><em>Awaiting first daily run — calculations will appear after '
-      'the next 08:00 AWST cycle.</em></p>\n'
+      'the next 08:00 AEST cycle.</em></p>\n'
       '</section>\n'
     )
   rows = []

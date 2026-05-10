@@ -43,7 +43,7 @@ def render_settings_tab(state: dict, *, active_market: str | None = None) -> str
       '''hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>\n'''
       f'  <p class="eyebrow">{html.escape(display, quote=True)} [{html.escape(contract_label, quote=True)}] SETTINGS</p>\n'
       '  <h2>Settings</h2>\n'
-      '  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>\n'
+      '  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AEST cycle.</p>\n'
       '  <form hx-patch="/markets/settings" hx-ext="json-enc" '
       'hx-swap="none" hx-on::after-request="handleTradesError(event)">\n'
       f'    <input type="hidden" name="market_id" value="{market_id_esc}">\n'

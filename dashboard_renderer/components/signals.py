@@ -140,7 +140,7 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
     return (
       '<section class="onboarding-card" aria-labelledby="onboarding-heading">\n'
       '  <h3 id="onboarding-heading">Awaiting first daily run</h3>\n'
-      '  <p>Calculations and equity curve will populate after the first cycle at 08:00 AWST.</p>\n'
+      '  <p>Calculations and equity curve will populate after the first cycle at 08:00 AEST.</p>\n'
       '</section>\n'
     )
 

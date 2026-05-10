@@ -478,7 +478,7 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       f'        hx-target="#trades-region"\n'
       f'        hx-swap="outerHTML"\n'
       f'        enctype="application/x-www-form-urlencoded">\n'
-      f'    <label>Exit date/time (AWST)\n'
+      f'    <label>Exit date/time (AEST)\n'
       f'      <input type="datetime-local" name="exit_dt" value="{now_awst}" required>\n'
       f'    </label>\n'
       f'    <label>Exit price\n'

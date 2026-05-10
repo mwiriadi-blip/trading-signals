@@ -356,8 +356,8 @@ def register(app: FastAPI) -> None:
 
     from datetime import datetime
     import pytz
-    perth = pytz.timezone('Australia/Perth')
-    now_awst = datetime.now(perth)
+    sydney = pytz.timezone('Australia/Sydney')
+    now_awst = datetime.now(sydney)
 
     state = _sm.load_state()
     body = render_status_strip(state, now_awst)

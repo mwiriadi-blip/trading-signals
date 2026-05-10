@@ -65,7 +65,7 @@ def _render_paper_trades_open_form() -> str:
     '      <option value="LONG">LONG</option>\n'
     '      <option value="SHORT">SHORT</option>\n'
     '    </select>\n'
-    '    <label for="paper-trade-entry-dt">Entry date/time (AWST)</label>\n'
+    '    <label for="paper-trade-entry-dt">Entry date/time (AEST)</label>\n'
     '    <input id="paper-trade-entry-dt" type="datetime-local" name="entry_dt" required>\n'
     '    <label for="paper-trade-entry-price">Entry price</label>\n'
     '    <input id="paper-trade-entry-price" type="number" name="entry_price" step="0.0001" min="0.0001" required>\n'

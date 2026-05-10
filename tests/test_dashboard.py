@@ -60,9 +60,10 @@ GOLDEN_EMPTY_HTML_PATH = DASHBOARD_FIXTURE_DIR / 'golden_empty.html'
 
 # C-1 reviews fix: pytz timezones must be applied via .localize(), NOT via
 # tzinfo=. Passing a pytz tz to datetime.tzinfo= yields a historical LMT
-# offset (+07:43:24 for Perth pre-1895) instead of the wall-clock AWST
-# (+08:00) we want. Use PERTH.localize(...) instead.
+# offset for Sydney pre-1895) instead of the wall-clock AEST (+10:00) we want.
+# Use SYDNEY.localize(...) instead.
 PERTH = pytz.timezone('Australia/Perth')
+SYDNEY = pytz.timezone('Australia/Sydney')
 FROZEN_NOW = PERTH.localize(datetime(2026, 4, 22, 9, 0))
 
 
@@ -590,11 +591,11 @@ class TestFormatters:
   # --- _fmt_last_updated ---
 
   def test_fmt_last_updated_awst(self) -> None:
-    '''VALIDATION row 05-02-T2 AWST test. C-1 reviews: use PERTH.localize(...) —
+    '''VALIDATION row 05-02-T2 AEST test. C-1 reviews: use SYDNEY.localize(...) —
     datetime(..., tzinfo=pytz.timezone(...)) silently picks historical LMT offset
-    (+07:43:24 for Perth pre-1895) instead of +08:00 AWST.'''
-    now = PERTH.localize(datetime(2026, 4, 22, 9, 0))
-    assert dashboard._fmt_last_updated(now) == '2026-04-22 09:00 AWST'
+    instead of +10:00 AEST.'''
+    now = SYDNEY.localize(datetime(2026, 4, 22, 9, 0))
+    assert dashboard._fmt_last_updated(now) == '2026-04-22 09:00 AEST'
 
   def test_fmt_last_updated_rejects_naive_datetime(self) -> None:
     '''RESEARCH Pitfall 9: naive datetime silently breaks golden-snapshot byte stability.'''
@@ -602,9 +603,9 @@ class TestFormatters:
       dashboard._fmt_last_updated(datetime(2026, 4, 22, 9, 0))  # no tzinfo
 
   def test_fmt_last_updated_converts_utc_to_awst(self) -> None:
-    '''Perth is UTC+8, no DST. 01:00 UTC → 09:00 AWST.'''
+    '''Sydney is UTC+10 (AEST). 01:00 UTC → 11:00 AEST.'''
     utc_now = datetime(2026, 4, 22, 1, 0, tzinfo=pytz.UTC)
-    assert dashboard._fmt_last_updated(utc_now) == '2026-04-22 09:00 AWST'
+    assert dashboard._fmt_last_updated(utc_now) == '2026-04-22 11:00 AEST'
 
 
 class TestRenderBlocks:
@@ -626,7 +627,7 @@ class TestRenderBlocks:
     output = dashboard._render_header(state, FROZEN_NOW)
     assert '<h1>Trading Signals</h1>' in output
     assert 'Mechanical multi-market trading system' in output
-    assert '2026-04-22 09:00 AWST' in output
+    assert '2026-04-22 11:00 AEST' in output
 
   def test_header_uses_render_header_signature(self) -> None:
     '''_render_header inherits _fmt_last_updated's naive-datetime rejection.'''
@@ -3250,7 +3251,7 @@ class TestPhase25FirstRun:
   def test_last_run_none_renders_onboarding_card(self):
     html_out = _render_to_str(_empty_state(last_run=None))
     assert 'Awaiting first daily run' in html_out
-    assert 'Calculations and equity curve will populate after the first cycle at 08:00 AWST.' in html_out
+    assert 'Calculations and equity curve will populate after the first cycle at 08:00 AEST.' in html_out
 
   def test_last_run_set_renders_trace_tables(self):
     state = _empty_state(last_run='2026-04-23', signals={'SPI200': {'strategy_version': 'v1.2.0', 'signal': 0}})
@@ -3436,9 +3437,9 @@ class TestPhase25Countdown:
 
   def test_status_strip_displays_awst_label(self):
     html_out = _render_to_str(_empty_state(last_run='2026-04-23'))
-    # Operator-locked: display literal must read AWST (not AEST)
-    assert 'AWST' in html_out
-    assert 'AEST' not in html_out
+    # Operator-locked: display literal must read AEST (schedule is Australia/Sydney)
+    assert 'AEST' in html_out
+    assert 'AWST' not in html_out
     assert 'name="account"' in html_out
 
 

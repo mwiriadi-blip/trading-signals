@@ -22,21 +22,22 @@ from dashboard_renderer.assets import (
 )
 from dashboard_renderer.context import RenderContext
 
-# Phase 25 D-08: AWST countdown helper. Inlined per D-02 — no external JS.
+# Phase 25 D-08: AEST countdown helper. Inlined per D-02 — no external JS.
 # Uses Date.UTC arithmetic — never browser local TZ (operator may travel;
-# daemon always runs AWST = UTC+8, no DST).
-# 08:00 AWST == 00:00 UTC. Target is 08:01 AWST == 00:01 UTC (60s buffer so
-# state.json has time to write before the strip auto-refreshes).
+# daemon runs at 08:00 AEST = UTC+10).
+# 08:00 AEST == 22:00 UTC (previous UTC calendar day). Target is 22:01 UTC
+# (60s buffer so state.json has time to write before the strip auto-refreshes).
 _AWST_COUNTDOWN_JS = '''<script>
-// Phase 25 D-08: AWST countdown. Fixed UTC+8 offset; ignores browser local TZ.
+// Phase 25 D-08: AEST countdown. Fixed UTC+10 offset; ignores browser local TZ.
+// 08:00 AEST = 22:00 UTC of the previous UTC calendar day.
 function _awstNext0800Utc() {
   var now = Date.now();
   var d = new Date(now);
-  var target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+  var target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 22, 0, 0, 0);
   if (target <= now) target += 86400000;
-  // Skip weekends — daemon does not run Sat/Sun (UTC day 0=Sun, 6=Sat).
+  // Skip weekends: 22:00 UTC Fri = 08:00 AEST Sat; 22:00 UTC Sat = 08:00 AEST Sun.
   var dt = new Date(target);
-  while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6) {
+  while (dt.getUTCDay() === 5 || dt.getUTCDay() === 6) {
     target += 86400000;
     dt = new Date(target);
   }
@@ -44,7 +45,9 @@ function _awstNext0800Utc() {
 }
 function _formatAwstCountdown(targetUtcMs) {
   var now = Date.now();
-  var dt = new Date(targetUtcMs);
+  // Day name reflects AEST date (UTC+10 = targetUtcMs + 10h), not UTC date.
+  var aestMs = targetUtcMs + 10 * 3600000;
+  var dt = new Date(aestMs);
   var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   var dayName = days[dt.getUTCDay()];
   var deltaMs = targetUtcMs - now;
@@ -53,9 +56,9 @@ function _formatAwstCountdown(targetUtcMs) {
   if (deltaH >= 24) {
     var ddays = Math.floor(deltaH / 24);
     var hours = deltaH % 24;
-    return dayName + ' 08:00 AWST · in ' + ddays + 'd ' + hours + 'h';
+    return dayName + ' 08:00 AEST · in ' + ddays + 'd ' + hours + 'h';
   }
-  return '08:00 AWST · in ' + deltaH + 'h ' + deltaM + 'm';
+  return '08:00 AEST · in ' + deltaH + 'h ' + deltaM + 'm';
 }
 function _refreshAwstCountdowns() {
   var target = _awstNext0800Utc();
@@ -104,18 +107,18 @@ _TABS_KEYBOARD_JS = '''<script>
 '''
 
 
-# Phase 25 D-07 Plan 06: one-shot 08:01 AWST status-strip refresh.
-# 08:01 AWST = 00:01 UTC (AWST is UTC+8, no DST). Fixed offset — no browser TZ.
+# Phase 25 D-07 Plan 06: one-shot 08:01 AEST status-strip refresh.
+# 08:01 AEST = 22:01 UTC (previous UTC day; AEST is UTC+10). Fixed offset — no browser TZ.
 # Fires htmx 'refresh' event on #status-strip, which hx-trigger="refresh" catches.
 # Re-arms for the next day after firing so the tab stays live indefinitely.
 _STATUS_STRIP_REFRESH_JS = '''<script>
-// Phase 25 D-07: schedule one-shot status-strip refresh at 08:01 AWST.
-// 08:01 AWST = 00:01 UTC. Fixed offset; ignores browser local TZ.
+// Phase 25 D-07: schedule one-shot status-strip refresh at 08:01 AEST.
+// 08:01 AEST = 22:01 UTC. Fixed offset; ignores browser local TZ.
 (function () {
   function msToNext0801Utc() {
     var now = Date.now();
     var d = new Date(now);
-    var target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 1, 0, 0);
+    var target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 22, 1, 0, 0);
     if (target <= now) target += 86400000;
     return target - now;
   }

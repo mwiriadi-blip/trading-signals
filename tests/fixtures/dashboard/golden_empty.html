@@ -798,7 +798,7 @@ input:focus-visible,
   <p class="subtitle">Mechanical multi-market trading system</p>
   <p class="meta">
     <span class="label">Last updated</span>
-    <span class="value">2026-04-22 09:00 AWST</span>
+    <span class="value">2026-04-22 11:00 AEST</span>
     {{SIGNOUT_BUTTON}}{{SESSION_NOTE}}
   </p>
 <div id="status-strip" class="status-strip" hx-get="/status-strip" hx-trigger="refresh, visibilitychange[document.visibilityState=='visible'] from:document" hx-swap="outerHTML" aria-live="polite">
@@ -807,7 +807,7 @@ input:focus-visible,
   <span>Awaiting first run</span>
   <span class="status-sep"> · </span>
   <span class="status-label">Next run</span>
-  <span class="next-run">08:00 AWST · <span data-countdown="2026-04-23T08:00:00+08:00">in 23h 0m</span></span>
+  <span class="next-run">08:00 AEST · <span data-countdown="2026-04-23T08:00:00+08:00">in 23h 0m</span></span>
 </div>
 </header>
 <nav role="tablist" aria-label="Function" class="tabs tabs-function">
@@ -848,7 +848,7 @@ input:focus-visible,
   <h2 id="signals-tab-heading" class="visually-hidden">Signals</h2>
 <section class="onboarding-card" aria-labelledby="onboarding-heading">
   <h3 id="onboarding-heading">Awaiting first daily run</h3>
-  <p>Calculations and equity curve will populate after the first cycle at 08:00 AWST.</p>
+  <p>Calculations and equity curve will populate after the first cycle at 08:00 AEST.</p>
 </section>
 <div id="trades-region">
 <section id="open-trade-form-section">
@@ -867,7 +867,7 @@ input:focus-visible,
       <option value="LONG">LONG</option>
       <option value="SHORT">SHORT</option>
     </select>
-    <label for="paper-trade-entry-dt">Entry date/time (AWST)</label>
+    <label for="paper-trade-entry-dt">Entry date/time (AEST)</label>
     <input id="paper-trade-entry-dt" type="datetime-local" name="entry_dt" required>
     <label for="paper-trade-entry-price">Entry price</label>
     <input id="paper-trade-entry-price" type="number" name="entry_price" step="0.0001" min="0.0001" required>
@@ -919,7 +919,7 @@ input:focus-visible,
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">SPI 200 [MINI] SETTINGS</p>
   <h2>Settings</h2>
-  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
+  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AEST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
     <input type="hidden" name="market_id" value="SPI200">
     <fieldset>
@@ -995,7 +995,7 @@ input:focus-visible,
 <section class="open-form settings-form" hx-headers='{"X-Trading-Signals-Auth": "{{WEB_AUTH_SECRET}}"}'>
   <p class="eyebrow">AUD / USD [MINI] SETTINGS</p>
   <h2>Settings</h2>
-  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AWST cycle.</p>
+  <p class="subtitle">Per-market trading rules. Changes take effect on the next 08:00 AEST cycle.</p>
   <form hx-patch="/markets/settings" hx-ext="json-enc" hx-swap="none" hx-on::after-request="handleTradesError(event)">
     <input type="hidden" name="market_id" value="AUDUSD">
     <fieldset>
@@ -1201,7 +1201,7 @@ input:focus-visible,
       <div class="field">
         <label for="open-form-executed-at">Executed at</label>
         <input id="open-form-executed-at" name="executed_at" type="date">
-        <small>Optional. Defaults to today (AWST).</small>
+        <small>Optional. Defaults to today (AEST).</small>
       </div>
       <div class="field">
         <label for="open-form-peak-price">Peak price</label>

@@ -86,9 +86,9 @@ def render_status_strip(state: dict, now_awst: datetime) -> str:
       f' · {html.escape(status_text, quote=True)}'
     )
 
-  # OR-02: static "08:00 AWST" label is always visible; JS countdown updates
-  # only the inner span (ticker portion). This keeps "AWST" in the rendered HTML
-  # regardless of countdown magnitude so the AWST-gate grep always passes.
+  # OR-02: static "08:00 AEST" label is always visible; JS countdown updates
+  # only the inner span (ticker portion). This keeps "AEST" in the rendered HTML
+  # regardless of countdown magnitude so the AEST-gate grep always passes.
   return (
     '<div id="status-strip" class="status-strip" '
     'hx-get="/status-strip" '
@@ -99,7 +99,7 @@ def render_status_strip(state: dict, now_awst: datetime) -> str:
     f'  {last_run_html}\n'
     '  <span class="status-sep"> · </span>\n'
     '  <span class="status-label">Next run</span>\n'
-    f'  <span class="next-run">08:00 AWST · '
+    f'  <span class="next-run">08:00 AEST · '
     f'<span data-countdown="{html.escape(next_run_iso, quote=True)}">'
     f'{html.escape(countdown_initial, quote=True)}</span></span>\n'
     '</div>\n'

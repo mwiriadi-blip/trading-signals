@@ -15,8 +15,8 @@ from dashboard_renderer.context import RenderContext
 def _resolve_now(now: datetime | None) -> datetime:
   if now is not None:
     return now
-  perth = pytz.timezone('Australia/Perth')
-  return datetime.now(perth)
+  sydney = pytz.timezone('Australia/Sydney')
+  return datetime.now(sydney)
 
 
 def _build_render_context(

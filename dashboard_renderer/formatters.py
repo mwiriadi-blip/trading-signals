@@ -47,8 +47,8 @@ def fmt_last_updated(now: datetime) -> str:
       'fmt_last_updated requires a timezone-aware datetime; '
       f'got naive datetime={now!r}'
     )
-  awst = now.astimezone(pytz.timezone('Australia/Perth'))
-  return awst.strftime('%Y-%m-%d %H:%M AWST')
+  aest = now.astimezone(pytz.timezone('Australia/Sydney'))
+  return aest.strftime('%Y-%m-%d %H:%M AEST')
 
 
 def format_indicator_value(
@@ -68,12 +68,12 @@ def format_indicator_value(
 # ---------------------------------------------------------------------------
 
 def _compute_next_awst_0800(now_awst: datetime) -> datetime:
-  '''Return the next 08:00 AWST datetime on a Mon-Fri weekday.
+  '''Return the next 08:00 AEST datetime on a Mon-Fri weekday.
 
-  OR-02 display rule: if >24h away, format as `Mon 08:00 AWST · in 2d 16h`;
+  OR-02 display rule: if >24h away, format as `Mon 08:00 AEST · in 2d 16h`;
   if <24h, format as `in Nh Mm`; if <1h, format as `in NNm`.
   '''
-  # Strip to 08:00 AWST on the same calendar day as now_awst.
+  # Strip to 08:00 AEST on the same calendar day as now_awst.
   today_0800 = now_awst.replace(hour=8, minute=0, second=0, microsecond=0)
   # If we are before 08:00 today AND today is a weekday, the target is today.
   if now_awst < today_0800 and now_awst.weekday() < 5:
@@ -101,7 +101,7 @@ def _format_countdown_text(now_awst: datetime, target_awst: datetime) -> str:
   mins = total_min % 60
   day_name = target_awst.strftime('%a')  # Mon, Tue, ...
   if total_sec >= 24 * 3600:
-    return f'{day_name} 08:00 AWST · in {days}d {hours}h'
+    return f'{day_name} 08:00 AEST · in {days}d {hours}h'
   if total_sec >= 3600:
     return f'in {hours}h {mins}m'
   return f'in {mins}m'
