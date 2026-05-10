@@ -2,14 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: Roadmap drafted, awaiting plan-phase
-last_updated: "2026-05-10T04:19:50.808Z"
-last_activity: 2026-05-10 — `/gsd-roadmapper` wrote v1.3 roadmap (Phases 28..38)
+status: Context gathered, awaiting `/gsd-plan-phase 28`
+last_updated: "2026-05-10T04:45:00Z"
+last_activity: 2026-05-10 — Plan 28-03 executed: tests/uat/test_uat_17_cookie_persistence.py spec persisted (1 uat-marked test; cookie WRITE+READ+session asserted together)
 progress:
   total_phases: 11
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 6
+  completed_plans: 3
+  percent: 50
 ---
 
 # STATE — Trading Signals
@@ -26,11 +27,11 @@ progress:
 
 ## Current Position
 
-Phase: 28 (v1.2 UAT Closure) — entry point, no infrastructure prerequisites
-Plan: —
-Status: Context gathered, awaiting `/gsd-plan-phase 28`
-Last activity: 2026-05-10 — `/gsd-discuss-phase 28` captured 20 D-decisions across 4 areas (P26 sign-off basis, VERIFICATION.md format, helper artefacts, failure handling)
-Resume file: .planning/phases/28-v1-2-uat-closure/28-CONTEXT.md
+Phase: 28 (v1.2 UAT Closure) — wave 2 in progress
+Plan: 28-03 complete (3/6); next plan per phase wave map
+Status: Plan 28-03 spec persisted (cookie-persistence UAT-17-3 collectable under `pytest -m uat`); ready for next plan in wave
+Last activity: 2026-05-10 — Plan 28-03 completed (commit 92ef6df): added tests/uat/test_uat_17_cookie_persistence.py asserting cookie WRITE + READ + no session loss in one test; default suite count unchanged (2 uat tests deselected).
+Resume file: .planning/phases/28-v1-2-uat-closure/28-03-SUMMARY.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
@@ -128,6 +129,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 27 P12 | 70min | 4 tasks tasks | 12 files files |
 | Phase 27 P13 | 36min | 4 tasks | 11 files |
 | Phase 27 P14 | ~25min | 4 tasks | 13 files |
+| Phase 28 P03 | ~12min | 1 tasks | 1 files |
 
 ## Accumulated Context
 

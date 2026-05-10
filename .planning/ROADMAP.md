@@ -82,7 +82,7 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 **Plan list:**
 - [ ] 28-01-PLAN.md — Persisted UAT substrate: pyproject uat marker + pytest-playwright dev dep + tests/uat/ conftest
 - [ ] 28-02-PLAN.md — Phase 17 UAT-1 ATR(14) hand-recalc Playwright spec
-- [ ] 28-03-PLAN.md — Phase 17 UAT-3 cookie-persistence Playwright spec
+- [x] 28-03-PLAN.md — Phase 17 UAT-3 cookie-persistence Playwright spec
 - [ ] 28-04-PLAN.md — Phase 23 UAT-2 /backtest visual-smoke Playwright spec
 - [ ] 28-05-PLAN.md — Phase 26 UAT-1..6 cold-start + multi-tab Playwright specs
 - [ ] 28-06-PLAN.md — Live evidence pass + 28-VERIFICATION.md (autonomous=false; iOS Safari operator checkpoint)
