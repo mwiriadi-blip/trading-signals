@@ -21,7 +21,8 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR_DEFAULT = Path('.planning/backtests/data')
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_CACHE_DIR_DEFAULT = _PROJECT_ROOT / '.planning' / 'backtests' / 'data'
 _CACHE_TTL_SECONDS = 86_400  # 24h per CONTEXT D-01
 _REQUIRED_COLUMNS = frozenset({'Open', 'High', 'Low', 'Close', 'Volume'})
 

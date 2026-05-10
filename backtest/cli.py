@@ -43,7 +43,8 @@ from backtest.simulator import simulate
 logger = logging.getLogger(__name__)
 
 _AWST = ZoneInfo('Australia/Perth')
-_BACKTEST_DIR = Path('.planning/backtests')
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_BACKTEST_DIR = _PROJECT_ROOT / '.planning' / 'backtests'
 
 INSTRUMENT_SYMBOLS = {
   'SPI200': '^AXJO',

@@ -42,7 +42,8 @@ from backtest.render import render_history, render_report
 logger = logging.getLogger(__name__)
 
 _LOG_PREFIX = '[Web]'  # web layer keeps [Web]; CLI uses [Backtest]
-_BACKTEST_DIR = Path('.planning/backtests')
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_BACKTEST_DIR = _PROJECT_ROOT / '.planning' / 'backtests'
 _SAFE_FILENAME_RE = re.compile(r'^[a-zA-Z0-9._-]+\.json$')
 
 
