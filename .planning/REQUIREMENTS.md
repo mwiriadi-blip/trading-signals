@@ -13,7 +13,7 @@
 
 ### DEBT — v1.2 closure (4 requirements)
 
-- [ ] **DEBT-01**: Operator can verify all 8 deferred v1.2 UAT scenarios — Phase 17 ATR(14) hand-recalc to 1e-6, Phase 17 iOS Safari tap-to-toggle trace panel, Phase 17 cookie persistence across reload, Phase 23 live yfinance CLI run (`python -m backtest --years 5`), Phase 23 `/backtest` browser visual smoke, Phase 26 cold-start smoke on production droplet, Phase 26 multi-tab market scoping browser walkthrough (UAT-2..6) — all signed off in `VERIFICATION.md`.
+- [x] **DEBT-01**: Operator can verify all 8 deferred v1.2 UAT scenarios — Phase 17 ATR(14) hand-recalc to 1e-6, Phase 17 iOS Safari tap-to-toggle trace panel, Phase 17 cookie persistence across reload, Phase 23 live yfinance CLI run (`python -m backtest --years 5`), Phase 23 `/backtest` browser visual smoke, Phase 26 cold-start smoke on production droplet, Phase 26 multi-tab market scoping browser walkthrough (UAT-2..6) — all signed off in `VERIFICATION.md`.
 - [ ] **DEBT-02**: 5 ad-hoc post-ship polish commits from 2026-05-08..05-10 (scheduler tz fix, signal status ladder trigger, v1.1 backtested per-market defaults, trace vote_params, market tab strip refresh) are formalised as a v1.2.1 retroactive patch phase with tests + a single-commit `MILESTONES.md` note.
 - [ ] **DEBT-03**: v1.2 Phases 17, 19, 20, 22, 24, 25, 26 each have a `VALIDATION.md` (Nyquist coverage matrix) backfilled retroactively to match the format of Phase 23 + 27.
 - [ ] **DEBT-04**: v1.2 Phases 17, 19, 20, 22, 23, 24, 25, 26 each have a `SECURITY.md` (threat-model + mitigations) backfilled retroactively to match the format of Phase 27.

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: Context gathered, awaiting `/gsd-plan-phase 28`
-last_updated: "2026-05-10T04:45:00Z"
-last_activity: 2026-05-10 — Plan 28-03 executed: tests/uat/test_uat_17_cookie_persistence.py spec persisted (1 uat-marked test; cookie WRITE+READ+session asserted together)
+status: Plan 28-03 spec persisted (cookie-persistence UAT-17-3 collectable under `pytest -m uat`); ready for next plan in wave
+last_updated: "2026-05-10T04:48:29.861Z"
+last_activity: "2026-05-10 — Plan 28-03 completed (commit 92ef6df): added tests/uat/test_uat_17_cookie_persistence.py asserting cookie WRITE + READ + no session loss in one test; default suite count unchanged (2 uat tests deselected)."
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 5
+  percent: 83
 ---
 
 # STATE — Trading Signals
@@ -31,7 +31,7 @@ Phase: 28 (v1.2 UAT Closure) — wave 2 in progress
 Plan: 28-03 complete (3/6); next plan per phase wave map
 Status: Plan 28-03 spec persisted (cookie-persistence UAT-17-3 collectable under `pytest -m uat`); ready for next plan in wave
 Last activity: 2026-05-10 — Plan 28-03 completed (commit 92ef6df): added tests/uat/test_uat_17_cookie_persistence.py asserting cookie WRITE + READ + no session loss in one test; default suite count unchanged (2 uat tests deselected).
-Resume file: .planning/phases/28-v1-2-uat-closure/28-03-SUMMARY.md
+Resume file: None
 
 ### Resume instructions for cloud Claude / fresh clone
 
@@ -130,6 +130,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 27 P13 | 36min | 4 tasks | 11 files |
 | Phase 27 P14 | ~25min | 4 tasks | 13 files |
 | Phase 28 P03 | ~12min | 1 tasks | 1 files |
+| Phase 28 P04 | 6 min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -236,6 +237,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 - [Phase ?]: Sub-split daily_run.py into daily_run + daily_run_helpers + paper_trade_alerts to honour <500 LOC budget (Plan 27-13 §M1)
 - [Phase ?]: Switched _LAST_LOADED_STATE from PEP 562 __getattr__ proxy to real attribute on main.py with through-main accessors in state_actions
 - [Phase ?]: Late-bind via main package — every seam re-resolves names through main on every call (mirrors Plan 27-12)
+- [Phase ?]: Plan 28-04 relaxed missing-CSS assertion to inline-or-link (no StaticFiles mount in trading-signals)
 
 ### Todos Carried Forward
 

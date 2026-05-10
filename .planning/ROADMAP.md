@@ -80,11 +80,11 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
   4. Operator runs the cold-start smoke + multi-tab market-scoping walkthrough on the production droplet; all 6 UAT-26-N scenarios are signed `verified` in a single `VERIFICATION.md`.
 **Plans:** 6 plans
 **Plan list:**
-- [ ] 28-01-PLAN.md — Persisted UAT substrate: pyproject uat marker + pytest-playwright dev dep + tests/uat/ conftest
-- [ ] 28-02-PLAN.md — Phase 17 UAT-1 ATR(14) hand-recalc Playwright spec
+- [x] 28-01-PLAN.md — Persisted UAT substrate: pyproject uat marker + pytest-playwright dev dep + tests/uat/ conftest
+- [x] 28-02-PLAN.md — Phase 17 UAT-1 ATR(14) hand-recalc Playwright spec
 - [x] 28-03-PLAN.md — Phase 17 UAT-3 cookie-persistence Playwright spec
-- [ ] 28-04-PLAN.md — Phase 23 UAT-2 /backtest visual-smoke Playwright spec
-- [ ] 28-05-PLAN.md — Phase 26 UAT-1..6 cold-start + multi-tab Playwright specs
+- [x] 28-04-PLAN.md — Phase 23 UAT-2 /backtest visual-smoke Playwright spec
+- [x] 28-05-PLAN.md — Phase 26 UAT-1..6 cold-start + multi-tab Playwright specs
 - [ ] 28-06-PLAN.md — Live evidence pass + 28-VERIFICATION.md (autonomous=false; iOS Safari operator checkpoint)
 **Plan-time verification:** none (mechanical UAT closure).
 
@@ -320,7 +320,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 25. UI overhaul | v1.2 | 12/12 | Complete | 2026-05-07 |
 | 26. 25-followup | v1.2 | 8/8 | Complete | 2026-05-08 |
 | 27. quality sweep | v1.2 | 16/16 | Complete | 2026-05-10 |
-| 28. v1.2 UAT closure | v1.3 | 0/0 | Not started | - |
+| 28. v1.2 UAT closure | v1.3 | 5/6 | In Progress|  |
 | 29. v1.2.1 patch wrap + validation sweep | v1.3 | 0/0 | Not started | - |
 | 30. file-size pre-split | v1.3 | 0/0 | Not started | - |
 | 31. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
