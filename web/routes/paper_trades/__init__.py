@@ -6,224 +6,50 @@ goes through state_manager.mutate_state (Phase 14 flock kernel — unchanged). C
 are immutable (405 + Allow: GET per RFC 7231 §6.5.5). Composite trade ID generated inside
 the mutate_state closure under LOCK_EX (D-01 + D-15 atomicity).
 
-Contract (CONTEXT.md 2026-04-30 D-01..D-16 + planner D-17..D-22):
-  D-01: Composite ID <INSTRUMENT>-<YYYYMMDD>-<NNN> inside mutate_state lock
-  D-02: Half round-trip cost on entry (entry_cost_aud = round_trip / 2)
-  D-03: Close form rendered below open trades table (HTMX hx-get close-form route)
-  D-04: Strict server-side validation: future entry_dt, entry_price<=0, contracts<=0,
-        fractional SPI contracts, wrong-side stop, unknown instrument/side
-  D-05: PATCH/DELETE allowed on open rows; closed rows return 405 immutable
-  D-09: state.paper_trades[] row shape (13 fields)
-  D-11: P&L formulas via pnl_engine (pure-math module)
-  D-13: Single #trades-region HTMX swap target for every mutation
-  D-15: ALL mutations via mutate_state — no direct load_state/save_state in _apply
-  D-17: No hx-ext="json-enc"; routes accept application/x-www-form-urlencoded.
-        Browsers + HTMX send form-encoded data by default (no json-enc extension needed).
-        Handlers read Request.form() and validate via Pydantic model_validate().
-        Gap closure 2026-04-30: original implementation incorrectly accepted JSON body;
-        corrected to accept form-encoded body per D-17 and the browser/HTMX contract.
-  D-18: Singular /paper-trade/<id> for individual ops; plural /paper-trades for list
-  D-21: DELETE carries no body
-  D-22: Validation failures return 400 (global RequestValidationError -> 400 handler)
-
-Hex-lite layering (CLAUDE.md + Phase 19 D-14):
-  Adapter tier: imports pnl_engine (pure-math), state_manager.mutate_state (I/O),
-                system_params.STRATEGY_VERSION (LOCAL inside _apply — kwarg trap).
-  system_params / pnl_engine / state_manager are LOCAL imports inside handler bodies
-  per Phase 11 C-2 (prevents circular imports, matches trades.py convention).
-
-Auth: Phase 16.1 AuthMiddleware gates all /paper-trade/* routes uniformly across
-GET/POST/PATCH/DELETE — no per-route auth boilerplate needed.
+Phase 30 D-08: converted from a single 493-LOC file into a package.
+  _models.py   — Pydantic request models + sentinel exceptions
+  _renderers.py — constants (_D09_KEYS, _MULTIPLIER, _COST_AUD) + _method_not_allowed_405
+  __init__.py  — register(app) + D-03 re-export surface
 
 Log prefix: [Web].
 '''
 import html
 import logging
-import math
-import zoneinfo
-from datetime import datetime
-from typing import Literal, TypeVar
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from fastapi.responses import HTMLResponse
 
-_T = TypeVar('_T', bound=BaseModel)
+from web.routes.paper_trades._models import (
+  _now_awst,
+  _parse_form,
+  _PaperTradeNotFound,
+  _PaperTradeImmutable,
+  _PaperTradeIDOverflow,
+  OpenPaperTradeRequest,
+  EditPaperTradeRequest,
+  ClosePaperTradeRequest,
+)
+from web.routes.paper_trades._renderers import (
+  _COST_AUD,
+  _MULTIPLIER,
+  _D09_KEYS,
+  _method_not_allowed_405,
+)
 
 logger = logging.getLogger(__name__)
 
-_AWST = zoneinfo.ZoneInfo('Australia/Perth')
 _LOG_PREFIX = '[Web]'
-_VALID_INSTRUMENTS = frozenset({'SPI200', 'AUDUSD'})
-_VALID_SIDES = frozenset({'LONG', 'SHORT'})
 
-# Mirror of system_params constants — kept here so pnl_engine stays decoupled per
-# planner D-19 + Phase 2 D-17. If system_params changes, update here and bump tests.
-_COST_AUD: dict[str, float] = {'SPI200': 6.0, 'AUDUSD': 5.0}  # full round-trip
-_MULTIPLIER: dict[str, float] = {'SPI200': 5.0, 'AUDUSD': 10000.0}
+# D-03 import-surface preservation — service layer + tests import these
+# names directly from `web.routes.paper_trades`. Re-export from the package
+# so the import path is unchanged.
+__all__ = [
+  'register',
+  'OpenPaperTradeRequest', 'EditPaperTradeRequest', 'ClosePaperTradeRequest',
+  '_PaperTradeNotFound', '_PaperTradeImmutable', '_PaperTradeIDOverflow',
+  '_D09_KEYS', '_MULTIPLIER', '_COST_AUD',
+]
 
-_D09_KEYS = frozenset({
-  'id', 'instrument', 'side', 'entry_dt', 'entry_price', 'contracts',
-  'stop_price', 'entry_cost_aud', 'status', 'exit_dt', 'exit_price',
-  'realised_pnl', 'strategy_version',
-})
-
-
-def _now_awst() -> datetime:
-  '''Return the current datetime in AWST (Australia/Perth). Copy from trades.py:73.'''
-  return datetime.now(_AWST)
-
-
-async def _parse_form(request: Request, model_cls: type[_T]) -> _T:
-  '''Read application/x-www-form-urlencoded body from request and validate via Pydantic.
-
-  D-17 gap-closure (2026-04-30): browsers + HTMX (without hx-ext="json-enc") send
-  form-encoded bodies, not JSON. This helper bridges the HTMX → FastAPI gap by:
-  1. Reading the form data dict (starlette Request.form() — already parsed by middleware)
-  2. Dropping empty-string values so optional fields remain None (not "")
-  3. Calling model_cls.model_validate() with from_attributes=False
-  4. Re-raising Pydantic ValidationError as FastAPI RequestValidationError so the
-     global handler in web/app.py remaps to 400 (planner D-22).
-
-  Called from the three mutation POST/PATCH handlers; DELETE has no body (D-21).
-  '''
-  raw_form = await request.form()
-  # Convert ImmutableMultiDict → plain dict; drop empty strings (optional fields)
-  form_dict: dict = {}
-  for key, value in raw_form.multi_items():
-    if value != '':
-      form_dict[key] = value
-
-  try:
-    return model_cls.model_validate(form_dict)
-  except ValidationError as exc:
-    # Wrap as RequestValidationError so web/app.py's handler remaps to 400 (D-22)
-    raise RequestValidationError(errors=exc.errors()) from exc
-
-
-# =========================================================================
-# Sentinels — raised inside _apply closures, caught by handlers
-# =========================================================================
-
-class _PaperTradeNotFound(Exception):
-  '''Row with the given trade_id does not exist in state.paper_trades.'''
-
-
-class _PaperTradeImmutable(Exception):
-  '''Raised when PATCH/DELETE/close is attempted on a status=closed row.'''
-
-
-class _PaperTradeIDOverflow(Exception):
-  '''Raised when the per-instrument-per-day counter would exceed 999.'''
-  def __init__(self, instrument: str, day: str) -> None:
-    self.instrument = instrument
-    self.day = day
-
-
-# =========================================================================
-# 405 helper — RFC 7231 §6.5.5
-# =========================================================================
-
-def _method_not_allowed_405(allow: str = 'GET') -> Response:
-  '''RFC 7231 §6.5.5 — 405 MUST include Allow header listing allowed methods.
-
-  Manual 405 responses (closed-row immutability) do NOT include Allow
-  automatically unlike FastAPI's auto-generated 405 for unknown methods.
-  We must add it explicitly. RESEARCH §Pattern 3 verified this.
-  '''
-  return Response(
-    content='closed rows are immutable',
-    status_code=405,
-    headers={'Allow': allow},
-    media_type='text/plain; charset=utf-8',
-  )
-
-
-# =========================================================================
-# Pydantic request models (D-04 + planner D-22)
-# =========================================================================
-
-class OpenPaperTradeRequest(BaseModel):
-  '''POST /paper-trade/open body — D-04 strict server-side validation.
-
-  Pydantic 422 is auto-remapped to 400 by the global RequestValidationError
-  handler in web/app.py (planner D-22 amendment — CONTEXT D-04 says 422
-  but the codebase-wide handler remaps to 400).
-  '''
-  model_config = ConfigDict(extra='forbid')  # D-04: unknown fields → 400
-
-  instrument: Literal['SPI200', 'AUDUSD']
-  side: Literal['LONG', 'SHORT']
-  entry_dt: datetime
-  entry_price: float = Field(gt=0)
-  contracts: float = Field(gt=0)
-  stop_price: float | None = None
-
-  @model_validator(mode='after')
-  def _coherence(self) -> 'OpenPaperTradeRequest':
-    '''D-04 cross-field validations: future entry_dt, SPI fractional contracts,
-    stop_price sign check.'''
-    # entry_dt must not be in the future (AWST)
-    now = _now_awst()
-    entry_dt_aware = self.entry_dt
-    if entry_dt_aware.tzinfo is None:
-      # naive datetime: assume AWST for comparison
-      import zoneinfo as _zi
-      entry_dt_aware = self.entry_dt.replace(tzinfo=_zi.ZoneInfo('Australia/Perth'))
-    if entry_dt_aware > now:
-      raise ValueError('entry_dt: must not be in the future (AWST)')
-
-    # SPI 200 mini contracts must be a whole integer
-    if self.instrument == 'SPI200' and self.contracts != int(self.contracts):
-      raise ValueError('contracts: SPI200 mini contracts must be a whole integer')
-
-    # stop_price validation
-    if self.stop_price is not None:
-      if self.stop_price <= 0:
-        raise ValueError('stop_price: must be > 0')
-      if self.side == 'LONG' and self.stop_price >= self.entry_price:
-        raise ValueError('stop_price: must be < entry_price for LONG')
-      if self.side == 'SHORT' and self.stop_price <= self.entry_price:
-        raise ValueError('stop_price: must be > entry_price for SHORT')
-
-    return self
-
-
-class EditPaperTradeRequest(BaseModel):
-  '''PATCH /paper-trade/<id> body — same D-04 rules as OpenPaperTradeRequest
-  but all fields optional (only supplied fields are updated).
-  '''
-  model_config = ConfigDict(extra='forbid')
-
-  instrument: Literal['SPI200', 'AUDUSD'] | None = None
-  side: Literal['LONG', 'SHORT'] | None = None
-  entry_dt: datetime | None = None
-  entry_price: float | None = Field(default=None, gt=0)
-  contracts: float | None = Field(default=None, gt=0)
-  stop_price: float | None = None
-
-  @model_validator(mode='after')
-  def _coherence(self) -> 'EditPaperTradeRequest':
-    '''Validate stop_price sign relative to entry_price when both are supplied.
-    Full D-04 coherence is enforced inside _apply (post-merge) for partial edits.
-    '''
-    if self.stop_price is not None and self.stop_price <= 0:
-      raise ValueError('stop_price: must be > 0')
-    return self
-
-
-class ClosePaperTradeRequest(BaseModel):
-  '''POST /paper-trade/<id>/close body.'''
-  model_config = ConfigDict(extra='forbid')
-
-  exit_dt: datetime
-  exit_price: float = Field(gt=0)
-
-
-# =========================================================================
-# register() factory — mounts all six routes
-# =========================================================================
 
 def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable length
   '''Mount all six Phase 19 paper-trade routes on the FastAPI app.
