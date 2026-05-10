@@ -1,4 +1,4 @@
-<!-- captured at HEAD 7b1564c043ab58108417a423580b92a98e36afa9 after 27-08+27-11 -->
+<!-- captured at HEAD b7ed1f27939a715833cfec35a36489878e875465 after triggers/stop-line -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -171,6 +171,21 @@ section h2 {
   font-size: var(--fs-label);
   color: var(--color-text-muted);
   margin: 0;
+}
+.card .triggers {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--color-text);
+  margin: var(--space-2) 0 0;
+}
+.card .stop-line {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--color-text);
+  margin: var(--space-1) 0 0;
+}
+.card .stop-tag {
+  color: var(--color-text-muted);
 }
 .chart-container {
   position: relative;
@@ -838,6 +853,8 @@ input:focus-visible,
       <p class="big-label signal-flat"><span class="status-dot status-dot--flat" aria-hidden="true"></span>FLAT</p>
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 18.3  ·  Mom<sub>1</sub> -0.5%  ·  Mom<sub>3</sub> +0.1%  ·  Mom<sub>12</sub> +1.4%  ·  RVol 0.95</p>
+      <p class="triggers">Triggers → LONG: 1) ADX ≥ 25 (now 18.3, +6.7)  2) 2 more Mom +2.0% votes</p>
+      <p class="stop-line">Stop 7950.0000 <span class="stop-tag">(trail · LONG)</span></p>
     </article>
 <details class="trace-disclosure" data-instrument="SPI200"{{TRACE_OPEN_SPI200}}>
   <summary class="trace-summary">Show calculations</summary>
@@ -877,6 +894,7 @@ input:focus-visible,
       <p class="big-label signal-long"><span class="status-dot status-dot--long" aria-hidden="true"></span>LONG</p>
       <p class="sub">Signal as of 2026-04-21</p>
       <p class="scalars">ADX 27.3  ·  Mom<sub>1</sub> +1.5%  ·  Mom<sub>3</sub> +1.8%  ·  Mom<sub>12</sub> +2.2%  ·  RVol 0.95</p>
+      <p class="stop-line">Stop 0.6600 <span class="stop-tag">(manual)</span></p>
     </article>
 <details class="trace-disclosure" data-instrument="AUDUSD"{{TRACE_OPEN_AUDUSD}}>
   <summary class="trace-summary">Show calculations</summary>
