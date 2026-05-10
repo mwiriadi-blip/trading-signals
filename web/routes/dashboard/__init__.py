@@ -69,18 +69,20 @@ from fastapi.responses import PlainTextResponse, Response
 from itsdangerous import BadSignature, SignatureExpired
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
+from system_params import INSTRUMENT_ID_RE as _MARKET_ID_RE  # r'^[A-Z0-9_]{2,20}$'
+
+from web.routes.dashboard._renderers import (
+  _forward_stop_fragment_response,
+  _is_htmx_request,
+  _is_stale_for,
+  _resolve_trace_open,
+)
+
 logger = logging.getLogger(__name__)
 
 _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py default
 _STATE_PATH = 'state.json'
-_REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01: forces regen of all 5 sibling HTMLs post-deploy
-
-# Phase 26 Plan 26-07 (R7): mirror Pydantic write-side regex (web/routes/markets.py:20)
-# on the cookie read+write paths for defense-in-depth. Bounded length, ASCII only.
-# Phase 27 #8: now sourced from system_params.INSTRUMENT_ID_RE — single source of
-# truth (review-fix agreed-8). The literal r'^[A-Z0-9_]{2,20}$' below documents
-# the canonical pattern in-place so reviewers can grep it without import-chasing.
-from system_params import INSTRUMENT_ID_RE as _MARKET_ID_RE  # r'^[A-Z0-9_]{2,20}$'
+_REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01
 
 # Phase 26 Plan 26-07 (R6): allowlist for active_function query param.
 _ALLOWED_FUNCTIONS = {'signals', 'account', 'settings', 'market-test'}
@@ -116,37 +118,6 @@ _PAGE_OUTPUTS = {
 }
 
 
-def _is_stale_for(page_output: Path) -> bool:
-  '''Phase 26 Plan 26-07 (R1): per-file staleness check.
-
-  D-08 generalised: state.json mtime > page_output mtime means regen needed.
-  Each sibling HTML (dashboard.html, dashboard-signals.html, ...) is now
-  gated by its own marker presence + own mtime — previously only
-  dashboard.html was checked, leaving siblings stale on disk after deploys
-  that bumped the marker but already had a fresh dashboard.html.
-
-  Returns True if page_output is missing (caller handles via .exists()).
-  Returns True if state.json is newer than page_output (regen path).
-  Returns True if cached page_output predates the tabbed dashboard marker.
-  Returns False if page_output is fresh relative to state.json.
-  Returns False if state.json itself is missing (no state to render from).
-  '''
-  try:
-    html_mtime = os.stat(page_output).st_mtime_ns
-  except FileNotFoundError:
-    return True  # missing page output — caller handles 503
-  try:
-    state_mtime = os.stat(_STATE_PATH).st_mtime_ns
-  except FileNotFoundError:
-    return False  # no state.json — serve whatever page_output is
-  try:
-    if _REQUIRED_DASHBOARD_MARKER not in page_output.read_bytes():
-      return True
-  except OSError:
-    return True
-  return state_mtime > html_mtime
-
-
 def register(app: FastAPI) -> None:
   '''Register GET / on the given FastAPI instance.'''
 
@@ -172,25 +143,23 @@ def register(app: FastAPI) -> None:
     except BadSignature:
       return False
 
-  def _resolve_trace_open(request: Request) -> frozenset:
-    '''Read tsi_trace_open cookie and return allowlisted instrument keys.
+  # Phase 25 D-05: selected_market cookie attrs. NO HttpOnly (JS-readable).
+  # SameSite=Lax (UI-state cookie; not session). Secure required for HTTPS.
+  _MARKET_COOKIE_ATTRS = '; Max-Age=2592000; Path=/; Secure; SameSite=Lax'
 
-    The cookie value is a comma-separated list of instrument keys
-    (e.g. "SPI200,AUDUSD"). Only keys matching the canonical market-ID regex
-    ^[A-Z0-9_]{2,20}$ (sourced from _MARKET_ID_RE) are accepted — all other
-    values are discarded silently. Returns empty frozenset when cookie absent
-    or contains no valid keys.
+  def _set_market_cookie(response: Response, market_id: str) -> None:
+    '''Phase 25 D-05: set selected_market cookie on every market-scoped render.
 
-    Phase 29 Plan 12: widened from a static frozenset{'SPI200','AUDUSD'} to
-    a regex-validated format allowlist so dynamically-added markets (Phase 25+
-    multi-market API) are also covered. Security is preserved: _trace_open_repl
-    can only emit b' open' or b'' — no injection surface regardless of market ID.
+    Cookie is JS-readable (no HttpOnly) so /account can route to last-selected market.
+
+    Phase 26 Plan 26-07 (R7): write-path regex tightened to mirror Pydantic
+    upstream (web/routes/markets.py:20). Replaces the permissive char-strip
+    sanitiser with an allowlist fullmatch — anything outside ^[A-Z0-9_]{2,20}$
+    is silently dropped.
     '''
-    raw = request.cookies.get('tsi_trace_open', '')
-    if not raw:
-      return frozenset()
-    parts = {p.strip() for p in raw.split(',') if p.strip()}
-    return frozenset(p for p in parts if _MARKET_ID_RE.fullmatch(p))
+    if not _MARKET_ID_RE.fullmatch(market_id or ''):
+      return
+    response.headers['Set-Cookie'] = f'selected_market={market_id}{_MARKET_COOKIE_ATTRS}'
 
   @app.get('/')
   def get_dashboard(request: Request, fragment: str | None = None):
@@ -241,28 +210,6 @@ def register(app: FastAPI) -> None:
   # markets.py because method differs (GET vs PATCH). Registration order:
   # markets.py is registered BEFORE dashboard.py in web/app.py, preserving
   # the 18ea2c5 literal-before-dynamic discipline.
-
-  # Phase 25 D-05: selected_market cookie attrs. NO HttpOnly (JS-readable).
-  # SameSite=Lax (UI-state cookie; not session). Secure required for HTTPS.
-  _MARKET_COOKIE_ATTRS = '; Max-Age=2592000; Path=/; Secure; SameSite=Lax'
-
-  def _is_htmx_request(request: Request) -> bool:
-    '''Phase 25 Pitfall 6: HTMX swap requests carry HX-Request: true header.'''
-    return request.headers.get('HX-Request', '').lower() == 'true'
-
-  def _set_market_cookie(response: Response, market_id: str) -> None:
-    '''Phase 25 D-05: set selected_market cookie on every market-scoped render.
-
-    Cookie is JS-readable (no HttpOnly) so /account can route to last-selected market.
-
-    Phase 26 Plan 26-07 (R7): write-path regex tightened to mirror Pydantic
-    upstream (web/routes/markets.py:20). Replaces the permissive char-strip
-    sanitiser with an allowlist fullmatch — anything outside ^[A-Z0-9_]{2,20}$
-    is silently dropped.
-    '''
-    if not _MARKET_ID_RE.fullmatch(market_id or ''):
-      return
-    response.headers['Set-Cookie'] = f'selected_market={market_id}{_MARKET_COOKIE_ATTRS}'
 
   async def _serve_market_scoped_page(request: Request, market_id: str, function: str):
     '''Phase 25 D-01..D-05: serve a market-scoped page (signals/settings/market-test).
@@ -492,66 +439,6 @@ def register(app: FastAPI) -> None:
       fragment=fragment,
     )
 
-  def _forward_stop_fragment_response(request: Request, fragment: str | None):
-    # Phase 15 CALC-03 + REVIEWS L-1: forward-stop fragment — EXACT match.
-    # Handled BEFORE the dashboard.html file-read path because this fragment
-    # does not need the on-disk dashboard.html to exist (it reads state.json
-    # directly via load_state). Degenerate Z returns em-dash, never 4xx.
-    if fragment != 'forward-stop':
-      return None
-    import html as _html
-    import math as _math
-
-    from dashboard import _fmt_currency, _fmt_em_dash  # LOCAL — C-2
-    from sizing_engine import get_trailing_stop  # LOCAL — C-2
-    from state_manager import load_state as _ls  # LOCAL — C-2
-
-    instrument = request.query_params.get('instrument', '')
-    z_raw = request.query_params.get('z', '')
-    span_id_suffix = _html.escape(instrument, quote=True) if instrument else 'unknown'
-
-    def _em_dash_response():
-      body = f'<span id="forward-stop-{span_id_suffix}-w">{_fmt_em_dash()}</span>'
-      return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
-
-    try:
-      z = float(z_raw)
-    except (ValueError, TypeError):
-      return _em_dash_response()
-    if not _math.isfinite(z) or z <= 0:
-      return _em_dash_response()
-
-    try:
-      state = _ls()
-    except (OSError, ValueError, TypeError):
-      return _em_dash_response()
-
-    pos = state.get('positions', {}).get(instrument)
-    if pos is None:
-      return _em_dash_response()
-
-    synth = dict(pos)
-    direction = synth.get('direction', 'LONG')
-    if direction == 'LONG':
-      peak = synth.get('peak_price') or synth.get('entry_price', 0.0)
-      synth['peak_price'] = max(peak, z)
-    else:
-      trough = synth.get('trough_price') or synth.get('entry_price', 0.0)
-      synth['trough_price'] = min(trough, z)
-
-    try:
-      w = get_trailing_stop(synth, 0.0, 0.0)
-    except (ValueError, TypeError, KeyError):
-      return _em_dash_response()
-
-    if not _math.isfinite(w):
-      w_html = _fmt_em_dash()
-    else:
-      w_html = _html.escape(_fmt_currency(w), quote=True)
-
-    body = f'<span id="forward-stop-{span_id_suffix}-w">{w_html}</span>'
-    return Response(content=body.encode('utf-8'), media_type='text/html; charset=utf-8')
-
   def _substitute(content: bytes, request: Request) -> bytes:
     '''Phase 26 Plan 26-04 (B2/B3): single substitution helper resolving every
     placeholder kind that flows through the web layer.
@@ -577,6 +464,11 @@ def register(app: FastAPI) -> None:
     Hex-boundary: imports stay LOCAL inside this function (Phase 11 C-2;
     enforced by tests/test_web_healthz.py::TestWebHexBoundary). Pure
     bytes -> bytes, no Response coupling.
+
+    Security: _is_cookie_session captures _session_serializer (register-time
+    closure) — this function must stay inside register() so the closure chain
+    is preserved. Moving _substitute to module-level would break session
+    cookie validation (T-30-03-01 mitigation).
     '''
     # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4): substitute placeholder
     # with env secret at request time so on-disk dashboard.html never
@@ -648,3 +540,9 @@ def register(app: FastAPI) -> None:
       content=content,
       media_type='text/html; charset=utf-8',
     )
+
+
+# D-03 import-surface preservation — service layer + tests import `register`
+# (and possibly other names) directly from `web.routes.dashboard`. Re-export
+# from the package so the import path is unchanged.
+__all__ = ['register']
