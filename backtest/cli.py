@@ -132,7 +132,10 @@ def _run_one_instrument(instrument: str, start: str, end: str,
   # '[Backtest] Fetching' line per instrument should appear in caplog.
   df = fetch_ohlcv(symbol, start, end, refresh=refresh)
   multiplier = INSTRUMENT_MULTIPLIERS[instrument]
-  result = simulate(df, instrument, multiplier, cost_round_trip, initial_account)
+  import system_params
+  settings = system_params.default_settings_for_market(instrument)
+  result = simulate(df, instrument, multiplier, cost_round_trip, initial_account,
+                    settings=settings)
   logger.info('[Backtest] Simulating %s: %d bars, %d trades',
               instrument, len(result.equity_curve), len(result.trades))
   return result
