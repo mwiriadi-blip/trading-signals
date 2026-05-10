@@ -2,7 +2,7 @@
 phase: 28-v1-2-uat-closure
 verified: 2026-05-10T13:30:00+08:00
 status: partial
-score: 4 FAIL of 8 scenarios verified (7 of 11 evidence rows PASS)
+score: 7 PASS + 1 DEFERRED-to-29.5 of 8 scenarios (3 of 4 Phase 28 FAILs resolved by Phase 29)
 overrides_applied: 0
 test_suite: 2030/2030 green at HEAD (379d919, 2m35s)
 notes: |
@@ -23,6 +23,8 @@ notes: |
   auth wiring; the production droplet returned 401 to every UAT request.
   Plan 06 wired WEB_AUTH_SECRET injection via .env.uat (gitignored) +
   same-origin route handler. Recorded in commits 7aaf27b and 379d919.
+
+  Closure update 2026-05-10: see ## Phase 29 Closure section. UAT-23-1 deferred to Phase 29.5.
 ---
 
 # Phase 28: v1.2 UAT Closure — Verification Report
@@ -43,6 +45,7 @@ notes: |
 | ATR(14) hand-recalc to 1e-6 | 17 / UAT-1 | MCP | FAIL | symptom: ATR drift 1.22730353 — displayed=88.888811 vs 40-bar-window-recalc=87.66150746868470815084506843 (period=14, ohlc_bars=40); suspected: trace panel shows 40 OHLC bars but `signal_engine` computes ATR over full history — Wilder seed at the start of the displayed window does not match engine's seed many bars earlier; repro: `pytest -m uat tests/uat/test_uat_17_atr_handcalc.py` |
 | ATR(14) hand-recalc to 1e-6 | 17 / UAT-1 | MCP | PASS (Phase 29 closure — 29-11) | engine ATR seed exposed via signal_engine.atr_seed_for_window + sig['atr_seed'] persistence (commit af93de1); hand-recalc from persisted seed converges within 1e-6; regression: tests/test_trace_atr_seed.py::test_handcalc_converges_to_displayed_atr_within_1e-6; repro: .venv/bin/pytest tests/test_trace_atr_seed.py -q |
 | iOS Safari tap-to-toggle | 17 / UAT-2 | Manual | FAIL | Operator (iPhone Safari, 2026-05-10): tap toggled, reload does NOT preserve state — panel minimises and operator has to re-tap "Show calculations". Desktop Chrome via Playwright PASSES the same flow (UAT-17-3 below) — iOS-specific divergence; suspected: cookie-write inline JS at root.html script[0] (`document.cookie = 'tsi_trace_open=...; Secure'`) — likely Secure+SameSite=Lax interaction on iOS Safari, OR backend not reading `tsi_trace_open` to seed `<details open>` on render; repro: iPhone Safari → `/markets/SPI200/signals` → tap "Show calculations" → pull-to-refresh → panel collapsed |
+| iOS Safari tap-to-toggle | 17 / UAT-2 | Manual | PASS (Phase 29 closure — 29-12) | server-side <details open> rendering from tsi_trace_open cookie (commit 8e83a44); two root causes fixed: _resolve_trace_open used static frozenset (now regex allowlist) + _TRACE_OPEN_PLACEHOLDER was static dict (now dynamic shim); regression: tests/test_trace_details_open_serverside.py::test_details_open_when_cookie_includes_instrument; operator manual re-test: PASS — iPhone 17 Pro Max, 2026-05-10 |
 | Cookie persistence across reload | 17 / UAT-3 | MCP | PASS | toggle flipped (closed→open); cookie `tsi_trace_open` written with `SPI200` value; state preserved across `page.reload()`; tablist (auth indicator) still rendered. Desktop Chrome only — iOS Safari divergence captured separately under UAT-17-2. |
 
 ## Phase 23 Scenarios
@@ -86,3 +89,14 @@ Two substrate gaps were closed during plan 06 — neither is a Phase 29 hand-off
 ---
 
 *DEBT-01 partially discharged: 7 PASS, 4 FAIL. v1.2 sign-off proceeds with Phase 29 absorbing the FAIL set.*
+
+## Phase 29 Closure
+
+Phase 29 (v1.2.1 Retroactive Patch Wrap + Validation Sweep) closed against this VERIFICATION report on 2026-05-10. Disposition of Phase 28 FAIL rows:
+
+- **UAT-26-1 cold-start JS:** PASS — resolved by Plan 29-02 (commit `73a8bc9`); regression test `tests/uat/test_uat_26_coldstart.py::test_no_pageerror_on_coldstart`.
+- **UAT-17-1 ATR(14) hand-recalc:** PASS — resolved by Plan 29-11 (commit `af93de1`); engine ATR seed exposure + persistence + 1e-6 hand-recalc convergence test `tests/test_trace_atr_seed.py::test_handcalc_converges_to_displayed_atr_within_1e-6`.
+- **UAT-17-2 iOS Safari `<details open>`:** PASS — resolved by Plan 29-12 (commit `8e83a44`); server-side cookie-driven `<details open>` rendering + integration test `tests/test_trace_details_open_serverside.py`; operator iPhone 17 Pro Max re-test: PASS 2026-05-10.
+- **UAT-23-1 live yfinance 5y backtest:** DEFERRED to Phase 29.5 — spike (Plan 29-13) identified root cause: `backtest/cli.py` calls `simulate()` with no `settings=` argument; operator chose escape-29-5 to keep Phase 29 scope clean; RCA at `.planning/phases/29-v1-2-1-retroactive-patch-wrap-validation-sweep/29-13-YFINANCE-SPIKE-RCA.md`; Phase 29.5 context at `.planning/phases/29-5-yfinance-regression-fix/29-5-CONTEXT.md`.
+
+`status` remains `partial` (1 of 4 Phase 28 FAILs deferred to Phase 29.5). `score` updated to 7 PASS + 1 DEFERRED-to-29.5 of 8 scenarios.
