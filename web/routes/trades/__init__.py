@@ -13,21 +13,21 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from web.routes.trades._models import (
   _OPERATOR_CLOSE,
-  _now_awst,
-  _OpenConflict,
-  OpenTradeRequest,
   CloseTradeRequest,
   ModifyTradeRequest,
+  OpenTradeRequest,
   _build_position_dict,
+  _now_awst,
+  _OpenConflict,
   _validation_exception_handler,
 )
 from web.routes.trades._renderers import (
-  _render_position_row_partial,
   _render_close_form_partial,
-  _render_modify_form_partial,
-  _render_open_success_partial,
   _render_close_success_partial,
+  _render_modify_form_partial,
   _render_modify_success_partial,
+  _render_open_success_partial,
+  _render_position_row_partial,
 )
 
 logger = logging.getLogger(__name__)

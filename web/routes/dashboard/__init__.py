@@ -55,7 +55,8 @@ Architecture (CLAUDE.md hex-lite + Phase 10 D-15 + Phase 13 D-07 extension):
 
   Both state_manager AND dashboard imports are LOCAL (inside the handler)
   per Phase 11 C-2 / Phase 13 D-07. Module-top imports of either would
-  fail tests/test_web_healthz.py::TestWebHexBoundary::test_web_adapter_imports_are_local_not_module_top.
+  fail tests/test_web_healthz.py::TestWebHexBoundary::
+  test_web_adapter_imports_are_local_not_module_top.
 
 Log prefix: [Web].
 '''
@@ -70,7 +71,6 @@ from itsdangerous import BadSignature, SignatureExpired
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
 from system_params import INSTRUMENT_ID_RE as _MARKET_ID_RE  # r'^[A-Z0-9_]{2,20}$'
-
 from web.routes.dashboard._renderers import (
   _forward_stop_fragment_response,
   _is_htmx_request,
@@ -226,7 +226,7 @@ def register(app: FastAPI) -> None:
     markets = state.get('markets', {}) or {}
     if market_id not in markets:
       return Response(
-        content=f'Market not found: {market_id}'.encode('utf-8'),
+        content=f'Market not found: {market_id}'.encode(),
         status_code=404,
         media_type='text/plain; charset=utf-8',
       )
@@ -298,11 +298,12 @@ def register(app: FastAPI) -> None:
     Cache-Control: no-store, private (T-25-06-03 cache poisoning mitigation).
     Warning text is NOT rendered (T-25-06-01: only state derivation emitted).
     '''
+    from datetime import datetime
+
+    import pytz
+
     import state_manager as _sm
     from dashboard_renderer.components.header import render_status_strip
-
-    from datetime import datetime
-    import pytz
     sydney = pytz.timezone('Australia/Sydney')
     now_awst = datetime.now(sydney)
 

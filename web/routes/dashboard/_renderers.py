@@ -8,7 +8,6 @@ Everything that references _session_secret, _session_serializer, or
 _MARKET_COOKIE_ATTRS stays inside register() in __init__.py.
 '''
 import os
-import re
 from pathlib import Path
 
 from fastapi import Request

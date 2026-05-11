@@ -182,7 +182,7 @@ def _format_pydantic_errors(exc: RequestValidationError) -> list[dict]:
   for err in exc.errors():
     loc = err.get('loc', ())
     leaf = next(
-      (str(p) for p in reversed(loc) if isinstance(p, (str, int)) and p != 'body'),
+      (str(p) for p in reversed(loc) if isinstance(p, str | int) and p != 'body'),
       '<root>',
     )
     out.append({'field': leaf, 'reason': err.get('msg', 'invalid')})
@@ -237,7 +237,9 @@ def _build_position_dict(req, executed_at, atr_entry):
   return {
     'direction': req.direction,
     'entry_price': req.entry_price,
-    'entry_date': executed_at.isoformat() if hasattr(executed_at, 'isoformat') else str(executed_at),
+    'entry_date': (
+      executed_at.isoformat() if hasattr(executed_at, 'isoformat') else str(executed_at)
+    ),
     'n_contracts': req.contracts,
     'pyramid_level': pyramid_level,
     'peak_price': peak,

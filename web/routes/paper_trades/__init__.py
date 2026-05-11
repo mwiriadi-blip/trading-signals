@@ -20,19 +20,19 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from web.routes.paper_trades._models import (
-  _now_awst,
-  _parse_form,
-  _PaperTradeNotFound,
-  _PaperTradeImmutable,
-  _PaperTradeIDOverflow,
-  OpenPaperTradeRequest,
-  EditPaperTradeRequest,
   ClosePaperTradeRequest,
+  EditPaperTradeRequest,
+  OpenPaperTradeRequest,
+  _now_awst,
+  _PaperTradeIDOverflow,
+  _PaperTradeImmutable,
+  _PaperTradeNotFound,
+  _parse_form,
 )
 from web.routes.paper_trades._renderers import (
   _COST_AUD,
-  _MULTIPLIER,
   _D09_KEYS,
+  _MULTIPLIER,
   _method_not_allowed_405,
 )
 
@@ -66,8 +66,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     '''Return rendered #trades-region HTML fragment. Used as HTMX hx-target
     for all mutations.
     '''
-    from state_manager import load_state
     from dashboard import _render_paper_trades_region
+    from state_manager import load_state
     state = load_state()
     return HTMLResponse(content=_render_paper_trades_region(state))
 
@@ -125,7 +125,7 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       raise HTTPException(
         status_code=400,
         detail=f'counter overflow for {exc.instrument} on {exc.day} (999 limit)',
-      )
+      ) from exc
 
     from dashboard import _render_paper_trades_region
     return HTMLResponse(content=_render_paper_trades_region(state))
@@ -177,7 +177,7 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       from state_manager import mutate_state
       state = mutate_state(_apply)
     except _PaperTradeNotFound:
-      raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found')
+      raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found') from None
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
 
@@ -206,7 +206,7 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       from state_manager import mutate_state
       state = mutate_state(_apply)
     except _PaperTradeNotFound:
-      raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found')
+      raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found') from None
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
 
@@ -236,8 +236,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
         raise _PaperTradeImmutable(trade_id)
 
       # D-04 close validation: exit_dt must be >= entry_dt
-      from datetime import datetime as _dt
       import zoneinfo as _zi
+      from datetime import datetime as _dt
       entry_dt_raw = row['entry_dt']
       entry_dt = _dt.fromisoformat(entry_dt_raw)
       exit_dt_aware = req.exit_dt
@@ -271,7 +271,7 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       from state_manager import mutate_state
       state = mutate_state(_apply)
     except _PaperTradeNotFound:
-      raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found')
+      raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found') from None
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
     except HTTPException:
@@ -294,7 +294,6 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     matches = [r for r in rows if r['id'] == trade_id]
     if not matches:
       raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found')
-    row = matches[0]
     esc_id = html.escape(trade_id, quote=True)
     now_awst = _now_awst().strftime('%Y-%m-%dT%H:%M')
     frag = (

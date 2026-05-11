@@ -9,6 +9,7 @@ import hmac
 import logging
 import os
 import time
+from datetime import UTC
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, Response
@@ -43,7 +44,6 @@ def register(app: FastAPI) -> None:
   username = os.environ.get('WEB_AUTH_USERNAME', '').strip()
   secret = os.environ.get('WEB_AUTH_SECRET', '').strip()
 
-  session_serializer = URLSafeTimedSerializer(secret, salt='tsi-session-cookie')
   pending_serializer = URLSafeTimedSerializer(secret, salt='tsi-pending-cookie')
   enroll_serializer = URLSafeTimedSerializer(secret, salt='tsi-enroll-cookie')
   # Phase 16.1 Plan 03 F-02: magic-link signing salt — separate from all
@@ -183,7 +183,8 @@ def register(app: FastAPI) -> None:
 
     # 2. Local imports preserve hex boundary (Plan 01 pattern).
     import hashlib
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
+
     import auth_store
     import notifier as notifier_mod
 
@@ -221,7 +222,7 @@ def register(app: FastAPI) -> None:
     })
     token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
     expires_at = (
-      datetime.now(timezone.utc) + timedelta(seconds=3600)
+      datetime.now(UTC) + timedelta(seconds=3600)
     ).isoformat()
     recovery_email = request.app.state.operator_recovery_email
     auth_store.add_magic_link(

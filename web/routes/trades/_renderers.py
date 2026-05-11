@@ -18,6 +18,10 @@ import json as _json
 from fastapi.responses import HTMLResponse, Response
 
 
+def _esc(s: object) -> str:
+  return html.escape(str(s), quote=True)
+
+
 def _render_position_row_partial(state, instrument, pos) -> str:
   '''Single <tr id="position-row-{instrument}"> stub.
 
@@ -27,7 +31,7 @@ def _render_position_row_partial(state, instrument, pos) -> str:
   with hx-swap="innerHTML" per REVIEWS HIGH #3 (per-instrument tbody
   grouping; entire tbody contents replaced on close/modify form open).
   '''
-  esc = lambda s: html.escape(str(s), quote=True)
+  esc = _esc
   manual_badge = ''
   if pos.get('manual_stop') is not None:
     manual_badge = '<span class="badge badge-manual" title="Operator override">manual</span>'
@@ -72,7 +76,7 @@ def _render_close_form_partial(state, instrument, pos) -> str:
   Single-tbody-level swap means no orphans: open form / confirmation /
   success state are mutually exclusive contents of the SAME tbody.
   '''
-  esc = lambda s: html.escape(str(s), quote=True)
+  esc = _esc
   return (
     f'<tr><td colspan="9">'
     f'Close {esc(pos["direction"])} {esc(instrument)} '
@@ -94,7 +98,7 @@ def _render_close_form_partial(state, instrument, pos) -> str:
 
 def _render_modify_form_partial(state, instrument, pos) -> str:
   '''REVIEWS HIGH #3: SINGLE confirmation <tr> only — same topology as close-form.'''
-  esc = lambda s: html.escape(str(s), quote=True)
+  esc = _esc
   return (
     f'<tr><td colspan="9">'
     f'Modify {esc(instrument)}: '
