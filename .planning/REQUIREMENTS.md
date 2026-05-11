@@ -20,7 +20,7 @@
 
 ### OPS — refactor + ops hygiene (4 requirements)
 
-- [ ] **OPS-01**: Pre-existing 500-LOC violators (`web/routes/trades.py`, `web/routes/login.py`, `web/routes/totp.py`, `web/routes/dashboard.py`, `web/routes/paper_trades.py`) are split behaviour-preservingly under the v1.2 D-09 cap, with each daughter file ≤500 LOC and full route + template + test parity verified before any v1.3 multi-tenant change lands.
+- [x] **OPS-01**: Pre-existing 500-LOC violators (`web/routes/trades.py`, `web/routes/login.py`, `web/routes/totp.py`, `web/routes/dashboard.py`, `web/routes/paper_trades.py`) are split behaviour-preservingly under the v1.2 D-09 cap, with each daughter file ≤500 LOC and full route + template + test parity verified before any v1.3 multi-tenant change lands.
 - [ ] **OPS-02**: `.planning/backtests/` path resolution is project-root-anchored (not CWD-relative), so `python -m backtest` and `/backtest` work identically regardless of caller's working directory.
 - [ ] **OPS-03**: AST hex-boundary guard (`tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent`) is extended so `signal_engine`, `sizing_engine`, `system_params`, and `backtest/` cannot import any of `news_fetcher`, `news_filter`, `auth_store`, `web/*`, or other v1.3-introduced I/O modules.
 - [ ] **OPS-04**: Operator runs codemoot + Nyquist gate at milestone close, verifies findings against current code (false-positive sweep), and records resolutions in `.planning/REVIEWS.md`. No critical findings remain unresolved at v1.3 close.
