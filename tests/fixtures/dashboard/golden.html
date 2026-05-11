@@ -935,9 +935,11 @@ input:focus-visible,
 <div id="trades-region">
 <section id="open-trade-form-section">
   <h2>Record New Paper Trade</h2>
+  <div class="error" hidden></div>
   <form hx-post="/paper-trade/open"
         hx-target="#trades-region"
         hx-swap="outerHTML"
+        hx-on::after-request="handleTradesError(event)"
         enctype="application/x-www-form-urlencoded">
     <label for="paper-trade-instrument">Instrument</label>
     <select id="paper-trade-instrument" name="instrument" required>

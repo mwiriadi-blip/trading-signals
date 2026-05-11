@@ -51,9 +51,11 @@ def _render_paper_trades_open_form() -> str:
   return (
     '<section id="open-trade-form-section">\n'
     '  <h2>Record New Paper Trade</h2>\n'
+    '  <div class="error" hidden></div>\n'
     '  <form hx-post="/paper-trade/open"\n'
     '        hx-target="#trades-region"\n'
     '        hx-swap="outerHTML"\n'
+    '        hx-on::after-request="handleTradesError(event)"\n'
     '        enctype="application/x-www-form-urlencoded">\n'
     '    <label for="paper-trade-instrument">Instrument</label>\n'
     '    <select id="paper-trade-instrument" name="instrument" required>\n'
@@ -74,7 +76,7 @@ def _render_paper_trades_open_form() -> str:
     '    <label for="paper-trade-stop-price">Stop price (optional)</label>\n'
     '    <input id="paper-trade-stop-price" type="number" name="stop_price" step="0.0001" min="0">\n'
     '    <button type="submit" class="btn-primary">Record paper trade</button>\n'
-  '  </form>\n'
+    '  </form>\n'
     '</section>\n'
   )
 
