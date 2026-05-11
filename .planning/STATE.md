@@ -26,9 +26,9 @@ progress:
 
 ## Current Position
 
-Phase: 30 (File-Size Pre-Split) — READY TO EXECUTE (7/7 plans, 0 complete)
-Plan: 1 of 7 complete
-Status: Ready to execute
+Phase: 30 (File-Size Pre-Split) — COMPLETE (7/7 plans)
+Next: Phase 31 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore)
+Status: Phase 30 closed 2026-05-11; 2065 tests green
 Resume file: None
 
 ### Resume instructions for cloud Claude / fresh clone
