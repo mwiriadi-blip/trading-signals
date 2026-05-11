@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 30-file-size-pre-split
 source: [30-01-SUMMARY.md, 30-02-SUMMARY.md, 30-03-SUMMARY.md, 30-04-SUMMARY.md, 30-05-SUMMARY.md, 30-06-SUMMARY.md, 30-07-SUMMARY.md]
 started: 2026-05-11T00:00:00+10:00
