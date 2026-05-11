@@ -299,9 +299,11 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     frag = (
       f'<section id="close-form-section">\n'
       f'  <h3>Close Trade: {esc_id}</h3>\n'
+      f'  <div class="error" hidden></div>\n'
       f'  <form hx-post="/paper-trade/{esc_id}/close"\n'
       f'        hx-target="#trades-region"\n'
       f'        hx-swap="outerHTML"\n'
+      f'        hx-on::after-request="handleTradesError(event)"\n'
       f'        enctype="application/x-www-form-urlencoded">\n'
       f'    <label>Exit date/time (AEST)\n'
       f'      <input type="datetime-local" name="exit_dt" value="{now_awst}" required>\n'

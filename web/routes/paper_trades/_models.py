@@ -18,12 +18,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 _T = TypeVar('_T', bound=BaseModel)
 
-_AWST = zoneinfo.ZoneInfo('Australia/Perth')
+_AEST = zoneinfo.ZoneInfo('Australia/Sydney')
 
 
 def _now_awst() -> datetime:
-  '''Return the current datetime in AWST (Australia/Perth). Copy from trades.py:73.'''
-  return datetime.now(_AWST)
+  '''Return the current datetime in AEST (Australia/Sydney). Label migrated to AEST in tz fix.'''
+  return datetime.now(_AEST)
 
 
 async def _parse_form(request: Request, model_cls: type[_T]) -> _T:
@@ -96,15 +96,15 @@ class OpenPaperTradeRequest(BaseModel):
   def _coherence(self) -> 'OpenPaperTradeRequest':
     '''D-04 cross-field validations: future entry_dt, SPI fractional contracts,
     stop_price sign check.'''
-    # entry_dt must not be in the future (AWST)
+    # entry_dt must not be in the future (AEST)
     now = _now_awst()
     entry_dt_aware = self.entry_dt
     if entry_dt_aware.tzinfo is None:
-      # naive datetime: assume AWST for comparison
+      # naive datetime: assume AEST for comparison (matches form label)
       import zoneinfo as _zi
-      entry_dt_aware = self.entry_dt.replace(tzinfo=_zi.ZoneInfo('Australia/Perth'))
+      entry_dt_aware = self.entry_dt.replace(tzinfo=_zi.ZoneInfo('Australia/Sydney'))
     if entry_dt_aware > now:
-      raise ValueError('entry_dt: must not be in the future (AWST)')
+      raise ValueError('entry_dt: must not be in the future (AEST)')
 
     # SPI 200 mini contracts must be a whole integer
     if self.instrument == 'SPI200' and self.contracts != int(self.contracts):
