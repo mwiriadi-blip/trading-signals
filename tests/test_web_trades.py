@@ -31,7 +31,8 @@ VALID_SECRET = 'a' * 32  # matches tests/conftest.py D-17 sentinel
 
 
 # Path constants (used by TestSoleWriterInvariant AST walks).
-WEB_ROUTES_TRADES_PATH = Path('web/routes/trades.py')
+# Phase 30: trades.py split into package; route handlers live in __init__.py.
+WEB_ROUTES_TRADES_PATH = Path('web/routes/trades/__init__.py')
 
 
 def _v3_state_with_open_position(

@@ -211,7 +211,7 @@ class TestLoginPostInvalid:
     assert 'value="wrong"' in r.text
     # Audit log fired with reason
     msgs = [
-      r.getMessage() for r in caplog.records if r.name == 'web.routes.login'
+      r.getMessage() for r in caplog.records if r.name.startswith('web.routes.login')
     ]
     assert any('login failure' in m and 'wrong_username' in m for m in msgs), (
       f'Expected [Web] login failure: ... reason=wrong_username, got: {msgs}'
@@ -231,7 +231,7 @@ class TestLoginPostInvalid:
     # SAME copy as wrong-username (D-14 + AUTH-02)
     assert 'Sign in failed' in r.text
     msgs = [
-      r.getMessage() for r in caplog.records if r.name == 'web.routes.login'
+      r.getMessage() for r in caplog.records if r.name.startswith('web.routes.login')
     ]
     assert any('login failure' in m and 'wrong_secret' in m for m in msgs), (
       f'Expected [Web] login failure: ... reason=wrong_secret, got: {msgs}'

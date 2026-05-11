@@ -166,10 +166,11 @@ _PROD_FILES = [
   'state_manager.py',
   'auth_store.py',
   'data_fetcher.py',
-  'web/routes/dashboard.py',
+  # Phase 30: dashboard/trades/paper_trades split into packages.
+  *[str(p) for p in sorted(pathlib.Path('web/routes/dashboard').glob('*.py'))],
   'web/routes/markets.py',
-  'web/routes/trades.py',
-  'web/routes/paper_trades.py',
+  *[str(p) for p in sorted(pathlib.Path('web/routes/trades').glob('*.py'))],
+  *[str(p) for p in sorted(pathlib.Path('web/routes/paper_trades').glob('*.py'))],
   'web/routes/backtest.py',
   'web/app.py',
 ] + [str(p) for p in pathlib.Path('notifier').glob('*.py')]
@@ -317,11 +318,12 @@ class TestSingleSourceOfTruth:
 
   def test_web_dashboard_market_id_re_mirrors_system_params(self) -> None:
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    src = (repo_root / 'web/routes/dashboard.py').read_text()
+    # Phase 30: dashboard.py split into package; __init__.py holds register().
+    src = (repo_root / 'web/routes/dashboard/__init__.py').read_text()
     # The canonical pattern is the same string used by system_params.
     canonical = INSTRUMENT_ID_RE.pattern
     assert canonical in src, (
-      f'web/routes/dashboard.py must contain the canonical pattern '
+      f'web/routes/dashboard/__init__.py must contain the canonical pattern '
       f'{canonical!r} (either imported from system_params or mirrored '
       f'literally).'
     )
@@ -337,9 +339,10 @@ class TestSingleSourceOfTruth:
 
   def test_trades_route_field_pattern_mirrors_system_params(self) -> None:
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    src = (repo_root / 'web/routes/trades.py').read_text()
+    # Phase 30: trades.py split into package; Pydantic models live in _models.py.
+    src = (repo_root / 'web/routes/trades/_models.py').read_text()
     canonical = INSTRUMENT_ID_RE.pattern
     assert canonical in src, (
-      f'web/routes/trades.py must contain the canonical pattern '
+      f'web/routes/trades/_models.py must contain the canonical pattern '
       f'{canonical!r} on every instrument Field(pattern=...).'
     )

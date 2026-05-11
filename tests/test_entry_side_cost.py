@@ -23,6 +23,11 @@ def _notifier_pkg_files() -> list[str]:
   return [str(p) for p in sorted(pathlib.Path('notifier').glob('*.py'))]
 
 
+def _web_route_pkg_files(pkg: str) -> list[str]:
+  '''Phase 30: route monoliths split into packages; walk every .py file.'''
+  return [str(p) for p in sorted(pathlib.Path(f'web/routes/{pkg}').glob('*.py'))]
+
+
 PROD_FILES = [
   'pnl_engine.py',
   'sizing_engine.py',
@@ -30,8 +35,9 @@ PROD_FILES = [
   # WR-01 fix: web routes + dashboard renderer also persist / display the
   # entry-side cost split. Extending the AST gate forces these paths
   # through pnl_engine.entry_side_cost — single source of truth.
-  'web/routes/paper_trades.py',
-  'web/routes/trades.py',
+  # Phase 30: paper_trades and trades split into packages; walk all files.
+  *_web_route_pkg_files('paper_trades'),
+  *_web_route_pkg_files('trades'),
   'dashboard_renderer/stats.py',
   *_notifier_pkg_files(),
 ]
