@@ -192,9 +192,9 @@ class TestStateSchemaVersionV7:
     retained for git-history continuity; value asserts the current schema
     version.
     '''
-    assert system_params.STATE_SCHEMA_VERSION == 11, (
-      f'v11: STATE_SCHEMA_VERSION must be 11 '
-      f'(contract_type + financing_rate_annual_pct on markets); '
+    assert system_params.STATE_SCHEMA_VERSION == 12, (
+      f'v12: STATE_SCHEMA_VERSION must be 12 '
+      f'(per-user namespace via admin bucket); '
       f'got {system_params.STATE_SCHEMA_VERSION!r}'
     )
 

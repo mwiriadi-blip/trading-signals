@@ -40,6 +40,7 @@ import fcntl
 import json
 import logging
 import os
+import shutil
 import sys
 import warnings
 import zoneinfo
@@ -80,6 +81,7 @@ from state_manager import io, migrations, validation, trades
 # --- migrations ---
 from state_manager.migrations import (
   MIGRATIONS,
+  _ADMIN_UID,
   _migrate,
   _migrate_v1_to_v2,
   _migrate_v2_to_v3,
@@ -91,12 +93,14 @@ from state_manager.migrations import (
   _migrate_v8_to_v9,
   _migrate_v9_to_v10,
   _migrate_v10_to_v11,
+  _migrate_v11_to_v12,
   _default_market_registry,
   _default_strategy_settings,
 )
 
 # --- validation ---
 from state_manager.validation import (
+  StateV12,
   _assert_tz_aware,
   _coerce_legacy_naive_iso,
   _read_signal_strategy_version,
@@ -178,34 +182,39 @@ def reset_state(initial_account=INITIAL_ACCOUNT) -> dict:
   ia_float = float(_Decimal(str(initial_account)).quantize(
     AUD_QUANTIZE, rounding=AUD_ROUND,
   ))
+  # Phase 33 TENANT-01: v12 shape — per-user state under state['users'][_ADMIN_UID].
+  # tour_completed=False for fresh reset (new user, no tour done yet);
+  # the migrator uses True (existing admin, tour already completed).
   return {
     'schema_version': STATE_SCHEMA_VERSION,
-    'account': ia_float,                      # D-02: from arg
+    'admin_user_id': _ADMIN_UID,              # Phase 33: constant, never inline string
     'last_run': None,
-    'positions': {                            # D-01: None = inactive
-      'SPI200': None,
-      'AUDUSD': None,
-    },
-    'signals': {                              # D-03: FLAT init (Phase 27 #11
-                                              # Plan 27-09: dict shape only —
-                                              # bare-int back-compat removed
-                                              # per Phase 26 DEBT.md R5)
+    'signals': {                              # D-03: FLAT init (dict shape only)
       'SPI200': {'signal': 0, 'strategy_version': STRATEGY_VERSION},
       'AUDUSD': {'signal': 0, 'strategy_version': STRATEGY_VERSION},
     },
-    'trade_log': [],
-    'equity_history': [],
     'warnings': [],
-    # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys emitted on
-    # fresh reset so corruption-recovery path + initial setup produce a
-    # state that passes _validate_loaded_state under schema v2.
-    'initial_account': ia_float,  # D-02: from arg
-    'contracts': {
-      'SPI200': _DEFAULT_SPI_LABEL,
-      'AUDUSD': _DEFAULT_AUDUSD_LABEL,
-    },
     'markets': _default_market_registry(),
     'strategy_settings': _default_strategy_settings(),
+    # v12: all per-user data lives under users{}
+    'users': {
+      _ADMIN_UID: {
+        'account': ia_float,                  # D-02: from arg
+        'initial_account': ia_float,          # D-02: from arg
+        'contracts': {
+          'SPI200': _DEFAULT_SPI_LABEL,
+          'AUDUSD': _DEFAULT_AUDUSD_LABEL,
+        },
+        'positions': {                        # D-01: None = inactive
+          'SPI200': None,
+          'AUDUSD': None,
+        },
+        'trade_log': [],
+        'equity_history': [],
+        'paper_trades': [],
+        'ui_prefs': {'tour_completed': False},  # False: fresh user, tour not done
+      },
+    },
   }
 
 
@@ -266,23 +275,35 @@ def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = Fals
     else:
       save_state(state, path=path)
     return state
-  # Happy path: migrate, then D-18 validate, then return.
+  # Happy path: Phase 33 pre-migration backup, then migrate, then validate.
+  # Backup is non-destructive shutil.copy2 — fires only when upgrading to v12.
+  _old_version = state.get('schema_version', 0)
+  if _old_version < 12:
+    if now is None:
+      now = datetime.now(UTC)
+    _backup_ts = now.date().isoformat()
+    _backup_path = path.parent / f'{path.name}.v11-backup-{_backup_ts}'
+    if not _backup_path.exists():
+      shutil.copy2(str(path), str(_backup_path))
   # Call _migrate and _migrate_v7_to_v8 via module-global names so that
   # monkeypatch.setattr(state_manager, '_migrate', ...) works in tests.
   state = _migrate(state)
   if 'markets' not in state or 'strategy_settings' not in state:
     state = _migrate_v7_to_v8(state)
+  # Phase 33 TENANT-01: Pydantic structural validation on v12 shape.
+  StateV12.model_validate(state)
   _validate_loaded_state(state)           # D-18: raises ValueError on missing keys
   # Phase 27 #6: read-path UTC-coercion shim — legacy naive ISO datetimes
   # in equity_history emit DeprecationWarning rather than failing the load.
   state = _coerce_legacy_naive_iso(state)
   # D-14 (Phase 8): materialise runtime-only _resolved_contracts from
   # tier labels. Underscore prefix = excluded from save_state (below).
-  # KeyError propagates if a label in state['contracts'] is absent from
-  # system_params.*_CONTRACTS — caller should repair via --reset.
+  # Phase 33 B2: contracts now live at state['users'][_ADMIN_UID]['contracts'].
+  # Use _ADMIN_UID constant — never inline string.
+  _user_contracts = state['users'][_ADMIN_UID]['contracts']
   state['_resolved_contracts'] = {
-    'SPI200':  SPI_CONTRACTS[state['contracts']['SPI200']],
-    'AUDUSD':  AUDUSD_CONTRACTS[state['contracts']['AUDUSD']],
+    'SPI200':  SPI_CONTRACTS[_user_contracts['SPI200']],
+    'AUDUSD':  AUDUSD_CONTRACTS[_user_contracts['AUDUSD']],
   }
   for key, market in state.get('markets', {}).items():
     if key not in state['_resolved_contracts'] and isinstance(market, dict):
@@ -366,11 +387,13 @@ __all__ = [
   'append_warning', 'clear_warnings', 'clear_warnings_by_source',
   'record_trade', 'update_equity_history',
   # Private but re-exported for backward compat with existing test imports
-  'MIGRATIONS', '_assert_migration_chain_contiguous', '_migrate',
+  'MIGRATIONS', '_ADMIN_UID', '_assert_migration_chain_contiguous', '_migrate',
   '_migrate_v1_to_v2', '_migrate_v2_to_v3', '_migrate_v3_to_v4',
   '_migrate_v4_to_v5', '_migrate_v5_to_v6', '_migrate_v6_to_v7',
   '_migrate_v7_to_v8', '_migrate_v8_to_v9', '_migrate_v9_to_v10',
-  '_migrate_v10_to_v11', '_default_market_registry', '_default_strategy_settings',
+  '_migrate_v10_to_v11', '_migrate_v11_to_v12', '_default_market_registry',
+  '_default_strategy_settings',
+  'StateV12',
   '_assert_tz_aware', '_coerce_legacy_naive_iso', '_read_signal_strategy_version',
   '_validate_loaded_state', '_validate_trade',
 ]

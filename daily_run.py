@@ -133,6 +133,11 @@ def _run_daily_check_impl(
 
   # Step 2: load state.
   state = state_manager.load_state()
+  # Phase 33 TENANT-01: per-user state bucket (v12 shape).
+  # _user is a live reference to state['users'][_ADMIN_UID]; mutations
+  # to _user propagate back to state automatically (same dict).
+  _ADMIN_UID = state_manager._ADMIN_UID
+  _user = state['users'][_ADMIN_UID]
   baseline_state = copy.deepcopy(state)
   enabled_markets = dict(sorted(
     (
@@ -255,7 +260,7 @@ def _run_daily_check_impl(
     old_signal = raw if isinstance(raw, int) else raw.get('signal', 0)
 
     # 3.h: current position (may be None on flat).
-    position = state['positions'].get(state_key)
+    position = _user['positions'].get(state_key)
 
     # 3.i: build bar dict for sizing_engine.step. Use last-row OHLC.
     last_row = df.iloc[-1]
@@ -275,7 +280,7 @@ def _run_daily_check_impl(
       indicators=step_scalars,
       old_signal=old_signal,
       new_signal=new_signal,
-      account=state['account'],
+      account=_user['account'],
       multiplier=multiplier,
       cost_aud_open=cost_aud_open,
     )
@@ -324,9 +329,9 @@ def _run_daily_check_impl(
       trades_recorded += 1
 
     # 3.n AC-1 revision 2026-04-22: position assignment AFTER record_trade.
-    # On a reversal, record_trade cleared state['positions'][state_key] to
-    # None; this line overwrites that None with the new reversal position.
-    state['positions'][state_key] = result.position_after
+    # On a reversal, record_trade cleared state['users'][_ADMIN_UID]['positions'][state_key]
+    # to None; this line overwrites that None with the new reversal position.
+    _user['positions'][state_key] = result.position_after
 
     # 3.o G-2 revision 2026-04-22: signal state update always dict shape
     # AND always carries last_scalars for Phase 5/6 rendering.
@@ -410,8 +415,8 @@ def _run_daily_check_impl(
   # Step 4: total equity = account + sum(unrealised_pnl across active positions).
   # Phase 8 D-17: resolve tier from state['_resolved_contracts'] (per-symbol
   # tier from operator --reset config), not scalar system_params imports.
-  equity = state['account']
-  for sk, pos in state['positions'].items():
+  equity = _user['account']
+  for sk, pos in _user['positions'].items():
     if pos is not None and sk in last_close_by_state_key:
       resolved = state['_resolved_contracts'][sk]
       equity += sizing_engine.compute_unrealised_pnl(
@@ -437,7 +442,7 @@ def _run_daily_check_impl(
   # captures these changes via _accumulated. (Pitfall 5 in 15-RESEARCH.md;
   # W3 invariant: exactly 2 mutate_state calls per run.)
   state = state_manager.clear_warnings_by_source(state, 'drift')
-  drift_events = sizing_engine.detect_drift(state['positions'], state['signals'])
+  drift_events = sizing_engine.detect_drift(_user['positions'], state['signals'])
   for ev in drift_events:
     state = state_manager.append_warning(state, 'drift', ev.message)
     logger.info(
@@ -473,15 +478,20 @@ def _run_daily_check_impl(
   _baseline = baseline_state
   def _apply_daily_run(fresh_state: dict) -> None:
     '''Replay the daily run's accumulated mutations onto fresh_state.
-    Daily-run mutated keys: positions, signals, account, trade_log,
-    equity_history, last_run, warnings.
+    Phase 33 TENANT-01: per-user keys (positions, account, trade_log,
+    equity_history) are in state['users'][_ADMIN_UID]; top-level keys
+    (signals, last_run, warnings) remain top-level.
     '''
-    for key in (
-      'positions', 'signals', 'account', 'trade_log',
-      'equity_history', 'last_run', 'warnings',
-    ):
-      # Only replay keys that changed during this run. This avoids writing
-      # unchanged stale snapshots back over concurrently updated values.
+    _uid = state_manager._ADMIN_UID
+    _fresh_user = fresh_state['users'][_uid]
+    _acc_user = _accumulated['users'][_uid]
+    _base_user = _baseline['users'][_uid]
+    # Per-user keys: replay into the user bucket.
+    for key in ('positions', 'account', 'trade_log', 'equity_history'):
+      if _acc_user.get(key) != _base_user.get(key):
+        _fresh_user[key] = _acc_user[key]
+    # Top-level keys: replay at state root.
+    for key in ('signals', 'last_run', 'warnings'):
       if (
         key in _accumulated
         and _accumulated.get(key) != _baseline.get(key)
@@ -492,11 +502,13 @@ def _run_daily_check_impl(
   # post-save state (mutate_state returns it). The crash-email path reads
   # via state_actions; keep it in sync with disk.
   state_actions._set_last_loaded_state(state)
+  # Phase 33 TENANT-01: per-user keys in user bucket
+  _saved_user = state['users'][_ADMIN_UID]
   logger.info(
     '[State] state.json saved (account=$%.2f, trades=%d, positions=%d)',
-    state['account'],
-    len(state['trade_log']),
-    sum(1 for p in state['positions'].values() if p is not None),
+    _saved_user['account'],
+    len(_saved_user['trade_log']),
+    sum(1 for p in _saved_user['positions'].values() if p is not None),
   )
   # Step 9.6 (Phase 20 D-12/D-18): evaluate stop-loss alerts and email.
   # MUST be called AFTER mutate_state(_apply_daily_run) returns — the

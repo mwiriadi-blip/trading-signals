@@ -166,29 +166,36 @@ class TestLoadSave:
       save_state(state, path=path)
 
   def test_load_state_missing_file_returns_fresh_shape(self, tmp_path) -> None:
-    '''STATE-01 + B-3: missing state.json returns dict with all 8 top-level keys at default values
-    AND does NOT create the file (no side-effect on read).
+    '''STATE-01 + B-3: missing state.json returns dict with all v12 top-level keys at default
+    values AND does NOT create the file (no side-effect on read).
+
+    Phase 33 TENANT-01: v12 moves per-user keys (account, positions, etc.)
+    under state['users']['u_admin_marc']. Top-level keys: schema_version,
+    admin_user_id, last_run, signals, warnings, markets, strategy_settings, users.
     '''
     path = tmp_path / 'state.json'
     assert not path.exists()
     state = load_state(path=path)
-    # All 8 STATE-01 top-level keys present
-    for key in ('schema_version', 'account', 'last_run', 'positions',
-                'signals', 'trade_log', 'equity_history', 'warnings'):
-      assert key in state, f'STATE-01: missing top-level key {key!r}'
+    # v12 top-level keys
+    for key in ('schema_version', 'admin_user_id', 'last_run', 'signals',
+                'warnings', 'markets', 'strategy_settings', 'users'):
+      assert key in state, f'STATE-01 v12: missing top-level key {key!r}'
     # Default values per D-01 / D-03 / STATE-07
     assert state['schema_version'] == STATE_SCHEMA_VERSION
-    assert state['account'] == INITIAL_ACCOUNT
+    assert state['admin_user_id'] == 'u_admin_marc'
     assert state['last_run'] is None
-    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
+    # Per-user keys in users bucket
+    user = state['users']['u_admin_marc']
+    assert user['account'] == INITIAL_ACCOUNT
+    assert user['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
     # Phase 27 #11 (Plan 27-09): reset_state writes dict-shaped signals.
     # Bare-int back-compat removed per Phase 26 DEBT.md R5.
     assert state['signals']['SPI200']['signal'] == 0, 'D-03: FLAT init (signal=0)'
     assert state['signals']['AUDUSD']['signal'] == 0, 'D-03: FLAT init (signal=0)'
     assert isinstance(state['signals']['SPI200'], dict), 'truth #1: dict shape only'
     assert isinstance(state['signals']['AUDUSD'], dict), 'truth #1: dict shape only'
-    assert state['trade_log'] == []
-    assert state['equity_history'] == []
+    assert user['trade_log'] == []
+    assert user['equity_history'] == []
     assert state['warnings'] == []
     # B-3: no side-effect on read — load_state on missing path must NOT create the file.
     # Orchestrator (Phase 4) must explicitly call save_state to materialize state.json.
@@ -445,8 +452,10 @@ class TestCorruptionRecovery:
     assert backup.read_bytes() == b'\x00\xff\x00not json'
 
     # STATE-07: returned state is a fresh reset (D-05: no silent clobber of valid state)
-    assert state['account'] == INITIAL_ACCOUNT
-    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}
+    # Phase 33 TENANT-01: per-user keys in users bucket
+    user = state['users']['u_admin_marc']
+    assert user['account'] == INITIAL_ACCOUNT
+    assert user['positions'] == {'SPI200': None, 'AUDUSD': None}
     assert state['schema_version'] == STATE_SCHEMA_VERSION
 
     # D-07: warning appended with source='state_manager'
@@ -512,28 +521,25 @@ class TestCorruptionRecovery:
     preserved — _validate_loaded_state runs OUTSIDE the JSONDecodeError except
     block so its ValueError propagates).
 
-    Reason: a file like {"schema_version": 1} parses fine, will migrate (no-op),
-    and downstream code crashes with KeyError on state['account']. D-18 makes
-    this surface as a specific ValueError at the load boundary so the operator
-    sees a real error rather than a confusing downstream crash.
+    Phase 33 TENANT-01: v12 requires 'admin_user_id' and 'users' top-level keys.
+    A file missing these parses fine (JSON valid), will not migrate (schema_version=12),
+    and _validate_loaded_state raises ValueError naming the missing keys.
     '''
     path = tmp_path / 'state.json'
-    # Valid JSON but MISSING 'account' (and 'positions', for stronger signal)
+    # Valid JSON but MISSING 'admin_user_id', 'users', 'markets', 'strategy_settings'
     bare_state = {
       'schema_version': STATE_SCHEMA_VERSION,
       'last_run': None,
       # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
       'signals': {'SPI200': _signal_dict(0), 'AUDUSD': _signal_dict(0)},
-      'trade_log': [],
-      'equity_history': [],
       'warnings': [],
-      # 'account' deliberately missing
-      # 'positions' deliberately missing
+      # 'admin_user_id' deliberately missing
+      # 'users' deliberately missing
     }
     path.write_text(json.dumps(bare_state, indent=2))
 
-    # D-18: validator raises ValueError naming the missing keys
-    with pytest.raises(ValueError, match='account'):
+    # D-18: validator raises ValueError naming the missing keys (v12: admin_user_id, users)
+    with pytest.raises(ValueError, match='admin_user_id|users|markets'):
       load_state(path=path)
 
     # D-05 NARROWNESS PRESERVED: this was NOT corruption, so no backup created
@@ -598,49 +604,56 @@ class TestRecordTrade:
       closing_cost_half = 6.0 * 2 / 2 = 6.0
       net_pnl = 1000.0 - 6.0 = 994.0
       account = INITIAL_ACCOUNT + 994.0
+    Phase 33 TENANT-01: account in users bucket.
     '''
     state = reset_state()
-    state['positions']['SPI200'] = self._make_open_position()
+    state['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
     result = record_trade(state, trade)
 
     expected = INITIAL_ACCOUNT + 994.0
-    assert result['account'] == expected, (
-      f'D-14: expected {expected}, got {result["account"]}'
+    user = result['users']['u_admin_marc']
+    assert user['account'] == expected, (
+      f'D-14: expected {expected}, got {user["account"]}'
     )
 
   def test_record_trade_appends_to_trade_log_with_net_pnl(self) -> None:
     '''STATE-05 / D-13 / D-20: trade-log entry has computed net_pnl;
     original trade dict (caller's input) is NOT mutated.
+    Phase 33 TENANT-01: trade_log in users bucket.
     '''
     state = reset_state()
-    state['positions']['SPI200'] = self._make_open_position()
+    state['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
     result = record_trade(state, trade)
 
-    assert len(result['trade_log']) == 1
-    logged = result['trade_log'][0]
+    user = result['users']['u_admin_marc']
+    assert len(user['trade_log']) == 1
+    logged = user['trade_log'][0]
     assert logged['net_pnl'] == 994.0, 'D-14: net_pnl in trade_log entry'
     assert logged['gross_pnl'] == 1000.0, 'original gross_pnl preserved in entry'
     assert logged['instrument'] == 'SPI200'
     assert logged['direction'] == 'LONG'
 
   def test_record_trade_sets_position_to_none(self) -> None:
-    '''D-01 / D-13: positions[instrument] is None after record_trade (atomic close).'''
+    '''D-01 / D-13: positions[instrument] is None after record_trade (atomic close).
+    Phase 33 TENANT-01: positions in users bucket.
+    '''
     state = reset_state()
-    state['positions']['SPI200'] = self._make_open_position()
+    state['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     trade = _make_trade()
     result = record_trade(state, trade)
-    assert result['positions']['SPI200'] is None, (
+    user = result['users']['u_admin_marc']
+    assert user['positions']['SPI200'] is None, (
       'D-01/D-13: record_trade must set positions[instrument] = None on close'
     )
     # AUDUSD untouched
-    assert result['positions']['AUDUSD'] is None
+    assert user['positions']['AUDUSD'] is None
 
   def test_record_trade_raises_on_missing_field(self) -> None:
     '''D-15: ValueError on missing required field, naming the offending key.'''
     state = reset_state()
-    state['positions']['SPI200'] = self._make_open_position()
+    state['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     trade = _make_trade()
     del trade['gross_pnl']
     with pytest.raises(ValueError, match='gross_pnl'):
@@ -730,41 +743,28 @@ class TestRecordTrade:
 
   def test_record_trade_does_not_mutate_caller_trade_dict(self) -> None:
     """D-20 (reviews-revision pass): record_trade must NOT mutate the
-    caller's trade dict. The trade_log entry is built via dict(trade,
-    net_pnl=net_pnl) — a shallow copy with net_pnl added — so the
-    caller's input dict is preserved verbatim. Phase 4 can safely reuse
-    the trade dict afterwards.
+    caller's trade dict. Phase 33 TENANT-01: results accessed via users bucket.
     """
     state = reset_state()
-    state['positions']['SPI200'] = self._make_open_position()
+    state['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
     original_keys = set(trade.keys())
     original_gross_pnl = trade['gross_pnl']
 
     result = record_trade(state, trade)
+    user = result['users']['u_admin_marc']
 
     # D-20: caller's trade dict is unchanged
     assert 'net_pnl' not in trade, (
       "D-20: record_trade must NOT add net_pnl to caller's trade dict; "
       f'trade now has keys: {sorted(trade.keys())}'
     )
-    assert set(trade.keys()) == original_keys, (
-      f'D-20: trade dict keys must be unchanged; '
-      f'before={sorted(original_keys)}, after={sorted(trade.keys())}'
-    )
-    assert trade['gross_pnl'] == original_gross_pnl, (
-      'D-20: trade dict values must be unchanged'
-    )
+    assert set(trade.keys()) == original_keys
+    assert trade['gross_pnl'] == original_gross_pnl
 
     # But the trade_log entry DOES carry net_pnl (it's a separate copy)
-    assert result['trade_log'][0]['net_pnl'] == 994.0, (
-      'D-20: trade_log entry must carry net_pnl (it is a copy of trade '
-      'with net_pnl added)'
-    )
-    assert result['trade_log'][0] is not trade, (
-      "D-20: trade_log entry must be a separate dict object, not the "
-      "caller's trade dict by reference"
-    )
+    assert user['trade_log'][0]['net_pnl'] == 994.0
+    assert user['trade_log'][0] is not trade
 
   def test_record_trade_phase_4_boundary_gross_pnl_not_realised_pnl(self) -> None:
     '''CRITICAL Phase 4 boundary AC (RESEARCH §Pitfall 3 / Open Question 1).
@@ -801,26 +801,24 @@ class TestRecordTrade:
     '''
     # CORRECT path: gross_pnl is RAW
     state = reset_state()
-    state['positions']['SPI200'] = self._make_open_position()
+    state['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     correct_trade = _make_trade(
       entry_price=7000.0, exit_price=7100.0, n_contracts=2,
       gross_pnl=1000.0,  # RAW: (7100 - 7000) * 2 * 5.0 = 1000.0
       cost_aud=6.0, multiplier=5.0,
     )
     result = record_trade(state, correct_trade)
+    result_user = result['users']['u_admin_marc']
     expected_correct = INITIAL_ACCOUNT + 994.0
-    assert result['account'] == expected_correct, (
+    assert result_user['account'] == expected_correct, (
       f'CORRECT: gross_pnl=1000.0 (raw) -> net_pnl=994.0 -> account={expected_correct}'
     )
-    assert result['trade_log'][0]['net_pnl'] == 994.0
+    assert result_user['trade_log'][0]['net_pnl'] == 994.0
 
     # BUG path simulation: if Phase 4 passes realised_pnl (already net of close cost)
     # as gross_pnl, record_trade double-deducts and account is short by 6.0.
-    # This is the bug Phase 4 MUST avoid.
     state2 = reset_state()
-    state2['positions']['SPI200'] = self._make_open_position()
-    # Simulate what Phase 2 ClosedTrade.realised_pnl would be:
-    # phase2_realised_pnl = RAW - closing_cost_half = 1000.0 - 6.0 = 994.0
+    state2['users']['u_admin_marc']['positions']['SPI200'] = self._make_open_position()
     phase2_realised_pnl = 994.0
     bug_trade = _make_trade(
       entry_price=7000.0, exit_price=7100.0, n_contracts=2,
@@ -828,16 +826,14 @@ class TestRecordTrade:
       cost_aud=6.0, multiplier=5.0,
     )
     bug_result = record_trade(state2, bug_trade)
-    # The bug: account is understated by exactly closing_cost_half = 6.0
+    bug_user = bug_result['users']['u_admin_marc']
     expected_bug = INITIAL_ACCOUNT + 988.0
-    assert bug_result['account'] == expected_bug, (
+    assert bug_user['account'] == expected_bug, (
       f'BUG: passing realised_pnl as gross_pnl double-deducts close cost; '
-      f'account becomes {expected_bug} instead of {expected_correct} (short by 6.0). '
-      f'Phase 4 MUST compute gross_pnl as RAW price-delta and pass THAT.'
+      f'account becomes {expected_bug} instead of {expected_correct} (short by 6.0).'
     )
-    # The bug delta is exactly closing_cost_half — proves the cause
     assert (
-      (result['account'] - bug_result['account']) ==
+      (result_user['account'] - bug_user['account']) ==
       (correct_trade['cost_aud'] * correct_trade['n_contracts'] / 2)
     ), 'bug magnitude must equal closing_cost_half'
 
@@ -850,8 +846,9 @@ class TestEquityHistory:
     '''STATE-06: append {date, equity} entry to equity_history.'''
     state = reset_state()
     result = update_equity_history(state, '2026-04-21', 99_500.0)
-    assert len(result['equity_history']) == 1
-    entry = result['equity_history'][0]
+    user = result['users']['u_admin_marc']
+    assert len(user['equity_history']) == 1
+    entry = user['equity_history'][0]
     assert entry == {'date': '2026-04-21', 'equity': 99_500.0}, (
       f'STATE-06: entry shape must be {{date, equity}}; got {entry}'
     )
@@ -862,9 +859,10 @@ class TestEquityHistory:
     state = update_equity_history(state, '2026-04-19', 99_500.0)
     state = update_equity_history(state, '2026-04-20', 99_750.0)
     state = update_equity_history(state, '2026-04-21', 99_000.5)
-    assert len(state['equity_history']) == 3
-    dates = [e['date'] for e in state['equity_history']]
-    equities = [e['equity'] for e in state['equity_history']]
+    user = state['users']['u_admin_marc']
+    assert len(user['equity_history']) == 3
+    dates = [e['date'] for e in user['equity_history']]
+    equities = [e['equity'] for e in user['equity_history']]
     assert dates == ['2026-04-19', '2026-04-20', '2026-04-21']
     assert equities == [99_500.0, 99_750.0, 99_000.5]
 
@@ -902,52 +900,63 @@ class TestReset:
   '''STATE-07 / D-01 / D-03: reset_state shape — $100k account, None positions,
   FLAT signals, empty collections.
 
-  Wave 2 fills this in.
+  Phase 33 TENANT-01: v12 shape — per-user keys under state['users']['u_admin_marc'].
   '''
 
   def test_reset_state_has_all_10_top_level_keys(self) -> None:
-    '''STATE-01: reset_state returns all required top-level keys.'''
+    '''STATE-01 v12: reset_state returns all required v12 top-level keys.
+    Per-user keys (account, positions, etc.) live under users[u_admin_marc].
+    '''
     state = reset_state()
-    expected_keys = {
-      'schema_version', 'account', 'last_run', 'positions',
-      'signals', 'trade_log', 'equity_history', 'warnings',
-      # Phase 8 (v2 schema): CONF-01 + CONF-02 top-level keys
-      'initial_account', 'contracts',
-      # Phase 24 (v8): market registry + per-market settings
+    expected_top_keys = {
+      'schema_version', 'admin_user_id', 'last_run',
+      'signals', 'warnings',
       'markets', 'strategy_settings',
+      'users',
     }
-    assert set(state.keys()) == expected_keys, (
-      f'STATE-01 (v2): reset_state keys mismatch. Expected {sorted(expected_keys)}, '
+    assert set(state.keys()) == expected_top_keys, (
+      f'STATE-01 v12: reset_state top-level keys mismatch. Expected {sorted(expected_top_keys)}, '
       f'got {sorted(state.keys())}'
+    )
+    # Per-user keys present in user bucket
+    user = state['users']['u_admin_marc']
+    expected_user_keys = {
+      'account', 'initial_account', 'contracts', 'positions',
+      'trade_log', 'equity_history', 'paper_trades', 'ui_prefs',
+    }
+    assert set(user.keys()) == expected_user_keys, (
+      f'v12: user bucket keys mismatch. Expected {sorted(expected_user_keys)}, '
+      f'got {sorted(user.keys())}'
     )
 
   def test_reset_state_canonical_default_values(self) -> None:
     '''STATE-07 / D-01 / D-03: every default value matches CONTEXT.md.
 
-    Phase 27 #11 (Plan 27-09): signals is now dict-shaped only (Phase 26
-    DEBT.md R5 — bare-int back-compat removed).
+    Phase 27 #11 (Plan 27-09): signals is now dict-shaped only.
+    Phase 33 TENANT-01: per-user values accessed via users bucket.
     '''
     state = reset_state()
+    user = state['users']['u_admin_marc']
     assert state['schema_version'] == STATE_SCHEMA_VERSION
-    assert state['account'] == INITIAL_ACCOUNT
+    assert user['account'] == INITIAL_ACCOUNT
     assert state['last_run'] is None
-    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
+    assert user['positions'] == {'SPI200': None, 'AUDUSD': None}, 'D-01: None when flat'
     # Phase 27 #11: dict-shape only
     assert isinstance(state['signals']['SPI200'], dict)
     assert isinstance(state['signals']['AUDUSD'], dict)
     assert state['signals']['SPI200']['signal'] == 0
     assert state['signals']['AUDUSD']['signal'] == 0
-    assert state['trade_log'] == []
-    assert state['equity_history'] == []
+    assert user['trade_log'] == []
+    assert user['equity_history'] == []
     assert state['warnings'] == []
 
   def test_reset_state_returns_independent_dicts(self) -> None:
     '''Idempotence: mutating one returned state must not affect a future reset.'''
     first = reset_state()
-    first['trade_log'].append({'instrument': 'SPI200'})
+    first['users']['u_admin_marc']['trade_log'].append({'instrument': 'SPI200'})
     first['warnings'].append({'date': '2026-04-21', 'source': 'x', 'message': 'y'})
     second = reset_state()
-    assert second['trade_log'] == [], (
+    assert second['users']['u_admin_marc']['trade_log'] == [], (
       'reset_state must return a NEW dict each call, not share mutable refs'
     )
     assert second['warnings'] == []
@@ -960,11 +969,14 @@ class TestResetState:
 
   def test_reset_state_accepts_custom_initial_account(self) -> None:
     '''D-02: reset_state(initial_account=50000) sets BOTH account and
-    initial_account to 50000.0 (invariant: they must be equal).'''
+    initial_account to 50000.0 (invariant: they must be equal).
+    Phase 33 TENANT-01: values in user bucket.
+    '''
     state = reset_state(initial_account=50000)
-    assert state['account'] == 50000.0
-    assert state['initial_account'] == 50000.0
-    assert state['account'] == state['initial_account'], (
+    user = state['users']['u_admin_marc']
+    assert user['account'] == 50000.0
+    assert user['initial_account'] == 50000.0
+    assert user['account'] == user['initial_account'], (
       'BUG-01 invariant: account and initial_account must be equal '
       'immediately after reset'
     )
@@ -972,31 +984,37 @@ class TestResetState:
   def test_reset_state_custom_initial_account_edge_one_dollar(self) -> None:
     '''D-02: edge — tiny initial_account still pairs account == initial_account.'''
     state = reset_state(initial_account=1.0)
-    assert state['account'] == 1.0
-    assert state['initial_account'] == 1.0
+    user = state['users']['u_admin_marc']
+    assert user['account'] == 1.0
+    assert user['initial_account'] == 1.0
 
   def test_reset_state_default_preserves_backward_compat(self) -> None:
     '''D-02: reset_state() with no arg still returns INITIAL_ACCOUNT
-    for both fields. Phase 3 callers + corrupt-recovery path stay green.'''
+    for both fields. Phase 3 callers + corrupt-recovery path stay green.
+    Phase 33 TENANT-01: values in user bucket.
+    '''
     state = reset_state()
-    assert state['account'] == INITIAL_ACCOUNT
-    assert state['initial_account'] == INITIAL_ACCOUNT
-    assert state['account'] == state['initial_account']
+    user = state['users']['u_admin_marc']
+    assert user['account'] == INITIAL_ACCOUNT
+    assert user['initial_account'] == INITIAL_ACCOUNT
+    assert user['account'] == user['initial_account']
 
   def test_reset_state_custom_initial_account_does_not_affect_other_fields(self) -> None:
     '''D-02: other canonical fields unchanged when custom initial_account passed.
 
     Phase 27 #11 (Plan 27-09): signals dict-shaped (was bare-int).
+    Phase 33 TENANT-01: per-user fields accessed via user bucket.
     '''
     state = reset_state(initial_account=50000)
-    assert state['positions'] == {'SPI200': None, 'AUDUSD': None}
+    user = state['users']['u_admin_marc']
+    assert user['positions'] == {'SPI200': None, 'AUDUSD': None}
     # Phase 27 #11: dict-shape only
     assert isinstance(state['signals']['SPI200'], dict)
     assert isinstance(state['signals']['AUDUSD'], dict)
     assert state['signals']['SPI200']['signal'] == 0
     assert state['signals']['AUDUSD']['signal'] == 0
-    assert state['trade_log'] == []
-    assert state['equity_history'] == []
+    assert user['trade_log'] == []
+    assert user['equity_history'] == []
     assert state['warnings'] == []
     assert state['last_run'] is None
 
@@ -1128,7 +1146,8 @@ class TestMigrateV2Backfill:
 
   def test_v0_state_gets_initial_account_and_contracts_defaults(self) -> None:
     '''D-15: state without schema_version (→ v0) + no initial_account + no
-    contracts → _migrate adds both with defaults.'''
+    contracts → _migrate adds both with defaults.
+    Phase 33 TENANT-01: after full walk to v12, per-user keys live under users bucket.'''
     state = {
       # no schema_version key → defaults to 0 in _migrate
       'account': INITIAL_ACCOUNT, 'last_run': None,
@@ -1137,16 +1156,19 @@ class TestMigrateV2Backfill:
       'trade_log': [], 'equity_history': [], 'warnings': [],
     }
     migrated = _migrate(state)
-    assert migrated['initial_account'] == INITIAL_ACCOUNT, (
-      f'D-15: v0 → v2 must add initial_account default; got {migrated.get("initial_account")!r}'
+    # Phase 33 TENANT-01: per-user keys in users bucket after full walk to v12
+    user = migrated['users']['u_admin_marc']
+    assert user['initial_account'] == INITIAL_ACCOUNT, (
+      f'D-15: v0 → v12 must add initial_account default; got {user.get("initial_account")!r}'
     )
-    assert migrated['contracts'] == {
+    assert user['contracts'] == {
       'SPI200': _DEFAULT_SPI_LABEL, 'AUDUSD': _DEFAULT_AUDUSD_LABEL,
-    }, f'D-15: v0 → v2 must add contracts defaults; got {migrated.get("contracts")!r}'
+    }, f'D-15: v0 → v12 must add contracts defaults; got {user.get("contracts")!r}'
 
   def test_v1_state_gets_only_phase8_keys_backfilled(self) -> None:
     '''D-15: state at schema_version=1 with other fields intact → _migrate
-    adds initial_account + contracts only; does NOT overwrite existing keys.'''
+    adds initial_account + contracts only; does NOT overwrite existing keys.
+    Phase 33 TENANT-01: after full walk to v12, per-user keys in users bucket.'''
     state = {
       'schema_version': 1,
       'account': 85432.10, 'last_run': '2026-03-15',
@@ -1157,24 +1179,27 @@ class TestMigrateV2Backfill:
       'warnings': [],
     }
     migrated = _migrate(state)
-    # Phase 8 keys backfilled
-    assert 'initial_account' in migrated
-    assert 'contracts' in migrated
-    # Existing keys untouched
-    assert migrated['account'] == 85432.10
+    # Phase 33 TENANT-01: per-user keys in users bucket after full walk to v12
+    user = migrated['users']['u_admin_marc']
+    # Phase 8 keys backfilled (now in user bucket)
+    assert 'initial_account' in user
+    assert 'contracts' in user
+    # Existing keys untouched (now in user bucket)
+    assert user['account'] == 85432.10
     assert migrated['last_run'] == '2026-03-15'
-    # Phase 27 #11 (Plan 27-09): _migrate walks v1->v10; v9->v10 promotes
+    # Phase 27 #11 (Plan 27-09): _migrate walks v1->v12; v9->v10 promotes
     # bare-int signal rows to dict shape. Bare-int values are preserved
     # in the `signal` key with strategy_version stamped per migrator.
     assert migrated['signals']['SPI200']['signal'] == 1
     assert migrated['signals']['AUDUSD']['signal'] == -1
-    assert migrated['trade_log'] == [{'instrument': 'SPI200', 'net_pnl': 250.0}]
-    assert migrated['equity_history'] == [{'date': '2026-03-14', 'equity': 85000.0}]
+    assert user['trade_log'] == [{'instrument': 'SPI200', 'net_pnl': 250.0}]
+    assert user['equity_history'] == [{'date': '2026-03-14', 'equity': 85000.0}]
 
   def test_v2_state_has_existing_initial_account_preserved(self) -> None:
     '''D-15 idempotence: the s.get(..., default) pattern preserves existing
     values. A state already carrying initial_account=50000.0 keeps it —
-    the lambda never overwrites operator choice.'''
+    the lambda never overwrites operator choice.
+    Phase 33 TENANT-01: after full walk to v12, per-user keys in users bucket.'''
     state = {
       'schema_version': 1,  # force re-run of MIGRATIONS[2]
       'account': 50000.0, 'last_run': None,
@@ -1186,10 +1211,12 @@ class TestMigrateV2Backfill:
       'contracts': {'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini'},
     }
     migrated = _migrate(state)
-    assert migrated['initial_account'] == 50000.0, (
+    # Phase 33 TENANT-01: per-user keys in users bucket after full walk to v12
+    user = migrated['users']['u_admin_marc']
+    assert user['initial_account'] == 50000.0, (
       'D-15: existing initial_account must be preserved (idempotent)'
     )
-    assert migrated['contracts'] == {
+    assert user['contracts'] == {
       'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini',
     }, 'D-15: existing contracts must be preserved (idempotent)'
 
@@ -1278,20 +1305,20 @@ class TestSaveStateExcludesUnderscoreKeys:
     )
 
   def test_public_keys_all_persisted(self, tmp_path) -> None:
-    '''D-14: filter is UNDERSCORE-ONLY. All 10 v2-required public keys
-    (schema_version, account, last_run, positions, signals, trade_log,
-    equity_history, warnings, initial_account, contracts) persist.'''
+    '''D-14: filter is UNDERSCORE-ONLY. All v12 public top-level keys
+    (schema_version, admin_user_id, last_run, signals, warnings,
+    markets, strategy_settings, users) persist.
+    Phase 33 TENANT-01: per-user keys moved to users bucket.'''
     path = tmp_path / 'state.json'
     state = reset_state()
     save_state(state, path=path)
     on_disk = json.loads(path.read_text())
     expected = {
-      'schema_version', 'account', 'last_run', 'positions',
-      'signals', 'trade_log', 'equity_history', 'warnings',
-      'initial_account', 'contracts',
+      'schema_version', 'admin_user_id', 'last_run',
+      'signals', 'warnings', 'markets', 'strategy_settings', 'users',
     }
     assert expected <= set(on_disk.keys()), (
-      f'D-14: all 10 v2-required public keys must persist; '
+      f'D-14: all v12 public top-level keys must persist; '
       f'missing={sorted(expected - set(on_disk.keys()))}'
     )
 
@@ -1337,10 +1364,13 @@ class TestLoadStateResolvesContracts:
 
   def test_load_state_resolves_spi_standard_and_audusd_mini(self, tmp_path) -> None:
     '''D-14: a different tier combination (spi-standard + audusd-mini)
-    resolves to the correct tier values from SPI_CONTRACTS / AUDUSD_CONTRACTS.'''
+    resolves to the correct tier values from SPI_CONTRACTS / AUDUSD_CONTRACTS.
+    Phase 33 TENANT-01: contracts lives in users bucket.'''
     path = tmp_path / 'state.json'
     state = reset_state()
-    state['contracts'] = {'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini'}
+    state['users']['u_admin_marc']['contracts'] = {
+      'SPI200': 'spi-standard', 'AUDUSD': 'audusd-mini',
+    }
     save_state(state, path=path)
     loaded = load_state(path=path)
     assert loaded['_resolved_contracts']['SPI200'] == {
@@ -1354,21 +1384,16 @@ class TestLoadStateResolvesContracts:
     '''D-14: an unknown label in state['contracts'] raises KeyError naming
     the offending label. Hex rule: caller surfaces and operator runs --reset.
 
+    Phase 33 TENANT-01: contracts lives in users bucket (v12 shape).
     The state is written directly (bypassing save_state — which would
     happily persist the bogus label) so the schema is valid JSON with
     all required keys, but the label lookup fails on load.'''
     path = tmp_path / 'state.json'
-    bogus_state = {
-      'schema_version': STATE_SCHEMA_VERSION,
-      'account': INITIAL_ACCOUNT, 'last_run': None,
-      'positions': {'SPI200': None, 'AUDUSD': None},
-      # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
-      'signals': {'SPI200': _signal_dict(0), 'AUDUSD': _signal_dict(0)},
-      'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
-      'contracts': {'SPI200': 'spi-made-up', 'AUDUSD': 'audusd-standard'},
+    good = reset_state()
+    good['users']['u_admin_marc']['contracts'] = {
+      'SPI200': 'spi-made-up', 'AUDUSD': 'audusd-standard',
     }
-    path.write_text(json.dumps(bogus_state, indent=2))
+    path.write_text(json.dumps(good, indent=2, default=str))
     with pytest.raises(KeyError, match='spi-made-up'):
       load_state(path=path)
 
@@ -1626,45 +1651,18 @@ class TestMutateState:
   '''
 
   def test_load_mutate_save_atomic(self, tmp_path) -> None:
-    '''Happy path: mutator applied, state persisted.'''
+    '''Happy path: mutator applied, state persisted.
+    Phase 33 TENANT-01: account in users bucket.'''
     from state_manager import mutate_state
     path = tmp_path / 'state.json'
     save_state(reset_state(), path=path)
 
     def _bump(state):
-      state['account'] = 99999.0
+      state['users']['u_admin_marc']['account'] = 99999.0
 
     result = mutate_state(_bump, path=path)
-    assert result['account'] == 99999.0
-    assert load_state(path=path)['account'] == 99999.0
-
-  @staticmethod
-  def _subprocess_mutate(path_str, key, value, ready_event, go_event):
-    '''Subprocess body: signal ready, wait for go, then mutate_state.'''
-    import sys
-    import os as _os
-    from pathlib import Path as _Path
-    # Ensure project on sys.path (parent of tests/)
-    proj = _os.path.dirname(_os.path.dirname(_os.path.abspath(path_str)))
-    # The test's tmp_path is OUTSIDE the project tree on macOS;
-    # locate the project root instead via the test's discoverable tree.
-    # Walk up from cwd until we find state_manager.py.
-    p = _os.getcwd()
-    while p and not _os.path.exists(_os.path.join(p, 'state_manager.py')):
-      parent = _os.path.dirname(p)
-      if parent == p:
-        break
-      p = parent
-    if p not in sys.path:
-      sys.path.insert(0, p)
-    from state_manager import mutate_state
-    ready_event.set()
-    go_event.wait(timeout=5.0)
-
-    def _apply(state):
-      state[key] = value
-
-    mutate_state(_apply, path=_Path(path_str))
+    assert result['users']['u_admin_marc']['account'] == 99999.0
+    assert load_state(path=path)['users']['u_admin_marc']['account'] == 99999.0
 
   def test_concurrent_writers_no_lost_update(self, tmp_path) -> None:
     '''REVIEWS HIGH #1: two processes both call mutate_state with non-
@@ -1672,23 +1670,38 @@ class TestMutateState:
     one of the mutations because both processes loaded the SAME pre-lock
     snapshot. mutate_state closes the race: both mutations land.'''
     import multiprocessing as mp
+    import os as _os
     path = tmp_path / 'state.json'
     seed = reset_state()
-    seed['account'] = 100000.0
+    # Phase 33 TENANT-01: account in users bucket.
+    seed['users']['u_admin_marc']['account'] = 100000.0
     save_state(seed, path=path)
 
+    # Phase 33: pass explicit project root so subprocess imports the
+    # worktree's state_manager (not the main repo's which still has v11 validation).
+    _proj_root = str(Path(__file__).parent.parent)
+
+    # Phase 33: spawn + import from subprocess_helpers_v12 (worktree-only module).
+    # Using spawn avoids fork-in-multithreaded-process deadlocks (Python 3.13
+    # DeprecationWarning). The target lives in subprocess_helpers_v12.py which
+    # does NOT exist in the main-repo tests/ dir, so spawn resolution is unambiguous.
+    import sys as _sys
+    _tests_dir = str(Path(__file__).parent)
+    if _tests_dir not in _sys.path:
+      _sys.path.insert(0, _tests_dir)
+    from subprocess_helpers_v12 import subprocess_mutate_v12 as _target
     ctx = mp.get_context('spawn')
     ready_a, ready_b = ctx.Event(), ctx.Event()
     go_a, go_b = ctx.Event(), ctx.Event()
 
-    # Process A writes to 'last_run'; Process B writes to 'account'.
+    # Process A writes to top-level 'last_run'; Process B writes to per-user 'account'.
     proc_a = ctx.Process(
-      target=self._subprocess_mutate,
-      args=(str(path), 'last_run', '2026-04-25', ready_a, go_a),
+      target=_target,
+      args=(str(path), 'last_run', '2026-04-25', ready_a, go_a, _proj_root),
     )
     proc_b = ctx.Process(
-      target=self._subprocess_mutate,
-      args=(str(path), 'account', 50000.0, ready_b, go_b),
+      target=_target,
+      args=(str(path), 'account', 50000.0, ready_b, go_b, _proj_root),
     )
     proc_a.start()
     proc_b.start()
@@ -1711,7 +1724,8 @@ class TestMutateState:
       'REVIEWS HIGH #1: last_run mutation lost — '
       'mutate_state did not serialize load-mutate-save'
     )
-    assert final['account'] == 50000.0, (
+    # Phase 33 TENANT-01: account in users bucket.
+    assert final['users']['u_admin_marc']['account'] == 50000.0, (
       'REVIEWS HIGH #1: account mutation lost — '
       'mutate_state did not serialize load-mutate-save'
     )
@@ -1724,11 +1738,12 @@ class TestMutateState:
     from state_manager import mutate_state
     path = tmp_path / 'state.json'
     seed = reset_state()
-    seed['account'] = 12345.0
+    # Phase 33 TENANT-01: account in users bucket.
+    seed['users']['u_admin_marc']['account'] = 12345.0
     save_state(seed, path=path)
 
     def _broken(state):
-      state['account'] = 99.0  # would mutate, but...
+      state['users']['u_admin_marc']['account'] = 99.0  # would mutate, but...
       raise ValueError('mutator boom')
 
     with pytest.raises(ValueError, match='mutator boom'):
@@ -1743,7 +1758,7 @@ class TestMutateState:
       os.close(fd)
 
     # State unchanged on disk (mutator's in-memory mutation never reached save_state)
-    assert load_state(path=path)['account'] == 12345.0
+    assert load_state(path=path)['users']['u_admin_marc']['account'] == 12345.0
 
   def test_reentrancy_save_state_within_mutate_state(self, tmp_path) -> None:
     '''A mutator that internally calls save_state(other_state, path=other_path)
@@ -1759,15 +1774,16 @@ class TestMutateState:
     save_state(reset_state(), path=path_outer)
 
     def _nest(state):
-      state['account'] = 1.0
+      # Phase 33 TENANT-01: account in users bucket.
+      state['users']['u_admin_marc']['account'] = 1.0
       # Nested save on a DIFFERENT path inside the outer lock — succeeds
       inner = reset_state()
-      inner['account'] = 2.0
+      inner['users']['u_admin_marc']['account'] = 2.0
       save_state(inner, path=path_inner)
 
     mutate_state(_nest, path=path_outer)
-    assert load_state(path=path_outer)['account'] == 1.0
-    assert load_state(path=path_inner)['account'] == 2.0
+    assert load_state(path=path_outer)['users']['u_admin_marc']['account'] == 1.0
+    assert load_state(path=path_inner)['users']['u_admin_marc']['account'] == 2.0
 
   def test_returns_post_save_state(self, tmp_path) -> None:
     '''mutate_state returns the post-save state dict.'''
@@ -1776,11 +1792,12 @@ class TestMutateState:
     save_state(reset_state(), path=path)
 
     def _set(state):
-      state['account'] = 42.0
+      # Phase 33 TENANT-01: account in users bucket.
+      state['users']['u_admin_marc']['account'] = 42.0
 
     result = mutate_state(_set, path=path)
     assert isinstance(result, dict)
-    assert result['account'] == 42.0
+    assert result['users']['u_admin_marc']['account'] == 42.0
 
 
 # =========================================================================
@@ -1805,7 +1822,8 @@ class TestSchemaMigrationV2ToV3:
 
   def test_v2_fixture_loads_with_manual_stop_backfilled_on_open_positions(
       self, tmp_path) -> None:
-    '''Load v2 fixture; both open positions have manual_stop=None added.'''
+    '''Load v2 fixture; both open positions have manual_stop=None added.
+    Phase 33 TENANT-01: after full walk to v12, positions in users bucket.'''
     # Copy fixture into tmp_path so load_state's corruption-recovery + save
     # writes don't mutate the committed fixture file.
     import shutil
@@ -1817,8 +1835,10 @@ class TestSchemaMigrationV2ToV3:
       f'STATE_SCHEMA_VERSION (now {STATE_SCHEMA_VERSION}); '
       f'got {state["schema_version"]}'
     )
-    spi = state['positions']['SPI200']
-    audusd = state['positions']['AUDUSD']
+    # Phase 33 TENANT-01: positions in users bucket
+    user = state['users']['u_admin_marc']
+    spi = user['positions']['SPI200']
+    audusd = user['positions']['AUDUSD']
     assert spi is not None and audusd is not None
     assert 'manual_stop' in spi, (
       f'D-09: SPI200 manual_stop key missing post-migration; pos={spi}'
@@ -1833,7 +1853,8 @@ class TestSchemaMigrationV2ToV3:
   def test_save_then_load_v3_round_trips(self, tmp_path) -> None:
     '''Load v2 -> save -> re-load yields schema_version=STATE_SCHEMA_VERSION
     with manual_stop=None preserved (Phase 14 D-09 invariant survives the
-    Phase 22 v3 -> v4 bump).'''
+    Phase 22 v3 -> v4 bump).
+    Phase 33 TENANT-01: positions in users bucket after full walk to v12.'''
     import shutil
     target = tmp_path / 'state.json'
     shutil.copyfile(_V2_FIXTURE, target)
@@ -1841,8 +1862,9 @@ class TestSchemaMigrationV2ToV3:
     save_state(state, path=target)
     reloaded = load_state(path=target)
     assert reloaded['schema_version'] == STATE_SCHEMA_VERSION
-    assert reloaded['positions']['SPI200']['manual_stop'] is None
-    assert reloaded['positions']['AUDUSD']['manual_stop'] is None
+    user = reloaded['users']['u_admin_marc']
+    assert user['positions']['SPI200']['manual_stop'] is None
+    assert user['positions']['AUDUSD']['manual_stop'] is None
 
   def test_migration_idempotent(self) -> None:
     '''Applying _migrate_v2_to_v3 twice produces identical output.'''
@@ -1886,10 +1908,11 @@ class TestSchemaMigrationV2ToV3:
     assert out['positions']['AUDUSD'] is None
 
   def test_v3_open_position_round_trips_through_save_state(self, tmp_path) -> None:
-    '''In-memory v3 with manual_stop=7700.0 saves+reloads bit-identically.'''
+    '''In-memory v3 with manual_stop=7700.0 saves+reloads bit-identically.
+    Phase 33 TENANT-01: positions in users bucket.'''
     path = tmp_path / 'state.json'
     state = reset_state()
-    state['positions']['SPI200'] = {
+    state['users']['u_admin_marc']['positions']['SPI200'] = {
       'direction': 'LONG',
       'entry_price': 7800.0,
       'entry_date': '2026-04-15',
@@ -1902,7 +1925,7 @@ class TestSchemaMigrationV2ToV3:
     }
     save_state(state, path=path)
     reloaded = load_state(path=path)
-    assert reloaded['positions']['SPI200']['manual_stop'] == 7700.0, (
+    assert reloaded['users']['u_admin_marc']['positions']['SPI200']['manual_stop'] == 7700.0, (
       'v3 round-trip: manual_stop=7700.0 must persist + reload'
     )
     assert reloaded['schema_version'] == STATE_SCHEMA_VERSION
@@ -2454,13 +2477,14 @@ class TestMigrateV5ToV6:
     assert out['paper_trades'] == [], (
       f'D-08: paper_trades must be empty list; got {out["paper_trades"]!r}'
     )
-    # Via _migrate walker: schema_version advances to STATE_SCHEMA_VERSION (7 at Phase 20)
+    # Via _migrate walker: schema_version advances to STATE_SCHEMA_VERSION
+    # Phase 33 TENANT-01: after full walk to v12, paper_trades in users bucket
     out2 = _migrate(dict(s))
     assert out2['schema_version'] == STATE_SCHEMA_VERSION, (
       f'D-08: _migrate must walk v5->v{STATE_SCHEMA_VERSION}; got {out2["schema_version"]}'
     )
-    assert out2['paper_trades'] == [], (
-      f'D-08: walker must stamp paper_trades=[]; got {out2["paper_trades"]!r}'
+    assert out2['users']['u_admin_marc']['paper_trades'] == [], (
+      f'D-08: walker must stamp paper_trades=[]; got {out2["users"]["u_admin_marc"]["paper_trades"]!r}'
     )
 
   def test_migrate_v5_to_v6_preserves_other_top_level_fields(self) -> None:
@@ -2514,8 +2538,7 @@ class TestMigrateV5ToV6:
   def test_migrate_v5_to_v6_idempotent_via_full_migrate(self) -> None:
     '''Running _migrate on an already-v6 state with a populated paper_trades
     array walks forward to current STATE_SCHEMA_VERSION; paper_trades preserved.
-    (Phase 20: walker now goes to v7; idempotent guard in v6->v7 preserves the
-    existing row's lack of last_alert_state=None.)
+    Phase 33 TENANT-01: after full walk to v12, paper_trades in users bucket.
     '''
     from state_manager import _migrate
     existing_row = {
@@ -2537,17 +2560,19 @@ class TestMigrateV5ToV6:
     assert out['schema_version'] == STATE_SCHEMA_VERSION, (
       f'D-08: v6 state walks to {STATE_SCHEMA_VERSION}; got {out["schema_version"]}'
     )
-    assert len(out['paper_trades']) == 1, (
+    # Phase 33 TENANT-01: paper_trades in users bucket after full walk to v12
+    user_pt = out['users']['u_admin_marc']['paper_trades']
+    assert len(user_pt) == 1, (
       'D-08: existing rows must survive the walk'
     )
     # Phase 20 v6->v7 migration adds last_alert_state=None to the row
-    assert out['paper_trades'][0]['id'] == existing_row['id']
-    assert out['paper_trades'][0]['last_alert_state'] is None
+    assert user_pt[0]['id'] == existing_row['id']
+    assert user_pt[0]['last_alert_state'] is None
 
   def test_migrate_v5_to_v6_via_full_migrate_sets_schema_6(self) -> None:
     '''Going through _migrate (the dispatch walker) on a v5 state ends at
     STATE_SCHEMA_VERSION AND stamps paper_trades=[].
-    (Phase 20: walker walks v5 -> v6 -> v7 = STATE_SCHEMA_VERSION.)
+    Phase 33 TENANT-01: after full walk to v12, paper_trades in users bucket.
     '''
     from state_manager import _migrate
     s = {
@@ -2564,8 +2589,10 @@ class TestMigrateV5ToV6:
     assert out['schema_version'] == STATE_SCHEMA_VERSION, (
       f'Phase 19 D-08: _migrate must walk v5->{STATE_SCHEMA_VERSION}; got {out["schema_version"]}'
     )
-    assert out.get('paper_trades') == [], (
-      f'D-08: walker must stamp paper_trades=[]; got {out.get("paper_trades")!r}'
+    # Phase 33 TENANT-01: paper_trades in users bucket after full walk to v12
+    assert out['users']['u_admin_marc']['paper_trades'] == [], (
+      f'D-08: walker must stamp paper_trades=[]; '
+      f'got {out["users"]["u_admin_marc"].get("paper_trades")!r}'
     )
 
 
@@ -2606,9 +2633,9 @@ class TestFullWalkV0ToV6:
     import json as _json
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 11, (
-      f'walk-forward chain v0->...->v11 must end at 11 '
-      f'(v11: contract_type + financing_rate_annual_pct backfill on markets); '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 12, (
+      f'walk-forward chain v0->...->v12 must end at 12 '
+      f'(v12: per-user namespace via admin bucket); '
       f'got {loaded["schema_version"]}'
     )
     # Phase 22 v3->v4 backfill also ran
@@ -2619,10 +2646,11 @@ class TestFullWalkV0ToV6:
     assert loaded['signals']['SPI200']['indicator_scalars'] == {}
     assert loaded['signals']['AUDUSD']['ohlc_window'] == []
     assert loaded['signals']['AUDUSD']['indicator_scalars'] == {}
-    # Phase 19 v5->v6 backfill
-    assert loaded.get('paper_trades') == [], (
-      f'Phase 19: full v0->v6 walk must stamp paper_trades=[]; '
-      f'got {loaded.get("paper_trades")!r}'
+    # Phase 19 v5->v6 backfill; Phase 33 TENANT-01: paper_trades in users bucket
+    user = loaded['users']['u_admin_marc']
+    assert user['paper_trades'] == [], (
+      f'Phase 19: full v0->v12 walk must stamp paper_trades=[]; '
+      f'got {user.get("paper_trades")!r}'
     )
 
 
@@ -2669,13 +2697,15 @@ class TestMigrateV6ToV7:
     assert out['paper_trades'][1]['last_alert_state'] is None, (
       'D-08: _migrate_v6_to_v7 must stamp last_alert_state=None on row 1'
     )
-    # Via _migrate walker: schema_version advances to 7
+    # Via _migrate walker: schema_version advances to STATE_SCHEMA_VERSION (12)
+    # Phase 33 TENANT-01: after full walk to v12, paper_trades in users bucket
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 11, (
-      f'D-08: _migrate must walk v6->v11; got {out2["schema_version"]}'
+    assert out2['schema_version'] == STATE_SCHEMA_VERSION, (
+      f'D-08: _migrate must walk v6->v{STATE_SCHEMA_VERSION}; got {out2["schema_version"]}'
     )
-    assert out2['paper_trades'][0]['last_alert_state'] is None
-    assert out2['paper_trades'][1]['last_alert_state'] is None
+    user_pt2 = out2['users']['u_admin_marc']['paper_trades']
+    assert user_pt2[0]['last_alert_state'] is None
+    assert user_pt2[1]['last_alert_state'] is None
 
   def test_migrate_v6_to_v7_preserves_other_paper_trade_fields(self) -> None:
     '''Round-trip equality: every original paper_trades row key+value is
@@ -2770,7 +2800,7 @@ class TestMigrateV6ToV7:
       'D-08: missing paper_trades key must remain absent after migration'
     )
     out2 = _migrate(dict(s))
-    assert out2['schema_version'] == 11  # v11: contract_type + financing_rate backfill
+    assert out2['schema_version'] == STATE_SCHEMA_VERSION  # v12: per-user namespace
 
   def test_migrate_v6_to_v7_silent_no_warnings_no_logs(self, caplog) -> None:
     '''D-15 silent migration: migrating 5 rows must emit zero log records and
@@ -2826,12 +2856,13 @@ class TestMigrateV6ToV7:
     }
     path.write_text(_json.dumps(bare_state, indent=2))
     loaded = load_state(path=path)
-    assert loaded['schema_version'] == 11, (
-      f'walk-forward chain v0->...->v11 must end at 11; '
+    assert loaded['schema_version'] == STATE_SCHEMA_VERSION == 12, (
+      f'walk-forward chain v0->...->v12 must end at 12; '
       f'got {loaded["schema_version"]}'
     )
-    # Phase 20 v6->v7 backfill
-    assert loaded['paper_trades'][0]['last_alert_state'] is None, (
+    # Phase 20 v6->v7 backfill; Phase 33 TENANT-01: paper_trades in users bucket
+    user_pt = loaded['users']['u_admin_marc']['paper_trades']
+    assert user_pt[0]['last_alert_state'] is None, (
       'Phase 20: full walk must stamp last_alert_state=None on paper_trades row'
     )
 
@@ -2869,8 +2900,251 @@ class TestMarketRegistrySchema:
     assert loaded['markets']['SPI200']['financing_rate_annual_pct'] == 0.0
 
   def test_record_trade_allows_market_present_in_positions(self) -> None:
+    # Phase 33 TENANT-01: positions/trade_log in users bucket
     state = reset_state()
-    state['positions']['XJO_CFD'] = None
+    state['users']['u_admin_marc']['positions']['XJO_CFD'] = None
     trade = _make_trade(instrument='XJO_CFD')
     record_trade(state, trade)
-    assert state['trade_log'][-1]['instrument'] == 'XJO_CFD'
+    assert state['users']['u_admin_marc']['trade_log'][-1]['instrument'] == 'XJO_CFD'
+
+
+# =========================================================================
+# Phase 33 TENANT-01: v11→v12 schema migration tests
+# =========================================================================
+
+class TestMigrateV11ToV12:
+  '''Phase 33 TENANT-01: _migrate_v11_to_v12 buckets per-user state.
+
+  Invariants:
+    - basic_move: 7 per-user keys move into state['users']['u_admin_marc']
+    - idempotent: calling twice yields identical result
+    - shared_keys_stay: signals/markets/strategy_settings/warnings/last_run stay top-level
+    - admin_user_id_added: state['admin_user_id'] == 'u_admin_marc'
+    - ui_prefs_initialized: state['users']['u_admin_marc']['ui_prefs'] == {'tour_completed': True}
+  '''
+
+  def _make_v11_state(self) -> dict:
+    '''Minimal v11 state dict with all 7 per-user keys populated.'''
+    return {
+      'schema_version': 11,
+      'account': 10000.0,
+      'initial_account': 10000.0,
+      'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'trade_log': [{'instrument': 'SPI200', 'gross_pnl': 100.0}],
+      'equity_history': [{'date': '2026-04-30', 'equity': 10100.0}],
+      'paper_trades': [{'id': 'pt-001', 'instrument': 'SPI200'}],
+      'last_run': '2026-04-30',
+      'signals': {'SPI200': {'signal': 1, 'strategy_version': 'v1.2.0'}},
+      'markets': {'SPI200': {'symbol': '^AXJO'}},
+      'strategy_settings': {'SPI200': {'momentum_votes_required': 1}},
+      'warnings': [],
+    }
+
+  def test_basic_move(self) -> None:
+    '''7 per-user keys moved into state["users"]["u_admin_marc"] and NOT at top-level.'''
+    from state_manager import _migrate_v11_to_v12
+    s = self._make_v11_state()
+    out = _migrate_v11_to_v12(dict(s))
+    user = out['users']['u_admin_marc']
+    for key in ('account', 'initial_account', 'contracts', 'positions',
+                'trade_log', 'equity_history', 'paper_trades'):
+      assert key in user, f'D-18: {key!r} must be in users[u_admin_marc]'
+      assert key not in out, f'D-18: {key!r} must NOT be at top-level after v12 migration'
+    # Values must be preserved
+    assert user['account'] == 10000.0
+    assert user['trade_log'] == [{'instrument': 'SPI200', 'gross_pnl': 100.0}]
+
+  def test_idempotent(self) -> None:
+    '''Calling _migrate_v11_to_v12 twice yields identical result.'''
+    from state_manager import _migrate_v11_to_v12
+    s = self._make_v11_state()
+    once = _migrate_v11_to_v12(dict(s))
+    twice = _migrate_v11_to_v12(dict(once))
+    assert once == twice, 'D-18 idempotency: result must be unchanged on second call'
+
+  def test_shared_keys_stay(self) -> None:
+    '''Shared keys (signals, markets, strategy_settings, warnings, last_run) stay top-level.'''
+    from state_manager import _migrate_v11_to_v12
+    s = self._make_v11_state()
+    out = _migrate_v11_to_v12(dict(s))
+    for key in ('signals', 'markets', 'strategy_settings', 'warnings', 'last_run'):
+      assert key in out, f'D-18: shared key {key!r} must stay at top-level in v12'
+
+  def test_admin_user_id_added(self) -> None:
+    '''state["admin_user_id"] == "u_admin_marc" after migration.'''
+    from state_manager import _migrate_v11_to_v12
+    s = self._make_v11_state()
+    out = _migrate_v11_to_v12(dict(s))
+    assert out.get('admin_user_id') == 'u_admin_marc', (
+      f'D-18: admin_user_id must be "u_admin_marc"; got {out.get("admin_user_id")!r}'
+    )
+
+  def test_ui_prefs_initialized(self) -> None:
+    '''state["users"]["u_admin_marc"]["ui_prefs"] == {"tour_completed": True}.'''
+    from state_manager import _migrate_v11_to_v12
+    s = self._make_v11_state()
+    out = _migrate_v11_to_v12(dict(s))
+    user = out['users']['u_admin_marc']
+    assert user.get('ui_prefs') == {'tour_completed': True}, (
+      f'D-18: ui_prefs must be {{"tour_completed": True}}; got {user.get("ui_prefs")!r}'
+    )
+
+
+class TestV12ValidationBehavior:
+  '''Phase 33 TENANT-01: _validate_loaded_state and _coerce_legacy_naive_iso v12 behavior.
+
+  Invariants:
+    - required_keys_v12: _validate_loaded_state raises for missing 'users';
+      does NOT raise for missing 'account' (moved to per-user namespace).
+    - coerce_legacy_naive_iso_per_user: DeprecationWarning emitted when
+      equity_history in any user bucket contains naive datetime string.
+  '''
+
+  def _make_v12_state(self) -> dict:
+    '''Minimal valid v12 state dict.'''
+    return {
+      'schema_version': 12,
+      'admin_user_id': 'u_admin_marc',
+      'last_run': '2026-04-30',
+      'signals': {'SPI200': {'signal': 0, 'strategy_version': 'v1.2.0'}},
+      'markets': {'SPI200': {'symbol': '^AXJO'}},
+      'strategy_settings': {'SPI200': {'momentum_votes_required': 1}},
+      'warnings': [],
+      'users': {
+        'u_admin_marc': {
+          'account': 10000.0,
+          'initial_account': 10000.0,
+          'contracts': {'SPI200': 'spi-mini'},
+          'positions': {'SPI200': None},
+          'trade_log': [],
+          'equity_history': [],
+          'paper_trades': [],
+          'ui_prefs': {'tour_completed': True},
+        },
+      },
+    }
+
+  def test_required_keys_v12(self) -> None:
+    '''_validate_loaded_state raises for missing "users"; does NOT raise for missing "account".'''
+    from state_manager import _validate_loaded_state
+    # Missing 'users' must raise
+    state_no_users = self._make_v12_state()
+    del state_no_users['users']
+    with pytest.raises(ValueError, match='users'):
+      _validate_loaded_state(state_no_users)
+    # 'account' not at top level anymore — must NOT cause a raise
+    state_valid = self._make_v12_state()
+    # Should not raise
+    _validate_loaded_state(state_valid)
+
+  def test_coerce_legacy_naive_iso_per_user(self) -> None:
+    '''DeprecationWarning emitted when user equity_history contains naive datetime.'''
+    from state_manager import _coerce_legacy_naive_iso
+    state = self._make_v12_state()
+    state['users']['u_admin_marc']['equity_history'] = [
+      {'date': '2026-04-30T08:00:00', 'equity': 10000.0},
+    ]
+    import warnings as _warnings
+    with _warnings.catch_warnings(record=True) as w:
+      _warnings.simplefilter('always')
+      _coerce_legacy_naive_iso(state)
+    dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+    assert len(dep_warnings) >= 1, (
+      'B1: DeprecationWarning must be emitted for naive datetime in user equity_history'
+    )
+
+
+class TestV12InitBehavior:
+  '''Phase 33 TENANT-01: __init__.py v12 changes — reset_state, load_state backup,
+  Pydantic validation, _resolved_contracts no KeyError.
+
+  Invariants:
+    - reset_state_v12_shape: reset_state() output has 'users', 'admin_user_id';
+      does NOT have 'account' at top level.
+    - load_state_writes_backup: v11 state.json triggers backup file creation.
+    - load_state_pydantic_validates: load_state on valid v11 file succeeds.
+    - load_state_resolved_contracts_no_keyerror: load_state on migrated v12 state
+      does not raise KeyError (B2 acceptance criterion).
+  '''
+
+  def _make_v11_json(self) -> str:
+    '''Minimal v11 state.json string.'''
+    import json as _json
+    from system_params import INITIAL_ACCOUNT, _DEFAULT_SPI_LABEL, _DEFAULT_AUDUSD_LABEL
+    return _json.dumps({
+      'schema_version': 11,
+      'account': INITIAL_ACCOUNT,
+      'initial_account': INITIAL_ACCOUNT,
+      'last_run': None,
+      'positions': {'SPI200': None, 'AUDUSD': None},
+      'signals': {
+        'SPI200': {'signal': 0, 'strategy_version': 'v1.2.0'},
+        'AUDUSD': {'signal': 0, 'strategy_version': 'v1.2.0'},
+      },
+      'trade_log': [],
+      'equity_history': [],
+      'warnings': [],
+      'contracts': {'SPI200': _DEFAULT_SPI_LABEL, 'AUDUSD': _DEFAULT_AUDUSD_LABEL},
+      'paper_trades': [],
+      'markets': {
+        'SPI200': {'symbol': '^AXJO', 'multiplier': 5, 'cost_aud': 6.0,
+                   'contract_type': 'mini', 'financing_rate_annual_pct': 0.0},
+        'AUDUSD': {'symbol': 'AUDUSD=X', 'multiplier': 100000, 'cost_aud': 7.0,
+                   'contract_type': 'mini', 'financing_rate_annual_pct': 0.0},
+      },
+      'strategy_settings': {
+        'SPI200': {'momentum_votes_required': 1, 'direction_mode': 'long_only',
+                   'risk_pct': 0.01, 'atr_multiplier': 2.0, 'one_contract_floor': False,
+                   'max_pyramid_level': 3, 'use_financing_cost': True,
+                   'hard_cap_contracts': 5, 'risk_cap_pct': 0.02},
+        'AUDUSD': {'momentum_votes_required': 1, 'direction_mode': 'both',
+                   'risk_pct': 0.005, 'atr_multiplier': 2.0, 'one_contract_floor': True,
+                   'max_pyramid_level': 3, 'use_financing_cost': True,
+                   'hard_cap_contracts': 5, 'risk_cap_pct': 0.02},
+      },
+    }, indent=2)
+
+  def test_reset_state_v12_shape(self) -> None:
+    '''reset_state() must emit v12 shape: has "users" + "admin_user_id"; no "account" at top.'''
+    from state_manager import reset_state
+    s = reset_state()
+    assert 'users' in s, 'v12: reset_state must emit "users" key'
+    assert 'admin_user_id' in s, 'v12: reset_state must emit "admin_user_id" key'
+    assert 'account' not in s, 'v12: "account" must NOT be at top level in reset_state output'
+    assert 'contracts' not in s, 'v12: "contracts" must NOT be at top level in reset_state output'
+    assert s['admin_user_id'] == 'u_admin_marc', (
+      f'admin_user_id must be "u_admin_marc"; got {s["admin_user_id"]!r}'
+    )
+    # User bucket must have account
+    assert 'account' in s['users']['u_admin_marc']
+
+  def test_load_state_writes_backup(self, tmp_path) -> None:
+    '''load_state on a v11 state.json writes a backup file with v11-backup in name.'''
+    from state_manager import load_state
+    path = tmp_path / 'state.json'
+    path.write_text(self._make_v11_json())
+    load_state(path=path)
+    backup_files = list(tmp_path.glob('*.v11-backup-*'))
+    assert len(backup_files) >= 1, (
+      f'load_state on v11 state must create a backup file; found: {list(tmp_path.iterdir())}'
+    )
+
+  def test_load_state_pydantic_validates(self, tmp_path) -> None:
+    '''load_state on a valid v11 file succeeds without raising.'''
+    from state_manager import load_state
+    path = tmp_path / 'state.json'
+    path.write_text(self._make_v11_json())
+    loaded = load_state(path=path)
+    assert loaded['schema_version'] == 12
+
+  def test_load_state_resolved_contracts_no_keyerror(self, tmp_path) -> None:
+    '''load_state on freshly-migrated v12 state does not raise KeyError (B2).'''
+    from state_manager import load_state
+    path = tmp_path / 'state.json'
+    path.write_text(self._make_v11_json())
+    loaded = load_state(path=path)
+    # _resolved_contracts must be materialised without KeyError
+    assert '_resolved_contracts' in loaded, 'B2: _resolved_contracts must be materialised'
+    assert 'SPI200' in loaded['_resolved_contracts']
+    assert 'AUDUSD' in loaded['_resolved_contracts']

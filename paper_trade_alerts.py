@@ -58,7 +58,10 @@ def _evaluate_paper_trade_alerts_impl(state: dict, dashboard_url: str) -> dict:
   transitions: list[dict] = []
   no_op_writes: dict[str, str] = {}  # id -> new_state (persisted unconditionally)
 
-  for row in state.get('paper_trades', []):
+  # Phase 33 TENANT-01: paper_trades in users bucket (v12 shape).
+  _uid = state_manager._ADMIN_UID
+  _user = state.get('users', {}).get(_uid, state)  # fallback to state for pre-v12
+  for row in _user.get('paper_trades', []):
     if not isinstance(row, dict):
       continue
     if row.get('status') != 'open':
@@ -144,7 +147,10 @@ def _evaluate_paper_trade_alerts_impl(state: dict, dashboard_url: str) -> dict:
   # Atomic persist via second mutate_state call (D-18)
   if commit_map:
     def _apply_alert_states(fresh_state: dict) -> None:
-      for row in fresh_state.get('paper_trades', []):
+      # Phase 33 TENANT-01: paper_trades in users bucket (v12 shape).
+      _uid2 = state_manager._ADMIN_UID
+      _fresh_user = fresh_state.get('users', {}).get(_uid2, fresh_state)
+      for row in _fresh_user.get('paper_trades', []):
         if isinstance(row, dict) and row.get('id') in commit_map:
           row['last_alert_state'] = commit_map[row['id']]
     state_manager.mutate_state(_apply_alert_states)

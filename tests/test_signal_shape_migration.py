@@ -197,9 +197,9 @@ class TestChainContiguityHoldsAfterV10Bump:
 
   def test_state_schema_version_is_10(self) -> None:
     from system_params import STATE_SCHEMA_VERSION
-    # v11 supersedes Plan 27-09's v10 floor; renamed inline assertion only.
-    assert STATE_SCHEMA_VERSION == 11, (
-      'STATE_SCHEMA_VERSION advanced to 11 (contract_type + financing_rate).'
+    # v12 supersedes v11; per-user namespace via admin bucket.
+    assert STATE_SCHEMA_VERSION == 12, (
+      'STATE_SCHEMA_VERSION advanced to 12 (per-user namespace via admin bucket).'
     )
 
   def test_migrations_registered_for_every_int_in_chain(self) -> None:

@@ -77,12 +77,14 @@ class TestLoadStateLegacyNaiveISOWarns:
   '''
 
   def test_load_state_with_naive_iso_in_legacy_file_warns(self, tmp_path):
-    # Build a minimal valid state with a NAIVE ISO datetime string in
-    # equity_history (no tz offset). This simulates a legacy file that
-    # was written before the fail-closed gate landed.
+    # Build a minimal v11-shaped state with a NAIVE ISO datetime string in
+    # equity_history (no tz offset). This simulates a legacy file written
+    # before the fail-closed gate landed (schema_version=11 so v11->v12
+    # migration runs and moves equity_history into the user bucket, then
+    # _coerce_legacy_naive_iso scans the user bucket and emits a warning).
     state_path = tmp_path / 'state.json'
     legacy_state = {
-      'schema_version': state_manager.STATE_SCHEMA_VERSION,
+      'schema_version': 11,  # v11 so migration runs and moves equity_history to user bucket
       'account': 100000.0,
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
@@ -116,7 +118,8 @@ class TestLoadStateLegacyNaiveISOWarns:
       result = load_state(path=state_path)
 
     # load_state succeeded — read-path shim coerced rather than rejected.
-    assert result['account'] == 100000.0
+    # Phase 33 TENANT-01: account now in users bucket
+    assert result['users']['u_admin_marc']['account'] == 100000.0
     # At least one DeprecationWarning was emitted mentioning naive ISO.
     deprecation_warnings = [
       w for w in caught

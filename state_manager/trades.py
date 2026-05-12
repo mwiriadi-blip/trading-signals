@@ -17,7 +17,22 @@ from datetime import datetime, UTC, timezone
 
 from system_params import MAX_WARNINGS
 
+from state_manager.migrations import _ADMIN_UID
 from state_manager.validation import _assert_tz_aware, _validate_trade
+
+
+def _admin_user(state: dict) -> dict:
+  '''Phase 33 TENANT-01: return the admin user's state bucket.
+
+  Centralises access to state['users'][_ADMIN_UID] so all record helpers
+  use a single accessor. Falls back to `state` itself if 'users' is absent
+  (pre-v12 state dicts in tests that build dicts directly without migration).
+  '''
+  users = state.get('users')
+  if isinstance(users, dict) and _ADMIN_UID in users:
+    return users[_ADMIN_UID]
+  # Pre-v12 fallback: state dict itself is the user bucket.
+  return state
 
 _AWST = zoneinfo.ZoneInfo('Australia/Perth')
 
@@ -128,17 +143,19 @@ def record_trade(state: dict, trade: dict) -> dict:
     realised_pnl as gross_pnl causes double-counting of the closing cost.
     Phase 4 orchestrator is responsible for this projection.
   '''
-  _validate_trade(trade, allowed_instruments=set(state.get('positions', {}).keys()))
+  # Phase 33 TENANT-01: per-user state bucket (v12 shape).
+  user = _admin_user(state)
+  _validate_trade(trade, allowed_instruments=set(user.get('positions', {}).keys()))
   # D-14: closing-half cost split. Phase 2 deducted opening half via
   # compute_unrealised_pnl during the position's lifetime. Phase 3 deducts
   # the closing half here at trade close.
   closing_cost_half = trade['cost_aud'] * trade['n_contracts'] / 2
   net_pnl = trade['gross_pnl'] - closing_cost_half
-  state['account'] += net_pnl
+  user['account'] += net_pnl
   # D-20: append a copy of trade WITH net_pnl, do NOT mutate caller's dict.
-  state['trade_log'].append(dict(trade, net_pnl=net_pnl))
+  user['trade_log'].append(dict(trade, net_pnl=net_pnl))
   # D-13 / D-01: position is closed atomically with the trade record.
-  state['positions'][trade['instrument']] = None
+  user['positions'][trade['instrument']] = None
   return state
 
 
@@ -186,5 +203,6 @@ def update_equity_history(state: dict, date: str, equity: float) -> dict:
       f'(int or float, not bool, not NaN/inf), got {equity!r}'
     )
   entry = {'date': date, 'equity': equity}
-  state['equity_history'].append(entry)
+  # Phase 33 TENANT-01: equity_history now lives in user bucket (v12 shape).
+  _admin_user(state)['equity_history'].append(entry)
   return state

@@ -151,8 +151,10 @@ class TestStateRoundTripPreservesAudCents:
     # Account round-trips: write '1234.56' → load 1234.56 (or Decimal('1234.56')).
     # Equality holds across float/Decimal boundary via str-form comparison
     # (avoids float-vs-Decimal type strictness).
-    assert str(Decimal(str(loaded['account']))) == '1234.56', (
-      f'account round-trip drift: expected "1234.56", got {loaded["account"]!r}'
+    # Phase 33 TENANT-01: account in users bucket.
+    _loaded_account = loaded['users']['u_admin_marc']['account']
+    assert str(Decimal(str(_loaded_account))) == '1234.56', (
+      f'account round-trip drift: expected "1234.56", got {_loaded_account!r}'
     )
 
   def test_state_no_drift_on_repeated_save_load_cycle(self, tmp_path) -> None:
@@ -170,7 +172,8 @@ class TestStateRoundTripPreservesAudCents:
       save_state(state, path=state_path)
       state = load_state(path=state_path)
     # After 5 cycles, account must still be exactly 1234.56.
-    assert str(Decimal(str(state['account']))) == '1234.56'
+    # Phase 33 TENANT-01: account in users bucket.
+    assert str(Decimal(str(state['users']['u_admin_marc']['account']))) == '1234.56'
 
   def test_v8_to_v9_migration_coerces_money(self) -> None:
     '''truth #4 + v9 schema bump: v8 state with floaty account

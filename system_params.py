@@ -277,7 +277,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 10_000.0   # starting account balance (STATE-07, reset_state); operator-default sized for retail SPI mini / AUDUSD mini lot
 MAX_WARNINGS: int = 50              # FIFO bound on state['warnings'] (D-11; Phase 27 #16 review-fix agreed-4: tightened from 100 to 50)
-STATE_SCHEMA_VERSION: int = 11      # v11 adds per-market contract_type + financing_rate_annual_pct; per-market default strategy settings honoured by reset_state.
+STATE_SCHEMA_VERSION: int = 12      # v12 buckets per-user state (account, initial_account, contracts, positions, trade_log, equity_history, paper_trades) under state['users']['u_admin_marc']; adds admin_user_id top-level key.
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # Phase 27 Plan 27-11 (review-fix agreed-5): second-line crash fallback.
