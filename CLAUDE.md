@@ -5,7 +5,7 @@
 - Do what has been asked; nothing more, nothing less
 - NEVER create files unless absolutely necessary — prefer editing existing files
 - NEVER create documentation files unless explicitly requested
-- NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
+- NEVER save working files or tests to root — use `tests/`, `docs/`, `scripts/`, named modules
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
 - Keep files under 500 lines
@@ -77,5 +77,27 @@ Any string works as a custom agent type.
 - ALWAYS verify build succeeds before committing
 
 ```bash
-npm run build && npm test
+.venv/bin/pytest -x --tb=short           # full suite (Python 3.13)
+.venv/bin/pytest -x --tb=short tests/test_<module>.py  # single file
 ```
+
+## Architecture
+
+Hexagonal-lite: pure-math hex (no I/O) vs I/O adapters.
+
+| Layer | Modules | Constraint |
+|-------|---------|------------|
+| **Pure-math hex** | `signal_engine.py`, `sizing_engine/`, `system_params.py`, `pnl_engine.py`, `alert_engine.py`, `backtest/` | stdlib-only; zero I/O, network, or state imports |
+| **State I/O** | `state_manager/` | File-based JSON (`state.json`); flock atomic writes via `mutate_state()` |
+| **Orchestration** | `main.py`, `daily_run.py`, `daily_run_helpers.py`, `scheduler_driver.py` | Wires hex + I/O |
+| **Notifications** | `notifier/` | Email via Resend HTTPS API only |
+| **Web** | `web/` (FastAPI + HTMX), `web/routes/` | No SPA; HTMX only |
+| **Auth** | `auth_store.py`, `web/routes/login/`, `web/routes/totp/` | Shared-secret + TOTP |
+
+## Key Conventions
+
+- **2-space indent** throughout — do NOT run `ruff format` (reflows to 4-space; breaks test gate)
+- **`Decimal` for all AUD amounts** — no floats; `from decimal import Decimal, ROUND_HALF_UP`
+- **`system_params.py` is single source of truth** for all constants — never define constants inline in engine modules
+- **`mutate_state()` only** for state writes — never call `save_state()` directly inside a `mutate_state` callback (flock deadlock)
+- **Signal-only** — never place, modify, or cancel live trades
