@@ -145,10 +145,12 @@ def _quarantine_corrupt_auth_file(path: Path) -> None:
 def load_auth(path: Path | None = None) -> AuthData:
   '''Load auth.json from disk and return AuthData. Migrates v1 -> v2 on first read.
 
-  WARNING: This function performs disk I/O via save_auth() during migration and
-  cannot safely be called inside a LOCK_EX window — save_auth() acquires LOCK_EX,
-  which will deadlock against an already-held lock. Callers inside a flock window
-  must use _read_auth_unlocked + _normalize_v2 directly (see auth_store._users).
+  WARNING: This function performs disk I/O via save_auth() during v1->v2 migration
+  and must NOT be called inside a LOCK_EX window. save_auth() issues an atomic
+  os.replace WITHOUT acquiring a lock; calling it while a flock holder holds LOCK_EX
+  creates a lost-update race (the unlocked write will overwrite the locked write's
+  inode). Callers inside a flock window must use _read_auth_unlocked + _normalize_v2
+  directly (see auth_store._users.consume_and_create_user).
   '''
   resolved = _resolve_path(path)
   if not resolved.exists():
