@@ -56,6 +56,17 @@ from auth_store._magic_links import (  # noqa: E402
   purge_expired_magic_links,
 )
 
+from auth_store._users import (  # noqa: E402
+  InviteAlreadyConsumed,
+  InviteExpired,
+  create_user,
+  consume_and_create_user,
+  get_user,
+  list_users,
+  mint_invite_token,
+  set_user_disabled,
+)
+
 
 def get_totp_secret(path: Path | None = None) -> str | None:
   '''F-01: read totp_secret. None if not yet enrolled.'''
@@ -116,4 +127,12 @@ __all__ = [
   'consume_magic_link',
   'count_recent_magic_links',
   'purge_expired_magic_links',
+  'InviteAlreadyConsumed',
+  'InviteExpired',
+  'create_user',
+  'consume_and_create_user',
+  'get_user',
+  'list_users',
+  'mint_invite_token',
+  'set_user_disabled',
 ]
