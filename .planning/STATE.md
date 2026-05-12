@@ -3,33 +3,33 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-12T08:46:47.394Z"
+last_updated: "2026-05-12T12:00:00.000Z"
 progress:
   total_phases: 14
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 31
-  completed_plans: 28
-  percent: 90
+  completed_plans: 31
+  percent: 93
 ---
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-05-10 (v1.2 milestone shipped via `/gsd-complete-milestone`)
+**Last updated:** 2026-05-12 (Phase 31 — Core Module Split — COMPLETE)
 
 ## Project Reference
 
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
-- **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 1880+ tests green)
-- **Current focus:** Phase 31 — Core Module Split
+- **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
+- **Current focus:** Phase 32 — next phase (see ROADMAP.md)
 
 ## Current Position
 
-Phase: 31 (Core Module Split) — EXECUTING
-Plan: 1 of 3
-Next: Execute Phase 31
-Status: Executing Phase 31
+Phase: 31 (Core Module Split) — COMPLETE
+Plans: 3 of 3 complete
+Next: Phase 32 (see ROADMAP.md)
+Status: Phase 31 all plans complete — 2084 tests green
 Resume file: .planning/phases/31-core-module-split/31-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone
@@ -237,6 +237,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 - [Phase ?]: Switched _LAST_LOADED_STATE from PEP 562 __getattr__ proxy to real attribute on main.py with through-main accessors in state_actions
 - [Phase ?]: Late-bind via main package — every seam re-resolves names through main on every call (mirrors Plan 27-12)
 - [Phase ?]: Plan 28-04 relaxed missing-CSS assertion to inline-or-link (no StaticFiles mount in trading-signals)
+- [Phase 31]: state_manager.py (1293 LOC) split into package (5 daughter files, all ≤500 LOC); sizing_engine.py (820 LOC) split into package (6 daughter files); AST gate tests in test_signal_engine.py, test_entry_side_cost.py, test_warnings_fifo.py updated to walk packages; 2084 tests green post-split
 
 ### Todos Carried Forward
 
