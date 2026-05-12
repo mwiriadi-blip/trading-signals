@@ -23,6 +23,7 @@ from auth_store._io import (
   save_auth,
 )
 from auth_store._schema import (
+  _ensure_aware,
   _normalize_v2,
 )
 
@@ -221,7 +222,10 @@ def consume_and_create_user(
       if matched_row is None or matched_row.get('consumed') is True:
         raise InviteAlreadyConsumed('invalid or already consumed invite token')
 
-      expires_dt = datetime.fromisoformat(matched_row['expires_at'])
+      try:
+        expires_dt = _ensure_aware(datetime.fromisoformat(matched_row['expires_at']))
+      except (TypeError, ValueError):
+        raise InviteExpired('invite token has unparseable expiry')
       if datetime.now(timezone.utc) > expires_dt:
         raise InviteExpired('invite token expired')
 

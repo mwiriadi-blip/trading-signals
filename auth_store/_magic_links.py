@@ -11,6 +11,7 @@ Atomic semantics: each helper follows the load -> mutate -> save pattern.
 consume_magic_link's flip-and-save is atomic per F-01 atomic-write contract.
 '''
 import hashlib
+import hmac
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -78,7 +79,7 @@ def consume_magic_link(
   data = load_auth(path=path)
   now = datetime.now(timezone.utc)
   for row in data['pending_magic_links']:
-    if row['token_hash'] != token_hash:
+    if not hmac.compare_digest(row['token_hash'], token_hash):
       continue
     if row['consumed']:
       return (False, None)
