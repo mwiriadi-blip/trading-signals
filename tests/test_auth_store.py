@@ -72,7 +72,8 @@ class TestAtomicWriteCrash:
         raise OSError('simulated fsync failure')
       return real_fsync(fd)
 
-    monkeypatch.setattr(auth_store.os, 'fsync', boom_fsync)
+    import auth_store._io as _auth_io
+    monkeypatch.setattr(_auth_io.os, 'fsync', boom_fsync)
 
     # Attempt save — expect OSError to propagate (re-raise per F-01 contract;
     # silent save-failures cause data loss, mirroring state_manager).
@@ -104,24 +105,28 @@ class TestSchemaV1Init:
 
     data = auth_store.load_auth(path=tmp_auth_path)
     assert data == {
-      'schema_version': 1,
+      'schema_version': 2,
       'totp_secret': None,
       'totp_enrolled': False,
       'totp_enrolled_at': None,
       'trusted_devices': [],
       'pending_magic_links': [],
+      'users': [],
+      'pending_invites': [],
     }, f'Unexpected default shape: {data}'
 
-  def test_load_auth_round_trips_existing_file(self, tmp_auth_path):
-    '''F-01: write a valid auth.json, load, assert dict equality.'''
+  def test_load_auth_round_trips_existing_v2_file(self, tmp_auth_path):
+    '''F-01: write a valid v2 auth.json, load, assert dict equality.'''
     import auth_store
     payload = {
-      'schema_version': 1,
+      'schema_version': 2,
       'totp_secret': 'JBSWY3DPEHPK3PXP',
       'totp_enrolled': True,
       'totp_enrolled_at': '2026-04-29T08:00:00+00:00',
       'trusted_devices': [],
       'pending_magic_links': [],
+      'users': [],
+      'pending_invites': [],
     }
     tmp_auth_path.write_text(json.dumps(payload))
     assert auth_store.load_auth(path=tmp_auth_path) == payload
@@ -134,12 +139,14 @@ class TestSchemaV1Init:
     loaded = auth_store.load_auth(path=path)
 
     assert loaded == {
-      'schema_version': 1,
+      'schema_version': 2,
       'totp_secret': None,
       'totp_enrolled': False,
       'totp_enrolled_at': None,
       'trusted_devices': [],
       'pending_magic_links': [],
+      'users': [],
+      'pending_invites': [],
     }
     assert not path.exists()
     quarantined = list(tmp_path.glob('auth.json.corrupt-*'))
