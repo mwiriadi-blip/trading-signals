@@ -13,6 +13,8 @@ import warnings
 from datetime import datetime, UTC, timezone
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict
+
 from system_params import (
   DEFAULT_MARKETS,
   DEFAULT_STRATEGY_SETTINGS,
@@ -33,14 +35,17 @@ _REQUIRED_TRADE_FIELDS = frozenset({
   'exit_reason', 'multiplier', 'cost_aud',
 })
 
-# D-18 (reviews-revision pass, 2026-04-21): required state top-level keys
-# for _validate_loaded_state.
+# D-18 (Phase 33 TENANT-01: v12 shape — per-user keys moved under users{}).
+# Required top-level keys for _validate_loaded_state.
+# v12 change: 'account', 'initial_account', 'contracts', 'positions',
+# 'trade_log', 'equity_history' moved to state['users'][uid].
+# Added: 'admin_user_id', 'users'.
 _REQUIRED_STATE_KEYS = frozenset({
-  'schema_version', 'account', 'last_run', 'positions',
-  'signals', 'trade_log', 'equity_history', 'warnings',
-  # Phase 8 (v2 schema): CONF-01 + CONF-02 required top-level keys
-  'initial_account', 'contracts',
+  'schema_version', 'last_run',
+  'signals', 'warnings',
   'markets', 'strategy_settings',
+  # v12: per-user namespace
+  'admin_user_id', 'users',
 })
 
 
@@ -85,29 +90,34 @@ def _coerce_legacy_naive_iso(state: dict) -> dict:
   Returns the input dict unchanged (the shim is observe-and-warn, not
   mutate).
   '''
-  for entry in state.get('equity_history', []):
-    if not isinstance(entry, dict):
+  # v12: equity_history lives under state['users'][uid]['equity_history'].
+  # Scan all user buckets; emit DeprecationWarning on first naive datetime found
+  # in ANY user's equity_history (one warning per load is enough).
+  for _user_data in state.get('users', {}).values():
+    if not isinstance(_user_data, dict):
       continue
-    raw = entry.get('date')
-    if not isinstance(raw, str):
-      continue
-    # Only datetime-shaped strings (with 'T') are candidates; YYYY-MM-DD
-    # date-only strings are intentional and out of scope.
-    if 'T' not in raw:
-      continue
-    try:
-      parsed = datetime.fromisoformat(raw)
-    except ValueError:
-      continue
-    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
-      warnings.warn(
-        'naive ISO datetime in legacy state coerced to UTC — please re-save',
-        DeprecationWarning,
-        stacklevel=2,
-      )
-      # One warning per load is enough — bail after first detection so
-      # we don't spam on a 365-day equity_history.
-      break
+    for entry in _user_data.get('equity_history', []):
+      if not isinstance(entry, dict):
+        continue
+      raw = entry.get('date')
+      if not isinstance(raw, str):
+        continue
+      # Only datetime-shaped strings (with 'T') are candidates; YYYY-MM-DD
+      # date-only strings are intentional and out of scope.
+      if 'T' not in raw:
+        continue
+      try:
+        parsed = datetime.fromisoformat(raw)
+      except ValueError:
+        continue
+      if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        warnings.warn(
+          'naive ISO datetime in legacy state coerced to UTC — please re-save',
+          DeprecationWarning,
+          stacklevel=2,
+        )
+        # One warning per load is enough — bail after first detection.
+        return state
   return state
 
 
@@ -209,6 +219,29 @@ def _validate_loaded_state(state: dict) -> None:
   missing = _REQUIRED_STATE_KEYS - state.keys()
   if missing:
     raise ValueError(f'state missing required keys: {sorted(missing)}')
+
+
+# =========================================================================
+# Phase 33 TENANT-01: Pydantic v12 shape validation
+# =========================================================================
+
+class StateV12(BaseModel):
+  '''Pydantic model for v12 top-level state shape.
+
+  Called from load_state() after _migrate() to gate on structural correctness
+  before _validate_loaded_state. extra='allow' so future keys (Phase 34+)
+  pass without requiring a model bump each time.
+  '''
+  model_config = ConfigDict(extra='allow')
+
+  schema_version: int
+  admin_user_id: str
+  last_run: str | None
+  signals: dict
+  markets: dict
+  strategy_settings: dict
+  warnings: list
+  users: dict
 
 
 # =========================================================================
