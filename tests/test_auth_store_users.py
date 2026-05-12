@@ -165,8 +165,7 @@ class TestInviteConsume:
     data = load_auth()
     past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     data['pending_invites'][0]['expires_at'] = past
-    import auth_store._io as _io
-    _io.save_auth(data)
+    auth_store.save_auth(data)
     with pytest.raises(InviteExpired) as exc_info:
       consume_and_create_user(raw, {'email': 'e@b.com'})
     assert isinstance(exc_info.value, InviteExpired)
