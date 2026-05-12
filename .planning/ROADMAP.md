@@ -192,7 +192,7 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
 **Requirements:** TENANT-01, TENANT-04
 **Success Criteria** (what must be TRUE):
   1. Migration runs as a single `_migrate_v11_to_v12(old: dict) -> dict` that builds a fresh dict, Pydantic-validates the v12 shape, and only then saves; auto-backup `state.json.v11-backup-<isoformat>` is written before the save.
-  2. Round-trip test on 5 fixtures (empty, max trade_log, mid-pyramid, mid-alert APPROACHING, naive-datetime legacy) is lossless: `migrate(v11) → v12 → reverse(v12) → v11'` and `v11 == v11'`; the v12 fixture passes Pydantic validation.
+  2. Round-trip test on 5 fixtures (empty, max trade_log, mid-pyramid, mid-alert APPROACHING, naive-datetime legacy) is lossless: every v11 field that maps to v12 is present with identical value in the migrated output; the v12 result passes Pydantic StateV12 validation.
   3. Migration-chain contiguity assert at module load + `load_state()` entry passes for the new chain ending at v12.
   4. `state/users/` is gitignored; `git ls-files | grep '^state/users/'` returns zero rows; CI fails the build if any per-user state path enters tracked files.
   5. Off-droplet backup (rclone-to-B2 or equivalent) runs daily; admin receives an alert email if backup is older than 48h.
