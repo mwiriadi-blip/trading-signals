@@ -12,6 +12,7 @@ This ordering keeps all 70+ monkeypatch.setattr(auth_store, 'DEFAULT_AUTH_PATH',
 calls working: tests rebind the attribute on THIS module; _resolve_path
 re-reads it from auth_store at call time.
 '''
+import logging
 from pathlib import Path
 
 # DEFAULT_AUTH_PATH MUST be defined BEFORE any daughter-module import.
@@ -67,6 +68,8 @@ from auth_store._users import (  # noqa: E402
   set_user_disabled,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def get_totp_secret(path: Path | None = None) -> str | None:
   '''F-01: read totp_secret. None if not yet enrolled.'''
@@ -80,8 +83,7 @@ def set_totp_secret(secret: str, path: Path | None = None) -> None:
   data['totp_enrolled'] = False
   data['totp_enrolled_at'] = None
   save_auth(data, path=path)
-  import logging
-  logging.getLogger(__name__).info('[Auth] totp secret persisted (enrolled=False)')
+  logger.info('[Auth] totp secret persisted (enrolled=False)')
 
 
 def mark_enrolled(path: Path | None = None) -> None:
@@ -91,10 +93,7 @@ def mark_enrolled(path: Path | None = None) -> None:
   data['totp_enrolled'] = True
   data['totp_enrolled_at'] = datetime.now(timezone.utc).isoformat()
   save_auth(data, path=path)
-  import logging
-  logging.getLogger(__name__).info(
-    '[Auth] totp enrollment finalised at=%s', data['totp_enrolled_at'],
-  )
+  logger.info('[Auth] totp enrollment finalised at=%s', data['totp_enrolled_at'])
 
 
 __all__ = [
