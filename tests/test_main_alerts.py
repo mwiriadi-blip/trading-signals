@@ -181,7 +181,7 @@ class TestEvaluatePaperTradeAlerts:
     assert called == []
     # last_alert_state updated to CLEAR on disk via no-op write
     saved = json.loads(p.read_text())
-    assert saved['paper_trades'][0]['last_alert_state'] == 'CLEAR'
+    assert saved['users']['u_admin_marc']['paper_trades'][0]['last_alert_state'] == 'CLEAR'
 
   def test_initial_none_to_approaching_emails(
     self, tmp_path, monkeypatch,
@@ -207,7 +207,7 @@ class TestEvaluatePaperTradeAlerts:
     assert sent_transitions[0]['new_state'] == 'APPROACHING'
     # Committed to disk
     saved = json.loads(p.read_text())
-    assert saved['paper_trades'][0]['last_alert_state'] == 'APPROACHING'
+    assert saved['users']['u_admin_marc']['paper_trades'][0]['last_alert_state'] == 'APPROACHING'
 
   def test_initial_none_to_hit_emails(
     self, tmp_path, monkeypatch,
@@ -260,7 +260,7 @@ class TestEvaluatePaperTradeAlerts:
     assert result['transitions'][0]['new_state'] == 'HIT'
     # Committed
     saved = json.loads(p.read_text())
-    assert saved['paper_trades'][0]['last_alert_state'] == 'HIT'
+    assert saved['users']['u_admin_marc']['paper_trades'][0]['last_alert_state'] == 'HIT'
 
   def test_clear_to_clear_no_email(self, tmp_path, monkeypatch) -> None:
     '''Dedup: CLEAR -> CLEAR (same state). NOT a transition.
@@ -302,7 +302,7 @@ class TestEvaluatePaperTradeAlerts:
     assert called == [], 'APPROACHING->CLEAR must NOT trigger email'
     # Badge refresh: last_alert_state updated to CLEAR on disk
     saved = json.loads(p.read_text())
-    assert saved['paper_trades'][0]['last_alert_state'] == 'CLEAR', (
+    assert saved['users']['u_admin_marc']['paper_trades'][0]['last_alert_state'] == 'CLEAR', (
       'APPROACHING->CLEAR must persist CLEAR to disk for badge refresh'
     )
     # No [Alert] N transition(s) emailed log line for this row
@@ -418,7 +418,7 @@ class TestEvaluatePaperTradeAlerts:
     assert result['emailed'] is False
     # Transitioning rows NOT updated (rollback)
     saved = json.loads(p.read_text())
-    trades_by_id = {r['id']: r for r in saved['paper_trades']}
+    trades_by_id = {r['id']: r for r in saved['users']['u_admin_marc']['paper_trades']}
     assert trades_by_id['SPI200-20260430-001']['last_alert_state'] is None, (
       'D-06: transitioning row must stay None on send failure (rollback)'
     )
@@ -462,7 +462,7 @@ class TestEvaluatePaperTradeAlerts:
 
     assert result['emailed'] is True
     saved = json.loads(p.read_text())
-    trades_by_id = {r['id']: r for r in saved['paper_trades']}
+    trades_by_id = {r['id']: r for r in saved['users']['u_admin_marc']['paper_trades']}
     assert trades_by_id['SPI200-20260430-001']['last_alert_state'] == 'APPROACHING'
     assert trades_by_id['SPI200-20260430-002']['last_alert_state'] == 'APPROACHING'
     info_msgs = [r.getMessage() for r in caplog.records
@@ -518,7 +518,7 @@ class TestEvaluatePaperTradeAlerts:
     # low=8120 > stop=8100 -> NOT HIT; close far -> CLEAR -> None->CLEAR -> no-op write
     assert result['transitions'] == []
     saved = json.loads(p.read_text())
-    assert saved['paper_trades'][0]['last_alert_state'] == 'CLEAR'
+    assert saved['users']['u_admin_marc']['paper_trades'][0]['last_alert_state'] == 'CLEAR'
 
   def test_two_phase_commit_ordering_no_deadlock(
     self, tmp_path, monkeypatch,
