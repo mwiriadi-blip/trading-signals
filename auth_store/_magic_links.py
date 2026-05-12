@@ -32,9 +32,11 @@ def add_magic_link(
 ) -> None:
   '''Append a new pending_magic_links row.
 
-  token_hash MUST be prefixed with 'sha256:' (e.g. 'sha256:<hex>').
-  Raises ValueError if the prefix is absent — fail-closed to prevent
-  hash-algorithm confusion if storage format is extended.
+  token_hash is a bare SHA-256 hex digest (no prefix). This intentionally
+  differs from invite tokens which use a 'sha256:<hex>' prefixed format.
+  The magic-link path pre-dates the invite path and callers (web/routes/login)
+  already supply bare hex; aligning formats would require a migration gate.
+  consume_magic_link hashes on receipt and compares with hmac.compare_digest.
 
   Row shape (F-01 PendingMagicLink):
     token_hash, email, action, created_at (now-iso), expires_at,
@@ -44,10 +46,6 @@ def add_magic_link(
   if unset — caller is responsible for boot-validating the env var; we
   fall back here so the helper is callable in test code without that gate).
   '''
-  if not isinstance(token_hash, str) or not token_hash.startswith('sha256:'):
-    raise ValueError(
-      f"token_hash must be prefixed with 'sha256:'; got {token_hash!r:.40}"
-    )
   resolved_email = (
     email if email is not None
     else os.environ.get('OPERATOR_RECOVERY_EMAIL', 'mwiriadi@gmail.com')
