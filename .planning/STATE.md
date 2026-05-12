@@ -22,16 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 33 — Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore
+- **Current focus:** Phase 34 — User Registry + Invite-Token Storage
 
 ## Current Position
 
-Phase: 33 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore) — EXECUTING
-Plan: 2 of 4 (Wave 2 in-progress)
-Plans: 1 of 4 complete
-Next: /gsd-execute-phase 33
-Status: Executing Phase 33 Wave 2
-Resume file: .planning/phases/33-schema-migration-v11-v12-admin-namespace-backup-gitignore/33-02-PLAN.md
+Phase: 33 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore) — COMPLETE
+Plan: 4 of 4
+Plans: 4 of 4 complete
+Next: /gsd-discuss-phase 34
+Status: Phase 33 complete; Phase 34 ready to plan
 
 ### Resume instructions for cloud Claude / fresh clone
 

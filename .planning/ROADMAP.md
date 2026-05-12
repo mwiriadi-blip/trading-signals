@@ -49,7 +49,7 @@ These gates run on every phase that touches per-user data, not just at milestone
 - [x] **Phase 30: File-Size Pre-Split** — behaviour-preserving splits of pre-existing 500-LOC violators (`web/routes/trades.py` 746, `dashboard.py` 644, `totp.py` 614, `login.py` 608, `paper_trades.py` 493) before any per-user `user_id` injection; extend AST hex blocklist for v1.3 I/O peers.
 - [x] **Phase 31: Core Module Split** — behaviour-preserving split of `state_manager.py` (1,293 LOC) into `state_manager/` package and `sizing_engine.py` (820 LOC) into `sizing_engine/` package before any per-user `user_id` injection.
 - [ ] **Phase 32: Dashboard Legacy Retirement** — confirm `dashboard_renderer/` as sole canonical renderer; retire `dashboard_legacy/`; thin `dashboard.py` to a route-through shim; eliminate the three-surface split that caused the layout-drift issue.
-- [ ] **Phase 33: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore** — atomic build-then-validate-then-save migration; auto-backup `state.json.v11-backup-<ts>`; round-trip fixtures; `state/users/` gitignore + CI gate + off-droplet (rclone-to-B2) daily backup with 48h-stale alert.
+- [x] **Phase 33: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore** — atomic build-then-validate-then-save migration; auto-backup `state.json.v11-backup-<ts>`; round-trip fixtures; `state/users/` gitignore + CI gate + off-droplet (rclone-to-B2) daily backup with 48h-stale alert.
 - [ ] **Phase 34: User Registry + Invite-Token Storage** — `auth_store.users[]` + `pending_invites[]` co-located in `auth.json`; `secrets.token_urlsafe(32)` mint, sha256 hash store, `hmac.compare_digest` verify, 7-day expiry, single-use guaranteed by `flock` on consume.
 - [ ] **Phase 35: Cookie + `Depends(current_user)` + Sub-Router Admin Gate** — cookie payload extends to `{"uid": ...}`; `web/dependencies.py` introduces `current_user_id` and `require_admin`; `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router locked Day 1; startup invariant test walks `app.routes`. Admin remains the only user — observable behaviour identical at this phase boundary.
 - [ ] **Phase 36: Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock** — centralized `load_X_for_user()` loaders; `PublicUserSummary` + `RedactStateFilter`; `TestTenantIsolation` quality gate introduced; per-user `fcntl.flock`; pyramid/exit semantics shift to fan-out.
@@ -199,9 +199,9 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
 **Plans:** 4 plans
 **Plan list:**
 - [x] 33-01-PLAN.md — Migration core: _migrate_v11_to_v12, STATE_SCHEMA_VERSION=12, MIGRATIONS[12], _REQUIRED_STATE_KEYS v12, StateV12 Pydantic model, reset_state() v12 shape, backup+validate in load_state() (Wave 1)
-- [ ] 33-02-PLAN.md — Round-trip fixtures + tests: 5 v11 fixture files + test_state_migration_v12.py (Wave 2, depends on 33-01)
-- [ ] 33-03-PLAN.md — Gitignore + CI gate: state/users/ entries in .gitignore + tests/test_gitignore_gate.py (Wave 2, depends on 33-01)
-- [ ] 33-04-PLAN.md — rclone-to-B2 backup + 48h stale alert: scripts/backup_state.sh + scripts/check_backup_age.py + systemd units + send_backup_stale_email + docs (Wave 2, depends on 33-01)
+- [x] 33-02-PLAN.md — Round-trip fixtures + tests: 5 v11 fixture files + test_state_migration_v12.py (Wave 2, depends on 33-01)
+- [x] 33-03-PLAN.md — Gitignore + CI gate: state/users/ entries in .gitignore + tests/test_gitignore_gate.py (Wave 2, depends on 33-01)
+- [x] 33-04-PLAN.md — rclone-to-B2 backup + 48h stale alert: scripts/backup_state.sh + scripts/check_backup_age.py + systemd units + send_backup_stale_email + docs (Wave 2, depends on 33-01)
 
 ### Phase 34: User Registry + Invite-Token Storage
 
