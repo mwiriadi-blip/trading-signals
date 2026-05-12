@@ -138,43 +138,49 @@ class TestDispatchUsesMaxWarningsConstant:
   '''
 
   def test_state_manager_imports_max_warnings(self) -> None:
-    '''state_manager imports MAX_WARNINGS from system_params (single source).'''
+    '''state_manager imports MAX_WARNINGS from system_params (single source).
+    Phase 31: state_manager is now a package — walk all .py files.'''
     import ast
-    src = pathlib.Path(state_manager.__file__).read_text()
-    assert 'MAX_WARNINGS' in src, (
-      'state_manager.py must reference MAX_WARNINGS '
-      '(single source of truth in system_params).'
-    )
-    # AST walk: confirm `from system_params import ... MAX_WARNINGS ...`
-    # appears AND no top-level `MAX_WARNINGS = ...` definition exists
-    # (the latter would break single-source-of-truth).
-    tree = ast.parse(src)
+    pkg_dir = pathlib.Path(state_manager.__file__).parent
+    pkg_files = sorted(pkg_dir.glob('*.py'))
     imports_max_warnings = False
     locally_defined = False
-    for node in ast.walk(tree):
-      if isinstance(node, ast.ImportFrom) and node.module == 'system_params':
-        for alias in node.names:
-          if alias.name == 'MAX_WARNINGS':
-            imports_max_warnings = True
-      elif isinstance(node, ast.Assign):
-        for target in node.targets:
-          if isinstance(target, ast.Name) and target.id == 'MAX_WARNINGS':
+    any_reference = False
+    for path in pkg_files:
+      src = path.read_text()
+      if 'MAX_WARNINGS' in src:
+        any_reference = True
+      tree = ast.parse(src)
+      for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == 'system_params':
+          for alias in node.names:
+            if alias.name == 'MAX_WARNINGS':
+              imports_max_warnings = True
+        elif isinstance(node, ast.Assign):
+          for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == 'MAX_WARNINGS':
+              locally_defined = True
+        elif isinstance(node, ast.AnnAssign):
+          if isinstance(node.target, ast.Name) and node.target.id == 'MAX_WARNINGS':
             locally_defined = True
-      elif isinstance(node, ast.AnnAssign):
-        if isinstance(node.target, ast.Name) and node.target.id == 'MAX_WARNINGS':
-          locally_defined = True
+    assert any_reference, (
+      'state_manager package must reference MAX_WARNINGS '
+      '(single source of truth in system_params).'
+    )
     assert imports_max_warnings, (
-      'state_manager.py must import MAX_WARNINGS from system_params.'
+      'state_manager package must import MAX_WARNINGS from system_params.'
     )
     assert not locally_defined, (
-      'state_manager.py must NOT redefine MAX_WARNINGS locally — '
+      'state_manager package must NOT redefine MAX_WARNINGS locally — '
       'system_params is the single source of truth.'
     )
 
   def test_no_hardcoded_warnings_bound_literal_in_state_manager(self) -> None:
     '''state_manager.append_warning must NOT hardcode the literal 50 or 100
-    in the slice/trim expression — it must use MAX_WARNINGS.'''
-    src = pathlib.Path(state_manager.__file__).read_text()
+    in the slice/trim expression — it must use MAX_WARNINGS.
+    Phase 31: state_manager is now a package — search all .py files.'''
+    pkg_dir = pathlib.Path(state_manager.__file__).parent
+    src = '\n'.join(p.read_text() for p in sorted(pkg_dir.glob('*.py')))
     # Find the append_warning function body and assert no `100` or `50`
     # literal sits inside its slice expression.
     match = re.search(
