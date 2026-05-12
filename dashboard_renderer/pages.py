@@ -1,6 +1,7 @@
 '''Page composition wrappers for phased migration.'''
 
 from dashboard_renderer.context import RenderContext
+from dashboard_renderer.shell import _render_page_body, _render_single_page_dashboard
 
 
 def render_dashboard_page_body(
@@ -13,9 +14,7 @@ def render_dashboard_page_body(
   Phase 26 Plan 06 (R4): legacy nav-mode parameter dropped — render_two_axis_nav
   is the only path; the file-vs-web nav distinction is gone.
   '''
-  import dashboard
-
-  return dashboard._render_single_page_dashboard(ctx, page)
+  return _render_single_page_dashboard(ctx, page)
 
 
 def render_panel_only(ctx: RenderContext) -> str:
@@ -29,11 +28,9 @@ def render_panel_only(ctx: RenderContext) -> str:
   Returns the raw content that would appear inside <section id="market-panel">,
   without the wrapper itself.
   '''
-  import dashboard as d
-
   page = ctx.active_function
   if page not in ('signals', 'account', 'settings', 'market-test'):
     page = 'signals'
 
-  _, _, _, _, render_body = d._render_page_body(ctx, page)
+  _, _, _, _, render_body = _render_page_body(ctx, page)
   return render_body()
