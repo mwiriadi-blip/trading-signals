@@ -1,9 +1,9 @@
 '''Check age of the off-droplet rclone-to-B2 backup and alert if stale.
 
-Run directly:
+Run directly (via systemd trading-signals-backup.timer):
   python scripts/check_backup_age.py
 
-Or import and call check_backup_age() from daily_run.py.
+Or call check_backup_age() from any orchestration script.
 
 Environment variables:
   RCLONE_REMOTE  — rclone remote name (default: 'b2')
@@ -52,6 +52,9 @@ def get_last_backup_time(
       ['rclone', 'lsl', f'{remote}:{bucket}/{path}'],
       capture_output=True, text=True,
     )
+    if result.returncode != 0:
+      logger.error('[Backup] rclone lsl exited %d: %s', result.returncode, result.stderr.strip())
+      return None
     for line in result.stdout.splitlines():
       line = line.strip()
       if line:

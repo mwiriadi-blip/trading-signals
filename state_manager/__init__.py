@@ -300,7 +300,8 @@ def load_state(path: Path = Path(STATE_FILE), now=None, _under_lock: bool = Fals
   # tier labels. Underscore prefix = excluded from save_state (below).
   # Phase 33 B2: contracts now live at state['users'][_ADMIN_UID]['contracts'].
   # Use _ADMIN_UID constant — never inline string.
-  _user_contracts = state['users'][_ADMIN_UID]['contracts']
+  _user_bucket = state.get('users', {}).get(_ADMIN_UID, {})
+  _user_contracts = _user_bucket.get('contracts', {})
   state['_resolved_contracts'] = {
     'SPI200':  SPI_CONTRACTS[_user_contracts['SPI200']],
     'AUDUSD':  AUDUSD_CONTRACTS[_user_contracts['AUDUSD']],

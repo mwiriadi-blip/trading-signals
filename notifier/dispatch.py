@@ -7,7 +7,6 @@ NEVER raises (CLAUDE.md "Email sends NEVER crash the workflow"). Every
 dispatch function returns a SendStatus(ok, reason) (or bool for the
 legacy stop-alert API) on every code path.
 '''
-import html
 import logging
 import os
 from datetime import datetime
@@ -424,7 +423,6 @@ def send_backup_stale_email(last_backup_iso: str, *, now=None) -> SendStatus:
 
   Returns SendStatus. NEVER raises (CLAUDE.md never-crash posture).
   '''
-  del now  # testability hook; not used in email body
   from_addr = os.environ.get('SIGNALS_EMAIL_FROM', '').strip()
   if not from_addr:
     logger.warning('[Email] WARN send_backup_stale_email: missing SIGNALS_EMAIL_FROM')
@@ -437,8 +435,7 @@ def send_backup_stale_email(last_backup_iso: str, *, now=None) -> SendStatus:
     logger.warning('[Email] WARN send_backup_stale_email: missing RESEND_API_KEY')
     return SendStatus(ok=False, reason='no_api_key')
 
-  safe_ts = html.escape(last_backup_iso, quote=True)
-  subject = f'[trading-signals] BACKUP STALE — last backup {safe_ts}'
+  subject = f'[trading-signals] BACKUP STALE — last backup {last_backup_iso}'
   text_body = (
     f'The off-droplet backup of state.json is overdue.\n\n'
     f'Last successful backup: {last_backup_iso}\n\n'

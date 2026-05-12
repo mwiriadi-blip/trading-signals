@@ -19,6 +19,3 @@ PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/home/trader/trading-signals
 ProtectHome=read-only
-
-[Install]
-WantedBy=multi-user.target
