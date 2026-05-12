@@ -157,7 +157,7 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-*Last updated: 2026-05-10 — Phase 29.5 complete (yfinance Regression Fix). UAT-23-1 closed: settings= wired into backtest CLI, SPI200 67 trades, AUDUSD 40 trades.*
+*Last updated: 2026-05-13 — Phase 34 complete (User Registry + Invite-Token Storage). auth_store/ package split from 520-LOC monolith; User + PendingInvite TypedDicts; v1→v2 schema migration; invite token mint/consume with LOCK_EX single-use guarantee; InviteAlreadyConsumed + InviteExpired typed exceptions (SC-4); 2151 tests green. RBAC-03 storage half delivered; RBAC-04 disabled flag stored (enforcement in Phase 35/36).*
 
 <details>
 <summary>Historical: v1.1 Progress (archived)</summary>
