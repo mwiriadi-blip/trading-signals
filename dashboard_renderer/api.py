@@ -12,7 +12,7 @@ import pytz
 
 from dashboard_renderer.components.header import render_header_from_context
 from dashboard_renderer.context import RenderContext
-from dashboard_renderer.formatters import _resolve_strategy_version, _resolve_trace_open_keys
+from dashboard_renderer.formatters import _resolve_strategy_version
 from dashboard_renderer.io import atomic_write_html
 from dashboard_renderer.shell import (
   _render_single_page_dashboard,
@@ -48,7 +48,6 @@ def _build_render_context(
     active_function=active_function,
     active_market=active_market,
   )
-  _resolve_trace_open_keys(ctx.state, list(ctx.trace_open_keys))
   return ctx
 
 
