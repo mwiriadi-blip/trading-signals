@@ -27,11 +27,11 @@ progress:
 ## Current Position
 
 Phase: 33 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore) — EXECUTING
-Plan: 1 of 4
-Plans: 0 of 4 complete
-Next: /gsd-execute-phase 32
-Status: Executing Phase 33
-Resume file: .planning/phases/32-dashboard-legacy-retirement/32-01-PLAN.md
+Plan: 2 of 4 (Wave 2 in-progress)
+Plans: 1 of 4 complete
+Next: /gsd-execute-phase 33
+Status: Executing Phase 33 Wave 2
+Resume file: .planning/phases/33-schema-migration-v11-v12-admin-namespace-backup-gitignore/33-02-PLAN.md
 
 ### Resume instructions for cloud Claude / fresh clone
 

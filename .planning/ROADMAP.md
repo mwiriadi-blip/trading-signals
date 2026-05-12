@@ -198,7 +198,7 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   5. Off-droplet backup (rclone-to-B2 or equivalent) runs daily; admin receives an alert email if backup is older than 48h.
 **Plans:** 4 plans
 **Plan list:**
-- [ ] 33-01-PLAN.md — Migration core: _migrate_v11_to_v12, STATE_SCHEMA_VERSION=12, MIGRATIONS[12], _REQUIRED_STATE_KEYS v12, StateV12 Pydantic model, reset_state() v12 shape, backup+validate in load_state() (Wave 1)
+- [x] 33-01-PLAN.md — Migration core: _migrate_v11_to_v12, STATE_SCHEMA_VERSION=12, MIGRATIONS[12], _REQUIRED_STATE_KEYS v12, StateV12 Pydantic model, reset_state() v12 shape, backup+validate in load_state() (Wave 1)
 - [ ] 33-02-PLAN.md — Round-trip fixtures + tests: 5 v11 fixture files + test_state_migration_v12.py (Wave 2, depends on 33-01)
 - [ ] 33-03-PLAN.md — Gitignore + CI gate: state/users/ entries in .gitignore + tests/test_gitignore_gate.py (Wave 2, depends on 33-01)
 - [ ] 33-04-PLAN.md — rclone-to-B2 backup + 48h stale alert: scripts/backup_state.sh + scripts/check_backup_age.py + systemd units + send_backup_stale_email + docs (Wave 2, depends on 33-01)
