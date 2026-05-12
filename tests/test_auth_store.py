@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-AUTH_STORE_PATH = Path('auth_store.py')
+AUTH_STORE_PACKAGE = Path('auth_store')
 ISO_8601_RE = re.compile(
   r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(\+\d{2}:\d{2}|Z)?$',
 )
@@ -592,9 +592,9 @@ class TestMagicLinks:
 
 
 class TestForbiddenImports:
-  '''Hex-boundary AST guard: auth_store.py is a peer of state_manager.py
+  '''Hex-boundary AST guard: auth_store/ package is a peer of state_manager/
   (NOT inside web/), so it MUST NOT import from web/, signal/sizing engines,
-  notifier, dashboard, or main.
+  notifier, dashboard, or main. Walks every .py file in the package.
   '''
 
   FORBIDDEN_ROOTS = frozenset({
@@ -602,26 +602,181 @@ class TestForbiddenImports:
   })
 
   def test_auth_store_does_not_import_web_or_signal_layers(self):
-    src = AUTH_STORE_PATH.read_text()
-    tree = ast.parse(src)
+    py_files = list(AUTH_STORE_PACKAGE.glob('*.py'))
+    # Phase 34 Plan 01: 5 files; Plan 02 adds _users.py — use >= 5 (forward-compatible)
+    assert len(py_files) >= 5, (
+      f'Expected >= 5 .py files in auth_store/ package, found {len(py_files)}: '
+      f'{[str(f) for f in py_files]}'
+    )
     violations = []
-    for node in ast.walk(tree):
-      if isinstance(node, ast.Import):
-        for alias in node.names:
-          root = alias.name.split('.', 1)[0]
+    for py_file in py_files:
+      src = py_file.read_text(encoding='utf-8')
+      tree = ast.parse(src)
+      for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+          for alias in node.names:
+            root = alias.name.split('.', 1)[0]
+            if root in self.FORBIDDEN_ROOTS:
+              violations.append(
+                f'{py_file}:{node.lineno}: import {alias.name}'
+              )
+        elif isinstance(node, ast.ImportFrom):
+          if node.module is None:
+            continue
+          root = node.module.split('.', 1)[0]
           if root in self.FORBIDDEN_ROOTS:
             violations.append(
-              f'Line {node.lineno}: import {alias.name}'
+              f'{py_file}:{node.lineno}: from {node.module} import ...'
             )
-      elif isinstance(node, ast.ImportFrom):
-        if node.module is None:
-          continue
-        root = node.module.split('.', 1)[0]
-        if root in self.FORBIDDEN_ROOTS:
-          violations.append(
-            f'Line {node.lineno}: from {node.module} import …'
-          )
     assert violations == [], (
-      f'auth_store.py must not import from web/signal/sizing layers: '
+      f'auth_store/ must not import from web/signal/sizing layers: '
       f'{violations}'
+    )
+
+
+# TestLoadAuthCorruptionRecovery: corruption-recovery behavior is covered by
+# TestSchemaV1Init.test_load_auth_corrupt_file_quarantines_and_returns_default
+# (empty/corrupt JSON quarantine + return-default contract verified there).
+# No duplicate class added per Task 2 spec.
+
+
+class TestSchemaMigrationV1ToV2:
+  '''Phase 34 Plan 01 Task 2: v1->v2 migration tests.
+
+  All tests write setup via json.dumps directly to the tmp path (the migration
+  is the function under test, so save_auth is NOT used in setup). Uses the
+  isolated_auth_json fixture which monkeypatches auth_store.DEFAULT_AUTH_PATH.
+  '''
+
+  def test_v1_to_v2_migration_backfills_users_and_invites(
+    self, isolated_auth_json,
+  ):
+    '''v1 file -> load_auth() returns schema_version=2 with users=[], invites=[].
+    Disk file is also immediately upgraded (D-09 immediate migration).
+    '''
+    import auth_store
+    v1 = {
+      'schema_version': 1,
+      'totp_secret': None,
+      'totp_enrolled': False,
+      'totp_enrolled_at': None,
+      'trusted_devices': [],
+      'pending_magic_links': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['schema_version'] == 2
+    assert result['users'] == []
+    assert result['pending_invites'] == []
+    # Disk must be upgraded too (D-09)
+    on_disk = json.loads(isolated_auth_json.read_text(encoding='utf-8'))
+    assert on_disk['schema_version'] == 2
+    assert 'users' in on_disk
+    assert 'pending_invites' in on_disk
+
+  def test_v1_to_v2_migration_preserves_trusted_devices(
+    self, isolated_auth_json,
+  ):
+    '''v1 file with one trusted_device: after migration, list is identical.'''
+    import auth_store
+    device = {
+      'uuid': 'abc123', 'label': 'iPhone', 'granted_at': '2026-04-29T00:00:00+00:00',
+      'last_seen': '2026-04-29T00:00:00+00:00', 'revoked': False, 'revoked_at': None,
+    }
+    v1 = {
+      'schema_version': 1, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [device], 'pending_magic_links': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['trusted_devices'] == [device]
+
+  def test_v1_to_v2_migration_preserves_pending_magic_links(
+    self, isolated_auth_json,
+  ):
+    '''v1 file with one pending_magic_link: after migration, list is identical.'''
+    import auth_store
+    link = {
+      'token_hash': 'deadbeef' * 8, 'email': 'test@example.com',
+      'action': 'totp-reset', 'created_at': '2026-04-29T00:00:00+00:00',
+      'expires_at': '2026-04-29T01:00:00+00:00', 'consumed': False, 'consumed_at': None,
+    }
+    v1 = {
+      'schema_version': 1, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [], 'pending_magic_links': [link],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['pending_magic_links'] == [link]
+
+  def test_v1_to_v2_migration_preserves_totp_fields(
+    self, isolated_auth_json,
+  ):
+    '''v1 file with totp_secret + enrolled=True: all three fields unchanged.'''
+    import auth_store
+    v1 = {
+      'schema_version': 1, 'totp_secret': 'S123', 'totp_enrolled': True,
+      'totp_enrolled_at': '2026-04-29T08:00:00+00:00',
+      'trusted_devices': [], 'pending_magic_links': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['totp_secret'] == 'S123'
+    assert result['totp_enrolled'] is True
+    assert result['totp_enrolled_at'] == '2026-04-29T08:00:00+00:00'
+
+  def test_v2_file_does_not_re_migrate_or_re_save(
+    self, isolated_auth_json,
+  ):
+    '''v2 file: load_auth() does NOT re-save (was_v1 gate prevents extra writes).
+    Verified by mtime unchanged after load_auth().
+    '''
+    import auth_store
+    v2 = {
+      'schema_version': 2, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [], 'pending_magic_links': [],
+      'users': [{'uid': 'abc', 'email': 'a@b.com', 'role': 'admin',
+                 'created_at': '2026-04-29T00:00:00+00:00', 'disabled': False}],
+      'pending_invites': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v2), encoding='utf-8')
+    mtime_before = isolated_auth_json.stat().st_mtime
+
+    auth_store.load_auth()
+
+    mtime_after = isolated_auth_json.stat().st_mtime
+    assert mtime_before == mtime_after, (
+      'load_auth() must not re-save a v2 file (was_v1 gate should prevent this)'
+    )
+
+  def test_v2_file_with_missing_users_key_is_defensively_backfilled(
+    self, isolated_auth_json,
+  ):
+    '''v2 file missing users key: load_auth() returns users=[] but does NOT
+    save (defensive backfill is in-memory only — mtime unchanged).
+    '''
+    import auth_store
+    v2_partial = {
+      'schema_version': 2, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [], 'pending_magic_links': [],
+      # users and pending_invites intentionally absent
+    }
+    isolated_auth_json.write_text(json.dumps(v2_partial), encoding='utf-8')
+    mtime_before = isolated_auth_json.stat().st_mtime
+
+    result = auth_store.load_auth()
+
+    mtime_after = isolated_auth_json.stat().st_mtime
+    assert result['users'] == []
+    assert result['pending_invites'] == []
+    assert mtime_before == mtime_after, (
+      'Defensive backfill on v2 file must NOT save to disk (no mtime bump)'
     )
