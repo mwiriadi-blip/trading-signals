@@ -177,9 +177,11 @@ class TestSecretRedactionGrepGate:
 
   # CR-01 fix: notifier.py monolith deleted; scan every notifier/*.py
   # in the post-Plan 27-12 package layout instead.
+  # Phase 34 Plan 01: auth_store.py deleted; scan auth_store/*.py package.
   COVERED_FILES = tuple(
     [str(p) for p in __import__('pathlib').Path('notifier').glob('*.py')]
-    + ['auth_store.py', 'data_fetcher.py']
+    + [str(p) for p in __import__('pathlib').Path('auth_store').glob('*.py')]
+    + ['data_fetcher.py']
   )
 
   # Suspicious pattern: an f-string or %-format interpolation of a bare
