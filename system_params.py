@@ -485,5 +485,8 @@ RATE_LIMIT_FORGOT_PER_HOUR = 3         # F-08
 RATE_LIMIT_RESET_PER_HOUR = 10         # F-08
 RATE_LIMIT_MAGIC_LINKS_PER_24H = 3     # F-08 per-account
 
+# Phase 34 Plan 02 — invite token TTL (single source of truth, WR-04).
+INVITE_TOKEN_TTL_DAYS: int = 7
+
 TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
 AUTH_JSON_PATH: str = 'auth.json'

@@ -26,6 +26,7 @@ from auth_store._schema import (
   _ensure_aware,
   _normalize_v2,
 )
+from system_params import INVITE_TOKEN_TTL_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ def mint_invite_token(
   raw = secrets.token_urlsafe(32)
   token_hash = 'sha256:' + hashlib.sha256(raw.encode('utf-8')).hexdigest()
   now = datetime.now(timezone.utc)
-  expires = now + timedelta(days=7)
+  expires = now + timedelta(days=INVITE_TOKEN_TTL_DAYS)
   data = load_auth(path=path)
   invite = {
     'token_hash': token_hash,
