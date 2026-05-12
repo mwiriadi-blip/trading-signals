@@ -10,6 +10,7 @@ from dashboard_renderer.context import RenderContext
 from dashboard_renderer.formatters import (
   _compute_next_awst_0800,
   _derive_status_dot_class,
+  _fmt_last_updated,
   _format_countdown_text,
 )
 from system_params import (
@@ -114,19 +115,17 @@ def render_status_strip(state: dict, now_awst: datetime) -> str:
 
 
 def render_header(state: dict, now: datetime, is_cookie_session: bool | None = None) -> str:
-  import dashboard as d
-
   # Phase 26 B1: market-agnostic subtitle. Hardcoded market names ('SPI 200',
   # 'AUD/USD') leaked into market-scoped pages and violated the per-market
   # scoping contract enforced by TestPhase26MarketScoping.
   subtitle = html.escape('Mechanical multi-market trading system', quote=True)
-  last_updated = html.escape(d._fmt_last_updated(now), quote=True)
+  last_updated = html.escape(_fmt_last_updated(now), quote=True)
   if is_cookie_session is None:
     auth_widget = '{{SIGNOUT_BUTTON}}{{SESSION_NOTE}}'
   elif is_cookie_session:
-    auth_widget = d._render_signout_button()
+    auth_widget = _render_signout_button()
   else:
-    auth_widget = d._render_session_note()
+    auth_widget = _render_session_note()
 
   status_strip = render_status_strip(state, now)
   # Phase 27 #15 (Plan 27-11): silent-crash-dropout fallback. When

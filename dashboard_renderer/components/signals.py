@@ -3,6 +3,18 @@
 import html
 import math
 
+from dashboard_renderer.components.trace import _render_trace_panels
+from dashboard_renderer.formatters import (
+  _SIGNAL_COLOUR,
+  _SIGNAL_LABEL,
+  _TRACE_OPEN_PLACEHOLDER,
+  _display_names,
+  _fmt_em_dash,
+  _fmt_percent_signed,
+  _strategy_settings_for,
+)
+from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
+
 
 def _next_triggers(scalars: dict, vote_params: dict, signal_int: int) -> list[str]:
   '''Ordered list of conditions to flip from FLAT to LONG/SHORT.
@@ -76,13 +88,12 @@ def _signal_card_stop(
     side the votes lean toward (or signal_int direction).
   - Returns None when no meaningful stop can be computed.
   '''
-  import dashboard as d
   import system_params as sp
 
   positions = state.get('positions') or {}
   pos = positions.get(state_key)
   if pos:
-    stop_val = d._compute_trail_stop_display(pos, settings=settings)
+    stop_val = _compute_trail_stop_display(pos, settings=settings)
     if stop_val is not None and not math.isnan(stop_val):
       direction = pos.get('direction', '')
       manual = pos.get('manual_stop') is not None
@@ -130,8 +141,6 @@ def _signal_card_stop(
 
 
 def render_signal_cards(state: dict, *, active_market: str | None = None) -> str:
-  import dashboard as d
-
   # Phase 25 D-09: hide trace tables on first run; show single onboarding card.
   # last_run is None means the daemon has never completed a cycle — no signal
   # data exists yet, so the full card+trace wall of "n/a" panels is replaced
@@ -151,31 +160,31 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
     '  <div class="cards-row">\n',
   ]
   # Phase 26 B1: when active_market is set and present, render only that market.
-  display_names = d._display_names(state)
+  display_names = _display_names(state)
   if active_market and active_market in display_names:
     display_names = {active_market: display_names[active_market]}
   for state_key, display in display_names.items():
     eyebrow = html.escape(display, quote=True)
     sig_entry = signals.get(state_key)
     if sig_entry is None:
-      label = html.escape(d._fmt_em_dash(), quote=True)
+      label = html.escape(_fmt_em_dash(), quote=True)
       signal_int = 0
       signal_as_of_line = 'Signal as of never'
-      scalars_line = html.escape(d._fmt_em_dash(), quote=True)
+      scalars_line = html.escape(_fmt_em_dash(), quote=True)
     else:
       # Phase 27 #11 (Plan 27-09): bare-int branch deleted. After v9->v10
       # migration runs at load_state, sig_entry is guaranteed to be a dict
       # (or None — handled above). Phase 26 DEBT.md R5.
       signal_int = sig_entry.get('signal', 0)
-      label = html.escape(d._SIGNAL_LABEL.get(signal_int, d._fmt_em_dash()), quote=True)
+      label = html.escape(_SIGNAL_LABEL.get(signal_int, _fmt_em_dash()), quote=True)
       signal_as_of = html.escape(sig_entry.get('signal_as_of', 'never'), quote=True)
       signal_as_of_line = f'Signal as of {signal_as_of}'
       scalars = sig_entry.get('last_scalars') or {}
       if scalars:
         adx = f'{scalars.get("adx", 0.0):.1f}'
-        mom1 = d._fmt_percent_signed(scalars.get('mom1', 0.0))
-        mom3 = d._fmt_percent_signed(scalars.get('mom3', 0.0))
-        mom12 = d._fmt_percent_signed(scalars.get('mom12', 0.0))
+        mom1 = _fmt_percent_signed(scalars.get('mom1', 0.0))
+        mom3 = _fmt_percent_signed(scalars.get('mom3', 0.0))
+        mom12 = _fmt_percent_signed(scalars.get('mom12', 0.0))
         rvol = f'{scalars.get("rvol", 0.0):.2f}'
         scalars_line = (
           f'ADX {html.escape(adx, quote=True)}  ·  '
@@ -185,7 +194,7 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
           f'RVol {html.escape(rvol, quote=True)}'
         )
       else:
-        scalars_line = html.escape(d._fmt_em_dash(), quote=True)
+        scalars_line = html.escape(_fmt_em_dash(), quote=True)
     # D-19 #5: semantic class from signal int — no inline style="color:..."
     # D-19 #3: status-dot glyph beside FLAT/LONG/SHORT label
     # Map signal int → class suffix: 1→long, -1→short, 0→flat (fallback flat)
@@ -198,10 +207,10 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
     if sig_entry is not None:
       import signal_engine
       vp_card = sig_entry.get('vote_params') or signal_engine.resolve_vote_params(
-        d._strategy_settings_for(state, state_key),
+        _strategy_settings_for(state, state_key),
       )
       scalars_for_card = sig_entry.get('last_scalars') or {}
-      settings_for_card = d._strategy_settings_for(state, state_key)
+      settings_for_card = _strategy_settings_for(state, state_key)
       triggers = _next_triggers(scalars_for_card, vp_card, signal_int)
       if triggers:
         triggers_html = (
@@ -240,11 +249,11 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
       trace_sig_dict = {
         **trace_sig_dict,
         'vote_params': signal_engine.resolve_vote_params(
-          d._strategy_settings_for(state, state_key),
+          _strategy_settings_for(state, state_key),
         ),
       }
-    trace_placeholder = d._TRACE_OPEN_PLACEHOLDER.get(state_key, '')
-    parts.append(d._render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
+    trace_placeholder = _TRACE_OPEN_PLACEHOLDER.get(state_key, '')
+    parts.append(_render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
   parts.append('  </div>\n')
   parts.append('</section>\n')
   return ''.join(parts)

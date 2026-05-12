@@ -2,17 +2,22 @@
 
 import html
 
+from dashboard_renderer.formatters import (
+  _EXIT_REASON_DISPLAY,
+  _display_names,
+  _fmt_currency,
+  _fmt_pnl_with_colour,
+)
+
 
 def render_trades_table(state: dict) -> str:
-  import dashboard as d
-
   trade_log = state.get('trade_log', [])
   slice_newest_first = list(reversed(trade_log[-20:]))
   rendered_rows = []
   for trade in slice_newest_first:
     closed = html.escape(trade.get('exit_date', ''), quote=True)
     instrument_key = trade.get('instrument', '')
-    instrument_display = d._display_names(state).get(instrument_key, instrument_key)
+    instrument_display = _display_names(state).get(instrument_key, instrument_key)
     instrument = html.escape(instrument_display, quote=True)
     direction_raw = trade.get('direction', '')
     direction_int = 1 if direction_raw == 'LONG' else -1 if direction_raw == 'SHORT' else 0
@@ -20,13 +25,13 @@ def render_trades_table(state: dict) -> str:
     # D-19 #5: use semantic class instead of inline style="color:..."
     _DIR_CLASS = {1: 'signal-long', -1: 'signal-short', 0: 'signal-flat'}
     dir_class = _DIR_CLASS.get(direction_int, 'signal-flat')
-    entry_price = html.escape(d._fmt_currency(trade.get('entry_price', 0.0)), quote=True)
-    exit_price = html.escape(d._fmt_currency(trade.get('exit_price', 0.0)), quote=True)
+    entry_price = html.escape(_fmt_currency(trade.get('entry_price', 0.0)), quote=True)
+    exit_price = html.escape(_fmt_currency(trade.get('exit_price', 0.0)), quote=True)
     contracts = html.escape(str(trade.get('n_contracts', 0)), quote=True)
     exit_reason_raw = trade.get('exit_reason', '')
-    reason_display = d._EXIT_REASON_DISPLAY.get(exit_reason_raw, exit_reason_raw)
+    reason_display = _EXIT_REASON_DISPLAY.get(exit_reason_raw, exit_reason_raw)
     reason = html.escape(reason_display, quote=True)
-    pnl_cell = d._fmt_pnl_with_colour(trade.get('net_pnl', 0.0))
+    pnl_cell = _fmt_pnl_with_colour(trade.get('net_pnl', 0.0))
     rendered_rows.append(
       '      <tr>\n'
       f'        <td data-label="Closed">{closed}</td>\n'
