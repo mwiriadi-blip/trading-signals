@@ -40,10 +40,15 @@ import pytest
 import pytz
 
 import dashboard
-from dashboard import (  # noqa: F401 — render_dashboard is Wave 2 goldens
+from dashboard import render_dashboard  # noqa: F401 — back-compat alias kept in shim
+from dashboard_renderer.formatters import (
+  _fmt_currency,
   _fmt_em_dash,
-  render_dashboard,
+  _format_indicator_value,
 )
+from dashboard_renderer.stats import compute_trail_stop_display
+from dashboard_renderer.components.calc_rows import _render_calc_row, _render_entry_target_row
+from dashboard_renderer.components.positions import _render_drift_banner
 
 # =========================================================================
 # Module-level path + fixture constants
@@ -1123,7 +1128,7 @@ class TestAtomicWrite:
     original_bytes = b'<!DOCTYPE html><html><body>ORIGINAL</body></html>'
     out.write_bytes(original_bytes)
     state = _make_state()
-    with patch('dashboard.os.replace', side_effect=OSError('disk full')):
+    with patch('dashboard_renderer.io.os.replace', side_effect=OSError('disk full')):
       with pytest.raises(OSError, match='disk full'):
         dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     assert out.read_bytes() == original_bytes, (
@@ -1134,7 +1139,7 @@ class TestAtomicWrite:
     '''Failed os.replace → tempfile cleanup via try/finally (no .tmp left).'''
     out = tmp_path / 'd.html'
     state = _make_state()
-    with patch('dashboard.os.replace', side_effect=OSError('disk full')):
+    with patch('dashboard_renderer.io.os.replace', side_effect=OSError('disk full')):
       with pytest.raises(OSError):
         dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     tmp_files = list(tmp_path.glob('*.tmp'))
@@ -1493,7 +1498,7 @@ class TestRenderManualStopBadge:
     Locks the discipline that future Phase 14+ changes to either side
     cannot drift without a red test.
     '''
-    from dashboard import _compute_trail_stop_display
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
     from sizing_engine import get_trailing_stop
 
     # Case 1: LONG manual_stop set → both return 7700.0
@@ -1543,7 +1548,7 @@ class TestRenderManualStopBadge:
     uses explicit `is None`. Hypothetical AUDUSD-near-zero edge case but
     the contract is "lockstep" — must hold for every float, including 0.0.
     '''
-    from dashboard import _compute_trail_stop_display
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
     from sizing_engine import get_trailing_stop
 
     pos = {
@@ -1568,7 +1573,7 @@ class TestRenderManualStopBadge:
     Pre-fix bug: dashboard's `or` truthiness dropped 0.0 to entry_price.
     Symmetric to the LONG case above.
     '''
-    from dashboard import _compute_trail_stop_display
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
     from sizing_engine import get_trailing_stop
 
     pos = {
@@ -1701,7 +1706,7 @@ class TestRenderCalculatorRow:
   '''Phase 15 CALC-01/02/04: per-instrument calculator sub-row rendering.'''
 
   def test_calc_row_long_position_renders_stop_distance_next_add(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1727,7 +1732,9 @@ class TestRenderCalculatorRow:
     assert 'class="calc-row"' in html_out
 
   def test_trail_stop_matches_display_helper(self) -> None:
-    from dashboard import _render_calc_row, _compute_trail_stop_display, _fmt_currency
+    from dashboard_renderer.components.calc_rows import _render_calc_row
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
+    from dashboard_renderer.formatters import _fmt_currency
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1748,7 +1755,7 @@ class TestRenderCalculatorRow:
     assert expected_str in html_out
 
   def test_entry_target_row_flat_long(self) -> None:
-    from dashboard import _render_entry_target_row
+    from dashboard_renderer.components.calc_rows import _render_entry_target_row
     state = {
       'positions': {},
       'signals': {
@@ -1768,7 +1775,7 @@ class TestRenderCalculatorRow:
     assert 'entry-target' in html_out
 
   def test_entry_target_row_flat_short(self) -> None:
-    from dashboard import _render_entry_target_row
+    from dashboard_renderer.components.calc_rows import _render_entry_target_row
     state = {
       'positions': {},
       'signals': {
@@ -1786,7 +1793,7 @@ class TestRenderCalculatorRow:
     assert 'SHORT' in html_out
 
   def test_no_calc_row_when_flat_signal(self) -> None:
-    from dashboard import _render_entry_target_row
+    from dashboard_renderer.components.calc_rows import _render_entry_target_row
     state = {
       'positions': {},
       'signals': {'SPI200': {'signal': 0}},
@@ -1795,7 +1802,7 @@ class TestRenderCalculatorRow:
     assert html_out == ''
 
   def test_pyramid_section_level_0(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1815,7 +1822,7 @@ class TestRenderCalculatorRow:
     assert '(+1×ATR)' in html_out
 
   def test_pyramid_section_level_1(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1837,7 +1844,7 @@ class TestRenderCalculatorRow:
     assert '(+2×ATR)' in html_out
 
   def test_pyramid_section_at_max(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     from system_params import MAX_PYRAMID_LEVEL
     pos = {
       'direction': 'LONG',
@@ -1862,7 +1869,7 @@ class TestRenderCalculatorRow:
     7800 - 150 = 7650. Expected dist = |7860 - 7650| = 210 (current baseline);
     entry baseline would give 150 — different.
     '''
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1901,7 +1908,8 @@ class TestRenderCalculatorRow:
     NEXT ADD = 7800 + 1*50 = 7850. Synth peak = max(7820, 7850) = 7850.
     S = 7850 - 3*50 = 7700.
     '''
-    from dashboard import _render_calc_row, _fmt_currency
+    from dashboard_renderer.components.calc_rows import _render_calc_row
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     pos = {
       'direction': 'LONG',
@@ -1941,7 +1949,7 @@ class TestRenderDriftBanner:
   '''Phase 15 SENTINEL-01/02 + D-11/D-13: dashboard drift banner rendering.'''
 
   def test_amber_drift_banner(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -1956,7 +1964,7 @@ class TestRenderDriftBanner:
     assert 'consider closing' in html_out
 
   def test_red_reversal_banner(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -1969,7 +1977,7 @@ class TestRenderDriftBanner:
     assert 'reversal recommended' in html_out
 
   def test_mixed_drift_reversal_uses_reversal_color(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -1984,7 +1992,7 @@ class TestRenderDriftBanner:
     assert 'sentinel-reversal' in html_out, 'mixed: any reversal -> red banner'
 
   def test_no_banner_when_no_drift(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {'warnings': []}
     assert _render_drift_banner(state) == ''
     state2 = {'warnings': [{'source': 'sizing_engine', 'message': 'x',
@@ -1992,7 +2000,7 @@ class TestRenderDriftBanner:
     assert _render_drift_banner(state2) == ''
 
   def test_banner_lists_all_drifted_instruments(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -2018,7 +2026,7 @@ class TestBannerStackOrder:
     additions sit ABOVE this slot in the same composition.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard
+    from dashboard import render_dashboard  # back-compat alias
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2056,7 +2064,7 @@ class TestBannerStackOrder:
     stale info is present.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard
+    from dashboard import render_dashboard  # back-compat alias
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2083,7 +2091,7 @@ class TestBannerStackOrder:
     Positions section heading. NOT injected into _render_positions_table.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard
+    from dashboard import render_dashboard  # back-compat alias
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2339,7 +2347,7 @@ class TestFormatIndicatorValue:
 
   def test_format_indicator_value_finite_returns_6_decimal(self) -> None:
     '''D-05: finite floats render to exactly 6 decimal places.'''
-    from dashboard import _format_indicator_value
+    from dashboard_renderer.formatters import _format_indicator_value
     result = _format_indicator_value(0.012345678, 14, 40)
     assert result == '0.012346', (
       f'D-05: 6-decimal format expected "0.012346"; got {result!r}'
@@ -2351,7 +2359,7 @@ class TestFormatIndicatorValue:
 
   def test_format_indicator_value_nan_seed_short(self) -> None:
     '''D-06: NaN with bars_available < seed_required -> reason text.'''
-    from dashboard import _format_indicator_value
+    from dashboard_renderer.formatters import _format_indicator_value
     result = _format_indicator_value(float('nan'), 20, 14)
     assert result == 'n/a (need 20 bars, have 14)', (
       f'D-06: seed-short reason expected; got {result!r}'
@@ -2359,7 +2367,7 @@ class TestFormatIndicatorValue:
 
   def test_format_indicator_value_nan_flat_price(self) -> None:
     '''D-06: NaN with bars_available >= seed_required -> flat-price reason.'''
-    from dashboard import _format_indicator_value
+    from dashboard_renderer.formatters import _format_indicator_value
     result = _format_indicator_value(float('nan'), 14, 40)
     assert result == 'n/a (flat price)', (
       f'D-06: flat-price reason expected; got {result!r}'
@@ -3193,8 +3201,9 @@ class TestSinglePageRenderIsolation:
     def _explode_market_test(*_args, **_kwargs):
       raise AssertionError('market-test tab must not be rendered for account page')
 
-    monkeypatch.setattr(dashboard, '_render_settings_tab', _explode_settings)
-    monkeypatch.setattr(dashboard, '_render_market_test_tab', _explode_market_test)
+    import dashboard_renderer.components.settings as _dr_settings
+    monkeypatch.setattr(_dr_settings, 'render_settings_tab', _explode_settings)
+    monkeypatch.setattr(_dr_settings, 'render_market_test_tab', _explode_market_test)
 
     dashboard.render_dashboard_page(state, page='account', out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
