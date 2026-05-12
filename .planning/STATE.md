@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: Phase 30 closed 2026-05-11; 2065 tests green
-last_updated: "2026-05-12T08:32:28.107Z"
+status: executing
+last_updated: "2026-05-12T08:46:47.394Z"
 progress:
   total_phases: 14
   completed_phases: 4
-  total_plans: 28
+  total_plans: 31
   completed_plans: 28
-  percent: 100
+  percent: 90
 ---
 
 # STATE — Trading Signals
@@ -22,13 +22,14 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 1880+ tests green)
-- **Current focus:** Phase 29 — v1.2.1 Retroactive Patch Wrap + Validation Sweep
+- **Current focus:** Phase 31 — Core Module Split
 
 ## Current Position
 
-Phase: 30 (File-Size Pre-Split) — COMPLETE (7/7 plans)
-Next: Phase 31 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore)
-Status: Phase 30 closed 2026-05-11; 2065 tests green
+Phase: 31 (Core Module Split) — EXECUTING
+Plan: 1 of 3
+Next: Execute Phase 31
+Status: Executing Phase 31
 Resume file: .planning/phases/31-core-module-split/31-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone
