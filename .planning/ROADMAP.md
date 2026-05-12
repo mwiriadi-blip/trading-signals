@@ -213,7 +213,10 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   2. Invite tokens are stored ONLY as `sha256:<hex>` hashes in `auth.json`; raw plaintext token never appears in any persisted file (grep gate over `auth.json` and `state.json` returns zero matches for any issued token).
   3. Two parallel `consume(token)` calls produce exactly one winner (single-use guaranteed by `flock` on the auth-file lock companion); the loser raises `InviteAlreadyConsumed`.
   4. Token expiry is 7 days from issue; `expired` and `revoked` consume paths return distinct typed errors.
-**Plans:** TBD
+**Plans:** 2 plans
+**Plan list:**
+- [ ] 34-01-PLAN.md — auth_store/ package split + schema v2 TypedDicts + v1->v2 migration + TestForbiddenImports update (Wave 1)
+- [ ] 34-02-PLAN.md — _users.py (create_user, mint_invite_token, consume_and_create_user, get_user, list_users, set_user_disabled) + tests/test_auth_store_users.py (Wave 2)
 **Plan-time verification:** none (stdlib-stable patterns).
 
 ### Phase 35: Cookie + Depends(current_user) + Sub-Router Admin Gate
