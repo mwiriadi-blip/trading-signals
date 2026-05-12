@@ -121,9 +121,10 @@ def compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
 
 
 def compute_trail_stop_display(position: dict, settings: dict | None = None) -> float:
-  atr_entry = position['atr_entry']
-  if not math.isfinite(atr_entry):
+  atr_entry = position.get('atr_entry')
+  if atr_entry is None or not math.isfinite(float(atr_entry)):
     return float('nan')
+  atr_entry = float(atr_entry)
   manual = position.get('manual_stop')
   if manual is not None:
     return manual
