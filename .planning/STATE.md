@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: executing
-last_updated: "2026-05-12T12:00:00.000Z"
+status: completed
+last_updated: "2026-05-12T10:27:04.993Z"
 progress:
   total_phases: 14
   completed_phases: 5
-  total_plans: 31
+  total_plans: 35
   completed_plans: 31
-  percent: 93
+  percent: 100
 ---
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-05-12 (Phase 31 — Core Module Split — COMPLETE)
+**Last updated:** 2026-05-12 (Phase 32 — Dashboard Legacy Retirement — PLANNED, 4 plans ready)
 
 ## Project Reference
 
@@ -22,15 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 32 — next phase (see ROADMAP.md)
+- **Current focus:** Phase 32 — Ready to execute (4 plans, cross-AI reviewed)
 
 ## Current Position
 
-Phase: 31 (Core Module Split) — COMPLETE
-Plans: 3 of 3 complete
-Next: Phase 32 (see ROADMAP.md)
-Status: Phase 31 all plans complete — 2084 tests green
-Resume file: .planning/phases/31-core-module-split/31-CONTEXT.md
+Phase: 32 (Dashboard Legacy Retirement) — PLANNED, ready to execute
+Plans: 0 of 4 complete
+Next: /gsd-execute-phase 32
+Status: Phase 32 plans complete — cross-AI reviewed (Gemini + Codex + OpenCode), review findings incorporated
+Resume file: .planning/phases/32-dashboard-legacy-retirement/32-01-PLAN.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
