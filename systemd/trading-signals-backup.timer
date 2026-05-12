@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily backup of trading-signals state.json to B2
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=trading-signals-backup.service
+
+[Install]
+WantedBy=timers.target
