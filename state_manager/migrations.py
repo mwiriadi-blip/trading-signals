@@ -27,6 +27,11 @@ from system_params import (
 
 logger = logging.getLogger(__name__)
 
+# Phase 33 TENANT-01: locked admin uid — never define inline as a string literal.
+# Phase 34 will introduce a user registry; this constant is the single source of truth
+# until then.
+_ADMIN_UID: str = 'u_admin_marc'
+
 
 # =========================================================================
 # Default registry helpers (used by _migrate_v7_to_v8 and reset_state)
@@ -351,6 +356,39 @@ def _migrate_v10_to_v11(s: dict) -> dict:
   return out
 
 
+def _migrate_v11_to_v12(s: dict) -> dict:
+  '''v12: bucket per-user state under state["users"]["u_admin_marc"].
+
+  Moves: account, initial_account, contracts, positions, trade_log,
+  equity_history, paper_trades into state["users"][_ADMIN_UID].
+  Adds: admin_user_id = _ADMIN_UID, users{} top-level.
+  Leaves shared: signals, markets, strategy_settings, warnings,
+  last_run, schema_version.
+  Idempotent: if "users" already present, skips re-bucketing.
+  D-15 silent migration: no append_warning, no log line.
+  '''
+  out = dict(s)
+  # Idempotency guard: if users already present, skip bucketing.
+  if 'users' in out:
+    return out
+  user_bucket = {
+    'account':         out.pop('account', INITIAL_ACCOUNT),
+    'initial_account': out.pop('initial_account', INITIAL_ACCOUNT),
+    'contracts':       out.pop('contracts', {
+      'SPI200': _DEFAULT_SPI_LABEL,
+      'AUDUSD': _DEFAULT_AUDUSD_LABEL,
+    }),
+    'positions':       out.pop('positions', {'SPI200': None, 'AUDUSD': None}),
+    'trade_log':       out.pop('trade_log', []),
+    'equity_history':  out.pop('equity_history', []),
+    'paper_trades':    out.pop('paper_trades', []),
+    'ui_prefs':        {'tour_completed': True},
+  }
+  out['users'] = {_ADMIN_UID: user_bucket}
+  out['admin_user_id'] = _ADMIN_UID
+  return out
+
+
 # =========================================================================
 # Migration registry and orchestrator
 # =========================================================================
@@ -367,6 +405,7 @@ MIGRATIONS: dict = {
   9: _migrate_v8_to_v9,  # Phase 27 #1: Decimal-quantize money fields (AUD cents, HALF_UP)
   10: _migrate_v9_to_v10,  # Phase 27 #11 (Plan 27-09): promote bare-int signal rows to dict
   11: _migrate_v10_to_v11,  # v11: contract_type + financing_rate_annual_pct on markets
+  12: _migrate_v11_to_v12,  # Phase 33 TENANT-01: per-user namespace under state['users']
 }
 
 
