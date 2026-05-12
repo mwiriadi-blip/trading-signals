@@ -257,9 +257,9 @@ def _render_page_body(ctx: RenderContext, page: str) -> tuple[str, str, str, str
     _render_trailing_stop_guidance,
   )
   from dashboard_renderer.components.settings import (
-    _render_add_market_form,
-    _render_market_test_tab,
-    _render_settings_tab,
+    render_add_market_form as _render_add_market_form,
+    render_market_test_tab as _render_market_test_tab,
+    render_settings_tab as _render_settings_tab,
   )
   from dashboard_renderer.components.signals import render_signal_cards as _render_signal_cards
 
