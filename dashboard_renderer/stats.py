@@ -51,6 +51,8 @@ def compute_win_rate(state: dict, em_dash: str = '—') -> str:
 
 def compute_total_return(state: dict) -> str:
   initial = state.get('initial_account', INITIAL_ACCOUNT)
+  if not initial:
+    return '—'
   eq_hist = state.get('equity_history', [])
   if eq_hist:
     current = eq_hist[-1].get('equity', state.get('account', initial))
