@@ -14,7 +14,7 @@ progress:
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-05-13 (Phase 34 — User Registry + Invite-Token Storage — PLANNED, 2 plans ready)
+**Last updated:** 2026-05-13 (Phase 34 — User Registry + Invite-Token Storage — COMPLETE, 2151 tests green)
 
 ## Project Reference
 
@@ -22,7 +22,7 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 34 — User Registry + Invite-Token Storage
+- **Current focus:** Phase 35 — Cookie + Depends(current_user) + Sub-Router Admin Gate
 
 ## Current Position
 
