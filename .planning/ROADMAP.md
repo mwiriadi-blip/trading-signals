@@ -177,7 +177,12 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   2. `dashboard_legacy/` is either deleted entirely or replaced by a single `__init__.py` that raises `ImportError("dashboard_legacy retired — use dashboard_renderer")` to catch accidental re-introduction.
   3. `dashboard.py` is ≤100 LOC and acts solely as a shim delegating to `dashboard_renderer`; no rendering logic lives in it.
   4. Full test suite is green; rendered HTML from `dashboard_renderer` is byte-identical on fixture state vs pre-Phase 32 baseline (confirms no behaviour regression from the retirement).
-**Plans:** TBD
+**Plans:** 4 plans
+**Plan list:**
+- [x] 32-01-PLAN.md — Port render_helpers / section_renderers / page_body unique content into dashboard_renderer/{formatters,stats,shell,components/header} (Wave 1)
+- [x] 32-02-PLAN.md — Create components/{trace,calc_rows,account}.py + absorb positions_section + paper_trades_section into components/{positions,paper_trades}.py (Wave 2)
+- [x] 32-03-PLAN.md — Eliminate `import dashboard as d` in dashboard_renderer/{api,pages,components/positions}.py; confirm acyclic package import (Wave 3)
+- [x] 32-04-PLAN.md — Thin dashboard.py to ≤100 LOC shim + retire dashboard_legacy stub + update all callers/tests + integration gate (Wave 4)
 **Plan-time verification:** audit each module in `dashboard_legacy/` against `dashboard_renderer/` to confirm coverage before deleting; if a unique capability is found in `dashboard_legacy/`, port it first.
 
 ### Phase 33: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore
@@ -430,7 +435,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 29. v1.2.1 patch wrap + validation sweep | v1.3 | 10/14 | In Progress|  |
 | 30. file-size pre-split | v1.3 | 7/7 | Complete | 2026-05-11 |
 | 31. core module split | v1.3 | 0/0 | Not started | - |
-| 32. dashboard legacy retirement | v1.3 | 0/0 | Not started | - |
+| 32. dashboard legacy retirement | v1.3 | 5/4 | Complete    | 2026-05-12 |
 | 33. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 34. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
 | 35. cookie + Depends + sub-router admin gate | v1.3 | 0/0 | Not started | - |
