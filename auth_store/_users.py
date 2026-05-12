@@ -60,7 +60,11 @@ def _read_auth_unlocked(resolved: Path) -> dict:
     return _default_auth_data()
   if not text.strip():
     return _default_auth_data()
-  return json.loads(text)
+  try:
+    return json.loads(text)
+  except (json.JSONDecodeError, UnicodeDecodeError):
+    logger.warning('[Auth] corrupt auth.json at %s; using defaults inside lock', resolved)
+    return _default_auth_data()
 
 
 def _verify_token(unhashed_token: str, stored_hash: str) -> bool:
@@ -210,7 +214,10 @@ def consume_and_create_user(
     try:
       raw_data = _read_auth_unlocked(resolved)
       data = _normalize_v2(raw_data)  # HIGH-fix: backfill v2 keys inside lock
-      assert data.get('schema_version', 0) >= 2, 'migration must precede invite flow'
+      if data.get('schema_version', 0) < 2:
+        raise RuntimeError(
+          f'[Auth] expected schema_version>=2 before invite flow; got {data.get("schema_version")!r}'
+        )
 
       # Scan pending_invites for a matching hash.
       matched_row = None
