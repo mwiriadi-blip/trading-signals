@@ -1,11 +1,221 @@
-'''Dashboard formatting helpers extracted from dashboard.py.'''
+'''Dashboard formatting helpers extracted from dashboard.py.
+
+Phase 32 Plan 01: absorbs unique non-delegating symbols from
+dashboard_legacy/render_helpers.py — market registry, resolve helpers,
+constants, and _TraceOpenPlaceholderMap. Underscore-prefixed names are
+CANONICAL per 32-01-PLAN.md §CANONICAL NAMING LOCK.
+'''
 
 import html
+import logging
 import math
+import re as _re
 from datetime import date, datetime, timedelta
 
 import pytz
 
+from system_params import (
+  _COLOR_FLAT,
+  _COLOR_LONG,
+  _COLOR_SHORT,
+  DEFAULT_MARKETS,
+  DEFAULT_STRATEGY_SETTINGS,
+  FALLBACK_CONTRACT_SPECS,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# Display-name + contract-spec dicts (ported from render_helpers.py)
+# =========================================================================
+
+_INSTRUMENT_DISPLAY_NAMES = {
+  'SPI200': 'SPI 200',
+  'AUDUSD': 'AUD / USD',
+}
+
+# Phase 8 IN-05: _CONTRACT_SPECS is a re-export of system_params.FALLBACK_CONTRACT_SPECS.
+_CONTRACT_SPECS = FALLBACK_CONTRACT_SPECS
+
+
+def _market_registry(state: dict | None = None) -> dict:
+  markets = (state or {}).get('markets')
+  if not isinstance(markets, dict):
+    return {key: dict(value) for key, value in DEFAULT_MARKETS.items()}
+  merged = {key: dict(value) for key, value in DEFAULT_MARKETS.items()}
+  for key, value in markets.items():
+    if isinstance(value, dict):
+      merged[key] = {**merged.get(key, {}), **value}
+  return dict(sorted(
+    merged.items(),
+    key=lambda item: (item[1].get('sort_order', 999), item[0]),
+  ))
+
+
+def _enabled_market_registry(state: dict | None = None) -> dict:
+  return {
+    key: market for key, market in _market_registry(state).items()
+    if market.get('enabled', True)
+  }
+
+
+def _display_names(state: dict | None = None) -> dict[str, str]:
+  return {
+    key: str(market.get('display_name') or key)
+    for key, market in _enabled_market_registry(state).items()
+  }
+
+
+def _strategy_settings_for(state: dict, market_id: str) -> dict:
+  settings = state.get('strategy_settings', {}).get(market_id, {})
+  if not isinstance(settings, dict):
+    settings = {}
+  return {**DEFAULT_STRATEGY_SETTINGS, **settings}
+
+
+# Phase 22 D-06: dashboard fallback when no signal row carries strategy_version.
+_DEFAULT_STRATEGY_VERSION = 'v1.0.0'
+
+
+def _resolve_strategy_version(state: dict) -> str:
+  '''Phase 22: extract the active strategy version from state.signals.
+
+  Reads strategy_version off each dict-shaped signal row, picks the
+  lexicographic max (str) when instruments disagree (transient migration
+  window), defaults to 'v1.0.0' if no row carries the field. Emits a
+  [State] WARN log for each dict-shaped row that lacks the field.
+  '''
+  signals = state.get('signals', {})
+  found: list[str] = []
+  for sig in signals.values():
+    if isinstance(sig, dict):
+      if 'strategy_version' in sig:
+        found.append(sig['strategy_version'])
+      else:
+        logger.warning(
+          '[State] WARN signal row missing strategy_version field — '
+          'defaulting to v1.0.0',
+        )
+  if not found:
+    return _DEFAULT_STRATEGY_VERSION
+  return max(found, key=str)
+
+
+# D-04: instrument keys whose <details open> we honour at the route-layer
+# cookie read. Mirrors state.signals keys (SPI200, AUDUSD).
+_VALID_TRACE_INSTRUMENT_KEYS: frozenset = frozenset({'SPI200', 'AUDUSD'})
+
+
+def _resolve_trace_open_keys(
+  state: dict,
+  trace_open_keys: list,
+) -> set:
+  '''Phase 17 D-04: which per-instrument <details> render with the `open`
+  attribute. Applies a defensive allowlist intersection against
+  _VALID_TRACE_INSTRUMENT_KEYS AND against the keys actually present in
+  state.signals.
+  '''
+  present_keys = set(state.get('signals', {}).keys())
+  return {
+    k for k in trace_open_keys
+    if k in _VALID_TRACE_INSTRUMENT_KEYS and k in present_keys
+  }
+
+
+# Phase 29 Plan 12: defaultdict-style callable so ALL market IDs emit
+# the correct {{TRACE_OPEN_<KEY>}} placeholder.
+class _TraceOpenPlaceholderMap:
+  '''Returns {{TRACE_OPEN_<KEY>}} for any valid instrument key; '' for invalid.
+
+  Mimics dict .get(key, default) so existing call sites are unchanged.
+  Invalid key = does not satisfy ^[A-Z0-9_]{2,20}$ (matches _MARKET_ID_RE).
+  '''
+  _RE = _re.compile(r'^[A-Z0-9_]{2,20}$')
+
+  def get(self, key: str, default: str = '') -> str:  # noqa: ANN001
+    if not self._RE.fullmatch(key or ''):
+      return default
+    return f'{{{{TRACE_OPEN_{key}}}}}'
+
+
+_TRACE_OPEN_PLACEHOLDER = _TraceOpenPlaceholderMap()
+
+# Signal display dicts
+_SIGNAL_LABEL = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
+_SIGNAL_COLOUR = {1: _COLOR_LONG, -1: _COLOR_SHORT, 0: _COLOR_FLAT}
+
+# Exit-reason display mapping (UI-SPEC §Closed trades table §Reason column).
+_EXIT_REASON_DISPLAY = {
+  'flat_signal': 'Signal flat',
+  'signal_reversal': 'Reversal',
+  'stop_hit': 'Stop hit',
+  'adx_exit': 'ADX drop',
+}
+
+# Phase 17 D-13: trace panel constants
+_TRACE_FORMULAS: dict[str, str] = {
+  'tr': 'TR = max(High - Low, |High - prev Close|, |Low - prev Close|)',
+  'atr': 'ATR(14) = Wilder-smooth(TR, 14) - initial seed = SMA(TR, 14)',
+  'plus_di': '+DI(20) = 100 * Wilder-smooth(+DM, 20) / ATR(20)',
+  'minus_di': '-DI(20) = 100 * Wilder-smooth(-DM, 20) / ATR(20)',
+  'adx': 'ADX(20) = 100 * Wilder-smooth(|+DI - -DI| / (+DI + -DI), 20)',
+  'mom1': 'Mom1 = (Close_t - Close_{t-1}) / Close_{t-1}',
+  'mom3': 'Mom3 = (Close_t - Close_{t-3}) / Close_{t-3}',
+  'mom12': 'Mom12 = (Close_t - Close_{t-12}) / Close_{t-12}',
+  'rvol': 'RVol(20) = Volume_t / SMA(Volume, 20)',
+}
+
+# D-06: seed window length per indicator.
+_SEED_LENGTHS: dict[str, int] = {
+  'tr': 1, 'atr': 14, 'plus_di': 20, 'minus_di': 20,
+  'adx': 20, 'mom1': 2, 'mom3': 4, 'mom12': 13, 'rvol': 20,
+}
+
+
+# =========================================================================
+# Underscore-prefixed format helpers — CANONICAL NAMES per 32-01-PLAN.md
+# These delegate to the public implementations below; downstream plans
+# (32-02, 32-03, 32-04) bind against these underscore-prefixed names.
+# =========================================================================
+
+def _fmt_em_dash() -> str:
+  '''UI-SPEC §Format Helper Contracts: single call site for the em-dash empty-value token.'''
+  return fmt_em_dash()
+
+
+def _fmt_currency(value: float) -> str:
+  '''UI-SPEC §Format Helper Contracts: $1,234.56 / -$567.89 / $0.00.'''
+  return fmt_currency(value)
+
+
+def _fmt_percent_signed(fraction: float) -> str:
+  '''UI-SPEC §Format Helper Contracts: +5.3% / -12.5% / +0.0%.'''
+  return fmt_percent_signed(fraction)
+
+
+def _fmt_percent_unsigned(fraction: float) -> str:
+  '''UI-SPEC §Format Helper Contracts: 58.3% / 12.5%. Input is a fraction.'''
+  return fmt_percent_unsigned(fraction)
+
+
+def _fmt_pnl_with_colour(value: float) -> str:
+  '''UI-SPEC §Format Helper Contracts + CONTEXT D-16: P&L span coloured by sign.'''
+  return fmt_pnl_with_colour(value)
+
+
+def _fmt_last_updated(now: datetime) -> str:
+  '''UI-SPEC §Format Helper Contracts + DASH-08: YYYY-MM-DD HH:MM AEST.'''
+  return fmt_last_updated(now)
+
+
+def _format_indicator_value(
+  value: float,
+  seed_required: int,
+  bars_available: int,
+) -> str:
+  '''Phase 17 D-05 + D-06: format a single indicator scalar for display.'''
+  return format_indicator_value(value, seed_required, bars_available)
 
 
 def fmt_em_dash() -> str:
