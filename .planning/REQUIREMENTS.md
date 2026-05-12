@@ -36,8 +36,8 @@
 
 - [ ] **RBAC-01**: Authenticated user has their `user_id` available declaratively via `Depends(current_user)` in every route; cookie session payload extends to include `uid`; admin remains the only user with no observable behaviour change at this stage; pre-v1.3 routes get scoped via the dependency, not per-route boilerplate.
 - [ ] **RBAC-02**: Admin-only routes live under `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router so the gate is set at mount time; a startup invariant test walks `app.routes` and asserts every `/admin/*` path has `require_admin` in its dependency chain.
-- [ ] **RBAC-03**: Admin can issue an invite token from `/admin/users` (`secrets.token_urlsafe(32)` raw; sha256 hash stored; `hmac.compare_digest` for verify; 7-day expiry; single-use guaranteed by `flock` on consume) and the invitee can accept the link, set a password, enrol TOTP, and confirm trusted device — joining as a non-admin F&F user.
-- [ ] **RBAC-04**: Admin can view `/admin/users` (user list with last-login + last-paper-trade timestamps + invite-pending status, no per-user trade content) and reversibly disable any non-admin user (disabled users cannot log in, but data is preserved); terminal delete is explicitly out of scope (deferred to v1.3.x).
+- [x] **RBAC-03**: Admin can issue an invite token from `/admin/users` (`secrets.token_urlsafe(32)` raw; sha256 hash stored; `hmac.compare_digest` for verify; 7-day expiry; single-use guaranteed by `flock` on consume) and the invitee can accept the link, set a password, enrol TOTP, and confirm trusted device — joining as a non-admin F&F user.
+- [x] **RBAC-04**: Admin can view `/admin/users` (user list with last-login + last-paper-trade timestamps + invite-pending status, no per-user trade content) and reversibly disable any non-admin user (disabled users cannot log in, but data is preserved); terminal delete is explicitly out of scope (deferred to v1.3.x).
 
 ### UMAIL — per-user email fan-out (4 requirements)
 

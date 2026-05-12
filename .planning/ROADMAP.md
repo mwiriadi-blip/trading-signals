@@ -215,7 +215,7 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   4. Token expiry is 7 days from issue; `expired` and `revoked` consume paths return distinct typed errors.
 **Plans:** 2 plans
 **Plan list:**
-- [ ] 34-01-PLAN.md — auth_store/ package split + schema v2 TypedDicts + v1->v2 migration + TestForbiddenImports update (Wave 1)
+- [x] 34-01-PLAN.md — auth_store/ package split + schema v2 TypedDicts + v1->v2 migration + TestForbiddenImports update (Wave 1)
 - [ ] 34-02-PLAN.md — _users.py (create_user, mint_invite_token, consume_and_create_user, get_user, list_users, set_user_disabled) + tests/test_auth_store_users.py (Wave 2)
 **Plan-time verification:** none (stdlib-stable patterns).
 
@@ -443,7 +443,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 31. core module split | v1.3 | 0/0 | Not started | - |
 | 32. dashboard legacy retirement | v1.3 | 5/4 | Complete    | 2026-05-12 |
 | 33. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
-| 34. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
+| 34. user registry + invite-token storage | v1.3 | 1/2 | In Progress|  |
 | 35. cookie + Depends + sub-router admin gate | v1.3 | 0/0 | Not started | - |
 | 36. per-user scoping + privacy + flock | v1.3 | 0/0 | Not started | - |
 | 37. per-user email fan-out + admin routes | v1.3 | 0/0 | Not started | - |
