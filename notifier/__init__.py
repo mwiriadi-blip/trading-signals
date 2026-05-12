@@ -49,6 +49,7 @@ from .crash_path import (
   _write_last_crash,
 )
 from .dispatch import (
+  send_backup_stale_email,
   send_crash_email,
   send_daily_email,
   send_magic_link_email,

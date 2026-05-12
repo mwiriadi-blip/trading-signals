@@ -7,6 +7,7 @@ NEVER raises (CLAUDE.md "Email sends NEVER crash the workflow"). Every
 dispatch function returns a SendStatus(ok, reason) (or bool for the
 legacy stop-alert API) on every code path.
 '''
+import html
 import logging
 import os
 from datetime import datetime
@@ -412,3 +413,56 @@ def send_stop_alert_email(transitions: list[dict], dashboard_url: str) -> bool:
       type(e).__name__, e,
     )
     return False
+
+
+def send_backup_stale_email(last_backup_iso: str, *, now=None) -> SendStatus:
+  '''Phase 33 TENANT-04: alert operator when off-droplet backup is >48h stale.
+
+  last_backup_iso: ISO-formatted string of the last successful backup time
+    (e.g. '2026-05-10T14:30:00+00:00').
+  now: optional datetime override for testability.
+
+  Returns SendStatus. NEVER raises (CLAUDE.md never-crash posture).
+  '''
+  del now  # testability hook; not used in email body
+  from_addr = os.environ.get('SIGNALS_EMAIL_FROM', '').strip()
+  if not from_addr:
+    logger.warning('[Email] WARN send_backup_stale_email: missing SIGNALS_EMAIL_FROM')
+    return SendStatus(ok=False, reason='missing_sender')
+  to_addr = _resolve_email_to_or_skip(state=None, context='send_backup_stale_email')
+  if to_addr is None:
+    return SendStatus(ok=False, reason='missing_recipient')
+  api_key = os.environ.get('RESEND_API_KEY', '').strip()
+  if not api_key:
+    logger.warning('[Email] WARN send_backup_stale_email: missing RESEND_API_KEY')
+    return SendStatus(ok=False, reason='no_api_key')
+
+  safe_ts = html.escape(last_backup_iso, quote=True)
+  subject = f'[trading-signals] BACKUP STALE — last backup {safe_ts}'
+  text_body = (
+    f'The off-droplet backup of state.json is overdue.\n\n'
+    f'Last successful backup: {last_backup_iso}\n\n'
+    'Please check the rclone/B2 configuration on the droplet:\n'
+    '  sudo systemctl status trading-signals-backup.timer\n'
+    '  sudo journalctl -u trading-signals-backup.service -n 50\n'
+  )
+  try:
+    _post_to_resend(
+      api_key=api_key,
+      from_addr=from_addr,
+      to_addr=to_addr,
+      subject=subject,
+      html_body=None,
+      text_body=text_body,
+    )
+    logger.info('[Email] backup-stale alert sent to %s', to_addr)
+    return SendStatus(ok=True, reason=None)
+  except ResendError as e:
+    logger.warning('[Email] WARN send_backup_stale_email failed: %s', e)
+    return SendStatus(ok=False, reason=str(e)[:200])
+  except Exception as e:  # noqa: BLE001 -- CLAUDE.md never-crash
+    logger.warning(
+      '[Email] WARN send_backup_stale_email unexpected: %s: %s',
+      type(e).__name__, e,
+    )
+    return SendStatus(ok=False, reason=f'{type(e).__name__}: {e}'[:200])
