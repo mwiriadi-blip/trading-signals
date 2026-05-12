@@ -423,17 +423,19 @@ class TestForbiddenImports:
 | A2 | `consume_and_create_user()` returns `User` dict (Claude's Discretion) | Code Examples | Callers in Phase 35 may expect `(True, uid)` tuple instead — no routes land this phase so no callers yet |
 | A3 | `mint_invite_token()` returns `(raw_token, expires_at_iso)` tuple | Code Examples | Caller (Phase 37 route) computes expiry differently — deferred, safe |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **test_auth_store.py already at 620 LOC — split or tolerate?**
    - What we know: D-12 says split only if > 500 after Phase 34 additions; file is already > 500.
    - What's unclear: Did the discuss session intend "only split if the delta pushes it over 500" or "the file is already over the cap"?
    - Recommendation: Planner should resolve as Claude's Discretion — splitting now into `test_auth_store_io.py` + `test_auth_store_users.py` is low-risk and cleaner.
+   - **RESOLVED:** New test file `tests/test_auth_store_users.py` created in Plan 34-02. `tests/test_auth_store.py` remains but is only modified for `TestForbiddenImports` update. Phase 34 user/invite tests go into the new file.
 
 2. **DEFAULT_AUTH_PATH monkeypatch ownership after split**
    - What we know: All existing tests do `monkeypatch.setattr(auth_store, 'DEFAULT_AUTH_PATH', tmp)`. After split, the name lives in `auth_store/_io.py`.
    - What's unclear: Which module should own it to preserve test compatibility.
    - Recommendation: Keep `DEFAULT_AUTH_PATH` in `auth_store/__init__.py` and import it into `_io.py`. This is the lowest-risk path — zero test changes needed.
+   - **RESOLVED:** `DEFAULT_AUTH_PATH` stays in `auth_store/__init__.py`. `_resolve_path()` in `_io.py` imports it from `auth_store` (the package). All existing `monkeypatch.setattr(auth_store, 'DEFAULT_AUTH_PATH', ...)` calls remain unchanged.
 
 ## Environment Availability
 
