@@ -28,9 +28,14 @@ def _web_route_pkg_files(pkg: str) -> list[str]:
   return [str(p) for p in sorted(pathlib.Path(f'web/routes/{pkg}').glob('*.py'))]
 
 
+def _sizing_engine_pkg_files() -> list[str]:
+  '''Phase 31: sizing_engine.py split into package; walk every .py file.'''
+  return [str(p) for p in sorted(pathlib.Path('sizing_engine').glob('*.py'))]
+
+
 PROD_FILES = [
   'pnl_engine.py',
-  'sizing_engine.py',
+  *_sizing_engine_pkg_files(),
   'main.py',
   # WR-01 fix: web routes + dashboard renderer also persist / display the
   # entry-side cost split. Extending the AST gate forces these paths
