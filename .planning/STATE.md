@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: ready_to_plan
-last_updated: "2026-05-12T10:27:04.993Z"
+status: executing
+last_updated: "2026-05-12T18:19:46.648Z"
 progress:
   total_phases: 14
   completed_phases: 6
-  total_plans: 35
-  completed_plans: 31
-  percent: 43
+  total_plans: 39
+  completed_plans: 36
+  percent: 92
 ---
 
 # STATE — Trading Signals
@@ -22,14 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 32 — Ready to execute (4 plans, cross-AI reviewed)
+- **Current focus:** Phase 33 — Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore
 
 ## Current Position
 
-Phase: 33
+Phase: 33 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore) — EXECUTING
+Plan: 1 of 4
 Plans: 0 of 4 complete
 Next: /gsd-execute-phase 32
-Status: Ready to plan
+Status: Executing Phase 33
 Resume file: .planning/phases/32-dashboard-legacy-retirement/32-01-PLAN.md
 
 ### Resume instructions for cloud Claude / fresh clone
