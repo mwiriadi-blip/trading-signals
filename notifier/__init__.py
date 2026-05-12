@@ -130,6 +130,7 @@ __all__ = [
   # =========================================================================
   'compose_email_body',
   'compose_email_subject',
+  'send_backup_stale_email',
   'send_crash_email',
   'send_daily_email',
   'send_magic_link_email',
