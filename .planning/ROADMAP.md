@@ -7,7 +7,8 @@
 - ✅ **v1.0 MVP — Mechanical Signal System** — Phases 1–9 (shipped 2026-04-24). See [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md).
 - ✅ **v1.1 Interactive Trading Workstation** — Phases 10–16 + 16.1 (shipped 2026-04-30). See [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md).
 - ✅ **v1.2 Trader-Grade Transparency & Validation** — Phases 17, 19, 20, 22, 23, 24, 25, 26, 27 (shipped 2026-05-10). See [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md).
-- 🟢 **v1.3 Multi-Tenant Friends & Family** — Phases 28–38 (planning, started 2026-05-10).
+- 🟢 **v1.3 Multi-Tenant Friends & Family** — Phases 28–40 (planning, started 2026-05-10).
+- 🔵 **v1.4 Domain Models** — Phase 41 (planned).
 
 ---
 
@@ -17,7 +18,7 @@
 
 **Granularity:** fine.
 **Phase numbering:** continues from v1.2 (last phase 27). v1.3 starts at **Phase 28**.
-**Coverage:** 28/28 v1.3 requirements mapped, 0 orphans, 0 duplicates.
+**Coverage:** 30/30 v1.3 requirements mapped, 0 orphans, 0 duplicates.
 
 ### Hard Constraints (inherited; non-negotiable)
 
@@ -33,36 +34,38 @@
 
 These gates run on every phase that touches per-user data, not just at milestone close:
 
-1. **Privacy gate — `TestTenantIsolation` test class** (introduced in Phase 34, applies to Phases 34–38):
+1. **Privacy gate — `TestTenantIsolation` test class** (introduced in Phase 36, applies to Phases 36–40):
    - Fixture user holding 5 paper trades produces zero `(entry_price|n_contracts|"direction":\s*"(LONG|SHORT)")` matches in admin user-list HTML, log lines, crash-email body, or any other user's served pages.
    - `PublicUserSummary` Pydantic model + `RedactStateFilter` enforce redaction.
    - Every entity-ID route has paired `test_<route>_returns_404_for_other_users_entity`.
 2. **AST hex boundary** — extended in Phase 30 to block any v1.3-introduced I/O module (`news_fetcher`, `news_filter`, `auth_store` extensions, `web/*`) from leaking into pure-math hex.
-3. **Atomic-write + per-user `flock`** — Phase 34 onwards; `mutate_user_state` composes with the existing `mutate_state` chokepoint, never forks it.
-4. **`state/users/` gitignore + CI gate** — Phase 31 onwards; `git ls-files | grep '^state/users/'` returns nothing.
+3. **Atomic-write + per-user `flock`** — Phase 36 onwards; `mutate_user_state` composes with the existing `mutate_state` chokepoint, never forks it.
+4. **`state/users/` gitignore + CI gate** — Phase 33 onwards; `git ls-files | grep '^state/users/'` returns nothing.
 
 ### Phases
 
 - [ ] **Phase 28: v1.2 UAT Closure** — verify 8 deferred operator-facing v1.2 UAT scenarios end-to-end; produce `VERIFICATION.md`.
 - [ ] **Phase 29: v1.2.1 Retroactive Patch Wrap + Validation Sweep** — formalise 5 ad-hoc post-ship polish commits; backfill Nyquist `VALIDATION.md` + `SECURITY.md` for v1.2 phases 17/19/20/22/23/24/25/26; fix `.planning/backtests` CWD-relative path.
 - [x] **Phase 30: File-Size Pre-Split** — behaviour-preserving splits of pre-existing 500-LOC violators (`web/routes/trades.py` 746, `dashboard.py` 644, `totp.py` 614, `login.py` 608, `paper_trades.py` 493) before any per-user `user_id` injection; extend AST hex blocklist for v1.3 I/O peers.
-- [ ] **Phase 31: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore** — atomic build-then-validate-then-save migration; auto-backup `state.json.v11-backup-<ts>`; round-trip fixtures; `state/users/` gitignore + CI gate + off-droplet (rclone-to-B2) daily backup with 48h-stale alert.
-- [ ] **Phase 32: User Registry + Invite-Token Storage** — `auth_store.users[]` + `pending_invites[]` co-located in `auth.json`; `secrets.token_urlsafe(32)` mint, sha256 hash store, `hmac.compare_digest` verify, 7-day expiry, single-use guaranteed by `flock` on consume.
-- [ ] **Phase 33: Cookie + `Depends(current_user)` + Sub-Router Admin Gate** — cookie payload extends to `{"uid": ...}`; `web/dependencies.py` introduces `current_user_id` and `require_admin`; `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router locked Day 1; startup invariant test walks `app.routes`. Admin remains the only user — observable behaviour identical at this phase boundary.
-- [ ] **Phase 34: Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock** — centralized `load_X_for_user()` loaders; `PublicUserSummary` + `RedactStateFilter`; `TestTenantIsolation` quality gate introduced; per-user `fcntl.flock`; pyramid/exit semantics shift to fan-out.
-- [ ] **Phase 35: Per-User Email Fan-Out + Admin Invite/Disable Routes + Invite-Acceptance Flow** — `per_user_fanout.py` orchestrator seam; per-user crash boundary; admin end-of-cycle summary; `/healthz/last-cycle`; `asyncio.Semaphore(2)` Resend throttle; RFC 8058 `List-Unsubscribe`; per-user enable/disable + pause-until.
-- [ ] **Phase 36: News Integration** — `news_fetcher.py` (I/O peer) + `news_filter.py` (pure, AST-hex eligible); pre-0.2.55 + post-0.2.55 yfinance schemas normalised; word-boundary regex with multi-keyword threshold + dampener allowlist; per-user dismiss; per-market daily cache; XSS-safe render.
-- [ ] **Phase 37: Guide UI — Tour + Tooltips** — Shepherd.js v14.5.1 (license-verified) + Microtip 0.2.2, both CDN/SRI; tour DOM portal-mounted at `<body>`; tour state per-user in `state.json` (NOT localStorage); `htmx:afterSwap` re-validation; `role="dialog"` + Esc-closes + focus-trap + replay-from-help.
-- [ ] **Phase 38: Milestone Close Audit (Codemoot + Nyquist Gate)** — codemoot review + Nyquist coverage gate; verify findings against current code (false-positive sweep); resolutions in `.planning/REVIEWS.md`; backfill any v1.3 phase missing `VALIDATION.md`/`SECURITY.md`.
+- [ ] **Phase 31: Core Module Split** — behaviour-preserving split of `state_manager.py` (1,293 LOC) into `state_manager/` package and `sizing_engine.py` (820 LOC) into `sizing_engine/` package before any per-user `user_id` injection.
+- [ ] **Phase 32: Dashboard Legacy Retirement** — confirm `dashboard_renderer/` as sole canonical renderer; retire `dashboard_legacy/`; thin `dashboard.py` to a route-through shim; eliminate the three-surface split that caused the layout-drift issue.
+- [ ] **Phase 33: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore** — atomic build-then-validate-then-save migration; auto-backup `state.json.v11-backup-<ts>`; round-trip fixtures; `state/users/` gitignore + CI gate + off-droplet (rclone-to-B2) daily backup with 48h-stale alert.
+- [ ] **Phase 34: User Registry + Invite-Token Storage** — `auth_store.users[]` + `pending_invites[]` co-located in `auth.json`; `secrets.token_urlsafe(32)` mint, sha256 hash store, `hmac.compare_digest` verify, 7-day expiry, single-use guaranteed by `flock` on consume.
+- [ ] **Phase 35: Cookie + `Depends(current_user)` + Sub-Router Admin Gate** — cookie payload extends to `{"uid": ...}`; `web/dependencies.py` introduces `current_user_id` and `require_admin`; `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router locked Day 1; startup invariant test walks `app.routes`. Admin remains the only user — observable behaviour identical at this phase boundary.
+- [ ] **Phase 36: Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock** — centralized `load_X_for_user()` loaders; `PublicUserSummary` + `RedactStateFilter`; `TestTenantIsolation` quality gate introduced; per-user `fcntl.flock`; pyramid/exit semantics shift to fan-out.
+- [ ] **Phase 37: Per-User Email Fan-Out + Admin Invite/Disable Routes + Invite-Acceptance Flow** — `per_user_fanout.py` orchestrator seam; per-user crash boundary; admin end-of-cycle summary; `/healthz/last-cycle`; `asyncio.Semaphore(2)` Resend throttle; RFC 8058 `List-Unsubscribe`; per-user enable/disable + pause-until.
+- [ ] **Phase 38: News Integration** — `news_fetcher.py` (I/O peer) + `news_filter.py` (pure, AST-hex eligible); pre-0.2.55 + post-0.2.55 yfinance schemas normalised; word-boundary regex with multi-keyword threshold + dampener allowlist; per-user dismiss; per-market daily cache; XSS-safe render.
+- [ ] **Phase 39: Guide UI — Tour + Tooltips** — Shepherd.js v14.5.1 (license-verified) + Microtip 0.2.2, both CDN/SRI; tour DOM portal-mounted at `<body>`; tour state per-user in `state.json` (NOT localStorage); `htmx:afterSwap` re-validation; `role="dialog"` + Esc-closes + focus-trap + replay-from-help.
+- [ ] **Phase 40: Milestone Close Audit (Codemoot + Nyquist Gate)** — codemoot review + Nyquist coverage gate; verify findings against current code (false-positive sweep); resolutions in `.planning/REVIEWS.md`; backfill any v1.3 phase missing `VALIDATION.md`/`SECURITY.md`.
 
 ### Parallelization
 
-After Phase 35 lands (per-user state + fan-out stable), Phases 36 (NEWS) and 37 (GUIDE UI) are **independent and can run in parallel** on disjoint files:
+After Phase 37 lands (per-user state + fan-out stable), Phases 38 (NEWS) and 39 (GUIDE UI) are **independent and can run in parallel** on disjoint files:
 
-- Phase 36 touches `news_fetcher.py`, `news_filter.py`, `web/routes/news.py`, dashboard news-panel render.
-- Phase 37 touches `dashboard_legacy/tour_panel.py`, `web/routes/tour.py`, `tooltip_data.py`, dashboard CDN tags.
+- Phase 38 touches `news_fetcher.py`, `news_filter.py`, `web/routes/news.py`, dashboard news-panel render.
+- Phase 39 touches `dashboard_legacy/tour_panel.py`, `web/routes/tour.py`, `tooltip_data.py`, dashboard CDN tags.
 
-Phase 38 (milestone close audit) requires both 36 and 37 complete.
+Phase 40 (milestone close audit) requires both 38 and 39 complete.
 
 ---
 
@@ -147,10 +150,40 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 **Plan-time verification:** none (mechanical splits + AST blocklist extension).
 **UI hint:** yes
 
-### Phase 31: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore
+### Phase 31: Core Module Split
+
+**Goal:** `state_manager.py` (1,293 LOC) and `sizing_engine.py` (820 LOC) are split into focused submodule packages before any v1.3 multi-tenant `user_id` injection touches their semantics, so later per-user diffs are reviewable at the submodule level.
+**Depends on:** Phase 30
+**Requirements:** OPS-05
+**Success Criteria** (what must be TRUE):
+  1. `state_manager/` package exposes the same public surface as the current `state_manager.py`; internally split into `migrations.py` (schema upgrade chain), `validation.py` (Pydantic validators + schema-version guards), `io.py` (atomic-write + `fcntl.flock` layer), and `trades.py` (trade-record helpers); every daughter file ≤500 LOC.
+  2. `sizing_engine/` package exposes the same public surface as the current `sizing_engine.py`; internally split into `sizing.py` (position-size calculation), `stops.py` (stop-loss logic), `pyramid.py` (pyramid add/exit logic), and `close.py` (close-position helpers); every daughter file ≤500 LOC.
+  3. Full test suite is green; all existing import paths resolve without change (public API exposed via package `__init__.py` re-exports); no external callers import implementation submodules directly.
+  4. AST hex boundary still passes: `signal_engine`, `data_fetcher`, and `web/*` cannot import `sizing_engine` internals directly (must go via the package surface).
+**Plans:** 3 plans
+**Plan list:**
+- [ ] 31-01-PLAN.md — state_manager/ package: scaffold + io.py + validation.py + trades.py + migrations.py + __init__.py; delete state_manager.py (Wave 1)
+- [ ] 31-02-PLAN.md — sizing_engine/ package: scaffold + _models.py + sizing.py + stops.py + pyramid.py + close.py + __init__.py; delete sizing_engine.py (Wave 1)
+- [ ] 31-03-PLAN.md — Integration gate: full suite + LOC audit + caller import check + hex boundary + deadlock invariant (Wave 2)
+**Plan-time verification:** none (mechanical splits, public API preserved by `__init__.py` re-exports).
+
+### Phase 32: Dashboard Legacy Retirement
+
+**Goal:** `dashboard_renderer/` is confirmed as the sole canonical dashboard renderer; `dashboard_legacy/` is retired (deleted or quarantined with an `ImportError` stub); `dashboard.py` shim is thinned to route-through only; the three-surface split that caused the recent layout-drift issue is eliminated.
+**Depends on:** Phase 31
+**Requirements:** OPS-06
+**Success Criteria** (what must be TRUE):
+  1. No live code path imports from `dashboard_legacy/`; `git grep "dashboard_legacy"` returns zero matches outside of test quarantine markers and this ROADMAP.
+  2. `dashboard_legacy/` is either deleted entirely or replaced by a single `__init__.py` that raises `ImportError("dashboard_legacy retired — use dashboard_renderer")` to catch accidental re-introduction.
+  3. `dashboard.py` is ≤100 LOC and acts solely as a shim delegating to `dashboard_renderer`; no rendering logic lives in it.
+  4. Full test suite is green; rendered HTML from `dashboard_renderer` is byte-identical on fixture state vs pre-Phase 32 baseline (confirms no behaviour regression from the retirement).
+**Plans:** TBD
+**Plan-time verification:** audit each module in `dashboard_legacy/` against `dashboard_renderer/` to confirm coverage before deleting; if a unique capability is found in `dashboard_legacy/`, port it first.
+
+### Phase 33: Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore
 
 **Goal:** `state.json` migrates from `STATE_SCHEMA_VERSION = 11` to v12 by build-then-validate-then-save with auto-backup; admin's existing paper-trade history moves losslessly into `state['users']['admin_<uid>']`; per-user state paths are gitignored with CI enforcement + off-droplet daily backup.
-**Depends on:** Phase 30
+**Depends on:** Phase 32
 **Requirements:** TENANT-01, TENANT-04
 **Success Criteria** (what must be TRUE):
   1. Migration runs as a single `_migrate_v11_to_v12(old: dict) -> dict` that builds a fresh dict, Pydantic-validates the v12 shape, and only then saves; auto-backup `state.json.v11-backup-<isoformat>` is written before the save.
@@ -162,11 +195,11 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 **Plan-time verification (research-flagged):**
 - **Schema version (codebase truth = v11, NOT v9 per PROJECT.md):** re-read `system_params.py` STATE_SCHEMA_VERSION and `state_manager.py` MIGRATIONS dict; lock the migration source/target versions before writing the migrator.
 
-### Phase 32: User Registry + Invite-Token Storage
+### Phase 34: User Registry + Invite-Token Storage
 
 **Goal:** `auth.json` holds the user list and pending invites alongside trusted_devices (single transactional file); invite tokens are minted with `secrets.token_urlsafe(32)`, stored as sha256 hashes only, verified via `hmac.compare_digest`, expire in 7 days, and consume single-use under `flock`. No routes yet — pure storage layer.
-**Depends on:** Phase 31
-**Requirements:** RBAC-03 (storage half — acceptance flow lands in Phase 35)
+**Depends on:** Phase 33
+**Requirements:** RBAC-03 (storage half — acceptance flow lands in Phase 37)
 **Success Criteria** (what must be TRUE):
   1. `auth_store.users[]` + `auth_store.pending_invites[]` arrays exist; user-create + invite-consume are one transactional `mutate(auth)` call (no cross-file race window where invite is consumed but user is not created).
   2. Invite tokens are stored ONLY as `sha256:<hex>` hashes in `auth.json`; raw plaintext token never appears in any persisted file (grep gate over `auth.json` and `state.json` returns zero matches for any issued token).
@@ -175,24 +208,24 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 **Plans:** TBD
 **Plan-time verification:** none (stdlib-stable patterns).
 
-### Phase 33: Cookie + Depends(current_user) + Sub-Router Admin Gate
+### Phase 35: Cookie + Depends(current_user) + Sub-Router Admin Gate
 
 **Goal:** Authenticated user has `user_id` declaratively available via `Depends(current_user)` in every route; admin-only routes are mounted under a sub-router with `require_admin` baked in at mount time; admin remains the only user with no observable behaviour change at this phase boundary, so all v1.2 routes survive untouched semantically.
-**Depends on:** Phase 32
+**Depends on:** Phase 34
 **Requirements:** RBAC-01, RBAC-02
 **Success Criteria** (what must be TRUE):
   1. Cookie session payload extends to `{"uid": "<user_id>"}`; `web/middleware/auth.py` sets `request.state.user_id`; backward-compat shim accepts cookies without `uid` and treats them as admin during migration grace.
   2. `web/dependencies.py` exposes `current_user_id` and `require_admin` factories; every authenticated route receives `user_id` via `Depends(current_user_id)`, no route reads `request.cookies` directly.
   3. `web/routes/admin/` is an `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router; new admin routes registered on it inherit the gate.
   4. Startup invariant test walks `app.routes` and asserts every `/admin/*` path has `require_admin` somewhere in its dependency chain; parametrized non-admin-gets-403 sweep covers every admin path.
-  5. Admin's existing observable behaviour is unchanged: full v1.2 dashboard, paper-trade entry, signal display — all routes return identical bytes vs pre-Phase 33 fixtures.
+  5. Admin's existing observable behaviour is unchanged: full v1.2 dashboard, paper-trade entry, signal display — all routes return identical bytes vs pre-Phase 35 fixtures.
 **Plans:** TBD
 **Plan-time verification:** none (FastAPI patterns canonical).
 
-### Phase 34: Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock
+### Phase 36: Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock
 
 **Goal:** Every per-user route reads SHARED signals + writes PER-USER positions/trades/alerts/journal/equity through `mutate_user_state(uid, mutator)` with per-user `fcntl.flock`; `PublicUserSummary` + `RedactStateFilter` enforce the privacy boundary; `TestTenantIsolation` is introduced as the milestone-wide quality gate.
-**Depends on:** Phase 33
+**Depends on:** Phase 35
 **Requirements:** TENANT-02, TENANT-03, RBAC-04
 **Success Criteria** (what must be TRUE):
   1. `mutate_user_state(user_id, mutator)` is a thin wrapper over the existing `mutate_state` chokepoint; per-user `fcntl.flock(state/users/{uid}.lock, LOCK_EX)` serializes daily fan-out vs HTMX writes; lock is held across the full read-modify-write window.
@@ -205,10 +238,10 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 **Plan-time verification (research-flagged):**
 - **State layout flock interaction:** confirm the `flock(LOCK_EX)`-across-read-modify-write pattern composes cleanly with existing `mutate_state` semantics under simulated 50-thread stress before locking the single-file `users{}` map choice; if friction-laden, fall back to the sharded-directory option (Stack research's Option A). Per-user flock itself is non-negotiable either way.
 
-### Phase 35: Per-User Email Fan-Out + Admin Invite/Disable Routes + Invite-Acceptance Flow
+### Phase 37: Per-User Email Fan-Out + Admin Invite/Disable Routes + Invite-Acceptance Flow
 
 **Goal:** F&F users receive their own 08:00 Sydney email with their stop-loss alerts, paper P&L, and the shared signal block; signal compute happens once per market per day; per-user crash boundary + admin summary email survive partial failures; admin can issue/revoke invites and disable users from the UI; invitee can accept the link, set a password, enrol TOTP, and join.
-**Depends on:** Phase 34
+**Depends on:** Phase 36
 **Requirements:** RBAC-03 (acceptance flow), UMAIL-01, UMAIL-02, UMAIL-03, UMAIL-04
 **Success Criteria** (what must be TRUE):
   1. `per_user_fanout.py` orchestrator seam (top-level, NOT inside `daily_run.py`) batches all per-user alert updates into a single terminal `mutate_state` call so the W3 invariant (exactly two saves per cycle) survives; yfinance fetch count remains exactly 2 per cycle (one per market) regardless of user count.
@@ -222,10 +255,10 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 - **Resend rate limit threshold:** re-verify documented current rate limit (older accounts 2 req/sec, newer 5 req/sec) before locking the semaphore constant; confirm batch-send API availability is unchanged.
 **UI hint:** yes
 
-### Phase 36: News Integration
+### Phase 38: News Integration
 
 **Goal:** Each market dashboard shows top 5 yfinance headlines per market with a critical-event heuristic banner; news fetch is shared per-market per-day (one fetch, all users see the same items); per-user dismiss state isolates the view; XSS + SSRF closed; signal compute remains AST-isolated from news input.
-**Depends on:** Phase 35 (parallelizable with Phase 37)
+**Depends on:** Phase 37 (parallelizable with Phase 39)
 **Requirements:** NEWS-01, NEWS-02, NEWS-03, NEWS-04
 **Success Criteria** (what must be TRUE):
   1. User sees top 5 latest `yfinance.Ticker.news` headlines per market on `/markets/{m}` route, deduplicated by title hash, cached daily (one fetch per market per day shared across users), Jinja2 `autoescape=True`, outbound links carry `rel="noopener noreferrer"`.
@@ -238,10 +271,10 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 - **yfinance fresh fixtures:** capture both pre-0.2.55 and post-0.2.55 news payload fixtures from the pinned yfinance version at plan time (library schema drift across 0.2.40 → 0.2.55 → 1.x is real); commit fixtures to the repo.
 **UI hint:** yes
 
-### Phase 37: Guide UI — Tour + Tooltips
+### Phase 39: Guide UI — Tour + Tooltips
 
 **Goal:** New F&F users see a 3-step first-run tour on first dashboard load (covering navigation, the v1.2 trace-panel differentiator, and paper-trade entry); inline tooltips on every panel survive HTMX swaps with no JS rebind; tour state persists per-user server-side; tour is keyboard-accessible and replayable from `/help`.
-**Depends on:** Phase 35 (parallelizable with Phase 36)
+**Depends on:** Phase 37 (parallelizable with Phase 38)
 **Requirements:** GUIDE-01, GUIDE-02, GUIDE-03, GUIDE-04
 **Success Criteria** (what must be TRUE):
   1. User hovers or focuses any panel header / control on the dashboard and sees an inline tooltip (Microtip-based, pure-CSS, survives HTMX swaps with no JS rebind) with WAI-ARIA `role="tooltip"`, ≥16px font on mobile, unique `aria-describedby` ID; tooltip count adds zero new tab stops on inactive market panels and zero new axe-core violations vs the Phase 25 baseline.
@@ -253,18 +286,56 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 - **Shepherd.js license:** verify license terms at install time (was AGPL through some 2024 versions, then relaxed); switch to Driver.js (MIT) if AGPL-blocked. CDN/SRI hashes generated and pinned at install.
 **UI hint:** yes
 
-### Phase 38: Milestone Close Audit (Codemoot + Nyquist Gate)
+### Phase 40: Milestone Close Audit (Codemoot + Nyquist Gate)
 
 **Goal:** Operator runs codemoot + Nyquist coverage gate against the full v1.3 surface, verifies findings against current code (codemoot has ~40-50% false-positive rate), records resolutions in `.planning/REVIEWS.md`, backfills any v1.3 phase missing `VALIDATION.md`/`SECURITY.md`, and closes the milestone with no unresolved critical findings.
-**Depends on:** Phase 36 AND Phase 37
+**Depends on:** Phase 38 AND Phase 39
 **Requirements:** OPS-04
 **Success Criteria** (what must be TRUE):
   1. `codemoot review --focus all` is run on the full v1.3 changeset; every finding is verified against current code by spawning an exploration agent to confirm at the exact file:line; resolutions are recorded in `.planning/REVIEWS.md`.
-  2. Every v1.3 phase directory (28–37) contains a Nyquist-format `VALIDATION.md` and a `SECURITY.md`; gaps from earlier phases are backfilled here.
+  2. Every v1.3 phase directory (28–39) contains a Nyquist-format `VALIDATION.md` and a `SECURITY.md`; gaps from earlier phases are backfilled here.
   3. Zero critical (security or correctness) codemoot findings remain unresolved at milestone close; INFO/WARNING findings are logged as known debt with a triage note.
   4. Full test suite is green; AST hex boundary passes; `TestTenantIsolation` passes; `git ls-files | grep '^state/users/'` returns nothing; off-droplet backup is current (<48h old).
 **Plans:** TBD
 **Plan-time verification:** none (process step).
+
+---
+
+## v1.4 Domain Models
+
+**Goal:** Replace dict-shaped market config and strategy settings with typed Pydantic models so schema mistakes are caught at construction time, `dict.get(...)` defensive patterns disappear at call sites, and future per-user market customisation has a stable contract to extend.
+
+**Granularity:** fine.
+**Phase numbering:** continues from v1.3 (last phase 40). v1.4 starts at **Phase 41**.
+
+### Hard Constraints (inherited; non-negotiable)
+
+- Hex-lite AST guard preserved — `signal_engine`, `sizing_engine`, `system_params`, `backtest/` stay pure-math.
+- File-based persistence unchanged — no schema migration in this milestone (Pydantic models are used in-process; serialisation format stays `state.json` dict-compatible).
+- HTMX-only, no SPA.
+
+### Phases
+
+- [ ] **Phase 41: Domain Models — Pydantic Market Config + Strategy Settings** — `MarketConfig` and `StrategySettings` Pydantic models replace `dict[str, dict]` shapes in `system_params.py`; `SignalSnapshot` Pydantic model replaces ad-hoc dict construction in `signal_engine.py`; `Position` TypedDict upgraded to Pydantic `BaseModel`; all call-site `dict.get(...)` replaced with attribute access; import-time validation catches schema mistakes.
+
+---
+
+### Phase 41: Domain Models — Pydantic Market Config + Strategy Settings
+
+**Goal:** `DEFAULT_MARKETS` and `DEFAULT_STRATEGY_SETTINGS_BY_MARKET` in `system_params.py` are backed by `MarketConfig` and `StrategySettings` Pydantic models; `signal_engine.py` emits a typed `SignalSnapshot`; `Position` TypedDict is upgraded to a Pydantic `BaseModel`; all call-site `dict.get(key, default)` patterns at the domain boundary are replaced with typed attribute access.
+**Depends on:** Phase 40
+**Requirements:** DOMAIN-01, DOMAIN-02, DOMAIN-03
+**Success Criteria** (what must be TRUE):
+  1. `MarketConfig` Pydantic model covers all fields currently in `DEFAULT_MARKETS` dict entries (`ticker`, `display_name`, `contract_type`, `financing_rate_annual_pct`, etc.); `DEFAULT_MARKETS` values validate at import time; any unknown or missing field raises `ValidationError` at startup, not silently at call-site.
+  2. `StrategySettings` Pydantic model covers all fields in `DEFAULT_STRATEGY_SETTINGS` / `DEFAULT_STRATEGY_SETTINGS_BY_MARKET`; validators enforce domain invariants (e.g. ATR period > 0, risk fraction ∈ (0, 1], pyramid levels ≥ 1); `default_settings_for_market()` returns `StrategySettings`; callers use `settings.atr_period` not `settings.get("atr_period")`.
+  3. `SignalSnapshot` Pydantic model captures signal state at validation time (vote result, ATR, entry price, stop distance, etc.); replaces ad-hoc dict construction in `signal_engine.py`; `state_manager` and `dashboard_renderer` access fields via attribute, not `.get()`.
+  4. `Position` TypedDict is upgraded to a Pydantic `BaseModel`; round-trip serialisation `Position.model_dump()` / `Position.model_validate(d)` is lossless on all existing `state.json` fixtures; no raw dict is constructed for Position at any call site.
+  5. Full test suite is green; AST hex boundary still passes; ruff clean; no `dict.get(` usage remains inside `system_params.py`, `signal_engine.py`, or `state_manager/` for domain model fields (grep gate).
+  6. Serialisation format is unchanged: `model.model_dump()` produces a dict byte-compatible with existing `state.json` schemas; no migration is required.
+**Plans:** TBD
+**Plan-time verification (research-flagged):**
+- **Position round-trip:** confirm all existing `state.json` Position fixtures validate cleanly via `Position.model_validate()` before adding validators; fix any field name or type discrepancy first to avoid a silent data migration.
+- **Hex boundary:** confirm Pydantic is already an allowed import in `system_params.py` (it is a stdlib-adjacent dep); if not, add it to the allowed-imports list in the AST guard before writing models.
 
 ---
 
@@ -279,29 +350,31 @@ Phase 38 (milestone close audit) requires both 36 and 37 complete.
 | OPS-01 | 30 |
 | OPS-02 | 29 |
 | OPS-03 | 30 |
-| OPS-04 | 38 |
-| TENANT-01 | 31 |
-| TENANT-02 | 34 |
-| TENANT-03 | 34 |
-| TENANT-04 | 31 |
-| RBAC-01 | 33 |
-| RBAC-02 | 33 |
-| RBAC-03 | 32 (storage) + 35 (acceptance flow) |
-| RBAC-04 | 34 |
-| UMAIL-01 | 35 |
-| UMAIL-02 | 35 |
-| UMAIL-03 | 35 |
-| UMAIL-04 | 35 |
-| NEWS-01 | 36 |
-| NEWS-02 | 36 |
-| NEWS-03 | 36 |
-| NEWS-04 | 36 |
-| GUIDE-01 | 37 |
-| GUIDE-02 | 37 |
-| GUIDE-03 | 37 |
-| GUIDE-04 | 37 |
+| OPS-04 | 40 |
+| OPS-05 | 31 |
+| OPS-06 | 32 |
+| TENANT-01 | 33 |
+| TENANT-02 | 36 |
+| TENANT-03 | 36 |
+| TENANT-04 | 33 |
+| RBAC-01 | 35 |
+| RBAC-02 | 35 |
+| RBAC-03 | 34 (storage) + 37 (acceptance flow) |
+| RBAC-04 | 36 |
+| UMAIL-01 | 37 |
+| UMAIL-02 | 37 |
+| UMAIL-03 | 37 |
+| UMAIL-04 | 37 |
+| NEWS-01 | 38 |
+| NEWS-02 | 38 |
+| NEWS-03 | 38 |
+| NEWS-04 | 38 |
+| GUIDE-01 | 39 |
+| GUIDE-02 | 39 |
+| GUIDE-03 | 39 |
+| GUIDE-04 | 39 |
 
-**Total:** 28/28 v1.3 requirements mapped. RBAC-03 is split across the storage layer (Phase 32) and the user-visible acceptance flow (Phase 35) — same requirement, two phase deliverables. No orphans, no duplicates of any other REQ-ID.
+**Total:** 30/30 v1.3 requirements mapped. RBAC-03 is split across the storage layer (Phase 34) and the user-visible acceptance flow (Phase 37) — same requirement, two phase deliverables. No orphans, no duplicates of any other REQ-ID.
 
 ---
 
@@ -356,15 +429,18 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 28. v1.2 UAT closure | v1.3 | 5/6 | In Progress|  |
 | 29. v1.2.1 patch wrap + validation sweep | v1.3 | 10/14 | In Progress|  |
 | 30. file-size pre-split | v1.3 | 7/7 | Complete | 2026-05-11 |
-| 31. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
-| 32. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
-| 33. cookie + Depends + sub-router admin gate | v1.3 | 0/0 | Not started | - |
-| 34. per-user scoping + privacy + flock | v1.3 | 0/0 | Not started | - |
-| 35. per-user email fan-out + admin routes | v1.3 | 0/0 | Not started | - |
-| 36. news integration | v1.3 | 0/0 | Not started | - |
-| 37. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
-| 38. milestone close audit | v1.3 | 0/0 | Not started | - |
+| 31. core module split | v1.3 | 0/0 | Not started | - |
+| 32. dashboard legacy retirement | v1.3 | 0/0 | Not started | - |
+| 33. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
+| 34. user registry + invite-token storage | v1.3 | 0/0 | Not started | - |
+| 35. cookie + Depends + sub-router admin gate | v1.3 | 0/0 | Not started | - |
+| 36. per-user scoping + privacy + flock | v1.3 | 0/0 | Not started | - |
+| 37. per-user email fan-out + admin routes | v1.3 | 0/0 | Not started | - |
+| 38. news integration | v1.3 | 0/0 | Not started | - |
+| 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
+| 40. milestone close audit | v1.3 | 0/0 | Not started | - |
+| 41. domain models — Pydantic market config | v1.4 | 0/0 | Not started | - |
 
 ---
 
-*Last updated: 2026-05-10 — v1.3 roadmap created by `/gsd-roadmapper` from research synthesis (`SUMMARY.md` + `STACK.md` + `FEATURES.md` + `ARCHITECTURE.md` + `PITFALLS.md`). v1.3 starts at Phase 28; numbering continues from v1.2 (last phase 27).*
+*Last updated: 2026-05-12 — Phases 31 (core module split) and 32 (dashboard legacy retirement) inserted from Codex audit recommendations; old Phases 31–38 renumbered to 33–40; OPS-05 and OPS-06 added to coverage map; requirement count updated to 30/30. v1.4 Domain Models milestone added (Phase 41, DOMAIN-01..03).*
