@@ -481,7 +481,7 @@ def register(app: FastAPI) -> None:
     # vs session note (header auth). LOCAL import preserves hex boundary
     # (Phase 11 C-2; web/routes/dashboard.py is allowed to import dashboard
     # per Phase 13 D-07).
-    from dashboard import _render_session_note, _render_signout_button
+    from dashboard_renderer.components.header import _render_session_note, _render_signout_button
 
     if _is_cookie_session(request):
       content = content.replace(

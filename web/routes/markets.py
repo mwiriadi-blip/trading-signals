@@ -255,7 +255,7 @@ def register(app: FastAPI) -> None:
   @app.patch('/account/balance', response_class=HTMLResponse)
   def save_account_balance(req: AccountBalanceRequest) -> HTMLResponse:
     from state_manager import mutate_state, load_state
-    from dashboard import _render_account_management_region
+    from dashboard_renderer.components.account import _render_account_management_region
 
     def _apply(state: dict) -> None:
       state['initial_account'] = float(req.initial_account)
