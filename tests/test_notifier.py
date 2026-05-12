@@ -2309,7 +2309,7 @@ class TestDriftBanner:
     import html as _html
     from datetime import UTC, datetime
 
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     from notifier import _render_header_email
     from state_manager import append_warning, reset_state
     state = reset_state()

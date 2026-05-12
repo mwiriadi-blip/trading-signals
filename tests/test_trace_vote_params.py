@@ -16,7 +16,7 @@ Tests:
 - test_trace_renders_without_vote_params_key: stale row (no key) falls back gracefully
 '''
 
-from dashboard_legacy.trace_panels import _render_trace_vote, _render_trace_panels
+from dashboard_renderer.components.trace import _render_trace_vote, _render_trace_panels
 
 
 class TestTraceVoteParams:

@@ -1,18 +1,34 @@
-"""dashboard_legacy — page-body orchestration + operator-form renderers.
+'''dashboard_legacy retired — all rendering lives in dashboard_renderer.
 
-Extracted from dashboard.py (Plan 27-14, Strategy B). The dashboard_renderer/
-package owns component-level rendering; this package owns the legacy
-page-body orchestration + operator forms + paper-trade subsections + account
-region + Phase 17 trace panels + Phase 15 calc rows.
+Any attribute access or submodule-style import raises ImportError to catch
+accidental re-introduction. Setting __path__ = [] makes submodule imports
+(e.g. `import dashboard_legacy.render_helpers`) fall back to __getattr__,
+so they raise ImportError (not ModuleNotFoundError) with the locked message.
+'''
+import sys
 
-Hex-boundary preserved: stdlib + pytz + dashboard_renderer + system_params.
-No imports from signal_engine / data_fetcher / notifier / main / numpy /
-pandas / yfinance / requests at module top. Local sizing_engine + pnl_engine
-imports inside function bodies preserved (C-2).
+__path__ = []
 
-Phase 27 IN-04: this module was previously a 150-line re-export shim that
-duplicated every symbol from every sub-module under the package namespace.
-The shim was redundant — `dashboard.py` imports directly from
-`dashboard_legacy.<submodule>`, no caller relies on `from dashboard_legacy
-import X`. Reducing to docstring-only cuts maintenance churn.
-"""
+
+class _RetiredSubmoduleFinder:
+  '''Meta-path finder that intercepts dashboard_legacy.* submodule imports
+  and raises ImportError with the locked retirement message — ensuring
+  the exception type is ImportError (not ModuleNotFoundError) on Python 3.13.
+  Only intercepts strict submodule paths (contains a dot after the package name).
+  '''
+
+  def find_spec(self, fullname, path, target=None):
+    if fullname.startswith('dashboard_legacy.'):
+      raise ImportError("dashboard_legacy retired — use dashboard_renderer")
+    return None
+
+
+_finder = _RetiredSubmoduleFinder()
+if not any(
+  type(f).__name__ == '_RetiredSubmoduleFinder' for f in sys.meta_path
+):
+  sys.meta_path.insert(0, _finder)
+
+
+def __getattr__(name):
+  raise ImportError("dashboard_legacy retired — use dashboard_renderer")
