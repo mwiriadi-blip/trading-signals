@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: executing
-last_updated: "2026-05-11T00:19:35.294Z"
+status: Phase 30 closed 2026-05-11; 2065 tests green
+last_updated: "2026-05-12T08:32:28.107Z"
 progress:
-  total_phases: 12
-  completed_phases: 3
+  total_phases: 14
+  completed_phases: 4
   total_plans: 28
-  completed_plans: 27
-  percent: 96
+  completed_plans: 28
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -29,7 +29,7 @@ progress:
 Phase: 30 (File-Size Pre-Split) — COMPLETE (7/7 plans)
 Next: Phase 31 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore)
 Status: Phase 30 closed 2026-05-11; 2065 tests green
-Resume file: None
+Resume file: .planning/phases/31-core-module-split/31-CONTEXT.md
 
 ### Resume instructions for cloud Claude / fresh clone
 
