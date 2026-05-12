@@ -18,6 +18,15 @@ from dashboard_renderer.formatters import (
 logger = logging.getLogger(__name__)
 
 
+def _is_nan_or_none(v) -> bool:
+  if v is None:
+    return True
+  try:
+    return math.isnan(float(v))
+  except (TypeError, ValueError):
+    return True
+
+
 # Fixed display order for indicator rows — matches _TRACE_FORMULAS key order.
 _INDICATOR_DISPLAY_ORDER = ['tr', 'atr', 'plus_di', 'minus_di', 'adx', 'mom1', 'mom3', 'mom12', 'rvol']
 _INDICATOR_DISPLAY_NAMES = {
@@ -89,7 +98,7 @@ def _render_trace_indicators(
   rows = []
 
   # ATR seed row (before the main indicator loop).
-  if atr_seed is None or (isinstance(atr_seed, float) and math.isnan(atr_seed)):
+  if _is_nan_or_none(atr_seed):
     seed_cell = '<em>(stale row — refresh after next 08:00 cycle)</em>'
   else:
     seed_val_esc = html.escape(f'{float(atr_seed):.6f}', quote=True)
