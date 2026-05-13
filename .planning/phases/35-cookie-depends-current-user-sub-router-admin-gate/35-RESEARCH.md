@@ -443,17 +443,19 @@ def get_user_by_email(email: str, path: Path | None = None) -> dict | None:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`tsi_trusted` + `user_id` propagation**
    - What we know: `tsi_trusted` payload is `{'uuid': ..., 'iat': ...}` — no `u` or `uid` field. Currently `_try_cookie` returns `True` on trusted path without setting any user state.
    - What's unclear: Should Phase 35 also propagate uid for trusted-device sessions? If so, how (look up device → user mapping)?
    - Recommendation: Trusted devices are not user-specific in Phase 34 (only one user). For Phase 35, set `request.state.user_id = None` on the trusted path (same as header auth D-06). Admin trusting a device will need to re-log-in after Phase 35 deploys if they want to hit `/admin/ping`. This is acceptable for the grace period.
+   - **RESOLVED (cross-AI review consensus + Plan 02):** Option B adopted — trusted-device path intentionally leaves `user_id=None`; `logger.warning` emitted on each trusted-device dispatch; `test_trusted_device_admin_access_returns_403` regression test documents the intentional 403 as accepted behaviour. Trusted-device→admin access is a known limitation for the Phase 35 grace period (see 35-02-PLAN.md).
 
 2. **Admin bootstrap timing**
    - What we know: `auth.json` currently has `schema_version=1` and no `users[]`. The admin user must be in `users[]` for `require_admin` to return their uid from `get_user()`.
    - What's unclear: Is there a bootstrap mechanism to create the admin user in `auth.json users[]`? Phase 34 added `create_user()` but no automatic admin bootstrap.
    - Recommendation: Phase 35 plan should include a note that the admin CANNOT access `/admin/ping` until they (a) log in once after Phase 35 deploys (creates a session with `uid=None`), AND (b) are bootstrapped into `auth.json users[]` (via `create_user({'email': WEB_AUTH_USERNAME, 'role': 'admin'})`). The invariant test must be set up with a pre-populated `isolated_auth_json` fixture.
+   - **RESOLVED (Plan 02 + Plan 05):** D-04 shim covers the bootstrap gap — existing cookies without `uid` resolve uid via `get_user_by_email(u)` and log the shim trigger. Plan 05's `test_admin_with_uid_no_resolved_user_cannot_pass_require_admin` verifies fail-closed behaviour when uid resolution fails. Test fixtures use `isolated_auth_json` with pre-populated admin user (see 35-05-PLAN.md).
 
 ---
 

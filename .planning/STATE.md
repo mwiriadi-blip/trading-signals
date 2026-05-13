@@ -26,10 +26,10 @@ progress:
 
 ## Current Position
 
-Phase: 34 (User Registry + Invite-Token Storage) — COMPLETE
-Plan: 2 of 2
-Plans: 2 of 2 complete
-Next: /gsd-execute-phase 35 (or /gsd-verify-work 34)
+Phase: 35 (Cookie + Depends(current_user) + Sub-Router Admin Gate) — PLANNED
+Plan: 0 of 5
+Plans: 0 of 5 complete
+Next: /gsd-execute-phase 35
 Status: Ready to execute
 
 ### Resume instructions for cloud Claude / fresh clone
