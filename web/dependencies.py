@@ -39,6 +39,6 @@ def require_admin(request: Request) -> str:
   if uid is None:
     raise HTTPException(status_code=403, detail=_DETAIL_ADMIN_REQUIRED)
   row = get_user(uid)
-  if row is None or row.get('role') != 'admin':
+  if row is None or row.get('role') != 'admin' or row.get('disabled'):
     raise HTTPException(status_code=403, detail=_DETAIL_ADMIN_REQUIRED)
   return uid
