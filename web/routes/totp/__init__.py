@@ -95,8 +95,10 @@ def register(app: FastAPI) -> None:
   def _redirect_to_login() -> Response:
     return Response(status_code=302, headers={'Location': '/login'})
 
-  def _make_session_cookie(uname: str) -> str:
-    token = session_serializer.dumps({'u': uname, 'iat': int(time.time())})
+  def _make_session_cookie(uname: str, uid: str | None = None) -> str:
+    # Phase 35 D-03: payload extended with uid. Old cookies (no uid) still
+    # decode via _validate_session_cookie's isinstance guard (unchanged).
+    token = session_serializer.dumps({'u': uname, 'uid': uid, 'iat': int(time.time())})
     return f'tsi_session={token}{_COOKIE_ATTRS_CREATE_SESSION}'
 
   def _provisioning_uri(secret_b32: str, uname: str) -> str:
@@ -200,8 +202,11 @@ def register(app: FastAPI) -> None:
     if not _is_safe_next(next_value):
       next_value = '/'
     logger.info('[Web] totp enrollment success user=%s', username)
+    # Phase 35 D-03: resolve uid so the cookie carries user_id for middleware.
+    row = auth_store.get_user_by_email(username)
+    uid = row['uid'] if row else None
     set_cookies = [
-      _make_session_cookie(username),
+      _make_session_cookie(username, uid=uid),
       f'tsi_enroll={_COOKIE_ATTRS_DELETE}',
     ]
     # FastAPI Response only carries one Set-Cookie via headers dict — emit
@@ -242,10 +247,13 @@ def register(app: FastAPI) -> None:
       next_value = '/'
     logger.info('[Web] totp verify success user=%s', username)
 
+    # Phase 35 D-03: resolve uid so the cookie carries user_id for middleware.
+    row = auth_store.get_user_by_email(username)
+    uid = row['uid'] if row else None
     # Build the cookie set: always tsi_session + delete tsi_pending; optionally
     # tsi_trusted when trust_device=on (Plan 02 E-04).
     cookies_to_set = [
-      _make_session_cookie(username),
+      _make_session_cookie(username, uid=uid),
       f'tsi_pending={_COOKIE_ATTRS_DELETE}',
     ]
     if trust_device == 'on':
