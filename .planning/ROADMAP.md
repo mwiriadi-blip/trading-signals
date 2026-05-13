@@ -450,7 +450,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 32. dashboard legacy retirement | v1.3 | 5/4 | Complete    | 2026-05-12 |
 | 33. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 34. user registry + invite-token storage | v1.3 | 2/2 | Complete   | 2026-05-12 |
-| 35. cookie + Depends + sub-router admin gate | v1.3 | 5/5 | Complete   | 2026-05-13 |
+| 35. cookie + Depends + sub-router admin gate | v1.3 | 5/5 | Complete    | 2026-05-13 |
 | 36. per-user scoping + privacy + flock | v1.3 | 0/0 | Not started | - |
 | 37. per-user email fan-out + admin routes | v1.3 | 0/0 | Not started | - |
 | 38. news integration | v1.3 | 0/0 | Not started | - |
