@@ -280,6 +280,18 @@ def client_with_state_v3(monkeypatch):
     state_manager, 'save_state',
     lambda state, *_a, **_kw: captured_saves.append(dict(state))
   )
+  # Phase 36: stub load_user_state so routes calling it get the user bucket.
+  # Falls back to the flat top-level state for pre-v12 set_state() callers (G-75).
+  def _load_user_state_stub(uid, *_a, **_kw):
+    state = state_box['value']
+    if 'users' in state and uid in state['users']:
+      return state['users'][uid]
+    # Pre-v12 flat state: synthesize user bucket from flat keys
+    return {k: state.get(k) for k in (
+      'paper_trades', 'positions', 'trade_log', 'equity_history',
+      'account', 'initial_account', 'contracts', 'ui_prefs',
+    ) if k in state}
+  monkeypatch.setattr(state_manager, 'load_user_state', _load_user_state_stub)
 
   # Phase 14 Plan 14-04 + REVIEWS HIGH #1: handlers use mutate_state.
   # The fixture must mirror the load -> mutate -> save semantic so test
@@ -297,14 +309,40 @@ def client_with_state_v3(monkeypatch):
 
   # Phase 36: also stub mutate_user_state so routes calling it use same
   # state_box and captured_saves (uid param ignored — single-user test).
+  # Compat shim A: if state was seeded with pre-v12 flat shape (no 'users' key),
+  #   auto-construct state['users'][uid] from the flat keys so _apply bodies that
+  #   navigate state['users'][uid] work (G-75). Tests using set_state() with old
+  #   flat shape don't need updating.
+  # Compat shim B: after mutation, propagate user-bucket keys to top-level so
+  #   pre-Wave-1 test assertions on captured_saves[-1]['paper_trades'] still pass.
+  # Both shims are removed in Wave 2 when tests reference user bucket directly.
+  _USER_BUCKET_KEYS = ('paper_trades', 'positions', 'trade_log', 'equity_history',
+                       'account', 'initial_account', 'contracts', 'ui_prefs')
   def _mutate_user_state_stub(uid, mutator, *_a, **_kw):
     state = state_box['value']
+    if 'users' not in state:
+      # Shim A: promote flat state to v12 user-bucket shape
+      user_bucket = {k: state.get(k) for k in _USER_BUCKET_KEYS if k in state}
+      state['users'] = {uid: user_bucket}
+    elif uid not in state['users']:
+      state['users'][uid] = {k: state.get(k) for k in _USER_BUCKET_KEYS if k in state}
     mutator(state)
+    # Shim B: propagate user-bucket keys back to top-level for legacy assertions
+    for _key in ('paper_trades', 'positions', 'trade_log'):
+      if _key in state['users'].get(uid, {}):
+        state[_key] = state['users'][uid][_key]
     captured_saves.append(dict(state))
     return state
   monkeypatch.setattr(state_manager, 'mutate_user_state', _mutate_user_state_stub)
 
-  client = TestClient(create_app())
+  # Phase 36: override current_user_id dependency so routes using
+  # Depends(current_user_id) get _ADMIN_UID without a real session cookie.
+  # Tests pass htmx_headers (X-Trading-Signals-Auth), not cookies — this
+  # override bridges the gap for the single-user test scenario.
+  from web.dependencies import current_user_id
+  app = create_app()
+  app.dependency_overrides[current_user_id] = lambda: _ADMIN_UID
+  client = TestClient(app)
 
   def set_state(payload):
     state_box['value'] = payload
@@ -389,6 +427,16 @@ def client_with_state_v6(monkeypatch):
                       lambda *_a, **_kw: state_box['value'])
   monkeypatch.setattr(state_manager, 'save_state',
                       lambda state, *_a, **_kw: captured_saves.append(dict(state)))
+  # Phase 36: stub load_user_state (same compat logic as client_with_state_v3).
+  def _load_user_state_stub_v6(uid, *_a, **_kw):
+    state = state_box['value']
+    if 'users' in state and uid in state['users']:
+      return state['users'][uid]
+    return {k: state.get(k) for k in (
+      'paper_trades', 'positions', 'trade_log', 'equity_history',
+      'account', 'initial_account', 'contracts', 'ui_prefs',
+    ) if k in state}
+  monkeypatch.setattr(state_manager, 'load_user_state', _load_user_state_stub_v6)
 
   def _mutate_state_stub(mutator, *_a, **_kw):
     state = state_box['value']
@@ -400,13 +448,28 @@ def client_with_state_v6(monkeypatch):
 
   # Phase 36: also stub mutate_user_state so routes calling it use same
   # state_box and captured_saves (uid param ignored — single-user test).
-  def _mutate_user_state_stub(uid, mutator, *_a, **_kw):
+  # Same shim A+B logic as client_with_state_v3 — see inline comment there.
+  _USER_BUCKET_KEYS_V6 = ('paper_trades', 'positions', 'trade_log', 'equity_history',
+                           'account', 'initial_account', 'contracts', 'ui_prefs')
+  def _mutate_user_state_stub_v6(uid, mutator, *_a, **_kw):
     state = state_box['value']
+    if 'users' not in state:
+      state['users'] = {uid: {k: state.get(k) for k in _USER_BUCKET_KEYS_V6 if k in state}}
+    elif uid not in state['users']:
+      state['users'][uid] = {k: state.get(k) for k in _USER_BUCKET_KEYS_V6 if k in state}
     mutator(state)
+    for _key in ('paper_trades', 'positions', 'trade_log'):
+      if _key in state['users'].get(uid, {}):
+        state[_key] = state['users'][uid][_key]
     captured_saves.append(dict(state))
     return state
-  monkeypatch.setattr(state_manager, 'mutate_user_state', _mutate_user_state_stub)
-  client = TestClient(create_app())
+  monkeypatch.setattr(state_manager, 'mutate_user_state', _mutate_user_state_stub_v6)
+
+  # Phase 36: override current_user_id dependency (same as client_with_state_v3).
+  from web.dependencies import current_user_id
+  app = create_app()
+  app.dependency_overrides[current_user_id] = lambda: _ADMIN_UID
+  client = TestClient(app)
 
   def set_state(payload):
     state_box['value'] = payload

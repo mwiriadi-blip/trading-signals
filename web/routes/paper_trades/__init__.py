@@ -2,23 +2,27 @@
 + GET /paper-trade/<id>/close-form + GET /paper-trades — Phase 19 LEDGER-01..06 + VERSION-03.
 
 Operator records paper trades (open/edit/delete/close) via this adapter. Every mutation
-goes through state_manager.mutate_state (Phase 14 flock kernel — unchanged). Closed rows
+goes through state_manager.mutate_user_state (Phase 36 per-user flock wrapper). Closed rows
 are immutable (405 + Allow: GET per RFC 7231 §6.5.5). Composite trade ID generated inside
-the mutate_state closure under LOCK_EX (D-01 + D-15 atomicity).
+the mutate_user_state closure under LOCK_EX (D-01 + D-15 atomicity).
 
 Phase 30 D-08: converted from a single 493-LOC file into a package.
   _models.py   — Pydantic request models + sentinel exceptions
   _renderers.py — constants (_D09_KEYS, _MULTIPLIER, _COST_AUD) + _method_not_allowed_405
   __init__.py  — register(app) + D-03 re-export surface
 
+Phase 36: migrated all mutate_state → mutate_user_state; all _apply bodies navigate
+  state['users'][user_id]; render path uses merged dict with signals.
+
 Log prefix: [Web].
 '''
 import html
 import logging
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from web.dependencies import current_user_id
 from web.routes.paper_trades._models import (
   ClosePaperTradeRequest,
   EditPaperTradeRequest,
@@ -62,22 +66,30 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
   # GET /paper-trades — list fragment (HTMX swap target after every mutation)
   # -----------------------------------------------------------------------
   @app.get('/paper-trades', response_class=HTMLResponse)
-  async def get_paper_trades_fragment(request: Request) -> HTMLResponse:
+  async def get_paper_trades_fragment(
+    request: Request,
+    user_id: str = Depends(current_user_id),
+  ) -> HTMLResponse:
     '''Return rendered #trades-region HTML fragment. Used as HTMX hx-target
     for all mutations.
     '''
     from dashboard_renderer.components.paper_trades import render_paper_trades_region
     from state_manager import load_state
-    state = load_state()
-    return HTMLResponse(content=render_paper_trades_region(state))
+    state_full = load_state()
+    user_state = state_full['users'][user_id]
+    merged = {**user_state, 'signals': state_full.get('signals', {})}
+    return HTMLResponse(content=render_paper_trades_region(merged))
 
   # -----------------------------------------------------------------------
   # POST /paper-trade/open
   # -----------------------------------------------------------------------
   @app.post('/paper-trade/open', response_class=HTMLResponse)
-  async def open_paper_trade(request: Request) -> HTMLResponse:
+  async def open_paper_trade(
+    request: Request,
+    user_id: str = Depends(current_user_id),
+  ) -> HTMLResponse:
     '''Validate D-04, generate composite ID inside flock, append row to
-    state.paper_trades. Returns rendered #trades-region HTML fragment.
+    user paper_trades bucket. Returns rendered #trades-region HTML fragment.
 
     D-17 gap-closure: accepts application/x-www-form-urlencoded (browser/HTMX default).
     '''
@@ -87,7 +99,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       # (LEARNINGS 2026-04-29 + planner D-19).
       from system_params import STRATEGY_VERSION  # noqa: PLC0415
 
-      rows = state.setdefault('paper_trades', [])
+      user = state['users'][user_id]
+      rows = user.setdefault('paper_trades', [])
       today_awst = _now_awst().strftime('%Y%m%d')
       prefix = f'{req.instrument}-{today_awst}-'
       same_day = [r for r in rows if r['id'].startswith(prefix)]
@@ -116,8 +129,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       })
 
     try:
-      from state_manager import mutate_state
-      state = mutate_state(_apply)
+      from state_manager import mutate_user_state
+      state = mutate_user_state(user_id, _apply)
     except _PaperTradeIDOverflow as exc:
       logger.warning(
         '%s ID counter overflow %s %s', _LOG_PREFIX, exc.instrument, exc.day,
@@ -128,13 +141,19 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       ) from exc
 
     from dashboard_renderer.components.paper_trades import render_paper_trades_region
-    return HTMLResponse(content=render_paper_trades_region(state))
+    user_state = state['users'][user_id]
+    merged = {**user_state, 'signals': state.get('signals', {})}
+    return HTMLResponse(content=render_paper_trades_region(merged))
 
   # -----------------------------------------------------------------------
   # PATCH /paper-trade/{trade_id}
   # -----------------------------------------------------------------------
   @app.patch('/paper-trade/{trade_id}', response_class=HTMLResponse)
-  async def edit_paper_trade(trade_id: str, request: Request) -> HTMLResponse:
+  async def edit_paper_trade(
+    trade_id: str,
+    request: Request,
+    user_id: str = Depends(current_user_id),
+  ) -> HTMLResponse:
     '''Edit an open paper trade row in-place. Closed rows return 405.
     D-05: strategy_version is refreshed to current STRATEGY_VERSION on edit.
 
@@ -144,7 +163,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     def _apply(state: dict) -> None:
       from system_params import STRATEGY_VERSION  # noqa: PLC0415 — fresh import (kwarg trap)
 
-      rows = state.get('paper_trades', [])
+      user = state['users'][user_id]
+      rows = user.get('paper_trades', [])
       matches = [r for r in rows if r['id'] == trade_id]
       if not matches:
         raise _PaperTradeNotFound(trade_id)
@@ -174,50 +194,62 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       row['last_alert_state'] = None
 
     try:
-      from state_manager import mutate_state
-      state = mutate_state(_apply)
+      from state_manager import mutate_user_state
+      state = mutate_user_state(user_id, _apply)
     except _PaperTradeNotFound:
       raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found') from None
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
 
     from dashboard_renderer.components.paper_trades import render_paper_trades_region
-    return HTMLResponse(content=render_paper_trades_region(state))
+    user_state = state['users'][user_id]
+    merged = {**user_state, 'signals': state.get('signals', {})}
+    return HTMLResponse(content=render_paper_trades_region(merged))
 
   # -----------------------------------------------------------------------
   # DELETE /paper-trade/{trade_id}
   # -----------------------------------------------------------------------
   @app.delete('/paper-trade/{trade_id}', response_class=HTMLResponse)
-  async def delete_paper_trade(trade_id: str) -> HTMLResponse:
+  async def delete_paper_trade(
+    trade_id: str,
+    user_id: str = Depends(current_user_id),
+  ) -> HTMLResponse:
     '''Remove an open paper trade row entirely. Closed rows return 405.
     D-21: no body on DELETE.
     '''
     def _apply(state: dict) -> None:
-      rows = state.get('paper_trades', [])
+      user = state['users'][user_id]
+      rows = user.get('paper_trades', [])
       matches = [r for r in rows if r['id'] == trade_id]
       if not matches:
         raise _PaperTradeNotFound(trade_id)
       row = matches[0]
       if row['status'] == 'closed':
         raise _PaperTradeImmutable(trade_id)
-      state['paper_trades'] = [r for r in rows if r['id'] != trade_id]
+      user['paper_trades'] = [r for r in rows if r['id'] != trade_id]
 
     try:
-      from state_manager import mutate_state
-      state = mutate_state(_apply)
+      from state_manager import mutate_user_state
+      state = mutate_user_state(user_id, _apply)
     except _PaperTradeNotFound:
       raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found') from None
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
 
     from dashboard_renderer.components.paper_trades import render_paper_trades_region
-    return HTMLResponse(content=render_paper_trades_region(state))
+    user_state = state['users'][user_id]
+    merged = {**user_state, 'signals': state.get('signals', {})}
+    return HTMLResponse(content=render_paper_trades_region(merged))
 
   # -----------------------------------------------------------------------
   # POST /paper-trade/{trade_id}/close
   # -----------------------------------------------------------------------
   @app.post('/paper-trade/{trade_id}/close', response_class=HTMLResponse)
-  async def close_paper_trade(trade_id: str, request: Request) -> HTMLResponse:
+  async def close_paper_trade(
+    trade_id: str,
+    request: Request,
+    user_id: str = Depends(current_user_id),
+  ) -> HTMLResponse:
     '''Close an open paper trade: compute realised P&L via pnl_engine, flip
     status=closed. Closed rows return 405 (D-05 immutability).
 
@@ -227,7 +259,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     def _apply(state: dict) -> None:
       from pnl_engine import compute_realised_pnl  # LOCAL — Phase 11 C-2
 
-      rows = state.get('paper_trades', [])
+      user = state['users'][user_id]
+      rows = user.get('paper_trades', [])
       matches = [r for r in rows if r['id'] == trade_id]
       if not matches:
         raise _PaperTradeNotFound(trade_id)
@@ -268,8 +301,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       row['status'] = 'closed'
 
     try:
-      from state_manager import mutate_state
-      state = mutate_state(_apply)
+      from state_manager import mutate_user_state
+      state = mutate_user_state(user_id, _apply)
     except _PaperTradeNotFound:
       raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found') from None
     except _PaperTradeImmutable:
@@ -278,19 +311,24 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
       raise  # re-raise HTTPException from within _apply (exit_dt validation)
 
     from dashboard_renderer.components.paper_trades import render_paper_trades_region
-    return HTMLResponse(content=render_paper_trades_region(state))
+    user_state = state['users'][user_id]
+    merged = {**user_state, 'signals': state.get('signals', {})}
+    return HTMLResponse(content=render_paper_trades_region(merged))
 
   # -----------------------------------------------------------------------
   # GET /paper-trade/{trade_id}/close-form
   # -----------------------------------------------------------------------
   @app.get('/paper-trade/{trade_id}/close-form', response_class=HTMLResponse)
-  async def get_close_form(trade_id: str) -> HTMLResponse:
+  async def get_close_form(
+    trade_id: str,
+    user_id: str = Depends(current_user_id),
+  ) -> HTMLResponse:
     '''Return a close-form HTML fragment with hx-post baked into the action.
     Trade ID travels in URL per RESEARCH §Pattern 1 (Phase 14 close-form precedent).
+    Navigates user bucket — a trade from another user is simply not found (404).
     '''
-    from state_manager import load_state
-    state = load_state()
-    rows = state.get('paper_trades', [])
+    from state_manager import load_user_state
+    rows = load_user_state(user_id).get('paper_trades', [])
     matches = [r for r in rows if r['id'] == trade_id]
     if not matches:
       raise HTTPException(status_code=404, detail=f'paper trade {trade_id!r} not found')
