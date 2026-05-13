@@ -621,7 +621,7 @@ def admin_disable_user(uid: str, disabled: bool = True):
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **render_paper_trades_region signals access**
    - What we know: renderer reads `state.get('signals', {})` AND `state.get('paper_trades', [])`.

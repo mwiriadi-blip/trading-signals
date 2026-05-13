@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: planning
-last_updated: "2026-05-13T06:48:46.414Z"
+last_updated: "2026-05-14T00:00:00.000Z"
 progress:
   total_phases: 14
   completed_phases: 9
-  total_plans: 46
+  total_plans: 49
   completed_plans: 47
-  percent: 100
+  percent: 96
 ---
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-05-13 (Phase 34 — User Registry + Invite-Token Storage — COMPLETE, 2151 tests green)
+**Last updated:** 2026-05-14 (Phase 36 — Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock — PLANNED, 3 plans)
 
 ## Project Reference
 
@@ -22,15 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 35 — cookie-depends-current-user-sub-router-admin-gate
+- **Current focus:** Phase 36 — per-route-user-id-scoping-privacy-boundary-per-user-flock
 
 ## Current Position
 
 Phase: 36
 Plan: Not started
-Plans: 0 of 5 complete
-Next: /gsd-execute-phase 35
-Status: Ready to plan
+Plans: 0 of 3 complete
+Next: /gsd-execute-phase 36
+Status: Ready to execute
 
 ### Resume instructions for cloud Claude / fresh clone
 

@@ -253,9 +253,20 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   6. Admin can reversibly disable any non-admin user from `/admin/users`; disabled users cannot log in; their data is preserved (re-enable restores everything); terminal delete is explicitly NOT shipped (deferred to v1.3.x).
 **Plans:** 3 plans
 Plans:
-- [ ] 36-01-PLAN.md — Wave 0: Foundation (mutate_user_state, load_user_state, record_trade uid param, PublicUserSummary model, conftest v12 fixtures, test stubs)
-- [ ] 36-02-PLAN.md — Wave 1: Route Migration (paper_trades + trades migrate to mutate_user_state, admin GET /users + PATCH /users/{uid}/disable)
-- [ ] 36-03-PLAN.md — Wave 2: Test Coverage (TestMutateUserState, 9 entity-ID 404 tests, TestTenantIsolation isolation assertion)
+
+**Wave 1**
+- [ ] 36-01-PLAN.md — Foundation (mutate_user_state, load_user_state, record_trade uid param, PublicUserSummary model, conftest v12 fixtures, test stubs)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 36-02-PLAN.md — Route Migration (paper_trades + trades migrate to mutate_user_state, admin GET /users + PATCH /users/{uid}/disable)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 36-03-PLAN.md — Test Coverage (TestMutateUserState, 9 entity-ID 404 tests, TestTenantIsolation isolation assertion)
+
+**Cross-cutting constraints:**
+- All routes must navigate `state['users'][user_id]` sub-dict for per-user data (not top-level state)
+- All `mutate_user_state` calls acquire per-user flock before delegating to `mutate_state`
+- `response_model=list[PublicUserSummary]` is the sole privacy enforcement mechanism in Phase 36
 **Plan-time verification (research-flagged):**
 - **State layout flock interaction:** confirm the `flock(LOCK_EX)`-across-read-modify-write pattern composes cleanly with existing `mutate_state` semantics under simulated 50-thread stress before locking the single-file `users{}` map choice; if friction-laden, fall back to the sharded-directory option (Stack research's Option A). Per-user flock itself is non-negotiable either way.
 
