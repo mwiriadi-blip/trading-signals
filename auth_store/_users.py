@@ -253,6 +253,13 @@ def consume_and_create_user(
       if datetime.now(timezone.utc) > expires_dt:
         raise InviteExpired('invite token expired')
 
+      invite_email = matched_row.get('email', '')
+      if invite_email.lower() != email.lower():
+        raise ValueError(
+          f'email mismatch: invite issued for {invite_email!r}, '
+          f'got {email!r}'
+        )
+
       matched_row['consumed'] = True
       matched_row['consumed_at'] = datetime.now(timezone.utc).isoformat()
 
