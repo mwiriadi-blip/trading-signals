@@ -145,6 +145,21 @@ def create_app() -> FastAPI:
   # Phase 16.1 D-08 + Phase 13 D-16/D-17 + Plan 03 F-06.
   username, secret, recovery_email = _read_auth_credentials()
 
+  # WR-01 boot-time invariant check: WEB_AUTH_USERNAME must match a user row
+  # email in auth.json so the D-04 cookie shim (get_user_by_email) resolves
+  # correctly. Local import preserves the hex boundary (middleware pattern).
+  try:
+    from auth_store import get_user_by_email as _gube
+    if _gube(username) is None:
+      logger.warning(
+        '[Web] WEB_AUTH_USERNAME=%r has no matching email in auth.json; '
+        'legacy session cookies will fail to resolve user_id (D-04 shim miss). '
+        'Create a user row with that email or update WEB_AUTH_USERNAME.',
+        username,
+      )
+  except Exception as _e:
+    logger.warning('[Web] boot-time user-email check failed: %s', _e)
+
   application = FastAPI(
     title='Trading Signals',
     description='SPI 200 & AUD/USD mechanical trading signal system',
