@@ -103,9 +103,11 @@ def register(app: FastAPI) -> None:
 
   def _provisioning_uri(secret_b32: str, uname: str) -> str:
     import pyotp
+    _issuer = os.environ.get('TOTP_ISSUER', 'Trading Signals')
+    _domain = os.environ.get('TOTP_DOMAIN', 'signals.mwiriadi.me')
     return pyotp.TOTP(secret_b32).provisioning_uri(
-      name=f'{uname}@signals.mwiriadi.me',
-      issuer_name='Trading Signals',
+      name=f'{uname}@{_domain}',
+      issuer_name=_issuer,
     )
 
   def _verify_code(secret_b32: str, code: str) -> bool:
