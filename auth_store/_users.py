@@ -131,6 +131,22 @@ def get_user(uid: str, path: Path | None = None) -> dict | None:
   return None
 
 
+def get_user_by_email(email: str, path: Path | None = None) -> dict | None:
+  '''Return the User dict matching email (case-insensitive), or None if not found.
+
+  Case-insensitive equality: both the argument and the stored email are lowercased
+  before comparison. Returns the first match when duplicates exist (Phase 34 does
+  not enforce email uniqueness — see 35-REVIEWS.md OpenCode/Codex consensus).
+  '''
+  needle = email.lower() if isinstance(email, str) else ''
+  data = load_auth(path=path)
+  for row in data.get('users', []):
+    stored = row.get('email', '')
+    if isinstance(stored, str) and stored.lower() == needle:
+      return row
+  return None
+
+
 def list_users(path: Path | None = None) -> list:
   '''Return all User rows.'''
   return load_auth(path=path).get('users', [])

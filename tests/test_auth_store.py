@@ -780,3 +780,174 @@ class TestSchemaMigrationV1ToV2:
     assert mtime_before == mtime_after, (
       'Defensive backfill on v2 file must NOT save to disk (no mtime bump)'
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 35 Plan 01 — get_user_by_email (Task 2)
+# ---------------------------------------------------------------------------
+
+class TestGetUserByEmail:
+  '''Phase 35 Plan 01 Task 2 — get_user_by_email unit tests.
+
+  Enumerates 9 cases per plan spec:
+    1. exact-case match
+    2. case-insensitive argument (upper query, lower stored)
+    3. case-insensitive stored (lower query, upper stored)
+    4. no-match returns None
+    5. empty users[] returns None
+    6. empty string arg returns None
+    7. duplicate rows — first match returned
+    8. path= kwarg respected
+    9. 'get_user_by_email' in auth_store.__all__
+
+  All tests use isolated_auth_json fixture from conftest.py.
+  '''
+
+  def test_get_user_by_email_returns_row_for_known_email(
+    self, isolated_auth_json,
+  ):
+    '''Exact-case match returns the correct user row.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    user = auth_store.create_user({'email': 'known@example.com', 'role': 'admin'})
+    result = get_user_by_email('known@example.com')
+    assert result is not None
+    assert result['uid'] == user['uid']
+    assert result['email'] == 'known@example.com'
+
+  def test_get_user_by_email_case_insensitive_argument(
+    self, isolated_auth_json,
+  ):
+    '''Upper-case query, lower-case stored — returns matching row.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    user = auth_store.create_user({'email': 'match@example.com', 'role': 'ff'})
+    result = get_user_by_email('MATCH@EXAMPLE.COM')
+    assert result is not None
+    assert result['uid'] == user['uid']
+
+  def test_get_user_by_email_case_insensitive_stored(
+    self, isolated_auth_json,
+  ):
+    '''Lower-case query, upper-case stored — returns matching row.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    # Write directly to bypass create_user validation (which lowercases nothing)
+    data = auth_store.load_auth()
+    import uuid
+    from datetime import datetime, timezone
+    uid = uuid.uuid4().hex
+    data['users'].append({
+      'uid': uid,
+      'email': 'UPPER@EXAMPLE.COM',
+      'role': 'ff',
+      'created_at': datetime.now(timezone.utc).isoformat(),
+      'disabled': False,
+    })
+    auth_store.save_auth(data)
+    result = get_user_by_email('upper@example.com')
+    assert result is not None
+    assert result['uid'] == uid
+
+  def test_get_user_by_email_returns_none_for_unknown_email(
+    self, isolated_auth_json,
+  ):
+    '''One user present but no match — returns None.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    auth_store.create_user({'email': 'other@example.com', 'role': 'ff'})
+    result = get_user_by_email('absent@example.com')
+    assert result is None
+
+  def test_get_user_by_email_returns_none_for_empty_users(
+    self, isolated_auth_json,
+  ):
+    '''Empty users[] — returns None.'''
+    from auth_store import get_user_by_email
+    result = get_user_by_email('anyone@example.com')
+    assert result is None
+
+  def test_get_user_by_email_returns_none_for_empty_string_arg(
+    self, isolated_auth_json,
+  ):
+    '''Empty string argument — returns None even if a row has email="".'''
+    import auth_store
+    from auth_store import get_user_by_email
+    auth_store.create_user({'email': 'real@example.com', 'role': 'ff'})
+    result = get_user_by_email('')
+    assert result is None
+
+  def test_get_user_by_email_duplicate_returns_first(
+    self, isolated_auth_json,
+  ):
+    '''Two rows with same lowercased email — first inserted is returned.'''
+    import uuid
+    import auth_store
+    from auth_store import get_user_by_email
+    from datetime import datetime, timezone
+    # Seed two rows sharing the same lowercased email directly.
+    data = auth_store.load_auth()
+    uid_first = uuid.uuid4().hex
+    uid_second = uuid.uuid4().hex
+    data['users'].append({
+      'uid': uid_first,
+      'email': 'dup@x.com',
+      'role': 'ff',
+      'created_at': datetime.now(timezone.utc).isoformat(),
+      'disabled': False,
+    })
+    data['users'].append({
+      'uid': uid_second,
+      'email': 'DUP@X.COM',
+      'role': 'admin',
+      'created_at': datetime.now(timezone.utc).isoformat(),
+      'disabled': False,
+    })
+    auth_store.save_auth(data)
+    result = get_user_by_email('dup@x.com')
+    assert result is not None
+    assert result['uid'] == uid_first, (
+      f'Expected first inserted uid={uid_first!r}, got {result["uid"]!r}'
+    )
+
+  def test_get_user_by_email_path_kwarg_isolates_two_files(
+    self, tmp_path,
+  ):
+    '''path= kwarg respected: lookup in tmp1 does not return user seeded in tmp2.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    from auth_store import save_auth, load_auth
+    import uuid
+    from datetime import datetime, timezone
+
+    tmp1 = tmp_path / 'auth1.json'
+    tmp2 = tmp_path / 'auth2.json'
+
+    def _seed(path, email):
+      data = load_auth(path=path)
+      uid = uuid.uuid4().hex
+      data['users'].append({
+        'uid': uid,
+        'email': email,
+        'role': 'ff',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'disabled': False,
+      })
+      save_auth(data, path=path)
+      return uid
+
+    uid1 = _seed(tmp1, 'file1@example.com')
+    uid2 = _seed(tmp2, 'file2@example.com')
+
+    result1 = get_user_by_email('file1@example.com', path=tmp1)
+    result2 = get_user_by_email('file2@example.com', path=tmp2)
+    cross = get_user_by_email('file2@example.com', path=tmp1)
+
+    assert result1 is not None and result1['uid'] == uid1
+    assert result2 is not None and result2['uid'] == uid2
+    assert cross is None, 'file2 email must not be found in tmp1'
+
+  def test_get_user_by_email_in_module___all__(self):
+    '''get_user_by_email is listed in auth_store.__all__.'''
+    import auth_store
+    assert 'get_user_by_email' in auth_store.__all__
