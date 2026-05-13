@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-13T01:15:56.570Z"
+last_updated: "2026-05-13T01:48:17.494Z"
 progress:
   total_phases: 14
   completed_phases: 8
@@ -22,15 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 35 — Cookie + Depends(current_user) + Sub-Router Admin Gate
+- **Current focus:** Phase 35 — cookie-depends-current-user-sub-router-admin-gate
 
 ## Current Position
 
-Phase: 35 (Cookie + Depends(current_user) + Sub-Router Admin Gate) — PLANNED
-Plan: 0 of 5
+Phase: 35 (cookie-depends-current-user-sub-router-admin-gate) — EXECUTING
+Plan: 1 of 5
 Plans: 0 of 5 complete
 Next: /gsd-execute-phase 35
-Status: Ready to execute
+Status: Executing Phase 35
 
 ### Resume instructions for cloud Claude / fresh clone
 

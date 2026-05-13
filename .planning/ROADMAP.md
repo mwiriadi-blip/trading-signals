@@ -232,7 +232,7 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   5. Admin's existing observable behaviour is unchanged: full v1.2 dashboard, paper-trade entry, signal display — all routes return identical bytes vs pre-Phase 35 fixtures.
 **Plans:** 5 plans
 **Plan list:**
-- [ ] 35-01-PLAN.md — auth_store get_user_by_email helper + re-export + unit tests (Wave 1)
+- [x] 35-01-PLAN.md — auth_store get_user_by_email helper + re-export + unit tests (Wave 1)
 - [ ] 35-02-PLAN.md — _make_session_cookie uid extension + AuthMiddleware sets request.state.user_id with D-04 shim (Wave 2)
 - [ ] 35-03-PLAN.md — web/dependencies.py current_user_id + require_admin factories + Wave-0 test stub (Wave 2)
 - [ ] 35-04-PLAN.md — web/routes/admin/ sub-router with APIRouter(prefix='/admin', dependencies=[Depends(require_admin)]) + GET /admin/ping (Wave 3)
@@ -450,7 +450,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 32. dashboard legacy retirement | v1.3 | 5/4 | Complete    | 2026-05-12 |
 | 33. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 34. user registry + invite-token storage | v1.3 | 2/2 | Complete   | 2026-05-12 |
-| 35. cookie + Depends + sub-router admin gate | v1.3 | 0/0 | Not started | - |
+| 35. cookie + Depends + sub-router admin gate | v1.3 | 1/5 | In Progress|  |
 | 36. per-user scoping + privacy + flock | v1.3 | 0/0 | Not started | - |
 | 37. per-user email fan-out + admin routes | v1.3 | 0/0 | Not started | - |
 | 38. news integration | v1.3 | 0/0 | Not started | - |
