@@ -222,10 +222,26 @@ def client_with_state_v3(monkeypatch):
   from web.app import create_app
 
   # Phase 36: v12-shaped state — user data lives under state['users'][uid].
+  # top-level 'positions' is a legacy compat shim for pre-migration routes
+  # (e.g. dashboard/_renderers.py::_forward_stop_fragment_response line 118)
+  # that still call state.get('positions', {}). Wave 1 plan 02 migrates those
+  # reads to load_user_state; until then the shim prevents test breakage.
+  _open_spi_position = {
+    'direction': 'LONG', 'entry_price': 7800.0, 'entry_date': '2026-04-20',
+    'n_contracts': 2, 'pyramid_level': 0,
+    'peak_price': 7850.0, 'trough_price': None, 'atr_entry': 50.0,
+    'manual_stop': None,
+  }
   default_state = {
     'schema_version': 12,
     'admin_user_id': _ADMIN_UID,
     'last_run': '2026-04-25',
+    # Legacy compat: pre-v12 reads (e.g. forward-stop fragment, dashboard) still
+    # expect top-level positions. Removed when Wave 1 migrates those routes.
+    'positions': {
+      'SPI200': _open_spi_position,
+      'AUDUSD': None,
+    },
     'signals': {
       'SPI200': {'last_scalars': {'atr': 50.0}, 'last_close': 7820.0},
       'AUDUSD': {'last_close': 0.6520, 'last_scalars': {'atr': 0.005}},
@@ -243,12 +259,7 @@ def client_with_state_v3(monkeypatch):
         'initial_account': 100_000.0,
         'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
         'positions': {
-          'SPI200': {
-            'direction': 'LONG', 'entry_price': 7800.0, 'entry_date': '2026-04-20',
-            'n_contracts': 2, 'pyramid_level': 0,
-            'peak_price': 7850.0, 'trough_price': None, 'atr_entry': 50.0,
-            'manual_stop': None,
-          },
+          'SPI200': _open_spi_position,
           'AUDUSD': None,
         },
         'trade_log': [],
