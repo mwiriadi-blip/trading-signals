@@ -230,7 +230,13 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   3. `web/routes/admin/` is an `APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` sub-router; new admin routes registered on it inherit the gate.
   4. Startup invariant test walks `app.routes` and asserts every `/admin/*` path has `require_admin` somewhere in its dependency chain; parametrized non-admin-gets-403 sweep covers every admin path.
   5. Admin's existing observable behaviour is unchanged: full v1.2 dashboard, paper-trade entry, signal display — all routes return identical bytes vs pre-Phase 35 fixtures.
-**Plans:** TBD
+**Plans:** 5 plans
+**Plan list:**
+- [ ] 35-01-PLAN.md — auth_store get_user_by_email helper + re-export + unit tests (Wave 1)
+- [ ] 35-02-PLAN.md — _make_session_cookie uid extension + AuthMiddleware sets request.state.user_id with D-04 shim (Wave 2)
+- [ ] 35-03-PLAN.md — web/dependencies.py current_user_id + require_admin factories + Wave-0 test stub (Wave 2)
+- [ ] 35-04-PLAN.md — web/routes/admin/ sub-router with APIRouter(prefix='/admin', dependencies=[Depends(require_admin)]) + GET /admin/ping (Wave 3)
+- [ ] 35-05-PLAN.md — web/app.py include_router(admin_router) wiring + startup invariant + 403-sweep + happy-path tests (Wave 4)
 **Plan-time verification:** none (FastAPI patterns canonical).
 
 ### Phase 36: Per-Route User-ID Scoping + Privacy Boundary + Per-User Flock
