@@ -3,7 +3,7 @@ phase: 36
 slug: per-route-user-id-scoping-privacy-boundary-per-user-flock
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-14
 ---
 
@@ -41,8 +41,8 @@ created: 2026-05-14
 | conftest-v12-fixture | W0 | 0 | TENANT-02 | — | `client_with_state_v3/v6` inject state with `users[uid]` sub-dict | fixture | `.venv/bin/pytest -x --tb=short tests/test_web_paper_trades.py` | ✅ (update) | ⬜ pending |
 | mutate-user-state-unit | W0 | 0 | TENANT-02 | — | per-user flock serializes concurrent writes | unit | `.venv/bin/pytest -x --tb=short tests/test_state_manager.py::TestMutateUserState` | ❌ W0 | ⬜ pending |
 | tenant-isolation-class | W0 | 0 | TENANT-03 | T-36-01 | user A's trades not visible in admin/user-B response | integration | `.venv/bin/pytest -x --tb=short tests/test_tenant_isolation.py::TestTenantIsolation` | ❌ W0 | ⬜ pending |
-| admin-users-endpoint | W0 | 0 | RBAC-04 | T-36-02 | GET /admin/users returns PublicUserSummary shape only | integration | `.venv/bin/pytest -x --tb=short tests/test_web_admin.py::TestAdminUsers` | ❌ W0 | ⬜ pending |
-| admin-disable-user | W0 | 0 | RBAC-04 | T-36-02 | PATCH /admin/users/{uid}/disable sets disabled flag | integration | `.venv/bin/pytest -x --tb=short tests/test_web_admin.py::TestAdminDisable` | ❌ W0 | ⬜ pending |
+| admin-users-endpoint | W0 | 0 | RBAC-04 | T-36-02 | GET /admin/users returns PublicUserSummary shape only | integration | `.venv/bin/pytest -x --tb=short tests/test_web_admin_users.py::TestAdminUsers` | ❌ W0 | ⬜ pending |
+| admin-disable-user | W0 | 0 | RBAC-04 | T-36-02 | PATCH /admin/users/{uid}/disable sets disabled flag | integration | `.venv/bin/pytest -x --tb=short tests/test_web_admin_users.py::TestAdminDisable` | ❌ W0 | ⬜ pending |
 | paper-trades-migrate | 1+ | 1 | TENANT-02 | T-36-01 | paper_trade routes write to state['users'][uid] bucket | integration | `.venv/bin/pytest -x --tb=short tests/test_web_paper_trades.py` | ✅ (update) | ⬜ pending |
 | trades-migrate | 1+ | 1 | TENANT-02 | T-36-01 | trade routes write to state['users'][uid] bucket | integration | `.venv/bin/pytest -x --tb=short tests/test_web_trades.py` | ✅ (update) | ⬜ pending |
 | 404-cross-user-paper | 1+ | 1 | TENANT-03 | T-36-01 | entity-ID routes return 404 for other user's entity | integration | `.venv/bin/pytest -x --tb=short tests/test_web_paper_trades.py -k 404_for_other` | ❌ W0 | ⬜ pending |
@@ -55,12 +55,12 @@ created: 2026-05-14
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_tenant_isolation.py` — `TestTenantIsolation` class covering TENANT-03 admin-list + cross-user-entity assertions
-- [ ] `tests/test_state_manager.py::TestMutateUserState` — unit tests for `mutate_user_state` flock wrapper
-- [ ] `tests/test_web_admin.py::TestAdminUsers` + `TestAdminDisable` — RBAC-04 admin route tests
-- [ ] `tests/conftest.py` — update `client_with_state_v3` + `client_with_state_v6` to v12 shape (`state['users'][uid]` sub-dict)
-- [ ] `tests/test_web_paper_trades.py` — add 404-for-other-users paired tests (D-14)
-- [ ] `tests/test_web_trades.py` — add 404-for-other-users paired tests (D-14)
+- [x] `tests/test_tenant_isolation.py` — `TestTenantIsolation` class covering TENANT-03 admin-list + cross-user-entity assertions (Wave 1 makes green)
+- [x] `tests/test_state_manager_per_user.py::TestMutateUserState` — unit tests for `mutate_user_state` flock wrapper
+- [x] `tests/test_web_admin_users.py::TestAdminUsers` + `TestAdminDisable` — RBAC-04 admin route tests (xfail; Wave 1 makes green)
+- [x] `tests/conftest.py` — updated `client_with_state_v3` + `client_with_state_v6` to v12 shape (`state['users'][uid]` sub-dict)
+- [x] `tests/test_web_paper_trades_ownership.py` — 404-for-other-users stubs (D-14; xfail; Wave 2)
+- [x] `tests/test_web_trades_ownership.py` — 404-for-other-users stubs (D-14; xfail; Wave 2)
 
 ---
 
