@@ -38,6 +38,7 @@ from fastapi import FastAPI
 
 from web.middleware.auth import AuthMiddleware
 from web.routes import dashboard as dashboard_route
+from web.routes.admin import router as admin_router
 from web.routes import devices as devices_route
 from web.routes import healthz as healthz_route
 from web.routes import login as login_route
@@ -187,6 +188,14 @@ def create_app() -> FastAPI:
   application.add_exception_handler(
     RequestValidationError, trades_route._validation_exception_handler,
   )
+
+  # Phase 35 D-08 + --reviews #4: admin sub-router registered BEFORE
+  # add_middleware. Gate (require_admin) is injected at router construction
+  # (Plan 04) — every route on admin_router inherits it. Order is a
+  # grep-auditability convention; middleware applies regardless of order
+  # but keeping route-tree mutations BEFORE add_middleware groups them
+  # cleanly for review.
+  application.include_router(admin_router)
 
   # D-06: AuthMiddleware MUST be registered LAST — Starlette runs middleware
   # in REVERSE of registration, so 'last registered' = 'first to dispatch'.
