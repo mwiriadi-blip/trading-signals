@@ -42,6 +42,13 @@ def two_user_client(isolated_auth_json, monkeypatch):
   Monkeypatches load_state and mutate_user_state to inject seeded state.
   Returns (client, uid_a, uid_b).
   '''
+  # test_tenant_isolation.py does not match test_web_* pattern so the autouse
+  # fixture in conftest.py does not set these env vars. Set them here so
+  # create_app() does not raise RuntimeError (D-16/D-17 fail-closed check).
+  monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
+  monkeypatch.setenv('WEB_AUTH_USERNAME', VALID_USERNAME)
+  monkeypatch.setenv('OPERATOR_RECOVERY_EMAIL', 'mwiriadi@gmail.com')
+
   sys.modules.pop('web.app', None)
 
   import auth_store
@@ -126,7 +133,6 @@ class TestTenantIsolation:
   The other two tests are Phase 37 stubs (fan-out + user-B dashboard).
   '''
 
-  @pytest.mark.xfail(strict=False, reason='Wave 1: GET /admin/users not yet implemented')
   def test_admin_users_response_has_no_trade_content(self, two_user_client):
     '''GET /admin/users JSON body must contain zero TRADE_CONTENT_RE matches.
 
