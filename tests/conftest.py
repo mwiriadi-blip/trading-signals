@@ -26,6 +26,8 @@ import time
 
 import pytest
 
+from state_manager.migrations import _ADMIN_UID
+
 # Phase 13 D-17: 32 chars meets the minimum-length check
 # (≈128 bits of entropy via openssl rand -hex 16).
 VALID_SECRET = 'a' * 32
@@ -219,31 +221,41 @@ def client_with_state_v3(monkeypatch):
   sys.modules.pop('web.app', None)
   from web.app import create_app
 
+  # Phase 36: v12-shaped state — user data lives under state['users'][uid].
   default_state = {
-    'schema_version': 3,
-    'account': 100_000.0,
+    'schema_version': 12,
+    'admin_user_id': _ADMIN_UID,
     'last_run': '2026-04-25',
-    'positions': {
-      'SPI200': {
-        'direction': 'LONG', 'entry_price': 7800.0, 'entry_date': '2026-04-20',
-        'n_contracts': 2, 'pyramid_level': 0,
-        'peak_price': 7850.0, 'trough_price': None, 'atr_entry': 50.0,
-        'manual_stop': None,  # Phase 14 D-09
-      },
-      'AUDUSD': None,
-    },
-    # Phase 14 REVIEWS MEDIUM #7: signals nested under last_scalars
-    # (matches main.py:1225 daily-loop write shape).
     'signals': {
       'SPI200': {'last_scalars': {'atr': 50.0}, 'last_close': 7820.0},
-      'AUDUSD': {},
+      'AUDUSD': {'last_close': 0.6520, 'last_scalars': {'atr': 0.005}},
     },
-    'trade_log': [], 'equity_history': [], 'warnings': [],
-    'initial_account': 100_000.0,
-    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+    'markets': {},
+    'strategy_settings': {},
+    'warnings': [],
     '_resolved_contracts': {
       'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
       'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
+    },
+    'users': {
+      _ADMIN_UID: {
+        'account': 100_000.0,
+        'initial_account': 100_000.0,
+        'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+        'positions': {
+          'SPI200': {
+            'direction': 'LONG', 'entry_price': 7800.0, 'entry_date': '2026-04-20',
+            'n_contracts': 2, 'pyramid_level': 0,
+            'peak_price': 7850.0, 'trough_price': None, 'atr_entry': 50.0,
+            'manual_stop': None,
+          },
+          'AUDUSD': None,
+        },
+        'trade_log': [],
+        'equity_history': [],
+        'paper_trades': [],
+        'ui_prefs': {'tour_completed': True},
+      },
     },
   }
   state_box = {'value': default_state}
@@ -271,6 +283,15 @@ def client_with_state_v3(monkeypatch):
     captured_saves.append(dict(state))
     return state
   monkeypatch.setattr(state_manager, 'mutate_state', _mutate_state_stub)
+
+  # Phase 36: also stub mutate_user_state so routes calling it use same
+  # state_box and captured_saves (uid param ignored — single-user test).
+  def _mutate_user_state_stub(uid, mutator, *_a, **_kw):
+    state = state_box['value']
+    mutator(state)
+    captured_saves.append(dict(state))
+    return state
+  monkeypatch.setattr(state_manager, 'mutate_user_state', _mutate_user_state_stub)
 
   client = TestClient(create_app())
 
@@ -320,23 +341,34 @@ def client_with_state_v6(monkeypatch):
   sys.modules.pop('web.app', None)
   from web.app import create_app
 
+  # Phase 36: v12-shaped state — user data lives under state['users'][uid].
   default_state = {
-    'schema_version': 7,
-    'account': 100_000.0,
+    'schema_version': 12,
+    'admin_user_id': _ADMIN_UID,
     'last_run': '2026-04-30',
-    'positions': {'SPI200': None, 'AUDUSD': None},
     'signals': {
       'SPI200': {'last_close': 7820.0, 'last_scalars': {'atr': 50.0}},
       'AUDUSD': {'last_close': 0.6520, 'last_scalars': {'atr': 0.005}},
     },
-    'trade_log': [], 'equity_history': [], 'warnings': [],
-    'initial_account': 100_000.0,
-    'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+    'markets': {},
+    'strategy_settings': {},
+    'warnings': [],
     '_resolved_contracts': {
       'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
       'AUDUSD': {'multiplier': 10000.0, 'cost_aud': 5.0},
     },
-    'paper_trades': [],   # Phase 19 D-08
+    'users': {
+      _ADMIN_UID: {
+        'account': 100_000.0,
+        'initial_account': 100_000.0,
+        'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-mini'},
+        'positions': {'SPI200': None, 'AUDUSD': None},
+        'trade_log': [],
+        'equity_history': [],
+        'paper_trades': [],
+        'ui_prefs': {'tour_completed': True},
+      },
+    },
   }
   state_box = {'value': default_state}
   captured_saves = []
@@ -354,6 +386,15 @@ def client_with_state_v6(monkeypatch):
     return state
 
   monkeypatch.setattr(state_manager, 'mutate_state', _mutate_state_stub)
+
+  # Phase 36: also stub mutate_user_state so routes calling it use same
+  # state_box and captured_saves (uid param ignored — single-user test).
+  def _mutate_user_state_stub(uid, mutator, *_a, **_kw):
+    state = state_box['value']
+    mutator(state)
+    captured_saves.append(dict(state))
+    return state
+  monkeypatch.setattr(state_manager, 'mutate_user_state', _mutate_user_state_stub)
   client = TestClient(create_app())
 
   def set_state(payload):
