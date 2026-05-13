@@ -318,6 +318,8 @@ def client_with_state_v3(monkeypatch):
   # Both shims are removed in Wave 2 when tests reference user bucket directly.
   _USER_BUCKET_KEYS = ('paper_trades', 'positions', 'trade_log', 'equity_history',
                        'account', 'initial_account', 'contracts', 'ui_prefs')
+  # Keys propagated back to top-level after mutation for legacy test assertions
+  _PROPAGATE_KEYS = ('paper_trades', 'positions', 'trade_log', 'account', 'equity_history')
   def _mutate_user_state_stub(uid, mutator, *_a, **_kw):
     state = state_box['value']
     if 'users' not in state:
@@ -328,7 +330,7 @@ def client_with_state_v3(monkeypatch):
       state['users'][uid] = {k: state.get(k) for k in _USER_BUCKET_KEYS if k in state}
     mutator(state)
     # Shim B: propagate user-bucket keys back to top-level for legacy assertions
-    for _key in ('paper_trades', 'positions', 'trade_log'):
+    for _key in _PROPAGATE_KEYS:
       if _key in state['users'].get(uid, {}):
         state[_key] = state['users'][uid][_key]
     captured_saves.append(dict(state))
@@ -451,6 +453,7 @@ def client_with_state_v6(monkeypatch):
   # Same shim A+B logic as client_with_state_v3 — see inline comment there.
   _USER_BUCKET_KEYS_V6 = ('paper_trades', 'positions', 'trade_log', 'equity_history',
                            'account', 'initial_account', 'contracts', 'ui_prefs')
+  _PROPAGATE_KEYS_V6 = ('paper_trades', 'positions', 'trade_log', 'account', 'equity_history')
   def _mutate_user_state_stub_v6(uid, mutator, *_a, **_kw):
     state = state_box['value']
     if 'users' not in state:
@@ -458,7 +461,7 @@ def client_with_state_v6(monkeypatch):
     elif uid not in state['users']:
       state['users'][uid] = {k: state.get(k) for k in _USER_BUCKET_KEYS_V6 if k in state}
     mutator(state)
-    for _key in ('paper_trades', 'positions', 'trade_log'):
+    for _key in _PROPAGATE_KEYS_V6:
       if _key in state['users'].get(uid, {}):
         state[_key] = state['users'][uid][_key]
     captured_saves.append(dict(state))

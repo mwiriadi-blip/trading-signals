@@ -76,7 +76,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     from dashboard_renderer.components.paper_trades import render_paper_trades_region
     from state_manager import load_state
     state_full = load_state()
-    user_state = state_full['users'][user_id]
+    # Graceful fallback: user bucket may not exist yet for newly created users.
+    user_state = state_full.get('users', {}).get(user_id, {})
     merged = {**user_state, 'signals': state_full.get('signals', {})}
     return HTMLResponse(content=render_paper_trades_region(merged))
 
