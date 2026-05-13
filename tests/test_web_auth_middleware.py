@@ -936,7 +936,9 @@ class TestCookieUidExtension:
     # Here we use a request that auth-fails (no auth) and hits the 401/302 branch.
     # We can't capture user_id in that case, so instead verify the AST guarantee:
     import ast
-    src_path = WEB_AUTH_PATH
+    from pathlib import Path
+    # Resolve relative to THIS test file (worktree-safe — avoids reading main repo copy).
+    src_path = Path(__file__).parent.parent / 'web' / 'middleware' / 'auth.py'
     tree = ast.parse(src_path.read_text())
     cls = next(
       n for n in ast.walk(tree)
