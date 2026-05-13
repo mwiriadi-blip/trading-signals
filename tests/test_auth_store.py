@@ -780,3 +780,21 @@ class TestSchemaMigrationV1ToV2:
     assert mtime_before == mtime_after, (
       'Defensive backfill on v2 file must NOT save to disk (no mtime bump)'
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 35 Plan 01 — get_user_by_email (Task 1 RED gate)
+# ---------------------------------------------------------------------------
+
+class TestGetUserByEmailRedGate:
+  '''Minimal RED gate: asserts get_user_by_email is importable and callable.
+  Replaced by TestGetUserByEmail (Task 2) once implementation is green.
+  '''
+
+  def test_get_user_by_email_importable_and_callable(self):
+    from auth_store import get_user_by_email  # noqa: F401
+    assert callable(get_user_by_email)
+
+  def test_get_user_by_email_in___all__(self):
+    import auth_store
+    assert 'get_user_by_email' in auth_store.__all__
