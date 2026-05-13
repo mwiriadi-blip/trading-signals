@@ -14,7 +14,8 @@ Fixture strategy:
 import types
 
 import pytest
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
+from fastapi.routing import APIRoute
 
 from web.dependencies import (
   _DETAIL_ADMIN_REQUIRED,
@@ -22,6 +23,7 @@ from web.dependencies import (
   current_user_id,
   require_admin,
 )
+from web.routes.admin import router
 
 
 def _fake_request(user_id_value, *, missing=False):
@@ -130,7 +132,59 @@ class TestRequireAdmin:
 # ---------------------------------------------------------------------------
 
 class TestAdminSubRouter:
-  pass
+  def test_router_is_apirouter_instance(self):
+    '''Verifies that web/routes/admin exposes an APIRouter object, not a plain
+    FastAPI app or any other type. FastAPI only accepts APIRouter instances in
+    include_router(); wrong type raises at startup.
+    '''
+    assert isinstance(router, APIRouter)
+
+  def test_router_prefix_is_admin(self):
+    '''Verifies APIRouter stores the prefix string verbatim at construction time.
+    FastAPI prepends this to all route paths during include_router() — prefix is
+    NOT reflected in router.routes entries (pre-include shape has no prefix).
+    '''
+    assert router.prefix == '/admin'
+
+  def test_router_has_require_admin_dependency(self):
+    '''Verifies FastAPI APIRouter(dependencies=...) stores Depends objects with
+    .dependency attribute pointing at the callable — needed by Plan 05's startup
+    invariant walker which checks `require_admin in [d.dependency for d in
+    route.dependencies]` after include_router on the live app.
+    '''
+    dep_callables = [d.dependency for d in router.dependencies]
+    assert require_admin in dep_callables
+
+  def test_router_has_ping_route(self):
+    '''Verifies the router carries a GET /admin/ping route. FastAPI bakes the
+    router prefix into route.path at construction time (not at include_router
+    time), so the pre-include shape is already '/admin/ping'. Plan 05's post-
+    include invariant walker also sees '/admin/ping' in app.routes.
+    '''
+    ping_routes = [
+      r for r in router.routes
+      if isinstance(r, APIRoute) and r.path == '/admin/ping' and 'GET' in r.methods
+    ]
+    assert len(ping_routes) == 1
+
+  def test_ping_handler_returns_ok_dict(self):
+    '''Verifies the route handler function itself (D-09). Calling it directly
+    bypasses FastAPI dependency injection — purely tests the return value.
+    '''
+    ping_routes = [
+      r for r in router.routes
+      if isinstance(r, APIRoute) and r.path == '/admin/ping'
+    ]
+    assert ping_routes
+    result = ping_routes[0].endpoint()
+    assert result == {'ok': True}
+
+  def test_router_all_exports(self):
+    '''Verifies web/routes/admin.__all__ == ['router'] so that
+    `from web.routes.admin import *` yields exactly the router object.
+    '''
+    import web.routes.admin as admin_mod
+    assert admin_mod.__all__ == ['router']
 
 
 class TestAdminGate403Sweep:
