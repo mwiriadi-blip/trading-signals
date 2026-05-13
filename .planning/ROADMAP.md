@@ -255,7 +255,7 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
 Plans:
 
 **Wave 1**
-- [ ] 36-01-PLAN.md — Foundation (mutate_user_state, load_user_state, record_trade uid param, PublicUserSummary model, conftest v12 fixtures, test stubs)
+- [x] 36-01-PLAN.md — Foundation (mutate_user_state, load_user_state, record_trade uid param, PublicUserSummary model, conftest v12 fixtures, test stubs)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 36-02-PLAN.md — Route Migration (paper_trades + trades migrate to mutate_user_state, admin GET /users + PATCH /users/{uid}/disable)
@@ -466,7 +466,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 33. schema v11→v12 + backup | v1.3 | 0/0 | Not started | - |
 | 34. user registry + invite-token storage | v1.3 | 2/2 | Complete   | 2026-05-12 |
 | 35. cookie + Depends + sub-router admin gate | v1.3 | 5/5 | Complete    | 2026-05-13 |
-| 36. per-user scoping + privacy + flock | v1.3 | 0/0 | Not started | - |
+| 36. per-user scoping + privacy + flock | v1.3 | 1/3 | In Progress|  |
 | 37. per-user email fan-out + admin routes | v1.3 | 0/0 | Not started | - |
 | 38. news integration | v1.3 | 0/0 | Not started | - |
 | 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
