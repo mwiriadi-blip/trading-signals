@@ -382,9 +382,49 @@ def mutate_state(
     os.close(fd)
 
 
+def mutate_user_state(
+  uid: str,
+  mutator: Callable[[dict], None],
+  path: Path = Path(STATE_FILE),
+) -> dict:
+  '''Phase 36 D-01/D-02/D-03: per-user outer flock + inner mutate_state.
+
+  Acquisition order: state/users/{uid}.lock (OUTER) -> state.json (INNER).
+  Both locks always acquired in this order by all callers — no deadlock.
+
+  The outer lock serializes concurrent writes for the SAME user (e.g. daily
+  fan-out vs HTMX write). Cross-user writes are serialized by the inner
+  state.json flock in mutate_state regardless (D-04).
+
+  lock_path is constructed relative to CWD so tests can redirect via
+  monkeypatch.chdir(tmp_path) (D-03).
+  '''
+  lock_dir = Path('state/users')
+  lock_dir.mkdir(parents=True, exist_ok=True)
+  lock_path = lock_dir / f'{uid}.lock'
+  # 'a+' creates file if absent; existing content ignored (lock-only fd).
+  with open(lock_path, 'a+') as lock_file:
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    try:
+      return mutate_state(mutator, path=path)
+    finally:
+      fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def load_user_state(uid: str, path: Path = Path(STATE_FILE)) -> dict:
+  '''Phase 36 D-05: return state["users"][uid] slice.
+
+  Re-exported from state_manager so routes can:
+    from state_manager import load_user_state
+  Only per-user data reads use this; signal/market reads keep load_state().
+  '''
+  return load_state(path=path)['users'][uid]
+
+
 __all__ = [
   # Public API
   'load_state', 'save_state', 'reset_state', 'mutate_state',
+  'mutate_user_state', 'load_user_state',
   'append_warning', 'clear_warnings', 'clear_warnings_by_source',
   'record_trade', 'update_equity_history',
   # Private but re-exported for backward compat with existing test imports

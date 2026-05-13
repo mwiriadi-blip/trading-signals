@@ -120,7 +120,7 @@ def clear_warnings_by_source(state: dict, source: str) -> dict:
   return state
 
 
-def record_trade(state: dict, trade: dict) -> dict:
+def record_trade(state: dict, trade: dict, uid: str = _ADMIN_UID) -> dict:
   '''STATE-05 / D-13 / D-14 / D-15 / D-16 / D-19 / D-20: record a closed trade.
 
   D-15 + D-19: validates trade shape and field types; raises ValueError
@@ -143,8 +143,10 @@ def record_trade(state: dict, trade: dict) -> dict:
     realised_pnl as gross_pnl causes double-counting of the closing cost.
     Phase 4 orchestrator is responsible for this projection.
   '''
-  # Phase 33 TENANT-01: per-user state bucket (v12 shape).
-  user = _admin_user(state)
+  # Phase 36 TENANT-01: per-user state bucket (v12 shape).
+  # uid parameter selects user bucket; defaults to _ADMIN_UID for backward compat.
+  users_map = state.get('users', {})
+  user = users_map.get(uid) or _admin_user(state)
   _validate_trade(trade, allowed_instruments=set(user.get('positions', {}).keys()))
   # D-14: closing-half cost split. Phase 2 deducted opening half via
   # compute_unrealised_pnl during the position's lifetime. Phase 3 deducts
