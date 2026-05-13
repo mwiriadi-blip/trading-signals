@@ -14,7 +14,7 @@ A **shipped** hosted Python web app (v1.1, 2026-04-30) running a mechanical tren
 
 **Production:** `https://signals.mwiriadi.me` — HTTPS + auth gated, daily 08:00 Sydney (AEST/AEDT, DST-aware) signal cycle on droplet systemd, daily emails flowing through Resend, 1880+ tests green, dashboard shows reproducible signals + paper-trade ledger + 5-year backtest gate. Schema at v9 (Decimal AUD-quantized money). DigitalOcean droplet + systemd is the documented PRIMARY deploy path; GHA cron disabled (preserved as rollback insurance).
 
-**Next:** v1.3 — Multi-Tenant Friends & Family — planning in flight.
+**Next:** v1.3 — Multi-Tenant Friends & Family — Phase 35 complete; Phase 36 (per-route user_id scoping) pending.
 
 ## Current Milestone: v1.3 Multi-Tenant Friends & Family
 
