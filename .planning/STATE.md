@@ -3,33 +3,34 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-11T00:19:35.294Z"
+last_updated: "2026-05-13T01:48:17.494Z"
 progress:
-  total_phases: 12
-  completed_phases: 3
-  total_plans: 28
-  completed_plans: 27
-  percent: 96
+  total_phases: 14
+  completed_phases: 8
+  total_plans: 46
+  completed_plans: 42
+  percent: 91
 ---
 
 # STATE — Trading Signals
 
-**Last updated:** 2026-05-10 (v1.2 milestone shipped via `/gsd-complete-milestone`)
+**Last updated:** 2026-05-13 (Phase 34 — User Registry + Invite-Token Storage — COMPLETE, 2151 tests green)
 
 ## Project Reference
 
 - **Name:** Trading Signals — SPI 200 & AUD/USD Mechanical System
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
-- **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 1880+ tests green)
-- **Current focus:** Phase 29 — v1.2.1 Retroactive Patch Wrap + Validation Sweep
+- **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
+- **Current focus:** Phase 35 — cookie-depends-current-user-sub-router-admin-gate
 
 ## Current Position
 
-Phase: 30 (File-Size Pre-Split) — COMPLETE (7/7 plans)
-Next: Phase 31 (Schema Migration v11→v12 + Admin Namespace + Backup + Gitignore)
-Status: Phase 30 closed 2026-05-11; 2065 tests green
-Resume file: None
+Phase: 35 (cookie-depends-current-user-sub-router-admin-gate) — EXECUTING
+Plan: 1 of 5
+Plans: 0 of 5 complete
+Next: /gsd-execute-phase 35
+Status: Executing Phase 35
 
 ### Resume instructions for cloud Claude / fresh clone
 
@@ -129,6 +130,9 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 27 P14 | ~25min | 4 tasks | 13 files |
 | Phase 28 P03 | ~12min | 1 tasks | 1 files |
 | Phase 28 P04 | 6 min | 1 tasks | 1 files |
+| Phase 34 P01 | 573s | 2 tasks | 7 files |
+| Phase 34 P02 | ~15min | 2 tasks | 4 files |
+| Phase 34 P02 | 15min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -236,6 +240,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 - [Phase ?]: Switched _LAST_LOADED_STATE from PEP 562 __getattr__ proxy to real attribute on main.py with through-main accessors in state_actions
 - [Phase ?]: Late-bind via main package — every seam re-resolves names through main on every call (mirrors Plan 27-12)
 - [Phase ?]: Plan 28-04 relaxed missing-CSS assertion to inline-or-link (no StaticFiles mount in trading-signals)
+- [Phase 31]: state_manager.py (1293 LOC) split into package (5 daughter files, all ≤500 LOC); sizing_engine.py (820 LOC) split into package (6 daughter files); AST gate tests in test_signal_engine.py, test_entry_side_cost.py, test_warnings_fifo.py updated to walk packages; 2084 tests green post-split
 
 ### Todos Carried Forward
 

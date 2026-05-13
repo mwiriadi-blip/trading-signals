@@ -277,7 +277,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 
 INITIAL_ACCOUNT: float = 10_000.0   # starting account balance (STATE-07, reset_state); operator-default sized for retail SPI mini / AUDUSD mini lot
 MAX_WARNINGS: int = 50              # FIFO bound on state['warnings'] (D-11; Phase 27 #16 review-fix agreed-4: tightened from 100 to 50)
-STATE_SCHEMA_VERSION: int = 11      # v11 adds per-market contract_type + financing_rate_annual_pct; per-market default strategy settings honoured by reset_state.
+STATE_SCHEMA_VERSION: int = 12      # v12 buckets per-user state (account, initial_account, contracts, positions, trade_log, equity_history, paper_trades) under state['users']['u_admin_marc']; adds admin_user_id top-level key.
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)
 
 # Phase 27 Plan 27-11 (review-fix agreed-5): second-line crash fallback.
@@ -484,6 +484,9 @@ RATE_LIMIT_LOGIN_PER_15M = 5           # F-08
 RATE_LIMIT_FORGOT_PER_HOUR = 3         # F-08
 RATE_LIMIT_RESET_PER_HOUR = 10         # F-08
 RATE_LIMIT_MAGIC_LINKS_PER_24H = 3     # F-08 per-account
+
+# Phase 34 Plan 02 — invite token TTL (single source of truth, WR-04).
+INVITE_TOKEN_TTL_DAYS: int = 7
 
 TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
 AUTH_JSON_PATH: str = 'auth.json'

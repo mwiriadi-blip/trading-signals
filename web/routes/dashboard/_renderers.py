@@ -91,7 +91,7 @@ def _forward_stop_fragment_response(request: Request, fragment: str | None):
   import html as _html
   import math as _math
 
-  from dashboard import _fmt_currency, _fmt_em_dash  # LOCAL — C-2
+  from dashboard_renderer.formatters import _fmt_currency, _fmt_em_dash  # LOCAL — C-2
   from sizing_engine import get_trailing_stop  # LOCAL — C-2
   from state_manager import load_state as _ls  # LOCAL — C-2
 

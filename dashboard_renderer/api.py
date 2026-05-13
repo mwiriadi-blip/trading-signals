@@ -4,12 +4,23 @@ Primary render-orchestration entrypoint. Keeps the public `dashboard.py`
 surface stable while moving top-level composition into `dashboard_renderer`.
 '''
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import pytz
 
+from dashboard_renderer.components.header import render_header_from_context
 from dashboard_renderer.context import RenderContext
+from dashboard_renderer.formatters import _resolve_strategy_version
+from dashboard_renderer.io import atomic_write_html
+from dashboard_renderer.shell import (
+  _render_single_page_dashboard,
+  _render_tabbed_dashboard,
+  render_html_shell,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_now(now: datetime | None) -> datetime:
@@ -27,10 +38,8 @@ def _build_render_context(
   active_function: str = 'signals',
   active_market: str | None = None,
 ) -> RenderContext:
-  import dashboard as d
-
   resolved_now = _resolve_now(now)
-  strategy_version = d._resolve_strategy_version(state)
+  strategy_version = _resolve_strategy_version(state)
   ctx = RenderContext.build(
     state=state,
     now=resolved_now,
@@ -39,7 +48,6 @@ def _build_render_context(
     active_function=active_function,
     active_market=active_market,
   )
-  d._resolve_trace_open_keys(ctx.state, list(ctx.trace_open_keys))
   return ctx
 
 
@@ -49,10 +57,8 @@ def _render_header_and_body(
   is_cookie_session: bool | None,
   body_html: str,
 ) -> str:
-  import dashboard as d
-
-  body = d._render_header_ctx(ctx, is_cookie_session=is_cookie_session) + body_html
-  return d._render_html_shell(ctx, body)
+  body = render_header_from_context(ctx, is_cookie_session=is_cookie_session) + body_html
+  return render_html_shell(ctx, body)
 
 
 def render_dashboard_files(
@@ -72,8 +78,6 @@ def render_dashboard_files(
   mixed-return-type predecessor that returned str on htmx_panel_only=True
   is gone (eliminated annotation lie).
   '''
-  import dashboard as d
-
   ctx = _build_render_context(
     state=state,
     now=now,
@@ -82,14 +86,14 @@ def render_dashboard_files(
     active_market=active_market,
   )
 
-  d.logger.info('[Dashboard] rendering to %s', out_path)
+  logger.info('[Dashboard] rendering to %s', out_path)
   html_str = _render_header_and_body(
     ctx=ctx,
     is_cookie_session=is_cookie_session,
     # Keep dashboard.html as the full composition entrypoint.
-    body_html=d._render_tabbed_dashboard(ctx),
+    body_html=_render_tabbed_dashboard(ctx),
   )
-  d._atomic_write_html(html_str, out_path)
+  atomic_write_html(html_str, out_path)
 
   sibling_targets = (
     ('signals', Path('dashboard-signals.html')),
@@ -114,10 +118,10 @@ def render_dashboard_files(
     sibling_html_str = _render_header_and_body(
       ctx=sibling_ctx,
       is_cookie_session=is_cookie_session,
-      body_html=d._render_single_page_dashboard(sibling_ctx, sibling_page),
+      body_html=_render_single_page_dashboard(sibling_ctx, sibling_page),
     )
-    d._atomic_write_html(sibling_html_str, sibling_out)
-  d.logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
+    atomic_write_html(sibling_html_str, sibling_out)
+  logger.info('[Dashboard] wrote %d bytes to %s', len(html_str), out_path)
 
 
 def render_panel_html(
@@ -165,11 +169,10 @@ def render_dashboard_as_str(
     active_function=active_function,
     active_market=active_market,
   )
-  import dashboard as d
   return _render_header_and_body(
     ctx=ctx,
     is_cookie_session=None,
-    body_html=d._render_single_page_dashboard(ctx, active_function),
+    body_html=_render_single_page_dashboard(ctx, active_function),
   )
 
 
@@ -183,8 +186,6 @@ def render_dashboard_page(
   *,
   active_market: str | None = None,
 ) -> None:
-  import dashboard as d
-
   ctx = _build_render_context(
     state=state,
     now=now,
@@ -192,11 +193,11 @@ def render_dashboard_page(
     active_function=page,
     active_market=active_market,
   )
-  d.logger.info('[Dashboard] rendering page=%s to %s', page, out_path)
+  logger.info('[Dashboard] rendering page=%s to %s', page, out_path)
   html_str = _render_header_and_body(
     ctx=ctx,
     is_cookie_session=is_cookie_session,
-    body_html=d._render_single_page_dashboard(ctx, page),
+    body_html=_render_single_page_dashboard(ctx, page),
   )
-  d._atomic_write_html(html_str, out_path)
-  d.logger.info('[Dashboard] wrote page=%s (%d bytes) to %s', page, len(html_str), out_path)
+  atomic_write_html(html_str, out_path)
+  logger.info('[Dashboard] wrote page=%s (%d bytes) to %s', page, len(html_str), out_path)

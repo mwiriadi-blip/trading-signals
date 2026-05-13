@@ -242,10 +242,12 @@ class TestCLI:
     assert rc == 0
 
     post = json.loads((tmp_path / 'state.json').read_text())
-    assert post['account'] == INITIAL_ACCOUNT, (
-      f'CLI-02: post-reset account should be ${INITIAL_ACCOUNT}, got {post["account"]}'
+    # Phase 33 TENANT-01: per-user keys in users bucket
+    _post_user = post['users']['u_admin_marc']
+    assert _post_user['account'] == INITIAL_ACCOUNT, (
+      f'CLI-02: post-reset account should be ${INITIAL_ACCOUNT}, got {_post_user["account"]}'
     )
-    assert post['trade_log'] == [], (
+    assert _post_user['trade_log'] == [], (
       'CLI-02: post-reset trade_log should be empty'
     )
 
@@ -708,8 +710,9 @@ class TestOrchestrator:
     monkeypatch.chdir(tmp_path)
     state_json = tmp_path / 'state.json'
     # Seed: LONG on SPI200 (open since 2026-04-10); FLAT on AUDUSD.
+    # Phase 33 TENANT-01: positions in users bucket.
     seed = state_manager.reset_state()
-    seed['positions']['SPI200'] = {
+    seed['users']['u_admin_marc']['positions']['SPI200'] = {
       'direction': 'LONG',
       'entry_price': 8000.0,
       'entry_date': '2026-04-10',
@@ -776,7 +779,9 @@ class TestOrchestrator:
     assert rc == 0
 
     post = json.loads(state_json.read_text())
-    sp = post['positions']['SPI200']
+    # Phase 33 TENANT-01: per-user keys in users bucket
+    _post_user = post['users']['u_admin_marc']
+    sp = _post_user['positions']['SPI200']
     assert sp is not None, (
       'AC-1 revision: state[positions][SPI200] is None — the new SHORT '
       'reversal position was wiped by record_trade. Check run_daily_check '
@@ -789,10 +794,10 @@ class TestOrchestrator:
     assert sp['n_contracts'] == 3
     assert sp['entry_price'] == 8050.0
     # Trade log contains the closed LONG with the right metadata.
-    assert len(post['trade_log']) == 1, (
-      f'AC-1: expected 1 closed trade, got {len(post["trade_log"])}'
+    assert len(_post_user['trade_log']) == 1, (
+      f'AC-1: expected 1 closed trade, got {len(_post_user["trade_log"])}'
     )
-    tl = post['trade_log'][0]
+    tl = _post_user['trade_log'][0]
     assert tl['direction'] == 'LONG'
     assert tl['exit_reason'] == 'signal_reversal'
     assert tl['instrument'] == 'SPI200'
@@ -1818,8 +1823,9 @@ class TestCrashEmailBoundary:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
     # Seed state.json with known non-default values.
+    # Phase 33 TENANT-01: account in users bucket.
     seed = state_manager.reset_state()
-    seed['account'] = 42_000.0
+    seed['users']['u_admin_marc']['account'] = 42_000.0
     state_manager.save_state(seed, path=tmp_path / 'state.json')
     _install_fixture_fetch(monkeypatch)
 
@@ -2589,7 +2595,8 @@ class TestRunDailyCheckPushesState:
       'D-08: _push_state_to_git must be invoked once per non-test weekday run'
     )
     pushed_state, pushed_now = calls[0]
-    assert 'account' in pushed_state, 'state arg must carry run state'
+    # Phase 33 TENANT-01: account now in users bucket
+    assert 'account' in pushed_state['users']['u_admin_marc'], 'state arg must carry run state'
     assert pushed_now == run_date, (
       'D-08: now arg must equal run_daily_check run_date'
     )
@@ -2740,8 +2747,9 @@ class TestDriftWarningLifecycle:
     state_file_path = tmp_path / 'state.json'
 
     # Seed state with a LONG SPI200 position.
+    # Phase 33 TENANT-01: positions in users bucket.
     seed = state_manager.reset_state()
-    seed['positions']['SPI200'] = dict(self._LONG_SPI200)
+    seed['users']['u_admin_marc']['positions']['SPI200'] = dict(self._LONG_SPI200)
     seed['signals']['SPI200'] = {
       'signal': 1, 'signal_as_of': '2026-04-20', 'as_of_run': '2026-04-20',
       'last_scalars': {'atr': 50.0}, 'last_close': 7800.0,

@@ -1,10 +1,13 @@
-"""Plan 27-14 Task 4: dashboard split parity gates.
+"""Plan 27-14 Task 4 + Phase 32 Plan 04 Task 3: dashboard split parity gates.
 
 Three structural assertions that must remain green for the dashboard.py +
-dashboard_legacy/ split to be correct:
+dashboard_renderer/ split to be correct:
 
-  1. test_dashboard_files_under_500_loc — every file in the split is <500
-     LOC (with M1 ±10% tolerance → <550 LOC actual gate).
+  1. test_dashboard_files_under_500_loc — Phase 32 Plan 04 close-out:
+     - dashboard_legacy/ contains exactly __init__.py (ImportError stub)
+     - dashboard.py is <=100 LOC (OPS-06 shim cap)
+     - dashboard_renderer/*.py all <=500 LOC
+     - Stub raises ImportError (NOT ModuleNotFoundError) with locked message
   2. test_dashboard_html_output_byte_identical — render_dashboard against
      the canonical fixture produces output byte-identical to the Task 1
      golden (captured AFTER 27-08 + 27-11 land).
@@ -12,8 +15,10 @@ dashboard_legacy/ split to be correct:
      test in addition to renderer unit tests. Hits the FastAPI app and
      asserts the dashboard route returns valid HTML.
 """
+import importlib
 import json
 import pathlib
+import subprocess
 import sys
 from datetime import datetime
 
@@ -38,27 +43,72 @@ AUTH_HEADER_NAME = 'X-Trading-Signals-Auth'
 
 
 def test_dashboard_files_under_500_loc() -> None:
-  """Plan 27-14 truth #1: dashboard.py + every dashboard_legacy/* <500 LOC.
+  """Phase 32 Plan 04 close-out: dashboard_legacy/ stub + LOC caps.
 
-  M1 tolerance: ±10% → 550 LOC hard ceiling. (Plan 27-12 + 27-13 use the
-  same precedent; plan-side targets stay 500.)
+  Phase 32 Plan 04 replaces dashboard_legacy/ submodule files with a
+  single ImportError stub and thins dashboard.py to <=100 LOC. This test
+  asserts the retirement is complete.
+
+  (a) dashboard_legacy/__init__.py is the ONLY .py file in dashboard_legacy/
+  (b) importing any name from dashboard_legacy raises ImportError with the
+      locked message 'dashboard_legacy retired' — NOT ModuleNotFoundError
+  (c) submodule-style import (fresh subprocess) also raises ImportError
+  (d) dashboard.py is <=100 LOC (OPS-06 shim cap)
+  (e) dashboard_renderer/*.py all <=500 LOC (assets.py exempt — data file)
   """
-  suspects = [pathlib.Path('dashboard.py')]
   package_dir = pathlib.Path('dashboard_legacy')
-  if package_dir.is_dir():
-    suspects.extend(sorted(package_dir.glob('*.py')))
+
+  # (a) Only __init__.py remains
   assert package_dir.is_dir(), 'dashboard_legacy/ package directory missing'
-  assert len(suspects) >= 2, (
-    f'expected dashboard.py + at least one dashboard_legacy/* file; got {suspects}'
+  py_files = sorted(package_dir.glob('*.py'))
+  assert py_files == [pathlib.Path('dashboard_legacy/__init__.py')], (
+    f'dashboard_legacy/ must contain exactly __init__.py; found: {py_files}'
   )
 
+  # (b) Attribute access raises ImportError('dashboard_legacy retired')
+  # Use importlib to force a fresh import check even if module is cached.
+  with pytest.raises(ImportError, match='dashboard_legacy retired'):
+    import dashboard_legacy as _dl
+    _ = _dl.render_helpers  # attribute access triggers __getattr__
+
+  # (c) Submodule import in fresh subprocess raises ImportError (NOT ModuleNotFoundError)
+  result = subprocess.run(
+    [sys.executable, '-c', 'import dashboard_legacy.render_helpers'],
+    capture_output=True,
+    text=True,
+    cwd=str(pathlib.Path(__file__).parent.parent),
+  )
+  assert result.returncode != 0, (
+    'Expected subprocess to fail on import dashboard_legacy.render_helpers'
+  )
+  assert 'ImportError' in result.stderr, (
+    f'Expected ImportError in stderr; got: {result.stderr[:300]}'
+  )
+  assert 'dashboard_legacy retired' in result.stderr, (
+    f'Expected locked message in stderr; got: {result.stderr[:300]}'
+  )
+  # NOT ModuleNotFoundError — __path__ = [] ensures __getattr__ handles it
+  assert 'ModuleNotFoundError' not in result.stderr, (
+    'Stub must raise ImportError (not ModuleNotFoundError) for submodule imports. '
+    f'Got: {result.stderr[:300]}'
+  )
+
+  # (d) dashboard.py <=100 LOC (OPS-06 shim cap)
+  dashboard_loc = pathlib.Path('dashboard.py').read_text().count('\n')
+  assert dashboard_loc <= 100, (
+    f'dashboard.py OPS-06 shim cap violated: {dashboard_loc} LOC (max 100)'
+  )
+
+  # (e) dashboard_renderer/*.py <=500 LOC (assets.py exempt — CSS/JS data file)
   too_big = []
-  for f in suspects:
+  for f in sorted(pathlib.Path('dashboard_renderer').rglob('*.py')):
+    if f.name == 'assets.py':
+      continue  # exempt: data file (CSS/JS constants), not subject to LOC cap
     loc = f.read_text().count('\n')
     if loc >= 550:
       too_big.append((str(f), loc))
   assert not too_big, (
-    'Plan 27-14 truth #1 violated — files exceeded LOC budget '
+    'dashboard_renderer/*.py LOC budget violated '
     '(<500 plan target; <550 M1 ±10% tolerance):\n  '
     + '\n  '.join(f'{p}: {n} LOC' for p, n in too_big)
   )

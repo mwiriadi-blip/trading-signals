@@ -416,3 +416,71 @@ ss -tlnp | grep 8000
 
 *Last updated: Phase 11 (Web Skeleton). 2026-04-24 post-cross-AI-review.*
 *Run this runbook ONCE per droplet. Subsequent updates use `bash deploy.sh`.*
+
+---
+
+## Backup Setup (Phase 33)
+
+Off-droplet daily backup of `state.json` to Backblaze B2 via rclone.
+
+### Prerequisites
+
+1. **Create a Backblaze B2 bucket** (Private):
+   - Backblaze console → Buckets → Create a Bucket
+   - Name: e.g. `trading-signals-backup` (note the name for `.env`)
+
+2. **Create an Application Key** with read+write access to that bucket:
+   - Backblaze console → Application Keys → Add a New Application Key
+   - Note `keyID` and `applicationKey`
+
+3. **Install rclone on the droplet**:
+   ```bash
+   curl https://rclone.org/install.sh | sudo bash
+   ```
+
+4. **Configure rclone** (adds a B2 remote named `b2`):
+   ```bash
+   rclone config
+   # Choose: n (new remote) → name: b2 → type: b2
+   # Enter account (keyID) and key (applicationKey) when prompted
+   ```
+
+5. **Add to `.env`** on the droplet:
+   ```
+   RCLONE_REMOTE=b2
+   B2_BUCKET=trading-signals-backup
+   ```
+
+### Install systemd units
+
+```bash
+sudo cp /home/trader/trading-signals/systemd/trading-signals-backup.service \
+        /etc/systemd/system/trading-signals-backup.service
+sudo cp /home/trader/trading-signals/systemd/trading-signals-backup.timer \
+        /etc/systemd/system/trading-signals-backup.timer
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now trading-signals-backup.timer
+systemctl status trading-signals-backup.timer
+```
+
+### Verify backup works
+
+```bash
+# Run backup manually (once):
+sudo systemctl start trading-signals-backup.service
+# Check journal:
+sudo journalctl -u trading-signals-backup.service -n 20
+# Verify file in B2:
+rclone lsl b2:trading-signals-backup/trading-signals/
+```
+
+### Stale-backup alert
+
+`scripts/check_backup_age.py` checks the last-modified timestamp via `rclone lsl`.
+If the backup is older than 48 hours, it sends an alert via `notifier.send_backup_stale_email`.
+
+To test the check manually:
+```bash
+B2_BUCKET=trading-signals-backup python scripts/check_backup_age.py
+```

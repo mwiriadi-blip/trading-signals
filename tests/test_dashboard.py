@@ -40,10 +40,44 @@ import pytest
 import pytz
 
 import dashboard
-from dashboard import (  # noqa: F401 — render_dashboard is Wave 2 goldens
+from dashboard import render_dashboard  # noqa: F401 — back-compat alias kept in shim
+from dashboard_renderer.assets import _INLINE_CSS
+from dashboard_renderer.formatters import (
+  _fmt_currency,
   _fmt_em_dash,
-  render_dashboard,
+  _fmt_last_updated,
+  _fmt_percent_signed,
+  _fmt_percent_unsigned,
+  _fmt_pnl_with_colour,
+  _format_indicator_value,
+  _TRACE_FORMULAS,
 )
+from dashboard_renderer.stats import (
+  compute_aggregate_stats,
+  compute_max_drawdown,
+  compute_sharpe,
+  compute_total_return,
+  compute_trail_stop_display,
+  compute_win_rate,
+)
+from dashboard_renderer.components.account import _render_key_stats
+from dashboard_renderer.components.calc_rows import _render_calc_row, _render_entry_target_row
+from dashboard_renderer.components.footer import render_footer
+from dashboard_renderer.components.header import render_header
+from dashboard_renderer.components.paper_trades import (
+  _render_alert_badge,
+  _render_paper_trades_closed,
+  _render_paper_trades_open,
+  _render_paper_trades_stats,
+  render_paper_trades_region,
+)
+from dashboard_renderer.components.positions import (
+  _compute_unrealised_pnl_display as compute_unrealised_pnl_display,
+  _render_drift_banner,
+  render_positions_table,
+)
+from dashboard_renderer.components.signals import render_signal_cards
+from dashboard_renderer.components.trades import render_trades_table
 
 # =========================================================================
 # Module-level path + fixture constants
@@ -220,7 +254,7 @@ class TestStatsMath:
         {'date': f'2026-01-{i + 1:02d}', 'equity': e} for i, e in enumerate(equities)
       ],
     }
-    result = dashboard._compute_sharpe(state)
+    result = compute_sharpe(state)
     assert result != _fmt_em_dash()
     assert re.match(r'^-?\d+\.\d{2}$', result), f'expected f".2f" format, got {result!r}'
 
@@ -231,7 +265,7 @@ class TestStatsMath:
         {'date': f'2026-01-{i + 1:02d}', 'equity': 100000 + i} for i in range(25)
       ],
     }
-    assert dashboard._compute_sharpe(state) == '—'
+    assert compute_sharpe(state) == '—'
 
   def test_sharpe_returns_dash_on_flat_equity(self) -> None:
     '''Flat equity (stdev==0) → em-dash (Pitfall 3 belt-and-braces).'''
@@ -240,7 +274,7 @@ class TestStatsMath:
         {'date': f'2026-01-{i + 1:02d}', 'equity': 100000.0} for i in range(40)
       ],
     }
-    assert dashboard._compute_sharpe(state) == '—'
+    assert compute_sharpe(state) == '—'
 
   def test_sharpe_returns_dash_on_zero_or_negative_equity(self) -> None:
     '''Non-positive equity → em-dash (Pitfall 4: math.log domain error guard).'''
@@ -250,11 +284,11 @@ class TestStatsMath:
         {'date': f'2026-01-{i + 1:02d}', 'equity': float(e)} for i, e in enumerate(equities)
       ],
     }
-    assert dashboard._compute_sharpe(state) == '—'
+    assert compute_sharpe(state) == '—'
 
   def test_sharpe_returns_dash_on_empty_history(self) -> None:
     '''Empty equity_history → em-dash.'''
-    assert dashboard._compute_sharpe({'equity_history': []}) == '—'
+    assert compute_sharpe({'equity_history': []}) == '—'
 
   # --- Max Drawdown ---
 
@@ -267,11 +301,11 @@ class TestStatsMath:
         {'date': f'2026-01-{i + 1:02d}', 'equity': float(e)} for i, e in enumerate(equities)
       ],
     }
-    assert dashboard._compute_max_drawdown(state) == '-18.2%'
+    assert compute_max_drawdown(state) == '-18.2%'
 
   def test_max_drawdown_returns_dash_on_empty(self) -> None:
     '''Empty equity_history → em-dash.'''
-    assert dashboard._compute_max_drawdown({'equity_history': []}) == '—'
+    assert compute_max_drawdown({'equity_history': []}) == '—'
 
   def test_max_drawdown_all_time_high(self) -> None:
     '''Monotonically increasing equities → max DD = 0.0%.'''
@@ -281,7 +315,7 @@ class TestStatsMath:
         {'date': f'2026-01-{i + 1:02d}', 'equity': float(e)} for i, e in enumerate(equities)
       ],
     }
-    assert dashboard._compute_max_drawdown(state) == '0.0%'
+    assert compute_max_drawdown(state) == '0.0%'
 
   # --- Win Rate ---
 
@@ -292,11 +326,11 @@ class TestStatsMath:
       {'gross_pnl': -30.0}, {'gross_pnl': 150.0},
     ]
     state = {'trade_log': trades}
-    assert dashboard._compute_win_rate(state) == '60.0%'
+    assert compute_win_rate(state) == '60.0%'
 
   def test_win_rate_returns_dash_on_empty_log(self) -> None:
     '''Empty trade_log → em-dash per CONTEXT D-09.'''
-    assert dashboard._compute_win_rate({'trade_log': []}) == '—'
+    assert compute_win_rate({'trade_log': []}) == '—'
 
   def test_win_rate_uses_gross_pnl_not_net_pnl(self) -> None:
     '''CONTEXT D-09: gross_pnl > 0 counts as win (industry "win before costs" convention).
@@ -306,7 +340,7 @@ class TestStatsMath:
       {'gross_pnl': -10.0, 'net_pnl': -15.0},  # loss
     ]
     state = {'trade_log': trades}
-    assert dashboard._compute_win_rate(state) == '50.0%'
+    assert compute_win_rate(state) == '50.0%'
 
   # --- Total Return ---
 
@@ -317,22 +351,22 @@ class TestStatsMath:
     operator-chosen baselines (default INITIAL_ACCOUNT changed to 10K in v11).
     '''
     state = {'initial_account': 100000.0, 'equity_history': [{'date': '2026-04-24', 'equity': 104532.18}]}
-    assert dashboard._compute_total_return(state) == '+4.5%'
+    assert compute_total_return(state) == '+4.5%'
 
   def test_total_return_negative(self) -> None:
     '''current_equity 95000 → -5.0%.'''
     state = {'initial_account': 100000.0, 'equity_history': [{'date': '2026-04-24', 'equity': 95000.0}]}
-    assert dashboard._compute_total_return(state) == '-5.0%'
+    assert compute_total_return(state) == '-5.0%'
 
   def test_total_return_from_account_when_history_empty(self) -> None:
     '''Empty history → fall back to state["account"] per CONTEXT D-10.'''
     state = {'initial_account': 100000.0, 'equity_history': [], 'account': 100000.0}
-    assert dashboard._compute_total_return(state) == '+0.0%'
+    assert compute_total_return(state) == '+0.0%'
 
   def test_total_return_zero_when_equal_to_initial(self) -> None:
     '''equity == initial_account → "+0.0%" (signed format locked).'''
     state = {'initial_account': 100000.0, 'equity_history': [{'date': '2026-01-01', 'equity': 100000.0}]}
-    assert dashboard._compute_total_return(state) == '+0.0%'
+    assert compute_total_return(state) == '+0.0%'
 
   # --- Unrealised P&L display (inline re-implementation parity) ---
 
@@ -356,7 +390,7 @@ class TestStatsMath:
       'trough_price': None, 'atr_entry': 50.0,
     }
     current_close = 8085.0
-    dashboard_long = dashboard._compute_unrealised_pnl_display(long_pos, 'SPI200', current_close)
+    dashboard_long = compute_unrealised_pnl_display(long_pos, 'SPI200', current_close)
     sizing_long = sizing_engine.compute_unrealised_pnl(
       long_pos, current_close, SPI_MULT, SPI_COST_AUD / 2,
     )
@@ -369,7 +403,7 @@ class TestStatsMath:
       'trough_price': 7800.0, 'atr_entry': 50.0,
     }
     current_close_short = 7820.0
-    dashboard_short = dashboard._compute_unrealised_pnl_display(
+    dashboard_short = compute_unrealised_pnl_display(
       short_pos, 'SPI200', current_close_short,
     )
     sizing_short = sizing_engine.compute_unrealised_pnl(
@@ -384,7 +418,7 @@ class TestStatsMath:
       'n_contracts': 2, 'pyramid_level': 0, 'peak_price': 8100.0,
       'trough_price': None, 'atr_entry': 50.0,
     }
-    assert dashboard._compute_unrealised_pnl_display(position, 'SPI200', None) is None
+    assert compute_unrealised_pnl_display(position, 'SPI200', None) is None
 
   # --- Trail stop display ---
 
@@ -394,7 +428,7 @@ class TestStatsMath:
       'direction': 'LONG', 'peak_price': 8100.0, 'trough_price': None,
       'entry_price': 8000.0, 'atr_entry': 50.0,
     }
-    assert dashboard._compute_trail_stop_display(position) == pytest.approx(7950.0)
+    assert compute_trail_stop_display(position) == pytest.approx(7950.0)
 
   def test_trail_stop_short(self) -> None:
     '''SHORT: trough_price + TRAIL_MULT_SHORT(2.0) * atr_entry(50.0) = 7800 + 100 = 7900.0.'''
@@ -402,7 +436,7 @@ class TestStatsMath:
       'direction': 'SHORT', 'peak_price': None, 'trough_price': 7800.0,
       'entry_price': 8000.0, 'atr_entry': 50.0,
     }
-    assert dashboard._compute_trail_stop_display(position) == pytest.approx(7900.0)
+    assert compute_trail_stop_display(position) == pytest.approx(7900.0)
 
   def test_trail_stop_long_fallback_to_entry(self) -> None:
     '''LONG with peak_price=None falls back to entry_price. 8000 - 3.0 * 50 = 7850.0.'''
@@ -410,7 +444,7 @@ class TestStatsMath:
       'direction': 'LONG', 'peak_price': None, 'trough_price': None,
       'entry_price': 8000.0, 'atr_entry': 50.0,
     }
-    assert dashboard._compute_trail_stop_display(position) == pytest.approx(7850.0)
+    assert compute_trail_stop_display(position) == pytest.approx(7850.0)
 
 
 class TestUnrealisedPnlUsesResolvedContracts:
@@ -439,7 +473,7 @@ class TestUnrealisedPnlUsesResolvedContracts:
         'AUDUSD':  {'multiplier': 10000.0, 'cost_aud': 5.0},
       },
     }
-    result = dashboard._compute_unrealised_pnl_display(
+    result = compute_unrealised_pnl_display(
       position, 'SPI200', 7100.0, state,
     )
     assert result == pytest.approx(4970.0)
@@ -460,7 +494,7 @@ class TestUnrealisedPnlUsesResolvedContracts:
         'AUDUSD':  {'multiplier': 10000.0, 'cost_aud': 5.0},
       },
     }
-    result = dashboard._compute_unrealised_pnl_display(
+    result = compute_unrealised_pnl_display(
       position, 'SPI200', 7100.0, state,
     )
     assert result == pytest.approx(4975.0)
@@ -481,8 +515,8 @@ class TestUnrealisedPnlUsesResolvedContracts:
       'trough_price': None, 'atr_entry': 50.0,
     }
     state = {}  # No _resolved_contracts
-    with caplog.at_level(logging.DEBUG, logger='dashboard'):
-      result = dashboard._compute_unrealised_pnl_display(
+    with caplog.at_level(logging.DEBUG, logger='dashboard_renderer.stats'):
+      result = compute_unrealised_pnl_display(
         position, 'SPI200', 7100.0, state,
       )
     assert result == pytest.approx(994.0)
@@ -500,7 +534,7 @@ class TestUnrealisedPnlUsesResolvedContracts:
       'trough_price': None, 'atr_entry': 50.0,
     }
     # multiplier=5.0, cost_aud=6.0. gross = 100*1*5 = 500. open_cost = 3.
-    result = dashboard._compute_unrealised_pnl_display(
+    result = compute_unrealised_pnl_display(
       position, 'SPI200', 7100.0, None,
     )
     assert result == pytest.approx(497.0)
@@ -516,64 +550,64 @@ class TestFormatters:
   # --- _fmt_currency ---
 
   def test_fmt_currency_positive(self) -> None:
-    assert dashboard._fmt_currency(1234.56) == '$1,234.56'
+    assert _fmt_currency(1234.56) == '$1,234.56'
 
   def test_fmt_currency_negative(self) -> None:
     '''Negative uses leading -$, NOT parentheses (UI-SPEC §Format Helper Contracts).'''
-    assert dashboard._fmt_currency(-567.89) == '-$567.89'
+    assert _fmt_currency(-567.89) == '-$567.89'
 
   def test_fmt_currency_zero(self) -> None:
     '''Always 2 dp, never collapses to "$0".'''
-    assert dashboard._fmt_currency(0.0) == '$0.00'
+    assert _fmt_currency(0.0) == '$0.00'
 
   def test_fmt_currency_large(self) -> None:
     '''Thousands separator, no K/M suffix.'''
-    assert dashboard._fmt_currency(100000.0) == '$100,000.00'
+    assert _fmt_currency(100000.0) == '$100,000.00'
 
   def test_fmt_currency_small_fraction(self) -> None:
     '''Small negative fractions keep the 2dp + leading -$.'''
-    assert dashboard._fmt_currency(-0.01) == '-$0.01'
+    assert _fmt_currency(-0.01) == '-$0.01'
 
   # --- _fmt_percent_signed ---
 
   def test_fmt_percent_signed_positive(self) -> None:
     '''Input 0.053 → "+5.3%".'''
-    assert dashboard._fmt_percent_signed(0.053) == '+5.3%'
+    assert _fmt_percent_signed(0.053) == '+5.3%'
 
   def test_fmt_percent_signed_negative(self) -> None:
     '''Input -0.125 → "-12.5%".'''
-    assert dashboard._fmt_percent_signed(-0.125) == '-12.5%'
+    assert _fmt_percent_signed(-0.125) == '-12.5%'
 
   def test_fmt_percent_signed_zero(self) -> None:
     '''Python +.1f on 0.0 yields "+0.0%" — UI-SPEC locks this behaviour.'''
-    assert dashboard._fmt_percent_signed(0.0) == '+0.0%'
+    assert _fmt_percent_signed(0.0) == '+0.0%'
 
   # --- _fmt_percent_unsigned ---
 
   def test_fmt_percent_unsigned_positive(self) -> None:
-    assert dashboard._fmt_percent_unsigned(0.583) == '58.3%'
+    assert _fmt_percent_unsigned(0.583) == '58.3%'
 
   def test_fmt_percent_unsigned_negative(self) -> None:
     '''Max DD uses unsigned format but negative sign appears naturally from negative input.'''
-    assert dashboard._fmt_percent_unsigned(-0.125) == '-12.5%'
+    assert _fmt_percent_unsigned(-0.125) == '-12.5%'
 
   # --- _fmt_pnl_with_colour ---
 
   def test_fmt_pnl_with_colour_positive(self) -> None:
     '''Positive → pnl-positive class (D-19 #5: no inline style="color:..."), "+" prefix.'''
-    result = dashboard._fmt_pnl_with_colour(1234.56)
+    result = _fmt_pnl_with_colour(1234.56)
     assert 'class="pnl-positive"' in result
     assert '+$1,234.56' in result
 
   def test_fmt_pnl_with_colour_negative(self) -> None:
     '''Negative → pnl-negative class (D-19 #5), leading -$.'''
-    result = dashboard._fmt_pnl_with_colour(-567.89)
+    result = _fmt_pnl_with_colour(-567.89)
     assert 'class="pnl-negative"' in result
     assert '-$567.89' in result
 
   def test_fmt_pnl_with_colour_zero(self) -> None:
     '''Zero → pnl-zero class (D-19 #5), no "+" or "-" prefix.'''
-    result = dashboard._fmt_pnl_with_colour(0.0)
+    result = _fmt_pnl_with_colour(0.0)
     assert 'class="pnl-zero"' in result
     assert '$0.00' in result
     assert '+$0.00' not in result
@@ -583,7 +617,7 @@ class TestFormatters:
 
   def test_fmt_em_dash(self) -> None:
     '''Single U+2014 codepoint.'''
-    result = dashboard._fmt_em_dash()
+    result = _fmt_em_dash()
     assert result == '—'
     assert len(result) == 1
     assert ord(result) == 0x2014
@@ -595,17 +629,17 @@ class TestFormatters:
     datetime(..., tzinfo=pytz.timezone(...)) silently picks historical LMT offset
     instead of +10:00 AEST.'''
     now = SYDNEY.localize(datetime(2026, 4, 22, 9, 0))
-    assert dashboard._fmt_last_updated(now) == '2026-04-22 09:00 AEST'
+    assert _fmt_last_updated(now) == '2026-04-22 09:00 AEST'
 
   def test_fmt_last_updated_rejects_naive_datetime(self) -> None:
     '''RESEARCH Pitfall 9: naive datetime silently breaks golden-snapshot byte stability.'''
     with pytest.raises(ValueError, match='timezone-aware'):
-      dashboard._fmt_last_updated(datetime(2026, 4, 22, 9, 0))  # no tzinfo
+      _fmt_last_updated(datetime(2026, 4, 22, 9, 0))  # no tzinfo
 
   def test_fmt_last_updated_converts_utc_to_awst(self) -> None:
     '''Sydney is UTC+10 (AEST). 01:00 UTC → 11:00 AEST.'''
     utc_now = datetime(2026, 4, 22, 1, 0, tzinfo=pytz.UTC)
-    assert dashboard._fmt_last_updated(utc_now) == '2026-04-22 11:00 AEST'
+    assert _fmt_last_updated(utc_now) == '2026-04-22 11:00 AEST'
 
 
 class TestRenderBlocks:
@@ -624,7 +658,7 @@ class TestRenderBlocks:
     pages don't leak other markets' display names.
     '''
     state = _make_state()
-    output = dashboard._render_header(state, FROZEN_NOW)
+    output = render_header(state, FROZEN_NOW)
     assert '<h1>Trading Signals</h1>' in output
     assert 'Mechanical multi-market trading system' in output
     assert '2026-04-22 11:00 AEST' in output
@@ -633,7 +667,7 @@ class TestRenderBlocks:
     '''_render_header inherits _fmt_last_updated's naive-datetime rejection.'''
     state = _make_state()
     with pytest.raises(ValueError, match='timezone-aware'):
-      dashboard._render_header(state, datetime(2026, 4, 22, 9, 0))  # naive
+      render_header(state, datetime(2026, 4, 22, 9, 0))  # naive
 
   # --- Signal cards ---
 
@@ -642,27 +676,27 @@ class TestRenderBlocks:
     state = _make_state()
     state['signals']['SPI200']['signal'] = 1
     state['signals']['AUDUSD']['signal'] = -1
-    output = dashboard._render_signal_cards(state)
+    output = render_signal_cards(state)
     assert 'signal-long' in output  # LONG chip
     assert 'signal-short' in output  # SHORT chip
 
     state['signals']['SPI200']['signal'] = 0
     state['signals']['AUDUSD']['signal'] = 0
-    output = dashboard._render_signal_cards(state)
+    output = render_signal_cards(state)
     assert 'signal-flat' in output  # FLAT chip
 
   def test_signal_card_empty_state(self) -> None:
     '''Missing signal entry: "Signal as of never" + signal-flat class (D-19 #5).'''
     state = _make_state()
     state['signals'] = {}
-    output = dashboard._render_signal_cards(state)
+    output = render_signal_cards(state)
     assert 'Signal as of never' in output
     assert 'signal-flat' in output  # FLAT class
 
   def test_signal_card_displays_instrument_names(self) -> None:
     '''Display names (not raw state keys).'''
     state = _make_state()
-    output = dashboard._render_signal_cards(state)
+    output = render_signal_cards(state)
     assert 'SPI 200' in output
     assert 'AUD / USD' in output
 
@@ -673,7 +707,7 @@ class TestRenderBlocks:
       'adx': 32.5, 'mom1': 0.031, 'mom3': 0.048, 'mom12': 0.092,
       'rvol': 1.12, 'atr': 50.0, 'pdi': 28.1, 'ndi': 12.4,
     }
-    output = dashboard._render_signal_cards(state)
+    output = render_signal_cards(state)
     assert '32.5' in output  # ADX
     assert '+3.1%' in output  # Mom1 as signed percent
 
@@ -685,7 +719,7 @@ class TestRenderBlocks:
     '''
     state = _make_state()
     state['signals']['SPI200']['signal_as_of'] = '<script>alert(1)</script>'
-    output = dashboard._render_signal_cards(state)
+    output = render_signal_cards(state)
     assert '&lt;script&gt;alert(1)&lt;/script&gt;' in output
     assert '<script>' not in output
 
@@ -695,7 +729,7 @@ class TestRenderBlocks:
     '''VALIDATION row 05-02-T3: 8 cols + SPI200 row values from sample_state.json.'''
     with SAMPLE_STATE_PATH.open('r', encoding='utf-8') as fh:
       state = json.load(fh)
-    output = dashboard._render_positions_table(state)
+    output = render_positions_table(state)
     for header in (
       'Instrument', 'Direction', 'Entry', 'Current', 'Contracts',
       'Pyramid', 'Trail Stop', 'Unrealised P&amp;L',
@@ -725,7 +759,7 @@ class TestRenderBlocks:
       'AUDUSD': {'signal': 0, 'last_close': 0.6500,
                   'last_scalars': {'atr': 0.005, 'rvol': 1.0}},
     }
-    output = dashboard._render_positions_table(state)
+    output = render_positions_table(state)
     assert 'colspan="9"' in output
     assert 'colspan="8"' not in output, 'stale colspan=8 must not appear'
     assert '— No open positions —' in output
@@ -734,7 +768,7 @@ class TestRenderBlocks:
     '''Position present but last_close=None → Current + Unrealised P&L em-dashed.'''
     state = _make_state()
     state['signals']['SPI200']['last_close'] = None
-    output = dashboard._render_positions_table(state)
+    output = render_positions_table(state)
     # There should be exactly 2 em-dashes in the SPI200 row: Current + Unrealised.
     # Use a substring that's unambiguous — the Current column's <td class="num">—</td>.
     assert '<td class="num">—</td>' in output
@@ -753,7 +787,7 @@ class TestRenderBlocks:
     '''
     state = _make_state()
     state['positions']['SPI200']['pyramid_level'] = '<img src=x onerror=alert(1)>'
-    output = dashboard._render_positions_table(state)
+    output = render_positions_table(state)
     assert '&lt;img src=x onerror=alert(1)&gt;' in output
     assert '<img src=x' not in output
 
@@ -774,7 +808,7 @@ class TestRenderBlocks:
         'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0,
       })
     state['trade_log'] = trades
-    output = dashboard._render_trades_table(state)
+    output = render_trades_table(state)
     # Count tbody rows. The thead <tr> and the tbody <tr>s are both '<tr>';
     # tbody rows are inside <tbody>. Count inside the tbody slice.
     tbody_start = output.find('<tbody>')
@@ -793,7 +827,7 @@ class TestRenderBlocks:
     '''Empty trade_log → colspan="7" placeholder.'''
     state = _make_state()
     state['trade_log'] = []
-    output = dashboard._render_trades_table(state)
+    output = render_trades_table(state)
     assert 'colspan="7"' in output
     assert '— No closed trades yet —' in output
 
@@ -818,7 +852,7 @@ class TestRenderBlocks:
        'gross_pnl': 500.0, 'n_contracts': 1, 'exit_reason': 'adx_exit',
        'multiplier': 10000.0, 'cost_aud': 5.0, 'net_pnl': 497.5},
     ]
-    output = dashboard._render_trades_table(state)
+    output = render_trades_table(state)
     assert 'Signal flat' in output
     assert 'Reversal' in output
     assert 'Stop hit' in output
@@ -842,7 +876,7 @@ class TestRenderBlocks:
        'exit_reason': '<script>alert(1)</script>',
        'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0},
     ]
-    output = dashboard._render_trades_table(state)
+    output = render_trades_table(state)
     assert '&lt;script&gt;alert(1)&lt;/script&gt;' in output
     assert '<script>alert(1)</script>' not in output
 
@@ -857,7 +891,7 @@ class TestRenderBlocks:
        'exit_reason': '<img src=x onerror=alert(1)>',
        'multiplier': 5.0, 'cost_aud': 6.0, 'net_pnl': 247.0},
     ]
-    output = dashboard._render_trades_table(state)
+    output = render_trades_table(state)
     assert '&lt;img src=x onerror=alert(1)&gt;' in output
     assert '<img src=x' not in output
 
@@ -867,7 +901,7 @@ class TestRenderBlocks:
     '''VALIDATION row 05-02-T3: 4 labels + computed values on sample_state.'''
     with SAMPLE_STATE_PATH.open('r', encoding='utf-8') as fh:
       state = json.load(fh)
-    output = dashboard._render_key_stats(state)
+    output = _render_key_stats(state)
     for label in ('Total Return', 'Sharpe', 'Max Drawdown', 'Win Rate'):
       assert label in output, f'missing label: {label!r}'
     # Sample state fixture ends at equity=104532.18 → +4.5% total return
@@ -883,17 +917,17 @@ class TestRenderBlocks:
     state = _make_state(with_equity=1, with_trades=0, with_positions=False, with_signals=False)
     state['initial_account'] = 100_000.0  # explicit baseline (default INITIAL_ACCOUNT is 10k since v11)
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 105_000.0}]
-    output = dashboard._render_key_stats(state)
+    output = _render_key_stats(state)
     assert 'pnl-positive' in output
 
     # Negative
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 95_000.0}]
-    output = dashboard._render_key_stats(state)
+    output = _render_key_stats(state)
     assert 'pnl-negative' in output
 
     # Zero
     state['equity_history'] = [{'date': '2026-01-01', 'equity': 100_000.0}]
-    output = dashboard._render_key_stats(state)
+    output = _render_key_stats(state)
     assert 'pnl-zero' in output
 
   # --- Footer ---
@@ -905,7 +939,7 @@ class TestRenderBlocks:
     (D-06). The disclaimer text is unchanged; the version line is a
     tail addition.
     '''
-    output = dashboard._render_footer('v1.2.0')
+    output = render_footer('v1.2.0')
     assert 'Signal-only system. Not financial advice.' in output
     # Phase 22: version line is appended; disclaimer copy unchanged.
     assert 'Strategy version:' in output
@@ -1123,7 +1157,7 @@ class TestAtomicWrite:
     original_bytes = b'<!DOCTYPE html><html><body>ORIGINAL</body></html>'
     out.write_bytes(original_bytes)
     state = _make_state()
-    with patch('dashboard.os.replace', side_effect=OSError('disk full')):
+    with patch('dashboard_renderer.io.os.replace', side_effect=OSError('disk full')):
       with pytest.raises(OSError, match='disk full'):
         dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     assert out.read_bytes() == original_bytes, (
@@ -1134,7 +1168,7 @@ class TestAtomicWrite:
     '''Failed os.replace → tempfile cleanup via try/finally (no .tmp left).'''
     out = tmp_path / 'd.html'
     state = _make_state()
-    with patch('dashboard.os.replace', side_effect=OSError('disk full')):
+    with patch('dashboard_renderer.io.os.replace', side_effect=OSError('disk full')):
       with pytest.raises(OSError):
         dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
     tmp_files = list(tmp_path.glob('*.tmp'))
@@ -1159,7 +1193,7 @@ class TestTotalReturnInitialAccount:
       'account': 75_000.0,
       'equity_history': [],
     }
-    assert dashboard._compute_total_return(state) == '+50.0%'
+    assert compute_total_return(state) == '+50.0%'
 
   def test_custom_initial_account_100k_account_50k_returns_minus_50pct(self) -> None:
     '''initial=100k, account=50k, empty equity_history → '-50.0%'.'''
@@ -1168,7 +1202,7 @@ class TestTotalReturnInitialAccount:
       'account': 50_000.0,
       'equity_history': [],
     }
-    assert dashboard._compute_total_return(state) == '-50.0%'
+    assert compute_total_return(state) == '-50.0%'
 
   def test_missing_initial_account_falls_back_to_INITIAL_ACCOUNT(self) -> None:
     '''No initial_account key → fallback to INITIAL_ACCOUNT baseline
@@ -1179,7 +1213,7 @@ class TestTotalReturnInitialAccount:
       'account': float(INITIAL_ACCOUNT),
       'equity_history': [],
     }
-    assert dashboard._compute_total_return(state) == '+0.0%'
+    assert compute_total_return(state) == '+0.0%'
 
 
 # =========================================================================
@@ -1493,7 +1527,7 @@ class TestRenderManualStopBadge:
     Locks the discipline that future Phase 14+ changes to either side
     cannot drift without a red test.
     '''
-    from dashboard import _compute_trail_stop_display
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
     from sizing_engine import get_trailing_stop
 
     # Case 1: LONG manual_stop set → both return 7700.0
@@ -1543,7 +1577,7 @@ class TestRenderManualStopBadge:
     uses explicit `is None`. Hypothetical AUDUSD-near-zero edge case but
     the contract is "lockstep" — must hold for every float, including 0.0.
     '''
-    from dashboard import _compute_trail_stop_display
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
     from sizing_engine import get_trailing_stop
 
     pos = {
@@ -1568,7 +1602,7 @@ class TestRenderManualStopBadge:
     Pre-fix bug: dashboard's `or` truthiness dropped 0.0 to entry_price.
     Symmetric to the LONG case above.
     '''
-    from dashboard import _compute_trail_stop_display
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
     from sizing_engine import get_trailing_stop
 
     pos = {
@@ -1701,7 +1735,7 @@ class TestRenderCalculatorRow:
   '''Phase 15 CALC-01/02/04: per-instrument calculator sub-row rendering.'''
 
   def test_calc_row_long_position_renders_stop_distance_next_add(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1727,7 +1761,9 @@ class TestRenderCalculatorRow:
     assert 'class="calc-row"' in html_out
 
   def test_trail_stop_matches_display_helper(self) -> None:
-    from dashboard import _render_calc_row, _compute_trail_stop_display, _fmt_currency
+    from dashboard_renderer.components.calc_rows import _render_calc_row
+    from dashboard_renderer.stats import compute_trail_stop_display as _compute_trail_stop_display
+    from dashboard_renderer.formatters import _fmt_currency
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1748,7 +1784,7 @@ class TestRenderCalculatorRow:
     assert expected_str in html_out
 
   def test_entry_target_row_flat_long(self) -> None:
-    from dashboard import _render_entry_target_row
+    from dashboard_renderer.components.calc_rows import _render_entry_target_row
     state = {
       'positions': {},
       'signals': {
@@ -1768,7 +1804,7 @@ class TestRenderCalculatorRow:
     assert 'entry-target' in html_out
 
   def test_entry_target_row_flat_short(self) -> None:
-    from dashboard import _render_entry_target_row
+    from dashboard_renderer.components.calc_rows import _render_entry_target_row
     state = {
       'positions': {},
       'signals': {
@@ -1786,7 +1822,7 @@ class TestRenderCalculatorRow:
     assert 'SHORT' in html_out
 
   def test_no_calc_row_when_flat_signal(self) -> None:
-    from dashboard import _render_entry_target_row
+    from dashboard_renderer.components.calc_rows import _render_entry_target_row
     state = {
       'positions': {},
       'signals': {'SPI200': {'signal': 0}},
@@ -1795,7 +1831,7 @@ class TestRenderCalculatorRow:
     assert html_out == ''
 
   def test_pyramid_section_level_0(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1815,7 +1851,7 @@ class TestRenderCalculatorRow:
     assert '(+1×ATR)' in html_out
 
   def test_pyramid_section_level_1(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1837,7 +1873,7 @@ class TestRenderCalculatorRow:
     assert '(+2×ATR)' in html_out
 
   def test_pyramid_section_at_max(self) -> None:
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     from system_params import MAX_PYRAMID_LEVEL
     pos = {
       'direction': 'LONG',
@@ -1862,7 +1898,7 @@ class TestRenderCalculatorRow:
     7800 - 150 = 7650. Expected dist = |7860 - 7650| = 210 (current baseline);
     entry baseline would give 150 — different.
     '''
-    from dashboard import _render_calc_row
+    from dashboard_renderer.components.calc_rows import _render_calc_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -1901,7 +1937,8 @@ class TestRenderCalculatorRow:
     NEXT ADD = 7800 + 1*50 = 7850. Synth peak = max(7820, 7850) = 7850.
     S = 7850 - 3*50 = 7700.
     '''
-    from dashboard import _render_calc_row, _fmt_currency
+    from dashboard_renderer.components.calc_rows import _render_calc_row
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     pos = {
       'direction': 'LONG',
@@ -1941,7 +1978,7 @@ class TestRenderDriftBanner:
   '''Phase 15 SENTINEL-01/02 + D-11/D-13: dashboard drift banner rendering.'''
 
   def test_amber_drift_banner(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -1956,7 +1993,7 @@ class TestRenderDriftBanner:
     assert 'consider closing' in html_out
 
   def test_red_reversal_banner(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -1969,7 +2006,7 @@ class TestRenderDriftBanner:
     assert 'reversal recommended' in html_out
 
   def test_mixed_drift_reversal_uses_reversal_color(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -1984,7 +2021,7 @@ class TestRenderDriftBanner:
     assert 'sentinel-reversal' in html_out, 'mixed: any reversal -> red banner'
 
   def test_no_banner_when_no_drift(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {'warnings': []}
     assert _render_drift_banner(state) == ''
     state2 = {'warnings': [{'source': 'sizing_engine', 'message': 'x',
@@ -1992,7 +2029,7 @@ class TestRenderDriftBanner:
     assert _render_drift_banner(state2) == ''
 
   def test_banner_lists_all_drifted_instruments(self) -> None:
-    from dashboard import _render_drift_banner
+    from dashboard_renderer.components.positions import _render_drift_banner
     state = {
       'warnings': [
         {'source': 'drift',
@@ -2018,7 +2055,7 @@ class TestBannerStackOrder:
     additions sit ABOVE this slot in the same composition.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard
+    from dashboard import render_dashboard  # back-compat alias
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2056,7 +2093,7 @@ class TestBannerStackOrder:
     stale info is present.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard
+    from dashboard import render_dashboard  # back-compat alias
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2083,7 +2120,7 @@ class TestBannerStackOrder:
     Positions section heading. NOT injected into _render_positions_table.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard
+    from dashboard import render_dashboard  # back-compat alias
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2339,7 +2376,7 @@ class TestFormatIndicatorValue:
 
   def test_format_indicator_value_finite_returns_6_decimal(self) -> None:
     '''D-05: finite floats render to exactly 6 decimal places.'''
-    from dashboard import _format_indicator_value
+    from dashboard_renderer.formatters import _format_indicator_value
     result = _format_indicator_value(0.012345678, 14, 40)
     assert result == '0.012346', (
       f'D-05: 6-decimal format expected "0.012346"; got {result!r}'
@@ -2351,7 +2388,7 @@ class TestFormatIndicatorValue:
 
   def test_format_indicator_value_nan_seed_short(self) -> None:
     '''D-06: NaN with bars_available < seed_required -> reason text.'''
-    from dashboard import _format_indicator_value
+    from dashboard_renderer.formatters import _format_indicator_value
     result = _format_indicator_value(float('nan'), 20, 14)
     assert result == 'n/a (need 20 bars, have 14)', (
       f'D-06: seed-short reason expected; got {result!r}'
@@ -2359,7 +2396,7 @@ class TestFormatIndicatorValue:
 
   def test_format_indicator_value_nan_flat_price(self) -> None:
     '''D-06: NaN with bars_available >= seed_required -> flat-price reason.'''
-    from dashboard import _format_indicator_value
+    from dashboard_renderer.formatters import _format_indicator_value
     result = _format_indicator_value(float('nan'), 14, 40)
     assert result == 'n/a (flat price)', (
       f'D-06: flat-price reason expected; got {result!r}'
@@ -2407,7 +2444,7 @@ class TestTracePanels:
     '''D-13: all 9 formula strings from _TRACE_FORMULAS appear in rendered HTML.'''
     state = _load_v5_state()
     rendered = self._render(state, tmp_path)
-    for key, formula in dashboard._TRACE_FORMULAS.items():
+    for key, formula in _TRACE_FORMULAS.items():
       escaped = html.escape(formula, quote=True)
       assert escaped in rendered, (
         f'D-13: formula for {key!r} must appear in HTML; '
@@ -2525,7 +2562,7 @@ class TestTracePanels:
     cursor: pointer in _INLINE_CSS (required for iOS Safari click-event firing
     on non-interactive elements).
     '''
-    css = dashboard._INLINE_CSS
+    css = _INLINE_CSS
     # Accept various whitespace forms; must have cursor: pointer on the class.
     assert 'trace-indicator-name' in css, (
       'D-15: .trace-indicator-name must be defined in _INLINE_CSS'
@@ -2615,7 +2652,7 @@ class TestRenderPaperTradesOpenTable:
 
   def test_open_table_renders_two_rows(self) -> None:
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'SPI200-20260428-001' in out, 'SPI200 open row must appear'
     assert 'AUDUSD-20260428-001' in out, 'AUDUSD open row must appear'
     # Closed rows must NOT appear in the open table
@@ -2627,7 +2664,7 @@ class TestRenderPaperTradesOpenTable:
     → unrealised = (7900-7800)*2*5 - 3 = 997.0 → '+997.00'.
     '''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert '+997.00' in out, f'Expected +997.00 in SPI200 open row; got excerpt: {out[:500]}'
 
   def test_open_table_renders_unrealised_pnl_per_row_audusd(self) -> None:
@@ -2635,12 +2672,12 @@ class TestRenderPaperTradesOpenTable:
     → (0.6500-0.6400)*1*10000 - 2.5 = 97.5 → '+97.50'.
     '''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert '+97.50' in out, f'Expected +97.50 in AUDUSD open row; got excerpt: {out[:500]}'
 
   def test_open_table_renders_pnl_positive_class(self) -> None:
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'pnl-positive' in out, 'Expected pnl-positive CSS class for positive P&L rows'
 
   def test_open_table_renders_pnl_negative_class(self) -> None:
@@ -2648,14 +2685,14 @@ class TestRenderPaperTradesOpenTable:
     state = _load_v6_state()
     # Override signal so SPI200 last_close is below entry to create a loss
     state['signals']['SPI200']['last_close'] = 7600.0
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'pnl-negative' in out, 'Expected pnl-negative CSS class for negative P&L row'
 
   def test_open_table_renders_na_when_last_close_missing(self) -> None:
     '''CONTEXT D-07: signals[instrument] lacking last_close → "n/a (no close price yet)".'''
     state = _load_v6_state()
     del state['signals']['SPI200']['last_close']
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'n/a (no close price yet)' in out, (
       'D-07: missing last_close must render n/a text'
     )
@@ -2664,20 +2701,20 @@ class TestRenderPaperTradesOpenTable:
     '''NaN guard: math.isnan check BEFORE f-string (planner trap + RESEARCH §Pitfall 5).'''
     state = _load_v6_state()
     state['signals']['SPI200']['last_close'] = float('nan')
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'n/a (no close price yet)' in out, (
       'NaN last_close must render n/a text'
     )
 
   def test_open_table_empty_state_copy(self) -> None:
     '''D-16 verbatim empty copy string.'''
-    out = dashboard._render_paper_trades_open([], {})
+    out = _render_paper_trades_open([], {})
     assert 'No open paper trades. Use the form above to record a new entry.' in out
 
   def test_open_table_row_has_close_button_with_hxget(self) -> None:
     '''RESEARCH §Pattern 1: close button must have hx-get for close-form route.'''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'hx-get="/paper-trade/SPI200-20260428-001/close-form"' in out, (
       'Close button must have hx-get pointing to close-form route'
     )
@@ -2685,7 +2722,7 @@ class TestRenderPaperTradesOpenTable:
   def test_open_table_row_has_delete_button_with_hxconfirm(self) -> None:
     '''Planner D-21: delete button with hx-delete + hx-confirm.'''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_open(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_open(state['paper_trades'], state['signals'])
     assert 'hx-delete="/paper-trade/SPI200-20260428-001"' in out, (
       'Delete button must have hx-delete pointing to trade route'
     )
@@ -2712,7 +2749,7 @@ class TestRenderPaperTradesOpenTable:
       'strategy_version': 'v1.2.0',
     }]
     signals = {'SPI200': {'last_close': 7900.0}}
-    out = dashboard._render_paper_trades_open(paper_trades, signals)
+    out = _render_paper_trades_open(paper_trades, signals)
     assert '<script>alert(1)</script>' not in out, (
       'Raw XSS trade_id must not appear unescaped in HTML output'
     )
@@ -2756,7 +2793,7 @@ class TestRenderPaperTradesOpenTable:
       },
     ]
     # Must not raise TypeError. Output type is str (rendered HTML).
-    out = dashboard._render_paper_trades_open(paper_trades, {})
+    out = _render_paper_trades_open(paper_trades, {})
     assert isinstance(out, str)
     assert '12345' in out, 'int trade_id should be coerced to str and rendered'
 
@@ -2766,7 +2803,7 @@ class TestRenderPaperTradesClosedTable:
 
   def test_closed_table_renders_two_rows(self) -> None:
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_closed(state['paper_trades'])
+    out = _render_paper_trades_closed(state['paper_trades'])
     assert 'SPI200-20260427-001' in out, 'Closed SPI200 row must appear'
     assert 'AUDUSD-20260427-001' in out, 'Closed AUDUSD row must appear'
     # Open rows must NOT appear in the closed table
@@ -2775,7 +2812,7 @@ class TestRenderPaperTradesClosedTable:
   def test_closed_table_sorted_by_exit_dt_desc(self) -> None:
     '''CONTEXT scope §Closed Paper Trades: rows ordered newest-first by exit_dt.'''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_closed(state['paper_trades'])
+    out = _render_paper_trades_closed(state['paper_trades'])
     # fixture: SPI200 exit 2026-04-28T15:00, AUDUSD exit same → both present
     spi_idx = out.index('SPI200-20260427-001')
     aud_idx = out.index('AUDUSD-20260427-001')
@@ -2787,13 +2824,13 @@ class TestRenderPaperTradesClosedTable:
   def test_closed_table_renders_realised_pnl(self) -> None:
     '''Closed SPI200 realised=994.0 → "+994.00"; AUDUSD realised=95.0 → "+95.00".'''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_closed(state['paper_trades'])
+    out = _render_paper_trades_closed(state['paper_trades'])
     assert '+994.00' in out, f'Expected +994.00 in closed table; excerpt: {out[:300]}'
     assert '+95.00' in out, f'Expected +95.00 in closed table; excerpt: {out[:300]}'
 
   def test_closed_table_empty_state_copy(self) -> None:
     '''D-16 verbatim closed-empty copy.'''
-    out = dashboard._render_paper_trades_closed([])
+    out = _render_paper_trades_closed([])
     assert (
       'No closed trades yet. Trades will appear here after you close an open position.' in out
     )
@@ -2805,22 +2842,22 @@ class TestRenderPaperTradesStats:
   def test_stats_bar_renders_realised_total(self) -> None:
     '''Closed rows: 994 + 95 = 1089.0 → "+1089.00".'''
     state = _load_v6_state()
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
-    out = dashboard._render_paper_trades_stats(stats)
+    stats = compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_stats(stats)
     assert '1089.00' in out, f'Expected 1089.00 in stats bar; got: {out}'
 
   def test_stats_bar_renders_unrealised_total(self) -> None:
     '''Open rows unrealised: 997 + 97.5 = 1094.5 → "+1094.50".'''
     state = _load_v6_state()
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
-    out = dashboard._render_paper_trades_stats(stats)
+    stats = compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_stats(stats)
     assert '1094.50' in out, f'Expected 1094.50 in stats bar; got: {out}'
 
   def test_stats_bar_renders_wins_count(self) -> None:
     '''2 positive closed rows → "Wins" badge contains "2".'''
     state = _load_v6_state()
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
-    out = dashboard._render_paper_trades_stats(stats)
+    stats = compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_stats(stats)
     assert '>2<' in out or 'Wins</span><span>2' in out, (
       f'Expected wins=2 in stats bar; got: {out}'
     )
@@ -2828,22 +2865,22 @@ class TestRenderPaperTradesStats:
   def test_stats_bar_renders_losses_count(self) -> None:
     '''0 negative closed rows → "Losses" badge contains "0".'''
     state = _load_v6_state()
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
-    out = dashboard._render_paper_trades_stats(stats)
+    stats = compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_stats(stats)
     assert 'Losses</span><span>0' in out, f'Expected losses=0 in stats bar; got: {out}'
 
   def test_stats_bar_renders_win_rate_percent(self) -> None:
     '''2 wins / 2 closed → "Win rate: 100%".'''
     state = _load_v6_state()
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
-    out = dashboard._render_paper_trades_stats(stats)
+    stats = compute_aggregate_stats(state['paper_trades'], state['signals'])
+    out = _render_paper_trades_stats(stats)
     assert '100%' in out, f'Expected 100% win rate in stats bar; got: {out}'
 
   def test_stats_bar_renders_em_dash_when_no_closed_rows(self) -> None:
     '''No closed rows → win_rate is "—".'''
     open_only = [r for r in _load_v6_state()['paper_trades'] if r['status'] == 'open']
-    stats = dashboard._compute_aggregate_stats(open_only, _load_v6_state()['signals'])
-    out = dashboard._render_paper_trades_stats(stats)
+    stats = compute_aggregate_stats(open_only, _load_v6_state()['signals'])
+    out = _render_paper_trades_stats(stats)
     assert '—' in out, f'Expected em-dash win_rate with no closed rows; got: {out}'
 
   def test_aggregate_stats_zero_pnl_excluded_from_wins_losses(self) -> None:
@@ -2863,20 +2900,20 @@ class TestRenderPaperTradesStats:
       'realised_pnl': 0.0,
       'strategy_version': 'v1.2.0',
     }]
-    stats = dashboard._compute_aggregate_stats(paper_trades, {})
+    stats = compute_aggregate_stats(paper_trades, {})
     assert stats['wins'] == 0, f'Zero PNL should not count as win; got wins={stats["wins"]}'
     assert stats['losses'] == 0, f'Zero PNL should not count as loss; got losses={stats["losses"]}'
 
   def test_stats_bar_uses_position_sticky_css(self) -> None:
     '''PATTERNS §inline CSS: .stats-bar must use position: sticky.'''
-    assert 'position: sticky' in dashboard._INLINE_CSS, (
+    assert 'position: sticky' in _INLINE_CSS, (
       'stats-bar CSS rule must include position: sticky'
     )
 
   def test_stats_bar_has_zindex_above_default(self) -> None:
     '''RESEARCH §Pattern 7: .stats-bar CSS must include z-index: 10.'''
-    assert '.stats-bar' in dashboard._INLINE_CSS, '.stats-bar class must be in _INLINE_CSS'
-    assert 'z-index: 10' in dashboard._INLINE_CSS, (
+    assert '.stats-bar' in _INLINE_CSS, '.stats-bar class must be in _INLINE_CSS'
+    assert 'z-index: 10' in _INLINE_CSS, (
       'RESEARCH §Pattern 7: z-index: 10 required on stats-bar'
     )
 
@@ -2886,7 +2923,7 @@ class TestComputeAggregateStats:
 
   def test_compute_aggregate_stats_returns_5_keys(self) -> None:
     state = _load_v6_state()
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], state['signals'])
+    stats = compute_aggregate_stats(state['paper_trades'], state['signals'])
     assert set(stats.keys()) == {'realised', 'unrealised', 'wins', 'losses', 'win_rate'}
 
   def test_compute_aggregate_stats_skips_open_when_last_close_missing(self) -> None:
@@ -2896,7 +2933,7 @@ class TestComputeAggregateStats:
       'SPI200': {'signal': 1},  # no last_close key
       'AUDUSD': {'signal': -1},
     }
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], signals_no_close)
+    stats = compute_aggregate_stats(state['paper_trades'], signals_no_close)
     assert stats['unrealised'] == 0.0, (
       f'No last_close → unrealised should be 0; got {stats["unrealised"]}'
     )
@@ -2908,7 +2945,7 @@ class TestComputeAggregateStats:
       'SPI200': {'last_close': float('nan')},
       'AUDUSD': {'last_close': float('nan')},
     }
-    stats = dashboard._compute_aggregate_stats(state['paper_trades'], signals_nan)
+    stats = compute_aggregate_stats(state['paper_trades'], signals_nan)
     assert stats['unrealised'] == 0.0, (
       f'NaN last_close → unrealised should be 0; got {stats["unrealised"]}'
     )
@@ -2922,7 +2959,7 @@ class TestComputeAggregateStats:
       state = _load_v6_state()
       # Keep only the SPI200 open row for simplicity
       open_only = [r for r in state['paper_trades'] if r['status'] == 'open' and r['instrument'] == 'SPI200']
-      stats = dashboard._compute_aggregate_stats(open_only, state['signals'])
+      stats = compute_aggregate_stats(open_only, state['signals'])
     assert stats['unrealised'] == sentinel_value, (
       f'Expected sentinel value {sentinel_value}; got {stats["unrealised"]}'
     )
@@ -2934,7 +2971,7 @@ class TestRenderPaperTradesRegion:
   def test_region_wraps_in_div_id_trades_region(self) -> None:
     '''HTMX swap target must be <div id="trades-region">.'''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_region(state)
+    out = render_paper_trades_region(state)
     assert out.startswith('<div id="trades-region">'), (
       f'Output must start with <div id="trades-region">; got: {out[:60]}'
     )
@@ -2942,7 +2979,7 @@ class TestRenderPaperTradesRegion:
   def test_region_includes_all_three_subsections(self) -> None:
     '''D-13 spec: stats bar + open table + close-form section + closed table all present.'''
     state = _load_v6_state()
-    out = dashboard._render_paper_trades_region(state)
+    out = render_paper_trades_region(state)
     assert 'class="stats-bar"' in out, 'Stats bar section missing'
     assert 'id="open-trades-section"' in out, 'Open trades section missing'
     assert 'id="close-form-section"' in out, 'Close-form placeholder section missing'
@@ -2967,7 +3004,7 @@ class TestRenderPaperTradesRegion:
       'strategy_version': 'v1.2.0',
     }]
     state = {'paper_trades': paper_trades, 'signals': {'SPI200': {'last_close': 7900.0}}}
-    out = dashboard._render_paper_trades_region(state)
+    out = render_paper_trades_region(state)
     assert '<img src=x onerror=alert(1)>' not in out, 'Raw XSS must not appear in output'
 
 
@@ -3065,52 +3102,52 @@ class TestRenderAlertBadge:
 
   def test_badge_clear_has_alert_clear_class(self) -> None:
     '''last_alert_state="CLEAR" with stop set -> span.alert-badge.alert-clear.'''
-    html_out = dashboard._render_alert_badge('CLEAR', has_stop=True)
+    html_out = _render_alert_badge('CLEAR', has_stop=True)
     assert 'alert-badge' in html_out
     assert 'alert-clear' in html_out
     assert 'CLEAR' in html_out
 
   def test_badge_approaching_has_alert_approaching_class(self) -> None:
     '''last_alert_state="APPROACHING" -> span.alert-badge.alert-approaching.'''
-    html_out = dashboard._render_alert_badge('APPROACHING', has_stop=True)
+    html_out = _render_alert_badge('APPROACHING', has_stop=True)
     assert 'alert-badge' in html_out
     assert 'alert-approaching' in html_out
     assert 'APPROACHING' in html_out
 
   def test_badge_hit_has_alert_hit_class(self) -> None:
     '''last_alert_state="HIT" -> span.alert-badge.alert-hit.'''
-    html_out = dashboard._render_alert_badge('HIT', has_stop=True)
+    html_out = _render_alert_badge('HIT', has_stop=True)
     assert 'alert-badge' in html_out
     assert 'alert-hit' in html_out
     assert 'HIT' in html_out
 
   def test_badge_none_state_no_stop_returns_alert_none_class(self) -> None:
     '''last_alert_state=None with has_stop=False -> span.alert-badge.alert-none, "--".'''
-    html_out = dashboard._render_alert_badge(None, has_stop=False)
+    html_out = _render_alert_badge(None, has_stop=False)
     assert 'alert-badge' in html_out
     assert 'alert-none' in html_out
     assert '--' in html_out
 
   def test_badge_none_state_with_stop_returns_alert_none_class(self) -> None:
     '''last_alert_state=None with has_stop=True -> alert-none badge (awaiting run).'''
-    html_out = dashboard._render_alert_badge(None, has_stop=True)
+    html_out = _render_alert_badge(None, has_stop=True)
     assert 'alert-badge' in html_out
     assert 'alert-none' in html_out
 
   def test_badge_xss_escape_not_applicable_known_states(self) -> None:
     '''Known state values (CLEAR/APPROACHING/HIT) contain no HTML chars; sanity check.'''
     for state in ('CLEAR', 'APPROACHING', 'HIT'):
-      html_out = dashboard._render_alert_badge(state, has_stop=True)
+      html_out = _render_alert_badge(state, has_stop=True)
       assert '<script>' not in html_out
 
   def test_badge_unknown_state_xss_safe(self) -> None:
     '''An unknown/malformed state value is escaped before render.'''
-    html_out = dashboard._render_alert_badge('<script>alert(1)</script>', has_stop=True)
+    html_out = _render_alert_badge('<script>alert(1)</script>', has_stop=True)
     assert '<script>alert(1)</script>' not in html_out
 
   def test_alert_css_in_inline_css(self) -> None:
     '''.alert-badge and state classes present in _INLINE_CSS.'''
-    css = dashboard._INLINE_CSS
+    css = _INLINE_CSS
     assert '.alert-badge' in css
     assert '.alert-clear' in css
     assert '.alert-approaching' in css
@@ -3130,7 +3167,7 @@ class TestRenderAlertBadge:
         'indicator_scalars': {'atr': 50.0},
       },
     }
-    html_out = dashboard._render_paper_trades_open(paper_trades, signals)
+    html_out = _render_paper_trades_open(paper_trades, signals)
     assert '<th>Alert</th>' in html_out
 
   def test_open_trades_row_renders_badge(self) -> None:
@@ -3146,13 +3183,13 @@ class TestRenderAlertBadge:
         'indicator_scalars': {'atr': 50.0},
       },
     }
-    html_out = dashboard._render_paper_trades_open(paper_trades, signals)
+    html_out = _render_paper_trades_open(paper_trades, signals)
     assert 'alert-badge' in html_out
     assert 'alert-hit' in html_out
 
   def test_empty_state_colspan_10(self) -> None:
     '''Empty open trades uses colspan="10" after adding Alert column.'''
-    html_out = dashboard._render_paper_trades_open([], {})
+    html_out = _render_paper_trades_open([], {})
     assert 'colspan="10"' in html_out
 
 
@@ -3193,8 +3230,9 @@ class TestSinglePageRenderIsolation:
     def _explode_market_test(*_args, **_kwargs):
       raise AssertionError('market-test tab must not be rendered for account page')
 
-    monkeypatch.setattr(dashboard, '_render_settings_tab', _explode_settings)
-    monkeypatch.setattr(dashboard, '_render_market_test_tab', _explode_market_test)
+    import dashboard_renderer.components.settings as _dr_settings
+    monkeypatch.setattr(_dr_settings, 'render_settings_tab', _explode_settings)
+    monkeypatch.setattr(_dr_settings, 'render_market_test_tab', _explode_market_test)
 
     dashboard.render_dashboard_page(state, page='account', out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
@@ -3236,9 +3274,9 @@ def _render_to_str(state, now=None):
   before the atomic file write.
   """
   from dashboard_renderer.api import _build_render_context, _render_header_and_body
-  import dashboard as d
+  from dashboard_renderer.shell import _render_tabbed_dashboard
   ctx = _build_render_context(state=state, now=now, trace_open_keys=None)
-  return _render_header_and_body(ctx=ctx, is_cookie_session=None, body_html=d._render_tabbed_dashboard(ctx))
+  return _render_header_and_body(ctx=ctx, is_cookie_session=None, body_html=_render_tabbed_dashboard(ctx))
 
 
 class TestPhase25FirstRun:

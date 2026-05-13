@@ -519,7 +519,7 @@ class TestForwardStopFragment:
 
   def test_long_z_above_peak_updates_w(self, client_with_state_v3, htmx_headers) -> None:
     '''LONG Z=7900 > peak=7850 -> synth peak=7900 -> W = 7900 - 3*50 = 7750.'''
-    from dashboard import _fmt_currency
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     client, set_state, _ = client_with_state_v3
     resp = client.get('/?fragment=forward-stop&instrument=SPI200&z=7900', headers=htmx_headers)
@@ -533,7 +533,7 @@ class TestForwardStopFragment:
 
   def test_long_z_below_peak_w_unchanged(self, client_with_state_v3, htmx_headers) -> None:
     '''LONG Z=7820 < peak=7850 -> synth peak stays 7850 -> W = 7850 - 3*50 = 7700.'''
-    from dashboard import _fmt_currency
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     client, set_state, _ = client_with_state_v3
     resp = client.get('/?fragment=forward-stop&instrument=SPI200&z=7820', headers=htmx_headers)
@@ -546,7 +546,7 @@ class TestForwardStopFragment:
   def test_short_z_below_trough_updates_w(self, client_with_state_v3, htmx_headers) -> None:
     '''SHORT Z=0.640 below trough=0.645 -> synth trough=0.640 -> W updated.'''
     import state_manager as sm
-    from dashboard import _fmt_currency
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     client, set_state, _ = client_with_state_v3
     # Inject AUDUSD SHORT position into state
@@ -569,7 +569,7 @@ class TestForwardStopFragment:
 
   def test_short_z_above_trough_w_unchanged(self, client_with_state_v3, htmx_headers) -> None:
     '''SHORT Z=0.660 > trough=0.645 -> synth trough stays 0.645 -> W = trough + 3*atr.'''
-    from dashboard import _fmt_currency
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     client, set_state, _ = client_with_state_v3
     # Inject AUDUSD SHORT position into state
@@ -597,7 +597,7 @@ class TestForwardStopFragment:
     Fixture choice: inject manual_stop via set_state inside the test (no new
     conftest fixture needed — set_state mutates the live state_box).
     '''
-    from dashboard import _fmt_currency
+    from dashboard_renderer.formatters import _fmt_currency
     client, set_state, _ = client_with_state_v3
     # Inject manual_stop onto the SPI200 LONG position
     import state_manager as sm
@@ -622,7 +622,7 @@ class TestForwardStopFragment:
 
     The manual_stop case (case 5) is covered by test_manual_stop_overrides_z_input.
     '''
-    from dashboard import _fmt_currency
+    from dashboard_renderer.formatters import _fmt_currency
     from sizing_engine import get_trailing_stop
     client, set_state, _ = client_with_state_v3
 
@@ -732,7 +732,7 @@ class TestSideBySideStopDisplay:
     '''When manual_stop is set, the cell shows class="trail-stop-split" with
     both manual and computed values, plus the (will close) annotation.
     '''
-    from dashboard import _render_single_position_row
+    from dashboard_renderer.components.positions import _render_single_position_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -755,7 +755,7 @@ class TestSideBySideStopDisplay:
 
   def test_no_manual_stop_single_cell(self) -> None:
     '''When manual_stop is None, the cell uses Phase 14 baseline (no split class).'''
-    from dashboard import _render_single_position_row
+    from dashboard_renderer.components.positions import _render_single_position_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,
@@ -776,7 +776,7 @@ class TestSideBySideStopDisplay:
 
   def test_will_close_annotation_in_em(self) -> None:
     '''The (will close) annotation must be wrapped in <em> per UI-SPEC accessibility.'''
-    from dashboard import _render_single_position_row
+    from dashboard_renderer.components.positions import _render_single_position_row
     pos = {
       'direction': 'LONG',
       'entry_price': 7800.0,

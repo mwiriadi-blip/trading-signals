@@ -1,0 +1,21 @@
+[Unit]
+Description=Trading Signals — rclone backup of state.json to B2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=trader
+Group=trader
+WorkingDirectory=/home/trader/trading-signals
+EnvironmentFile=-/home/trader/trading-signals/.env
+ExecStart=/home/trader/trading-signals/scripts/backup_state.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading-signals-backup
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/trader/trading-signals
+ProtectHome=read-only

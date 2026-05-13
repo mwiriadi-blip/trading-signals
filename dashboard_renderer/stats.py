@@ -51,6 +51,8 @@ def compute_win_rate(state: dict, em_dash: str = '—') -> str:
 
 def compute_total_return(state: dict) -> str:
   initial = state.get('initial_account', INITIAL_ACCOUNT)
+  if not initial:
+    return '—'
   eq_hist = state.get('equity_history', [])
   if eq_hist:
     current = eq_hist[-1].get('equity', state.get('account', initial))
@@ -119,9 +121,10 @@ def compute_aggregate_stats(paper_trades=None, signals=None) -> dict:
 
 
 def compute_trail_stop_display(position: dict, settings: dict | None = None) -> float:
-  atr_entry = position['atr_entry']
-  if not math.isfinite(atr_entry):
+  atr_entry = position.get('atr_entry')
+  if atr_entry is None or not math.isfinite(float(atr_entry)):
     return float('nan')
+  atr_entry = float(atr_entry)
   manual = position.get('manual_stop')
   if manual is not None:
     return manual

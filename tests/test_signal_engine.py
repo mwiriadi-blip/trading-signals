@@ -457,11 +457,13 @@ PHASE2_SNAPSHOT_PATH = Path('tests/determinism/phase2_snapshot.json')
 SIGNAL_ENGINE_PATH = Path('signal_engine.py')
 TEST_SIGNAL_ENGINE_PATH = Path('tests/test_signal_engine.py')
 # Phase 2 Wave 0: extend AST guard to cover new hex modules (D-07, RESEARCH §Example 5)
-SIZING_ENGINE_PATH = Path('sizing_engine.py')
+# Phase 31: sizing_engine.py split into package — walk all .py files in the package
+SIZING_ENGINE_PKG_FILES = sorted(Path('sizing_engine').glob('*.py'))
 SYSTEM_PARAMS_PATH = Path('system_params.py')
 TEST_SIZING_ENGINE_PATH = Path('tests/test_sizing_engine.py')
 # Phase 3 Wave 0: add state_manager.py to AST guard
-STATE_MANAGER_PATH = Path('state_manager.py')
+# Phase 31: state_manager.py split into package — walk all .py files in the package
+STATE_MANAGER_PKG_FILES = sorted(Path('state_manager').glob('*.py'))
 TEST_STATE_MANAGER_PATH = Path('tests/test_state_manager.py')
 # Phase 4 Wave 0: add data_fetcher.py + main.py to AST guard
 DATA_FETCHER_PATH = Path('data_fetcher.py')
@@ -614,11 +616,11 @@ FORBIDDEN_MODULES_BACKTEST_PURE = FORBIDDEN_MODULES | frozenset({'pyarrow'})
 # Phase 20: alert_engine.py added to both lists (D-10 + D-11 pure-math hex-tier)
 # Phase 23: simulator.py and metrics.py added (render.py uses json+html legitimately
 # and is checked by test_backtest_render_no_forbidden_imports below)
-_HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
-                  ALERT_ENGINE_PATH,
+_HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, *SIZING_ENGINE_PKG_FILES, SYSTEM_PARAMS_PATH,
+                  PNL_ENGINE_PATH, ALERT_ENGINE_PATH,
                   BACKTEST_SIMULATOR_PATH, BACKTEST_METRICS_PATH]
 # signal_engine.py legitimately uses numpy/pandas; Phase 2 modules must not
-_HEX_PATHS_STDLIB_ONLY = [SIZING_ENGINE_PATH, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
+_HEX_PATHS_STDLIB_ONLY = [*SIZING_ENGINE_PKG_FILES, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
                            ALERT_ENGINE_PATH]
 
 
@@ -864,7 +866,7 @@ class TestDeterminism:
       f'not numpy.isnan. numpy/pandas belong in signal_engine.py (indicator math) only.'
     )
 
-  @pytest.mark.parametrize('module_path', [STATE_MANAGER_PATH])
+  @pytest.mark.parametrize('module_path', STATE_MANAGER_PKG_FILES)
   def test_state_manager_no_forbidden_imports(self, module_path: Path) -> None:
     '''Phase 3 Wave 0: state_manager.py must not import sibling hexes, numpy, pandas,
     or network modules. It IS allowed to import stdlib I/O modules (os, json, tempfile,
@@ -1052,11 +1054,11 @@ class TestDeterminism:
     covered_paths = [
       SIGNAL_ENGINE_PATH,
       TEST_SIGNAL_ENGINE_PATH,
-      SIZING_ENGINE_PATH,       # Phase 2 Wave 0
-      SYSTEM_PARAMS_PATH,       # Phase 2 Wave 0
-      TEST_SIZING_ENGINE_PATH,  # Phase 2 Wave 0
-      STATE_MANAGER_PATH,       # Phase 3 Wave 0
-      TEST_STATE_MANAGER_PATH,  # Phase 3 Wave 0
+      *SIZING_ENGINE_PKG_FILES,  # Phase 2 Wave 0 (Phase 31: package)
+      SYSTEM_PARAMS_PATH,        # Phase 2 Wave 0
+      TEST_SIZING_ENGINE_PATH,   # Phase 2 Wave 0
+      *STATE_MANAGER_PKG_FILES,  # Phase 3 Wave 0 (Phase 31: package)
+      TEST_STATE_MANAGER_PATH,   # Phase 3 Wave 0
       DATA_FETCHER_PATH,        # Phase 4 Wave 0
       TEST_DATA_FETCHER_PATH,   # Phase 4 Wave 0
       MAIN_PATH,                # Phase 4 Wave 0

@@ -40,3 +40,9 @@ tests/uat/_traces/
 
 # Phase 28 plan 06: per-operator UAT secrets (WEB_AUTH_SECRET etc.) — never committed.
 .env.uat
+
+# Phase 33 TENANT-04: per-user state files — never committed; off-droplet backup only
+state/users/
+state/users/*.json
+state/users/*.lock
+state/*.v11-backup-*

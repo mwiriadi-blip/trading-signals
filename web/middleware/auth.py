@@ -166,6 +166,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     self._trusted_serializer = URLSafeTimedSerializer(secret, salt=_TRUSTED_SALT)
 
   async def dispatch(self, request: Request, call_next):
+    # --reviews fix: reset user_id at the TOP of dispatch BEFORE any routing logic
+    # to prevent stale value leaking across requests sharing a connection and to
+    # eliminate fragile-ordering coupling between PUBLIC_PATHS and _try_cookie.
+    request.state.user_id = None
+
     # D-02: path-allowlist exemption FIRST.
     if request.url.path in EXEMPT_PATHS:
       return await call_next(request)
@@ -243,18 +248,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
     LEGB rule: SignatureExpired is a subclass of BadSignature, so the
     expired branch MUST come first within each try block.
     '''
-    # Path 1 — tsi_session (Plan 01)
+    # Path 1 — tsi_session (Phase 35 D-04/D-05 extension)
     token = request.cookies.get(_SESSION_COOKIE_NAME)
     if token:
       try:
-        self._session_serializer.loads(token, max_age=_SESSION_MAX_AGE_SECONDS)
+        payload = self._session_serializer.loads(token, max_age=_SESSION_MAX_AGE_SECONDS)
+        uid = payload.get('uid') if isinstance(payload, dict) else None
+        if uid is None:
+          # D-04 backward-compat shim: old cookie (no uid key) or uid=None.
+          # Look up uid via email/username from the payload.
+          from auth_store import get_user_by_email
+          uname = payload.get('u', '') if isinstance(payload, dict) else ''
+          row = get_user_by_email(uname)
+          uid = row['uid'] if row else None
+          logger.info(
+            '[Auth] D-04 cookie shim %s uname=%s',
+            'resolved' if uid else 'miss',
+            uname,
+          )
+        request.state.user_id = uid  # D-05: always set, even if None
         return True
       except SignatureExpired:
         pass  # fall through to tsi_trusted
       except BadSignature:
         pass  # fall through to tsi_trusted
 
-    # Path 2 — tsi_trusted (Plan 02)
+    # Path 2 — tsi_trusted (Plan 02; Phase 35 Option B accepted limitation)
     trusted = request.cookies.get(_TRUSTED_COOKIE_NAME)
     if trusted:
       try:
@@ -267,6 +286,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
           # Local import preserves hex boundary (Plan 01 pattern).
           from auth_store import update_last_seen
           update_last_seen(uuid_value)
+          # Phase 35 Option B: user_id stays None for trusted-device path.
+          # The tsi_trusted payload is {uuid, iat} — no username field to
+          # map device→admin without a fragile env-var lookup (see 35-REVIEWS.md
+          # consensus #1). Emit warning on every hit for operator visibility.
+          logger.warning(
+            '[Auth] Trusted-device session active — user_id not resolved; '
+            '/admin/* routes will return 403 (Phase 35 Option B accepted limitation)'
+          )
           return True
         # signature ok but uuid revoked / missing / unknown → no grant.
       except SignatureExpired:

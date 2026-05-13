@@ -454,3 +454,128 @@ class TestQrCodeRenderedFromPyotpProvisioningUri:
     # page (the QR encodes the otpauth URI; the manual fallback shows the
     # secret + issuer label as well).
     assert 'Trading Signals' in body
+
+
+# =============================================================================
+# Phase 35 Plan 02 Task 1 — _make_session_cookie uid payload extension (D-03)
+# =============================================================================
+
+
+class TestMakeSessionCookieUidPayload:
+  '''D-03: _make_session_cookie(uname, uid=None) serialises uid into the payload.
+
+  Tests:
+    - test_make_session_cookie_uid_none_default: calling with just uname → uid=None in payload
+    - test_make_session_cookie_includes_uid: passing uid → uid in payload
+    - test_make_session_cookie_round_trip_via_validate: _validate_session_cookie returns payload intact
+  '''
+
+  def _decode_session_cookie(self, cookie_header: str, secret: str = 'a' * 32) -> dict:
+    '''Extract and decode the tsi_session token from a cookie header string.'''
+    from itsdangerous.url_safe import URLSafeTimedSerializer
+    token = cookie_header.split('tsi_session=', 1)[1].split(';', 1)[0]
+    ser = URLSafeTimedSerializer(secret, salt='tsi-session-cookie')
+    return ser.loads(token, max_age=86400)
+
+  def test_make_session_cookie_uid_none_default(self, client, fresh_auth_path):
+    '''_make_session_cookie(uname) with no uid arg → payload has uid=None and u=uname.
+
+    Test via the TOTP flow: post_enroll with no user in auth.json
+    ensures get_user_by_email returns None → uid=None in cookie.
+    '''
+    import pyotp
+    import auth_store
+    new_secret = pyotp.random_base32()
+    auth_store.set_totp_secret(new_secret, path=fresh_auth_path)
+    # Build enroll token
+    import time
+    from itsdangerous.url_safe import URLSafeTimedSerializer
+    ser = URLSafeTimedSerializer('a' * 32, salt='tsi-enroll-cookie')
+    enroll_token = ser.dumps({'u': 'marc', 'iat': int(time.time()), 'next': '/'})
+    code = pyotp.TOTP(new_secret).now()
+    r = _request_with_cookies(client, 'POST',
+      '/enroll-totp',
+      cookies={'tsi_enroll': enroll_token},
+      data={'code': code},
+      follow_redirects=False,
+    )
+    assert r.status_code == 302
+    # Extract all Set-Cookie headers
+    raw = getattr(r, 'raw_headers', None) or getattr(r.headers, 'raw', None) or []
+    session_header = ''
+    for name, value in raw:
+      if name.lower() == b'set-cookie' and b'tsi_session=' in value:
+        session_header = value.decode('latin-1')
+        break
+    assert session_header, 'No tsi_session cookie found in response'
+    payload = self._decode_session_cookie(session_header)
+    assert isinstance(payload, dict), f'Expected dict payload, got {type(payload)}'
+    assert 'uid' in payload, f'payload missing uid key: {payload}'
+    # No user row in auth.json → uid should be None
+    assert payload['uid'] is None, f'Expected uid=None (no user in auth.json), got {payload["uid"]!r}'
+    assert payload['u'] == 'marc', f'Expected u=marc, got {payload["u"]!r}'
+
+  def test_make_session_cookie_includes_uid(self, client, fresh_auth_path):
+    '''_make_session_cookie with admin user in auth.json → payload uid=<user uid>.'''
+    import pyotp
+    import auth_store
+    import time
+    from itsdangerous.url_safe import URLSafeTimedSerializer
+    # Create admin user first — email must match WEB_AUTH_USERNAME (marc)
+    user = auth_store.create_user({'email': 'marc', 'role': 'admin'}, path=fresh_auth_path)
+    expected_uid = user['uid']
+    new_secret = pyotp.random_base32()
+    auth_store.set_totp_secret(new_secret, path=fresh_auth_path)
+    auth_store.mark_enrolled(path=fresh_auth_path)
+    # Use post_verify (enrolled=True path) to issue the session cookie
+    ser_pending = URLSafeTimedSerializer('a' * 32, salt='tsi-pending-cookie')
+    pending_token = ser_pending.dumps({'u': 'marc', 'iat': int(time.time()), 'next': '/', 'pwd_ok': True})
+    code = pyotp.TOTP(new_secret).now()
+    r = _request_with_cookies(client, 'POST',
+      '/verify-totp',
+      cookies={'tsi_pending': pending_token},
+      data={'code': code},
+      follow_redirects=False,
+    )
+    assert r.status_code == 302
+    raw = getattr(r, 'raw_headers', None) or getattr(r.headers, 'raw', None) or []
+    session_header = ''
+    for name, value in raw:
+      if name.lower() == b'set-cookie' and b'tsi_session=' in value:
+        session_header = value.decode('latin-1')
+        break
+    assert session_header, 'No tsi_session cookie found in verify response'
+    payload = self._decode_session_cookie(session_header)
+    assert 'uid' in payload, f'payload missing uid key: {payload}'
+    assert payload['uid'] == expected_uid, (
+      f'Expected uid={expected_uid!r}, got {payload["uid"]!r}'
+    )
+
+  def test_make_session_cookie_round_trip_via_validate(self, client, fresh_auth_path):
+    '''_validate_session_cookie decodes a Phase 35 cookie (with uid key) correctly.
+
+    The isinstance guard in _validate_session_cookie returns payload dict unchanged.
+    We simulate: emit a cookie via post_enroll, then feed it to a GET /enroll-totp?reset=1
+    which calls _validate_session_cookie internally — verifying the decode does not break.
+    '''
+    import pyotp
+    import auth_store
+    import time
+    from itsdangerous.url_safe import URLSafeTimedSerializer
+    new_secret = pyotp.random_base32()
+    auth_store.set_totp_secret(new_secret, path=fresh_auth_path)
+    # Build a Phase 35 cookie directly
+    ser = URLSafeTimedSerializer('a' * 32, salt='tsi-session-cookie')
+    token = ser.dumps({'u': 'marc', 'uid': 'test-uid-abc', 'iat': int(time.time())})
+    cookie_header = f'tsi_session={token}; Max-Age=43200; Path=/; Secure; HttpOnly; SameSite=Strict'
+    # _validate_session_cookie is used in GET /enroll-totp?reset=1
+    r = _request_with_cookies(client, 'GET',
+      '/enroll-totp?reset=1',
+      cookies={'tsi_session': token},
+    )
+    # If _validate_session_cookie breaks on the uid key, we'd get 302 to /login.
+    # A successful decode gives 200 (choice page).
+    assert r.status_code == 200, (
+      f'_validate_session_cookie broke on uid-bearing payload: '
+      f'status={r.status_code}, body={r.text[:120]!r}'
+    )

@@ -24,8 +24,8 @@ from datetime import datetime
 import pytest
 import pytz
 
-from dashboard import (
-  _render_drift_banner,
+from dashboard_renderer.components.positions import _render_drift_banner
+from dashboard_renderer.components.paper_trades import (
   _render_paper_trades_closed,
   _render_paper_trades_open,
 )

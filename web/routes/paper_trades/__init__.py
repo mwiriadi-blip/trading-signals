@@ -66,10 +66,10 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     '''Return rendered #trades-region HTML fragment. Used as HTMX hx-target
     for all mutations.
     '''
-    from dashboard import _render_paper_trades_region
+    from dashboard_renderer.components.paper_trades import render_paper_trades_region
     from state_manager import load_state
     state = load_state()
-    return HTMLResponse(content=_render_paper_trades_region(state))
+    return HTMLResponse(content=render_paper_trades_region(state))
 
   # -----------------------------------------------------------------------
   # POST /paper-trade/open
@@ -127,8 +127,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
         detail=f'counter overflow for {exc.instrument} on {exc.day} (999 limit)',
       ) from exc
 
-    from dashboard import _render_paper_trades_region
-    return HTMLResponse(content=_render_paper_trades_region(state))
+    from dashboard_renderer.components.paper_trades import render_paper_trades_region
+    return HTMLResponse(content=render_paper_trades_region(state))
 
   # -----------------------------------------------------------------------
   # PATCH /paper-trade/{trade_id}
@@ -181,8 +181,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
 
-    from dashboard import _render_paper_trades_region
-    return HTMLResponse(content=_render_paper_trades_region(state))
+    from dashboard_renderer.components.paper_trades import render_paper_trades_region
+    return HTMLResponse(content=render_paper_trades_region(state))
 
   # -----------------------------------------------------------------------
   # DELETE /paper-trade/{trade_id}
@@ -210,8 +210,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     except _PaperTradeImmutable:
       return _method_not_allowed_405('GET')
 
-    from dashboard import _render_paper_trades_region
-    return HTMLResponse(content=_render_paper_trades_region(state))
+    from dashboard_renderer.components.paper_trades import render_paper_trades_region
+    return HTMLResponse(content=render_paper_trades_region(state))
 
   # -----------------------------------------------------------------------
   # POST /paper-trade/{trade_id}/close
@@ -277,8 +277,8 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
     except HTTPException:
       raise  # re-raise HTTPException from within _apply (exit_dt validation)
 
-    from dashboard import _render_paper_trades_region
-    return HTMLResponse(content=_render_paper_trades_region(state))
+    from dashboard_renderer.components.paper_trades import render_paper_trades_region
+    return HTMLResponse(content=render_paper_trades_region(state))
 
   # -----------------------------------------------------------------------
   # GET /paper-trade/{trade_id}/close-form

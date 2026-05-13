@@ -82,8 +82,6 @@ logger = logging.getLogger(__name__)
 
 _DASHBOARD_PATH = 'dashboard.html'  # D-09: repo root, matches dashboard.py default
 _STATE_PATH = 'state.json'
-_REQUIRED_DASHBOARD_MARKER = b'class="tabs tabs-function"'  # Phase 25 D-01
-
 # Phase 26 Plan 26-07 (R6): allowlist for active_function query param.
 _ALLOWED_FUNCTIONS = {'signals', 'account', 'settings', 'market-test'}
 
@@ -481,7 +479,7 @@ def register(app: FastAPI) -> None:
     # vs session note (header auth). LOCAL import preserves hex boundary
     # (Phase 11 C-2; web/routes/dashboard.py is allowed to import dashboard
     # per Phase 13 D-07).
-    from dashboard import _render_session_note, _render_signout_button
+    from dashboard_renderer.components.header import _render_session_note, _render_signout_button
 
     if _is_cookie_session(request):
       content = content.replace(

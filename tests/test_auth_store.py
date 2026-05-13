@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-AUTH_STORE_PATH = Path('auth_store.py')
+AUTH_STORE_PACKAGE = Path('auth_store')
 ISO_8601_RE = re.compile(
   r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(\+\d{2}:\d{2}|Z)?$',
 )
@@ -72,7 +72,8 @@ class TestAtomicWriteCrash:
         raise OSError('simulated fsync failure')
       return real_fsync(fd)
 
-    monkeypatch.setattr(auth_store.os, 'fsync', boom_fsync)
+    import auth_store._io as _auth_io
+    monkeypatch.setattr(_auth_io.os, 'fsync', boom_fsync)
 
     # Attempt save — expect OSError to propagate (re-raise per F-01 contract;
     # silent save-failures cause data loss, mirroring state_manager).
@@ -104,24 +105,28 @@ class TestSchemaV1Init:
 
     data = auth_store.load_auth(path=tmp_auth_path)
     assert data == {
-      'schema_version': 1,
+      'schema_version': 2,
       'totp_secret': None,
       'totp_enrolled': False,
       'totp_enrolled_at': None,
       'trusted_devices': [],
       'pending_magic_links': [],
+      'users': [],
+      'pending_invites': [],
     }, f'Unexpected default shape: {data}'
 
-  def test_load_auth_round_trips_existing_file(self, tmp_auth_path):
-    '''F-01: write a valid auth.json, load, assert dict equality.'''
+  def test_load_auth_round_trips_existing_v2_file(self, tmp_auth_path):
+    '''F-01: write a valid v2 auth.json, load, assert dict equality.'''
     import auth_store
     payload = {
-      'schema_version': 1,
+      'schema_version': 2,
       'totp_secret': 'JBSWY3DPEHPK3PXP',
       'totp_enrolled': True,
       'totp_enrolled_at': '2026-04-29T08:00:00+00:00',
       'trusted_devices': [],
       'pending_magic_links': [],
+      'users': [],
+      'pending_invites': [],
     }
     tmp_auth_path.write_text(json.dumps(payload))
     assert auth_store.load_auth(path=tmp_auth_path) == payload
@@ -134,12 +139,14 @@ class TestSchemaV1Init:
     loaded = auth_store.load_auth(path=path)
 
     assert loaded == {
-      'schema_version': 1,
+      'schema_version': 2,
       'totp_secret': None,
       'totp_enrolled': False,
       'totp_enrolled_at': None,
       'trusted_devices': [],
       'pending_magic_links': [],
+      'users': [],
+      'pending_invites': [],
     }
     assert not path.exists()
     quarantined = list(tmp_path.glob('auth.json.corrupt-*'))
@@ -585,9 +592,9 @@ class TestMagicLinks:
 
 
 class TestForbiddenImports:
-  '''Hex-boundary AST guard: auth_store.py is a peer of state_manager.py
+  '''Hex-boundary AST guard: auth_store/ package is a peer of state_manager/
   (NOT inside web/), so it MUST NOT import from web/, signal/sizing engines,
-  notifier, dashboard, or main.
+  notifier, dashboard, or main. Walks every .py file in the package.
   '''
 
   FORBIDDEN_ROOTS = frozenset({
@@ -595,26 +602,352 @@ class TestForbiddenImports:
   })
 
   def test_auth_store_does_not_import_web_or_signal_layers(self):
-    src = AUTH_STORE_PATH.read_text()
-    tree = ast.parse(src)
+    py_files = list(AUTH_STORE_PACKAGE.glob('*.py'))
+    # Phase 34 Plan 01: 5 files; Plan 02 adds _users.py — use >= 5 (forward-compatible)
+    assert len(py_files) >= 5, (
+      f'Expected >= 5 .py files in auth_store/ package, found {len(py_files)}: '
+      f'{[str(f) for f in py_files]}'
+    )
     violations = []
-    for node in ast.walk(tree):
-      if isinstance(node, ast.Import):
-        for alias in node.names:
-          root = alias.name.split('.', 1)[0]
+    for py_file in py_files:
+      src = py_file.read_text(encoding='utf-8')
+      tree = ast.parse(src)
+      for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+          for alias in node.names:
+            root = alias.name.split('.', 1)[0]
+            if root in self.FORBIDDEN_ROOTS:
+              violations.append(
+                f'{py_file}:{node.lineno}: import {alias.name}'
+              )
+        elif isinstance(node, ast.ImportFrom):
+          if node.module is None:
+            continue
+          root = node.module.split('.', 1)[0]
           if root in self.FORBIDDEN_ROOTS:
             violations.append(
-              f'Line {node.lineno}: import {alias.name}'
+              f'{py_file}:{node.lineno}: from {node.module} import ...'
             )
-      elif isinstance(node, ast.ImportFrom):
-        if node.module is None:
-          continue
-        root = node.module.split('.', 1)[0]
-        if root in self.FORBIDDEN_ROOTS:
-          violations.append(
-            f'Line {node.lineno}: from {node.module} import …'
-          )
     assert violations == [], (
-      f'auth_store.py must not import from web/signal/sizing layers: '
+      f'auth_store/ must not import from web/signal/sizing layers: '
       f'{violations}'
     )
+
+
+# TestLoadAuthCorruptionRecovery: corruption-recovery behavior is covered by
+# TestSchemaV1Init.test_load_auth_corrupt_file_quarantines_and_returns_default
+# (empty/corrupt JSON quarantine + return-default contract verified there).
+# No duplicate class added per Task 2 spec.
+
+
+class TestSchemaMigrationV1ToV2:
+  '''Phase 34 Plan 01 Task 2: v1->v2 migration tests.
+
+  All tests write setup via json.dumps directly to the tmp path (the migration
+  is the function under test, so save_auth is NOT used in setup). Uses the
+  isolated_auth_json fixture which monkeypatches auth_store.DEFAULT_AUTH_PATH.
+  '''
+
+  def test_v1_to_v2_migration_backfills_users_and_invites(
+    self, isolated_auth_json,
+  ):
+    '''v1 file -> load_auth() returns schema_version=2 with users=[], invites=[].
+    Disk file is also immediately upgraded (D-09 immediate migration).
+    '''
+    import auth_store
+    v1 = {
+      'schema_version': 1,
+      'totp_secret': None,
+      'totp_enrolled': False,
+      'totp_enrolled_at': None,
+      'trusted_devices': [],
+      'pending_magic_links': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['schema_version'] == 2
+    assert result['users'] == []
+    assert result['pending_invites'] == []
+    # Disk must be upgraded too (D-09)
+    on_disk = json.loads(isolated_auth_json.read_text(encoding='utf-8'))
+    assert on_disk['schema_version'] == 2
+    assert 'users' in on_disk
+    assert 'pending_invites' in on_disk
+
+  def test_v1_to_v2_migration_preserves_trusted_devices(
+    self, isolated_auth_json,
+  ):
+    '''v1 file with one trusted_device: after migration, list is identical.'''
+    import auth_store
+    device = {
+      'uuid': 'abc123', 'label': 'iPhone', 'granted_at': '2026-04-29T00:00:00+00:00',
+      'last_seen': '2026-04-29T00:00:00+00:00', 'revoked': False, 'revoked_at': None,
+    }
+    v1 = {
+      'schema_version': 1, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [device], 'pending_magic_links': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['trusted_devices'] == [device]
+
+  def test_v1_to_v2_migration_preserves_pending_magic_links(
+    self, isolated_auth_json,
+  ):
+    '''v1 file with one pending_magic_link: after migration, list is identical.'''
+    import auth_store
+    link = {
+      'token_hash': 'deadbeef' * 8, 'email': 'test@example.com',
+      'action': 'totp-reset', 'created_at': '2026-04-29T00:00:00+00:00',
+      'expires_at': '2026-04-29T01:00:00+00:00', 'consumed': False, 'consumed_at': None,
+    }
+    v1 = {
+      'schema_version': 1, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [], 'pending_magic_links': [link],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['pending_magic_links'] == [link]
+
+  def test_v1_to_v2_migration_preserves_totp_fields(
+    self, isolated_auth_json,
+  ):
+    '''v1 file with totp_secret + enrolled=True: all three fields unchanged.'''
+    import auth_store
+    v1 = {
+      'schema_version': 1, 'totp_secret': 'S123', 'totp_enrolled': True,
+      'totp_enrolled_at': '2026-04-29T08:00:00+00:00',
+      'trusted_devices': [], 'pending_magic_links': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v1), encoding='utf-8')
+
+    result = auth_store.load_auth()
+
+    assert result['totp_secret'] == 'S123'
+    assert result['totp_enrolled'] is True
+    assert result['totp_enrolled_at'] == '2026-04-29T08:00:00+00:00'
+
+  def test_v2_file_does_not_re_migrate_or_re_save(
+    self, isolated_auth_json,
+  ):
+    '''v2 file: load_auth() does NOT re-save (was_v1 gate prevents extra writes).
+    Verified by mtime unchanged after load_auth().
+    '''
+    import auth_store
+    v2 = {
+      'schema_version': 2, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [], 'pending_magic_links': [],
+      'users': [{'uid': 'abc', 'email': 'a@b.com', 'role': 'admin',
+                 'created_at': '2026-04-29T00:00:00+00:00', 'disabled': False}],
+      'pending_invites': [],
+    }
+    isolated_auth_json.write_text(json.dumps(v2), encoding='utf-8')
+    mtime_before = isolated_auth_json.stat().st_mtime
+
+    auth_store.load_auth()
+
+    mtime_after = isolated_auth_json.stat().st_mtime
+    assert mtime_before == mtime_after, (
+      'load_auth() must not re-save a v2 file (was_v1 gate should prevent this)'
+    )
+
+  def test_v2_file_with_missing_users_key_is_defensively_backfilled(
+    self, isolated_auth_json,
+  ):
+    '''v2 file missing users key: load_auth() returns users=[] but does NOT
+    save (defensive backfill is in-memory only — mtime unchanged).
+    '''
+    import auth_store
+    v2_partial = {
+      'schema_version': 2, 'totp_secret': None, 'totp_enrolled': False,
+      'totp_enrolled_at': None, 'trusted_devices': [], 'pending_magic_links': [],
+      # users and pending_invites intentionally absent
+    }
+    isolated_auth_json.write_text(json.dumps(v2_partial), encoding='utf-8')
+    mtime_before = isolated_auth_json.stat().st_mtime
+
+    result = auth_store.load_auth()
+
+    mtime_after = isolated_auth_json.stat().st_mtime
+    assert result['users'] == []
+    assert result['pending_invites'] == []
+    assert mtime_before == mtime_after, (
+      'Defensive backfill on v2 file must NOT save to disk (no mtime bump)'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 35 Plan 01 — get_user_by_email (Task 2)
+# ---------------------------------------------------------------------------
+
+class TestGetUserByEmail:
+  '''Phase 35 Plan 01 Task 2 — get_user_by_email unit tests.
+
+  Enumerates 9 cases per plan spec:
+    1. exact-case match
+    2. case-insensitive argument (upper query, lower stored)
+    3. case-insensitive stored (lower query, upper stored)
+    4. no-match returns None
+    5. empty users[] returns None
+    6. empty string arg returns None
+    7. duplicate rows — first match returned
+    8. path= kwarg respected
+    9. 'get_user_by_email' in auth_store.__all__
+
+  All tests use isolated_auth_json fixture from conftest.py.
+  '''
+
+  def test_get_user_by_email_returns_row_for_known_email(
+    self, isolated_auth_json,
+  ):
+    '''Exact-case match returns the correct user row.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    user = auth_store.create_user({'email': 'known@example.com', 'role': 'admin'})
+    result = get_user_by_email('known@example.com')
+    assert result is not None
+    assert result['uid'] == user['uid']
+    assert result['email'] == 'known@example.com'
+
+  def test_get_user_by_email_case_insensitive_argument(
+    self, isolated_auth_json,
+  ):
+    '''Upper-case query, lower-case stored — returns matching row.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    user = auth_store.create_user({'email': 'match@example.com', 'role': 'ff'})
+    result = get_user_by_email('MATCH@EXAMPLE.COM')
+    assert result is not None
+    assert result['uid'] == user['uid']
+
+  def test_get_user_by_email_case_insensitive_stored(
+    self, isolated_auth_json,
+  ):
+    '''Lower-case query, upper-case stored — returns matching row.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    # Write directly to bypass create_user validation (which lowercases nothing)
+    data = auth_store.load_auth()
+    import uuid
+    from datetime import datetime, timezone
+    uid = uuid.uuid4().hex
+    data['users'].append({
+      'uid': uid,
+      'email': 'UPPER@EXAMPLE.COM',
+      'role': 'ff',
+      'created_at': datetime.now(timezone.utc).isoformat(),
+      'disabled': False,
+    })
+    auth_store.save_auth(data)
+    result = get_user_by_email('upper@example.com')
+    assert result is not None
+    assert result['uid'] == uid
+
+  def test_get_user_by_email_returns_none_for_unknown_email(
+    self, isolated_auth_json,
+  ):
+    '''One user present but no match — returns None.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    auth_store.create_user({'email': 'other@example.com', 'role': 'ff'})
+    result = get_user_by_email('absent@example.com')
+    assert result is None
+
+  def test_get_user_by_email_returns_none_for_empty_users(
+    self, isolated_auth_json,
+  ):
+    '''Empty users[] — returns None.'''
+    from auth_store import get_user_by_email
+    result = get_user_by_email('anyone@example.com')
+    assert result is None
+
+  def test_get_user_by_email_returns_none_for_empty_string_arg(
+    self, isolated_auth_json,
+  ):
+    '''Empty string argument — returns None even if a row has email="".'''
+    import auth_store
+    from auth_store import get_user_by_email
+    auth_store.create_user({'email': 'real@example.com', 'role': 'ff'})
+    result = get_user_by_email('')
+    assert result is None
+
+  def test_get_user_by_email_duplicate_returns_first(
+    self, isolated_auth_json,
+  ):
+    '''Two rows with same lowercased email — first inserted is returned.'''
+    import uuid
+    import auth_store
+    from auth_store import get_user_by_email
+    from datetime import datetime, timezone
+    # Seed two rows sharing the same lowercased email directly.
+    data = auth_store.load_auth()
+    uid_first = uuid.uuid4().hex
+    uid_second = uuid.uuid4().hex
+    data['users'].append({
+      'uid': uid_first,
+      'email': 'dup@x.com',
+      'role': 'ff',
+      'created_at': datetime.now(timezone.utc).isoformat(),
+      'disabled': False,
+    })
+    data['users'].append({
+      'uid': uid_second,
+      'email': 'DUP@X.COM',
+      'role': 'admin',
+      'created_at': datetime.now(timezone.utc).isoformat(),
+      'disabled': False,
+    })
+    auth_store.save_auth(data)
+    result = get_user_by_email('dup@x.com')
+    assert result is not None
+    assert result['uid'] == uid_first, (
+      f'Expected first inserted uid={uid_first!r}, got {result["uid"]!r}'
+    )
+
+  def test_get_user_by_email_path_kwarg_isolates_two_files(
+    self, tmp_path,
+  ):
+    '''path= kwarg respected: lookup in tmp1 does not return user seeded in tmp2.'''
+    import auth_store
+    from auth_store import get_user_by_email
+    from auth_store import save_auth, load_auth
+    import uuid
+    from datetime import datetime, timezone
+
+    tmp1 = tmp_path / 'auth1.json'
+    tmp2 = tmp_path / 'auth2.json'
+
+    def _seed(path, email):
+      data = load_auth(path=path)
+      uid = uuid.uuid4().hex
+      data['users'].append({
+        'uid': uid,
+        'email': email,
+        'role': 'ff',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'disabled': False,
+      })
+      save_auth(data, path=path)
+      return uid
+
+    uid1 = _seed(tmp1, 'file1@example.com')
+    uid2 = _seed(tmp2, 'file2@example.com')
+
+    result1 = get_user_by_email('file1@example.com', path=tmp1)
+    result2 = get_user_by_email('file2@example.com', path=tmp2)
+    cross = get_user_by_email('file2@example.com', path=tmp1)
+
+    assert result1 is not None and result1['uid'] == uid1
+    assert result2 is not None and result2['uid'] == uid2
+    assert cross is None, 'file2 email must not be found in tmp1'
+
+  def test_get_user_by_email_in_module___all__(self):
+    '''get_user_by_email is listed in auth_store.__all__.'''
+    import auth_store
+    assert 'get_user_by_email' in auth_store.__all__

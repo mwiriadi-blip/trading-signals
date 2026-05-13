@@ -2,18 +2,18 @@
 
 import html
 
+from dashboard_renderer.formatters import _display_names, _strategy_settings_for
+
 
 def render_settings_tab(state: dict, *, active_market: str | None = None) -> str:
-  import dashboard as d
-
   sections = []
   # Phase 26 B1: when active_market is set and present, render only that market.
-  display_names = d._display_names(state)
+  display_names = _display_names(state)
   if active_market and active_market in display_names:
     display_names = {active_market: display_names[active_market]}
   market_registry = state.get('markets', {}) if isinstance(state, dict) else {}
   for market_id, display in display_names.items():
-    settings = d._strategy_settings_for(state, market_id)
+    settings = _strategy_settings_for(state, market_id)
     market_entry = market_registry.get(market_id, {}) if isinstance(market_registry, dict) else {}
     if not isinstance(market_entry, dict):
       market_entry = {}
@@ -148,9 +148,7 @@ def render_add_market_form(state: dict) -> str:
 
 
 def render_market_test_tab(state: dict, *, active_market: str | None = None) -> str:
-  import dashboard as d
-
-  display_names = d._display_names(state)
+  display_names = _display_names(state)
   # Phase 26 B1: when active_market is set and present, render only that market.
   if active_market and active_market in display_names:
     display_names = {active_market: display_names[active_market]}
@@ -163,7 +161,7 @@ def render_market_test_tab(state: dict, *, active_market: str | None = None) -> 
   # as placeholder="<inherited default>" so blanks fall back server-side.
   # Phase 26 B1: prefer active_market when set+present; else first-market fallback.
   target_market = active_market if (active_market and active_market in display_names) else next(iter(display_names), None)
-  settings = d._strategy_settings_for(state, target_market) if target_market else {}
+  settings = _strategy_settings_for(state, target_market) if target_market else {}
   adx_placeholder = html.escape(str(settings.get('adx_gate', '')), quote=True)
   votes_placeholder = html.escape(str(settings.get('momentum_votes_required', '')), quote=True)
   risk_long_placeholder = html.escape(

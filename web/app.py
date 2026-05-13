@@ -1,7 +1,7 @@
 '''Web application factory — Phase 11 D-02 + Phase 13 D-01..D-21+.
 
 Architecture (CLAUDE.md hex-lite + Phase 10 D-15):
-  web/ is an adapter hex (peer of notifier/, dashboard_legacy/, dashboard.py shim).
+  web/ is an adapter hex (peer of notifier/, dashboard_renderer/, dashboard.py shim).
   Allowed web imports: fastapi, starlette, stdlib, read-only state access via
                        routes/healthz.py, routes/state.py, and routes/dashboard.py
                        (the latter calls dashboard.render_dashboard per D-07).

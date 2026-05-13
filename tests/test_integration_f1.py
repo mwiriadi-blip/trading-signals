@@ -53,10 +53,13 @@ def _setup_f1(tmp_path, monkeypatch):
   # 2. Seed state — sample_state_with_change has SPI200 SHORT + AUDUSD LONG +
   #    pre-existing drift warning. With 400d fixtures producing FLAT signals,
   #    sizing_engine.step closes both positions during the run (trade_log grows).
-  seed = json.loads(
+  _raw_seed = json.loads(
     (NOTIFIER_FIXTURE_DIR / 'sample_state_with_change.json').read_text()
   )
-  state_manager.save_state(seed)
+  state_manager.save_state(_raw_seed)
+  # Phase 33 TENANT-01: load_state returns v12 shape; use as initial_seed
+  # so assertions can access per-user bucket keys.
+  seed = state_manager.load_state()
 
   # 3. Mock boundary 1: yfinance fetch -> 400d canonical fixtures.
   #    Patch target is data_fetcher.yf.Ticker (the import site INSIDE
@@ -188,13 +191,17 @@ def _assert_f1_outputs(tmp_path, captured, initial_seed, mutate_calls):
   final_state = state_manager.load_state()
   # M-4: state must have transitioned. Either account changed (P&L from
   # FLAT-signal closures) OR positions changed shape (closures removed entries).
-  account_changed = final_state.get('account') != initial_seed.get('account')
+  # Phase 33 TENANT-01: per-user keys in users bucket.
+  _uid = 'u_admin_marc'
+  _final_user = final_state['users'][_uid]
+  _seed_user = initial_seed['users'][_uid]
+  account_changed = _final_user.get('account') != _seed_user.get('account')
   positions_changed = (
-    set(final_state.get('positions', {}).keys()) !=
-    set(initial_seed.get('positions', {}).keys())
+    set(_final_user.get('positions', {}).keys()) !=
+    set(_seed_user.get('positions', {}).keys())
   ) or any(
-    final_state['positions'].get(k) != initial_seed['positions'].get(k)
-    for k in set(final_state.get('positions', {})) | set(initial_seed.get('positions', {}))
+    _final_user['positions'].get(k) != _seed_user['positions'].get(k)
+    for k in set(_final_user.get('positions', {})) | set(_seed_user.get('positions', {}))
   )
   assert account_changed or positions_changed, (
     'state.json must reflect the run (account changed from FLAT-signal closure '
@@ -203,8 +210,8 @@ def _assert_f1_outputs(tmp_path, captured, initial_seed, mutate_calls):
 
   # L-3 / Gemini #4: trade_log must have grown — proves FLAT-signal closures
   # actually appended to trade_log via sizing engine, not just no-op'd.
-  initial_log_len = len(initial_seed.get('trade_log', []))
-  final_log_len = len(final_state.get('trade_log', []))
+  initial_log_len = len(_seed_user.get('trade_log', []))
+  final_log_len = len(_final_user.get('trade_log', []))
   assert final_log_len > initial_log_len, (
     f'trade_log must grow: FLAT signals should close BOTH seed positions; '
     f'got initial={initial_log_len}, final={final_log_len} (REVIEWS L-3)'
