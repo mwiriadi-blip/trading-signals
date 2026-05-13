@@ -251,7 +251,11 @@ Phase 40 (milestone close audit) requires both 38 and 39 complete.
   4. `PublicUserSummary` Pydantic model carries only `{user_id, display_name, status, last_seen_date, has_active_position: bool}`; admin `/admin/users` view returns `list[PublicUserSummary]` only — no `state[]`, no trade content, no equity figures.
   5. `RedactStateFilter` is installed at app startup; structured field-name allowlist (`event`, `user_id`, `signal_as_of`, `rc`) — `paper_trades`/`equity_history`/`entry_price`/`n_contracts`/`journal` are replaced with `<redacted>` in log records.
   6. Admin can reversibly disable any non-admin user from `/admin/users`; disabled users cannot log in; their data is preserved (re-enable restores everything); terminal delete is explicitly NOT shipped (deferred to v1.3.x).
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 36-01-PLAN.md — Wave 0: Foundation (mutate_user_state, load_user_state, record_trade uid param, PublicUserSummary model, conftest v12 fixtures, test stubs)
+- [ ] 36-02-PLAN.md — Wave 1: Route Migration (paper_trades + trades migrate to mutate_user_state, admin GET /users + PATCH /users/{uid}/disable)
+- [ ] 36-03-PLAN.md — Wave 2: Test Coverage (TestMutateUserState, 9 entity-ID 404 tests, TestTenantIsolation isolation assertion)
 **Plan-time verification (research-flagged):**
 - **State layout flock interaction:** confirm the `flock(LOCK_EX)`-across-read-modify-write pattern composes cleanly with existing `mutate_state` semantics under simulated 50-thread stress before locking the single-file `users{}` map choice; if friction-laden, fall back to the sharded-directory option (Stack research's Option A). Per-user flock itself is non-negotiable either way.
 
