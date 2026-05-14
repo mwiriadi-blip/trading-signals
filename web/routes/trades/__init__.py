@@ -279,7 +279,10 @@ def register(app: FastAPI) -> None:
     '''
     from state_manager import load_state, load_user_state
     state = load_state()
-    positions = load_user_state(user_id)['positions']
+    try:
+      positions = load_user_state(user_id)['positions']
+    except KeyError:
+      raise HTTPException(status_code=403, detail='Not authenticated')
     pos = positions.get(instrument)
     if pos is None:
       raise HTTPException(
@@ -297,7 +300,10 @@ def register(app: FastAPI) -> None:
     '''
     from state_manager import load_state, load_user_state
     state = load_state()
-    positions = load_user_state(user_id)['positions']
+    try:
+      positions = load_user_state(user_id)['positions']
+    except KeyError:
+      raise HTTPException(status_code=403, detail='Not authenticated')
     pos = positions.get(instrument)
     if pos is None:
       raise HTTPException(
@@ -312,7 +318,10 @@ def register(app: FastAPI) -> None:
     '''Restore a position row. Phase 36: reads from user bucket; 404 if None.'''
     from state_manager import load_state, load_user_state
     state = load_state()
-    positions = load_user_state(user_id)['positions']
+    try:
+      positions = load_user_state(user_id)['positions']
+    except KeyError:
+      raise HTTPException(status_code=403, detail='Not authenticated')
     pos = positions.get(instrument)
     if pos is None:
       raise HTTPException(

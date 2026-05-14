@@ -417,8 +417,16 @@ def load_user_state(uid: str, path: Path = Path(STATE_FILE)) -> dict:
   Re-exported from state_manager so routes can:
     from state_manager import load_user_state
   Only per-user data reads use this; signal/market reads keep load_state().
+
+  Raises KeyError with a clear message if uid is not in state["users"].
+  Routes should catch KeyError and raise HTTPException 403 rather than letting
+  it propagate as a 500.
   '''
-  return load_state(path=path)['users'][uid]
+  state = load_state(path=path)
+  user = state.get('users', {}).get(uid)
+  if user is None:
+    raise KeyError(f'user {uid!r} not in state["users"]')
+  return user
 
 
 __all__ = [
