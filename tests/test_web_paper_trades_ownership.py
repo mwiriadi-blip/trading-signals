@@ -109,7 +109,10 @@ def two_user_paper_client(isolated_auth_json, monkeypatch):
   # Stub mutate_user_state: invoke mutator on seeded_state but return it.
   # For 404-for-other-users tests: uid_b has no trade with uid_a's trade_id
   # so _apply raises _PaperTradeNotFound → route returns 404.
+  # Assert uid == uid_b so a regression where the route resolves the wrong user
+  # is caught immediately rather than producing a subtly wrong result.
   def _mutate_stub(uid, mutator, *_a, **_kw):
+    assert uid == uid_b, f'route passed wrong uid: expected {uid_b!r}, got {uid!r}'
     mutator(seeded_state)
     return seeded_state
   monkeypatch.setattr(state_manager, 'mutate_user_state', _mutate_stub)
