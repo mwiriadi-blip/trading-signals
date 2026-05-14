@@ -1,370 +1,280 @@
 ---
-phase: 37-per-user-email-fan-out-admin-invite-disable-routes-invite-ac
-reviewed: 2026-05-14T12:00:00Z
+phase: 37-sc5-gap-closure
+reviewed: 2026-05-15T00:00:00Z
 depth: standard
-files_reviewed: 22
+files_reviewed: 3
 files_reviewed_list:
-  - auth_store/__init__.py
-  - auth_store/_schema.py
-  - auth_store/_users.py
-  - main.py
-  - notifier/transport.py
-  - per_user_fanout.py
-  - system_params.py
-  - tests/conftest.py
-  - tests/test_auth_store_users.py
-  - tests/test_main.py
-  - tests/test_per_user_fanout.py
-  - tests/test_web_admin_invite.py
-  - tests/test_web_dashboard_email_prefs.py
-  - tests/test_web_invite.py
-  - web/app.py
-  - web/middleware/auth.py
-  - web/routes/admin/__init__.py
-  - web/routes/admin/_models.py
-  - web/routes/admin/_renderers.py
   - web/routes/dashboard/__init__.py
-  - web/routes/healthz.py
-  - web/routes/invite/__init__.py
-  - web/routes/invite/_renderers.py
+  - dashboard_renderer/components/account.py
+  - tests/test_tenant_isolation.py
 findings:
-  critical: 4
-  warning: 5
-  info: 3
-  total: 12
+  critical: 2
+  warning: 2
+  info: 1
+  total: 5
 status: issues_found
 ---
 
-# Phase 37: Code Review Report
+# Phase 37 (SC-5 gap closure): Code Review Report
 
-**Reviewed:** 2026-05-14T12:00:00Z
+**Reviewed:** 2026-05-15T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 22
+**Files Reviewed:** 3
 **Status:** issues_found
 
 ## Summary
 
-Phase 37 adds per-user email fan-out, an admin invite flow, user disable/enable,
-and a multi-step invite-acceptance wizard. Core crypto and locking patterns are
-sound. Four BLOCKER-tier issues were found: the raw invite token is exposed in
-the HTML response body sent to the admin browser (token-leak vector); the wizard
-stores the raw token inside a signed cookie that can be replayed after the invite
-is consumed; `create_user` silently drops the `password_hash` field on any
-non-invite path; and the PATCH `/admin/users/{uid}/disable` endpoint takes
-`disabled` as a query-string boolean, which FastAPI parses from the URL, meaning
-`PATCH /admin/users/abc/disable?disabled=false` re-enables a user with no admin
-confirmation—an RBAC boundary surprise. Five warnings cover missing email
-validation at the invite boundary, silent no-op on empty admin_uid, an
-unescaped token_hash in HTMX `hx-delete` attributes, a rate-limit duplicate-
-constant drift risk, and a TOCTOU window in `_peek_invite_token`. Three info
-items note dead code, a missing test isolation gap, and a magic-number TTL.
+Reviewed the SC-5 gap-closure implementation: per-user state scoping on `/account`
+via `_serve_account_page_scoped`, the `_account_include_open_form` flag in
+`account.py`, and the un-skipped tenant isolation test.
+
+Two critical issues found. First, the tenant isolation test passes vacuously because
+`paper_trades` is never rendered on the `/account` page — the route the test hits.
+The isolation guarantee the test is meant to lock is untested. Second, `scoped_state`
+leaks all top-level keys from `full_state` via `**full_state` spread, meaning
+production-state fields like `positions` and `trade_log` are not scoped per-user.
+Both issues are invisible to the test because the test's seeded state omits
+top-level `positions` and `trade_log` keys that production state carries.
 
 ---
 
 ## Critical Issues
 
-### CR-01: Raw invite token written into HTML response body returned to admin browser
+### CR-01: Tenant isolation test passes vacuously — paper_trades not rendered on /account
 
-**File:** `web/routes/admin/__init__.py:161-168` and `web/routes/admin/_renderers.py:93-102`
-
-**Issue:** `admin_issue_invite` builds `invite_url = f'{base_url}/accept-invite?token={raw_token}'` and passes it directly to `_render_invite_url_fragment`, which embeds the full URL—including the secret raw token—inside a `<code>` block in the HTML response. The browser caches this response, it appears in browser history, is present in server access logs (if the full response body is logged), and leaks in any Content-Security-Policy or network-layer logging of response bodies.
-
-The raw token is a 32-byte `secrets.token_urlsafe` value equivalent to a one-time password. Exposing it in HTML is consistent with the design intent (admin copy-pastes it) but it means the token travels in plaintext HTML, not just in the out-of-band invite email. Combined with a logging or proxy layer that captures response bodies, the token is fully exposed.
-
-More critically: the fragment is returned as the inner HTML of `#invite-form-wrapper` via HTMX (`hx-target="#invite-form-wrapper" hx-swap="innerHTML"`). This HTML fragment—containing the raw token—will be captured in any HTMX response log, browser dev-tools network tab replay, or XSS exfiltration of the DOM.
-
-**Fix:** Do not embed the raw token in any server-rendered HTML. Instead return only a confirmation message and the token hash (which the admin already sees in the pending-invites table for revocation). The raw token was already emailed to the invitee. If the admin needs a copy-able link, truncate/mask the token in the UI: e.g. show only the first 6 chars + `...` as a visual confirmation the link was issued, but never render the full token in HTML.
-
-```python
-# _renderers.py: replace invite_url embed with masked confirmation
-def _render_invite_url_fragment(email: str, expires_at: str) -> str:
-  safe_email = html.escape(email, quote=True)
-  safe_expires = html.escape(expires_at, quote=True)
-  return (
-    f'<div class="banner-success" role="status" aria-live="polite">'
-    f'<p>Invite sent to {safe_email}. The link expires: {safe_expires}.</p>'
-    f'<p>The invitation email has been delivered. '
-    f'Ask the invitee to check their inbox.</p>'
-    f'</div>'
-  )
-
-# admin/__init__.py: drop invite_url from the renderer call
-return HTMLResponse(_render_invite_url_fragment(email, expires_at))
-```
-
----
-
-### CR-02: Raw invite token stored in wizard cookie payload — survives server-side invite revocation
-
-**File:** `web/routes/invite/__init__.py:115`
-
-**Issue:** On GET `/accept-invite`, the handler stores the raw token in the signed `tsi_invite_wizard` cookie:
-
-```python
-payload = {'step': 'password', 'raw_token': token, 'email': email}
-```
-
-The signed cookie is issued to the invitee's browser. The browser can hold this cookie for up to 1 hour (`_WIZARD_COOKIE_MAX_AGE = 3600`). If an admin calls `DELETE /admin/invites/{token_hash}` to revoke the invite while the invitee's wizard cookie is active, the cookie still contains the raw token. When the invitee then submits POST `/accept-invite`, the handler reads `raw_token` from the cookie and calls `consume_and_create_user`. The consume path does re-check expiry and consumed status **inside a flock**, so revocation via `revoke_invite` (which sets `consumed=True`) will prevent the new user from being created.
-
-However: the raw token is now persisted on the invitee's disk (in browser cookie storage) for up to 1 hour beyond any revocation. If the cookie is exfiltrated (XSS, local storage access, shared browser profile), the raw token is exposed. Per plan LEARNINGS G-72, token hashes must be enforced at all storage boundaries. The raw token must not be stored in a cookie.
-
-**Fix:** Instead of storing `raw_token` in the cookie, store only the token hash. On POST `/accept-invite`, read the raw token from a hidden form field (passed from the GET response HTML) and re-derive the hash for the consume call. The raw token only lives in the URL query parameter and in the form submit body, never in persistent cookie storage.
-
-```python
-# GET handler: store hash, not raw token, in cookie
-token_hash = 'sha256:' + hashlib.sha256(token.encode('utf-8')).hexdigest()
-payload = {'step': 'password', 'token_hash': token_hash, 'email': email}
-
-# Step-1 form: embed token in a hidden input (lives only in the transient page)
-# _render_step1_password_page: add <input type="hidden" name="raw_token" value="{safe_token}">
-
-# POST handler: get raw_token from Form(...), not from cookie
-raw_token: str = Form(...)
-# validate: cookie step == 'password' and hash matches
-expected_hash = 'sha256:' + hashlib.sha256(raw_token.encode()).hexdigest()
-if wizard_payload.get('token_hash') != expected_hash:
-    return HTMLResponse(_render_invite_error_page(), status_code=400)
-```
-
----
-
-### CR-03: `create_user` silently drops `password_hash` — no-invite user creation path creates users without passwords
-
-**File:** `auth_store/_users.py:150-165`
-
-**Issue:** `create_user` builds the user dict without a `password_hash` field:
-
-```python
-user = {
-    'uid': uuid.uuid4().hex,
-    'email': email,
-    'role': role,
-    'created_at': datetime.now(timezone.utc).isoformat(),
-    'disabled': False,
-}
-```
-
-The `User` TypedDict declares `password_hash: str | None` (line 56 of `_schema.py`). Any caller that uses `create_user` to create an account (as opposed to `consume_and_create_user`) produces a row without the `password_hash` key. If `verify_password` is later called with `stored_hash=None` (from `.get('password_hash')`), it silently returns `False` rather than raising—which is correct—but a row with no `password_hash` key at all will return `None` from `.get('password_hash')`, which also maps to `False` from `verify_password`. The silent divergence between `None` (explicitly no password) and missing key (accidentally no password) is a data integrity risk: new code that checks `user.get('password_hash') is not None` as a "has a password" guard will treat both cases identically.
-
-**Fix:** Add `password_hash` field explicitly to `create_user`:
-
-```python
-user = {
-    'uid': uuid.uuid4().hex,
-    'email': email,
-    'role': role,
-    'created_at': datetime.now(timezone.utc).isoformat(),
-    'disabled': False,
-    'password_hash': fields.get('password_hash'),  # None for admin-only rows
-}
-```
-
----
-
-### CR-04: PATCH `/admin/users/{uid}/disable` accepts `disabled` as a query-string boolean — re-enable is a one-param URL with no confirmation gate
-
-**File:** `web/routes/admin/__init__.py:124-135`
+**File:** `tests/test_tenant_isolation.py:164`
 
 **Issue:**
+`test_other_user_dashboard_has_no_user_a_trade_content` asserts that user A's
+`paper_trades` (with `entry_price`, `n_contracts`, `LONG` direction) do not appear
+in user B's `/account` response. The test will always pass regardless of whether
+isolation works, because `paper_trades` is never rendered on the `/account` page.
+
+Call chain trace:
+1. `/account` -> `_serve_account_page_scoped` -> `render_dashboard_as_str(scoped_state, active_function='account')`
+2. `render_dashboard_as_str` -> `_render_single_page_dashboard(ctx, 'account')`
+3. `_render_page_body(ctx, 'account')` -> `_account_body()`
+4. `_account_body` -> `_render_account_management_region(state)` (`account.py:187`)
+5. `_render_account_management_region` calls `render_positions_table` and
+   `render_trades_table` — it does NOT call `render_paper_trades_region`
+
+`render_paper_trades_region` (the only function that renders `paper_trades`) is
+invoked exclusively from the `signals` page path (`shell.py:290`). The `/account`
+route never renders `paper_trades` at all. User A's 5 paper trades with
+`entry_price`/`n_contracts`/`LONG` would not appear in user B's `/account`
+response even if `scoped_state` were `full_state` verbatim with all user data
+merged.
+
+The isolation guarantee SC-5 is meant to provide is untested. If
+`render_paper_trades_region` is later wired into the account page (the natural
+location for F&F paper-trade history), the isolation gate will be absent.
+
+**Fix — option A (correct the test target):** The test must hit the endpoint that
+actually renders `paper_trades`. If paper trades belong on `/account`, wire
+`render_paper_trades_region` into `_render_account_management_region` and assert
+isolation against `/account`. If they only render on `/signals`, the test must
+GET `/signals` (or `/markets/{market_id}/signals`) authenticated as user B.
+
+**Fix — option B (minimum viable sentinel):** Add a positive assertion that the
+page rendered actual account content, so any future rendering change that causes
+a vacuous pass is caught immediately:
 
 ```python
-@router.patch('/users/{uid}/disable')
-def admin_disable_user(uid: str, disabled: bool = True):
+def test_other_user_dashboard_has_no_user_a_trade_content(self, two_user_client):
+    client, uid_a, uid_b = two_user_client
+    cookie_b = _build_session_cookie(uid_b)
+    resp = client.get('/account', cookies={'tsi_session': cookie_b})
+    body_text = resp.text
+
+    # Positive sentinel: ensure the account page actually rendered content
+    # so a vacuous-pass (empty or 503 response) is caught immediately.
+    assert resp.status_code == 200, f'Expected 200, got {resp.status_code}'
+    assert 'account-management-region' in body_text, (
+        'Expected account-management-region in /account response — '
+        'test may be passing vacuously if render path changed'
+    )
+
+    matches = TRADE_CONTENT_RE.findall(body_text)
+    assert matches == [], (
+        f'User A trade content leaked into user B dashboard: {matches}'
+    )
 ```
 
-FastAPI resolves `disabled` from the **query string** (not from a form body or JSON body), because `bool` is a scalar type without a `Body(...)` or `Form(...)` annotation. The HTMX button in `_renderers.py` calls `hx-patch="/admin/users/{uid}/disable"` without any request body—so the default `disabled=True` fires, correctly disabling the user.
+---
 
-However, since `disabled` is a query param, **any** request to `PATCH /admin/users/{uid}/disable?disabled=false` will re-enable the user. This is exploitable by an authenticated admin who can craft a URL, or inadvertently by a future HTMX form that adds query params. More critically, the endpoint name is `/disable` (suggesting a one-way action) but it is actually a full toggle controlled by a query param—a contract mismatch that is not surfaced in the UI.
+### CR-02: scoped_state spreads full_state — top-level positions/trade_log leak per-user data
 
-**Fix:** Require `disabled` from a form body and rename the endpoint to make toggle semantics explicit, or split into two endpoints `/disable` and `/enable`:
+**File:** `web/routes/dashboard/__init__.py:214`
+
+**Issue:**
+`scoped_state` is constructed as:
 
 ```python
-from fastapi import Form
-
-@router.patch('/users/{uid}/disable')
-def admin_disable_user(uid: str, disabled: bool = Form(default=True)):
-    ...
+scoped_state = {
+    **full_state,
+    'paper_trades': user_bucket.get('paper_trades', []),
+    'equity_history': user_bucket.get('equity_history', []),
+    '_account_include_open_form': is_admin,
+}
 ```
 
-Or, remove the `disabled` parameter entirely and make `PATCH /admin/users/{uid}/disable` always set `disabled=True`, and add a separate `PATCH /admin/users/{uid}/enable` endpoint. This matches the endpoint name and removes the re-enable footgun.
+The `**full_state` spread copies ALL top-level keys verbatim into `scoped_state`.
+In production schema v12, `full_state` contains top-level `positions`, `trade_log`,
+`account`, `initial_account` and similar global/admin-scope fields. These are NOT
+overridden by the subsequent per-user keys above.
+
+Downstream renderers that read from `scoped_state`:
+- `_compute_account_stat_values` (`account.py:104`) reads `state.get('trade_log', [])`
+  and iterates `state.get('positions', {})` — both come from `full_state` unchanged
+- `render_trades_table` reads `state.get('trade_log', [])` — same
+
+If `full_state` carries global (admin) `trade_log` entries, they will appear in
+every user's `/account` stats tile regardless of who is authenticated. If
+`full_state` carries a top-level `positions` dict (global admin positions), every
+user sees open-exposure figures derived from admin positions.
+
+The test is blind to this because its `seeded_state` (test lines 84-117) has no
+top-level `positions` or `trade_log` keys — those fields are only under
+`state['users'][uid_*]`, which is not the production schema layout.
+
+**Fix:** Explicitly override all per-user fields when building `scoped_state`:
+
+```python
+user_bucket = full_state.get('users', {}).get(uid, {}) or {}
+is_admin = (uid == full_state.get('admin_user_id'))
+scoped_state = {
+    **full_state,
+    # Explicit per-user overrides — never let full_state bleed through for these
+    'paper_trades':    user_bucket.get('paper_trades', []),
+    'equity_history':  user_bucket.get('equity_history', []),
+    'trade_log':       user_bucket.get('trade_log', []),
+    'positions':       user_bucket.get('positions', {}),
+    'account':         user_bucket.get('account', full_state.get('account')),
+    'initial_account': user_bucket.get('initial_account', full_state.get('initial_account')),
+    '_account_include_open_form': is_admin,
+}
+```
 
 ---
 
 ## Warnings
 
-### WR-01: No email format validation on `POST /admin/invites` — any string is accepted as email
+### WR-01: No error handling in _serve_account_page_scoped — render failure returns unhandled 500
 
-**File:** `web/routes/admin/__init__.py:139-168`
-
-**Issue:** The `email` parameter is `email: str = Form(...)`. FastAPI's `Form(...)` only enforces non-empty presence; it does not validate email format. An admin submitting `email=notanemail` or `email=<script>alert(1)</script>` will mint a valid invite token and attempt to send an email to that address. The invite row is stored with the malformed email, which then propagates to `mint_invite_token`, `send_invite_email`, and ultimately the Resend API (which will return a 4xx and log it as a ResendError, silently dropped).
-
-The lack of validation means the admin UI can silently create invite rows for invalid addresses that can never be accepted by a real invitee.
-
-**Fix:** Add a simple email-format validator at the route boundary, consistent with `_EMAIL_RE` already used in `web/app.py`:
-
-```python
-import re
-_INVITE_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-
-if not _INVITE_EMAIL_RE.match(email):
-    raise HTTPException(status_code=422, detail='Invalid email address')
-```
-
----
-
-### WR-02: `admin_uid` from `Depends(current_user_id)` can be `None` — silently stored as `invited_by: None`
-
-**File:** `web/routes/admin/__init__.py:143-160`
+**File:** `web/routes/dashboard/__init__.py:184`
 
 **Issue:**
+The module docstring states the never-crash contract (D-10): render failures log
+WARN and serve stale content, only falling back to 503 on first-run. Every other
+render path (`_serve_dashboard_page`, `_serve_dashboard_root`) wraps the render
+call in `try/except Exception` to honour this contract.
+
+`_serve_account_page_scoped` has no such guard. Any exception from
+`render_dashboard_as_str` or `_substitute` propagates as an unhandled 500. This
+route is the most likely to encounter per-user state edge cases (malformed user
+bucket, missing keys, None values) that trigger render exceptions.
+
+**Fix:** Wrap the render + substitute block in a try/except matching the D-10
+never-crash pattern used by `_serve_dashboard_page`:
 
 ```python
-admin_uid: str = Depends(current_user_id),
-...
-raw_token, expires_at = mint_invite_token(invited_by_uid=admin_uid, email=email)
-```
-
-`current_user_id` (from `web/dependencies.py`) returns `request.state.user_id`, which `AuthMiddleware` sets to `None` for trusted-device sessions (Phase 35 Option B: `request.state.user_id = None` is explicitly set on the tsi_trusted path—see `web/middleware/auth.py:295`). If a trusted-device session calls `POST /admin/invites`, `admin_uid` will be `None`, and the stored invite row will have `invited_by: None`. This is a data-integrity issue: the audit trail for who issued the invite is silently lost.
-
-**Fix:** Add a None guard before minting the token:
-
-```python
-if not admin_uid:
-    raise HTTPException(status_code=403, detail='Cannot determine admin identity; re-login with TOTP session')
+try:
+    body = render_dashboard_as_str(
+        scoped_state, now=None, active_function='account',
+    )
+    body_bytes = _substitute(body.encode('utf-8'), request)
+except Exception as exc:
+    logger.warning(
+        '[Web] account page render failed uid=%s: %s: %s',
+        uid, type(exc).__name__, exc,
+    )
+    return PlainTextResponse(
+        content='dashboard not ready',
+        status_code=503,
+        media_type='text/plain; charset=utf-8',
+    )
 ```
 
 ---
 
-### WR-03: Unescaped `token_hash` injected into HTMX `hx-delete` URL path attribute — partial XSS vector
+### WR-02: two_user_client seeded_state missing top-level production fields — test is blind to CR-02
 
-**File:** `web/routes/admin/_renderers.py:190`
+**File:** `tests/test_tenant_isolation.py:84`
 
 **Issue:**
+The seeded_state fixture omits several top-level fields that production schema v12
+carries (`positions`, `trade_log`, `account`, `initial_account`). These are absent
+at the top level of `seeded_state` — they exist only inside `state['users'][uid_*]`.
+
+As noted in CR-02, `_serve_account_page_scoped` spreads `full_state` and only
+overrides `paper_trades` and `equity_history`. A test that populates production-
+realistic top-level `positions` and `trade_log` in `seeded_state` would catch
+cross-user leakage via the `**full_state` spread. With the current minimal seeded
+state, `full_state.get('positions', {})` evaluates to `{}` and
+`full_state.get('trade_log', [])` evaluates to `[]`, so contamination is invisible.
+
+**Fix:** Add production-realistic top-level fields to `seeded_state` that
+`_serve_account_page_scoped` must NOT bleed into user B's rendered page:
 
 ```python
-safe_hash = html.escape(inv.get('token_hash', ''), quote=True)
-...
-f'hx-delete="/admin/invites/{safe_hash}" '
+seeded_state = {
+    'schema_version': 12,
+    'admin_user_id': uid_a,
+    # Production-realistic top-level fields that must be scoped per-user:
+    'trade_log': [
+        {'net_pnl': 500.0, 'entry_price': 8000.0, 'n_contracts': 3,
+         'direction': 'LONG', 'instrument': 'SPI200'},
+    ],
+    'positions': {
+        'SPI200': {'n_contracts': 2, 'direction': 'LONG', 'entry_price': 8000.0},
+    },
+    ...
+}
 ```
 
-`html.escape(quote=True)` encodes `&`, `<`, `>`, `"`, and `'`. It does NOT encode `/` or `:`. A token hash stored as `sha256:abcdef...` is valid. However, if an attacker-controlled value were stored in `token_hash` (e.g., via a crafted auth.json write), a value like `sha256:abc/../../other-path` would produce `hx-delete="/admin/invites/sha256:abc/../../other-path"` in the HTML. The HTMX client would send a `DELETE` request to the resolved path, potentially targeting a different route.
-
-In practice the token_hash is always written by `mint_invite_token` using `hashlib.sha256` output (hex digits only after the `sha256:` prefix), so there is no realistic path injection under normal operation. But the rendered HTML attribute should enforce URL encoding for the path segment:
-
-**Fix:** URL-encode the hash value when embedding in HTMX attributes:
-
-```python
-from urllib.parse import quote as _url_quote
-safe_hash_url = _url_quote(inv.get('token_hash', ''), safe='')
-...
-f'hx-delete="/admin/invites/{safe_hash_url}" '
-```
-
----
-
-### WR-04: Rate-limit constants duplicated between `web/middleware/auth.py` and `system_params.py` — drift risk documented but not enforced
-
-**File:** `web/middleware/auth.py:74-83`
-
-**Issue:** The file comment explicitly acknowledges the duplication:
-
-> "These literals SHADOW system_params.RATE_LIMIT_* — we keep a private copy here because the AST hex-boundary guard rejects ANY occurrence of 'system_params' in this file. Drift risk: low (single operator, infrequent config change). If you bump either copy, bump the other in the same PR."
-
-The current values match `system_params.py` but there is no automated enforcement. A future commit that bumps `system_params.RATE_LIMIT_LOGIN_PER_15M` from 5 to 10 without updating `auth.py` will silently apply different limits to the login route. The LEARNINGS pattern (G-74) requires environment-driven configuration for values that vary per deployment; this case is slightly different (a policy constant) but the drift risk is real.
-
-**Fix:** Add an AST or import-time test that asserts the two sets of literals are equal:
-
-```python
-# tests/test_rate_limit_constants.py
-def test_rate_limit_constants_not_drifted():
-    from system_params import (
-        RATE_LIMIT_LOGIN_PER_15M, RATE_LIMIT_FORGOT_PER_HOUR, RATE_LIMIT_RESET_PER_HOUR,
-    )
-    from web.middleware.auth import (
-        RATE_LIMIT_LOGIN_PER_15M as AUTH_LOGIN,
-        RATE_LIMIT_FORGOT_PER_HOUR as AUTH_FORGOT,
-        RATE_LIMIT_RESET_PER_HOUR as AUTH_RESET,
-    )
-    assert AUTH_LOGIN == RATE_LIMIT_LOGIN_PER_15M
-    assert AUTH_FORGOT == RATE_LIMIT_FORGOT_PER_HOUR
-    assert AUTH_RESET == RATE_LIMIT_RESET_PER_HOUR
-```
-
----
-
-### WR-05: `_peek_invite_token` has a TOCTOU window — token can be consumed between peek and consume
-
-**File:** `auth_store/_users.py:333-352`
-
-**Issue:** `_peek_invite_token` reads the auth store without a flock and returns the email if the token is valid and unexpired. The caller (`get_accept_invite` in `web/routes/invite/__init__.py:104`) uses this to validate the token before rendering the password form. Between the peek and the eventual `consume_and_create_user` call (which does hold a flock), a concurrent request could:
-
-1. Concurrent GET `/accept-invite?token=X` → peek succeeds, wizard cookie issued.
-2. Admin calls `DELETE /admin/invites/{hash}` → token marked consumed.
-3. Invitee submits POST `/accept-invite` → consume fails with `InviteAlreadyConsumed`.
-
-This is an accepted TOCTOU (the revocation wins per design), but the current error handling on step 3 in `post_accept_invite` returns `_render_invite_error_page()` with HTTP 200, which is correct. The issue is that the peek does not check consumed status atomically with the flock—it uses `load_auth` without a lock—meaning if two invitees simultaneously try to accept the same token, both will pass the peek, both will issue wizard cookies, and only the first to reach `consume_and_create_user` will succeed. The second sees an error page. This is the documented behavior, but:
-
-The peek at line 342 iterates the FULL pending_invites list and raises `InviteAlreadyConsumed` on the first matching (but consumed) token. If the token matches NO row at all, it raises `InviteAlreadyConsumed` from line 352. The timing-safety comment at line 338 says it "walks the full pending_invites list before deciding"—but the loop `break`s immediately on first match (line 343), so it does NOT walk the full list before deciding for the happy path. It only walks fully when no match is found.
-
-This means a partial match (e.g., token that matches the first of N invites) short-circuits immediately and skips timing noise for the remaining N-1 invites—a minor timing oracle for enumerating invite list length.
-
-**Fix:** Accept the documented TOCTOU tradeoff but fix the timing claim: remove the comment "Timing-safe: walks the full pending_invites list before deciding" since it is only true for the not-found path. Update the docstring to accurately describe the actual behavior.
+Then assert that user B's `/account` response does not contain `n_contracts` or
+`entry_price` values from the admin's top-level positions and trade_log.
 
 ---
 
 ## Info
 
-### IN-01: Dead code block in `admin_list_users` — user_devices dict built but never populated
+### IN-01: _account_include_open_form defaults to True — permissive default creates footgun
 
-**File:** `web/routes/admin/__init__.py:73-79`
-
-**Issue:**
-
-```python
-user_devices: dict = {}
-for dev in auth_data.get('trusted_devices', []):
-    # trusted_devices are global per auth.json v2 schema (not per-user)
-    # Phase 37: associate devices per user via device uuid → user lookup
-    pass
-```
-
-The `for` loop body is `pass`—`user_devices` is never populated. The variable is then never read. This is dead code left over from an incomplete Phase 37 implementation stub. The `last_seen_date` computation at line 96 uses `auth_data.get('trusted_devices', [])` directly instead of the (empty) `user_devices` dict.
-
-**Fix:** Remove lines 73-79 entirely, or implement the per-user device association if it is needed.
-
----
-
-### IN-02: `test_invite_route_registered_before_auth_middleware` opens file with a relative path — test is environment-sensitive
-
-**File:** `tests/test_web_invite.py:407`
+**File:** `dashboard_renderer/components/account.py:190`
 
 **Issue:**
+`_render_account_management_region` reads:
 
 ```python
-src = open('web/app.py').read()
+include_open_form = state.get('_account_include_open_form', True)
 ```
 
-Uses a relative path. This test will fail if pytest is run from any directory other than the repo root. The project's CLAUDE.md convention requires tests to use absolute paths or `Path(__file__).parent` anchors.
+The default is `True` (show position-open form). Only `_serve_account_page_scoped`
+explicitly sets this flag. All other render paths (`render_dashboard_files`,
+`render_dashboard_page`, the on-disk `dashboard-account.html`) never set it, so
+they render with the admin form visible — which is intentional for the admin path.
 
-**Fix:**
+The risk: any future code that calls `render_dashboard_as_str` for a non-admin user
+without setting `_account_include_open_form` will silently show the admin form.
+The safe default direction for a security-sensitive UI element is `False` (hidden),
+with admin callers opting in explicitly.
+
+**Fix:** Invert the default to `False` (restrictive) and update `_serve_account_page_scoped`
+to pass `True` for the admin case only:
 
 ```python
-from pathlib import Path
-src = (Path(__file__).parent.parent / 'web' / 'app.py').read_text()
+# account.py:190 — default to False (safe/restrictive)
+include_open_form = state.get('_account_include_open_form', False)
 ```
+
+Then in `render_dashboard_files` / `render_dashboard_page` (the admin-only on-disk
+path), pass the flag explicitly in state or accept that the on-disk path is
+admin-only and document it. This makes the safe path the default and requires
+explicit opt-in for the privileged form.
 
 ---
 
-### IN-03: `_WIZARD_COOKIE_MAX_AGE = 3600` is a magic number not sourced from `system_params`
-
-**File:** `web/routes/invite/__init__.py:36`
-
-**Issue:** The wizard cookie TTL of 3600 seconds (1 hour) is a hardcoded magic number. All other cookie TTLs in the project are defined in `system_params.py` (e.g., `TSI_SESSION_TTL_SECONDS`, `TSI_ENROLL_TTL_SECONDS`, `MAGIC_LINK_TTL_SECONDS`). The `_ENROLL_COOKIE_MAX_AGE = 600` on line 42 mirrors `system_params.TSI_ENROLL_TTL_SECONDS` but is not imported—same pattern as the rate-limit duplication (WR-04). A future change to the enroll TTL in `system_params` won't automatically update this constant.
-
-**Fix:** Add `INVITE_WIZARD_TTL_SECONDS: int = 3600` to `system_params.py` and import it in the invite module. For `_ENROLL_COOKIE_MAX_AGE`, import `TSI_ENROLL_TTL_SECONDS` from `system_params` (or document why the literal shadow is intentional, mirroring the auth.py pattern).
-
----
-
-_Reviewed: 2026-05-14T12:00:00Z_
+_Reviewed: 2026-05-15T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
