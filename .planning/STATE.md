@@ -272,6 +272,7 @@ None at the GSD-session level. Three operator-owned prerequisites (domain / drop
 | 260426-vcw | Phase 12 HTTPS reconcile — sync nginx/signals.conf comments with deployed state, add port-80 redirect, delete duplicate | 2026-04-26 | 70431c9 | [260426-vcw-phase-12-https-reconcile-sync-nginx-sign](./quick/260426-vcw-phase-12-https-reconcile-sync-nginx-sign/) |
 | 260429-b3e | Append v1.2+ long-term roadmap reference to SPEC.md (paper-ledger, multi-user 2FA, calc transparency, news, audit, backtest gate) | 2026-04-29 | 1eb8159 | [260429-b3e-update-spec-md-with-v1-2-long-term-roadm](./quick/260429-b3e-update-spec-md-with-v1-2-long-term-roadm/) |
 | 260429-sdp | HIGH-SEV bug fix — `_run_daily_check_caught` was discarding `run_daily_check`'s 4-tuple and silently never dispatching the daily 08:00 AWST email on the production droplet daemon. Restored dispatch + 4 regression tests + inverted Phase-4 fossil test that was enforcing the bug. Operator deploy: `git pull` + `sudo systemctl restart trading-signals` on droplet. | 2026-04-29 | 879730d | [260429-sdp-fix-scheduler-email-dispatch](./quick/260429-sdp-fix-scheduler-email-dispatch/) |
+| 260514-qvv | commit phase-37 review fixes — 12 findings from 37-REVIEW.md (CR-01 token-leak, CR-02 cookie token, CR-03 create_user silent drop, CR-04 form vs query-string, WR-01..WR-05, IN-01..IN-03); 2325 tests green | 2026-05-14 | 5575f21 | [260514-qvv-commit-phase-37-review-fixes](./quick/260514-qvv-commit-phase-37-review-fixes/) |
 
 ### Warnings (roadmap-level)
 
