@@ -66,6 +66,8 @@ EXEMPT_PATHS = frozenset({'/healthz'})
 PUBLIC_PATHS = frozenset({
   '/login', '/logout', '/enroll-totp', '/verify-totp',
   '/forgot-2fa', '/reset-totp',
+  '/accept-invite',         # Phase 37 D-04: unauthenticated invitee wizard step 1
+  '/accept-invite/device',  # Phase 37 D-04: wizard step 3 (tsi_invite_wizard is the auth)
 })
 
 # Phase 16.1 Plan 03 F-08 — rate-limit constants (per-IP, in-memory).

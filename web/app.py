@@ -45,6 +45,7 @@ from web.routes import login as login_route
 from web.routes import reset as reset_route
 from web.routes import state as state_route
 from web.routes import totp as totp_route
+from web.routes import invite as invite_route
 from web.routes import paper_trades as paper_trades_route
 from web.routes import trades as trades_route
 from web.routes import backtest as backtest_route
@@ -196,6 +197,10 @@ def create_app() -> FastAPI:
   # Phase 16.1 Plan 03 — /reset-totp magic-link consumption (F-02 + E-07).
   # IS in PUBLIC_PATHS — operator has no session at recovery time.
   reset_route.register(application)
+  # Phase 37 D-04: /accept-invite wizard (public — invitee has no session).
+  # Review #1 deployment-blocker fix: registered BEFORE add_middleware(AuthMiddleware, ...)
+  # per Phase 13 D-06 invariant. Without this, all wizard routes 404 on deploy.
+  invite_route.register(application)
 
   # Phase 14 D-04 / TRADE-02: 422 -> 400 remap with field-level error JSON.
   # Single global handler covers all routes (Plan 14-04).
