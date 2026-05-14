@@ -294,3 +294,141 @@ class TestMalformedHash:
     _write_auth_with_invite(isolated_auth_json, 'md5:abcdef1234567890')
     with pytest.raises(InviteAlreadyConsumed):
       consume_and_create_user('any-token', {'email': 'e@b.com'})
+
+
+# ---------------------------------------------------------------------------
+# TestPasswordHashing (Task 1 TDD RED — Plan 37-03)
+# ---------------------------------------------------------------------------
+
+class TestPasswordHashing:
+  '''Covers behaviors 1-8 from 37-03-PLAN Task 1.'''
+
+  def test_bcrypt_import_succeeds(self):
+    import bcrypt  # noqa: F401
+
+  def test_hash_password_and_verify_password_importable(self):
+    from auth_store import hash_password, verify_password  # noqa: F401
+
+  def test_hash_password_returns_2b12_prefix(self):
+    from auth_store import hash_password
+    h = hash_password('correct horse battery staple')
+    assert isinstance(h, str)
+    assert h.startswith('$2b$12$')
+    assert len(h) == 60
+
+  def test_hash_password_salts_differ(self):
+    from auth_store import hash_password
+    h1 = hash_password('same_input')
+    h2 = hash_password('same_input')
+    assert h1 != h2
+
+  def test_verify_password_correct(self):
+    from auth_store import hash_password, verify_password
+    h = hash_password('correct horse battery staple')
+    assert verify_password('correct horse battery staple', h) is True
+
+  def test_verify_password_wrong(self):
+    from auth_store import hash_password, verify_password
+    h = hash_password('right')
+    assert verify_password('wrong', h) is False
+
+  def test_verify_password_invalid_hash_returns_false(self):
+    from auth_store import verify_password
+    assert verify_password('any', 'not-a-bcrypt-hash') is False
+
+  def test_verify_password_empty_hash_returns_false(self):
+    from auth_store import verify_password
+    assert verify_password('any', '') is False
+
+  def test_verify_password_none_hash_returns_false(self):
+    from auth_store import verify_password
+    assert verify_password('any', None) is False
+
+
+# ---------------------------------------------------------------------------
+# TestUserSchemaPasswordHashField (Task 1 TDD RED — Plan 37-03)
+# ---------------------------------------------------------------------------
+
+class TestUserSchemaPasswordHashField:
+  '''Covers behaviors 9-11 from 37-03-PLAN Task 1.'''
+
+  def test_user_typeddict_has_password_hash_annotation(self):
+    from auth_store._schema import User
+    from typing import get_type_hints
+    hints = get_type_hints(User)
+    assert 'password_hash' in hints
+
+  def test_existing_admin_row_roundtrips_without_error(self, isolated_auth_json):
+    import json
+    from pathlib import Path
+    import auth_store
+    from auth_store import load_auth, save_auth
+    # Write a v2 admin-only auth.json without password_hash
+    auth_data = {
+      'schema_version': 2,
+      'totp_secret': None,
+      'totp_enrolled': False,
+      'totp_enrolled_at': None,
+      'trusted_devices': [],
+      'pending_magic_links': [],
+      'users': [{'uid': 'admin', 'email': 'admin@ex.com', 'role': 'admin',
+                 'created_at': '2026-01-01T00:00:00+00:00', 'disabled': False}],
+      'pending_invites': [],
+    }
+    Path(auth_store.DEFAULT_AUTH_PATH).write_text(json.dumps(auth_data), encoding='utf-8')
+    data = load_auth()
+    save_auth(data)
+    # No ValueError or KeyError
+
+  def test_admin_row_get_password_hash_returns_none(self, isolated_auth_json):
+    import json
+    from pathlib import Path
+    import auth_store
+    from auth_store import load_auth
+    auth_data = {
+      'schema_version': 2,
+      'totp_secret': None,
+      'totp_enrolled': False,
+      'totp_enrolled_at': None,
+      'trusted_devices': [],
+      'pending_magic_links': [],
+      'users': [{'uid': 'admin', 'email': 'admin@ex.com', 'role': 'admin',
+                 'created_at': '2026-01-01T00:00:00+00:00', 'disabled': False}],
+      'pending_invites': [],
+    }
+    Path(auth_store.DEFAULT_AUTH_PATH).write_text(json.dumps(auth_data), encoding='utf-8')
+    data = load_auth()
+    row = data['users'][0]
+    assert row.get('password_hash') is None
+
+
+# ---------------------------------------------------------------------------
+# TestPasswordHash72ByteCap (Task 1 TDD RED — Plan 37-03, review #9)
+# ---------------------------------------------------------------------------
+
+class TestPasswordHash72ByteCap:
+  '''Covers behaviors 12-13 from 37-03-PLAN Task 1 (review consensus #9).'''
+
+  def test_hash_password_72_bytes_succeeds(self):
+    from auth_store import hash_password
+    # 72 ASCII chars = 72 UTF-8 bytes
+    result = hash_password('a' * 72)
+    assert result.startswith('$2b$12$')
+
+  def test_hash_password_73_bytes_raises_value_error(self):
+    from auth_store import hash_password
+    with pytest.raises(ValueError) as exc_info:
+      hash_password('a' * 73)
+    assert 'exceeds 72' in str(exc_info.value)
+
+  def test_hash_password_multibyte_unicode_cap(self):
+    from auth_store import hash_password
+    # '🦀' is 4 UTF-8 bytes each; 19 * 4 = 76 bytes > 72
+    with pytest.raises(ValueError) as exc_info:
+      hash_password('🦀' * 19)
+    assert 'exceeds 72' in str(exc_info.value)
+
+  def test_hash_password_72_plus_1_ascii_raises(self):
+    from auth_store import hash_password
+    with pytest.raises(ValueError):
+      hash_password('a' * 72 + 'x')
