@@ -320,6 +320,10 @@ async def _fan_out_all(
 def run(state: dict, run_date: str) -> list[dict]:
   '''Synchronous entry point called from main.py after daily_run returns.
 
+  REVIEW #4 — cycle-date idempotency guard: if state.last_cycle.date == run_date,
+  skip fan-out entirely and return the existing users list. Prevents duplicate
+  sends if any orchestration path is retried after a partial success.
+
   W3 invariant: exactly ONE terminal mutate_state call here is the W3 #2 write.
   Do NOT call mutate_state inside asyncio tasks (flock deadlock from thread ctx).
 
@@ -330,6 +334,17 @@ def run(state: dict, run_date: str) -> list[dict]:
   Returns:
     list of per-user outcome dicts: [{'uid': str, 'ok': bool, 'reason': str | None}]
   '''
+  # REVIEW #4: cycle-date idempotency guard — early-return if this date was
+  # already processed. Prevents duplicate sends on orchestration path retries.
+  existing = state.get('last_cycle') or {}
+  if existing.get('date') == run_date:
+    logger.info(
+      '[Fan-out] idempotency: last_cycle.date == run_date == %s; '
+      'skipping (review #4)',
+      run_date,
+    )
+    return list(existing.get('users', []))
+
   from auth_store import list_users
 
   all_users = list_users()
@@ -383,3 +398,35 @@ def run(state: dict, run_date: str) -> list[dict]:
   send_cycle_summary_email(outcomes, run_date)
 
   return outcomes
+
+
+def record_cycle_crash(run_date: str, exc_str: str) -> None:
+  '''REVIEW #5: called by main.py when per_user_fanout.run() raises.
+
+  Writes state['last_cycle'] with crash field and sends a CRASH-tagged admin
+  cycle summary email so the admin always gets cycle visibility even on total
+  fan-out failure.
+
+  Never raises — both mutate_state and send_cycle_summary_email are wrapped in
+  independent try/except blocks so a secondary failure doesn't mask the first.
+  '''
+  def _write_crash(s: dict) -> None:
+    s['last_cycle'] = {
+      'date': run_date,
+      'total': 0,
+      'ok': 0,
+      'failed': 0,
+      'users': [],
+      'errors': [],
+      'crash': exc_str[:500],
+    }
+
+  try:
+    mutate_state(_write_crash)
+  except Exception:  # noqa: BLE001 — never raise; log then continue
+    logger.exception('[Fan-out] record_cycle_crash: mutate_state failed')
+
+  try:
+    send_cycle_summary_email(outcomes=[], run_date=run_date, crash=exc_str)
+  except Exception:  # noqa: BLE001 — never raise; log then continue
+    logger.exception('[Fan-out] record_cycle_crash: summary email failed')

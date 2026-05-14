@@ -27,6 +27,7 @@ import logging  # noqa: E402 — re-exported as main.logging for test patches
 # Tests do `monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', fake)`
 # and `monkeypatch.setattr('main.state_manager.append_warning', fake)`.
 import data_fetcher  # noqa: E402, F401 — main.data_fetcher
+import per_user_fanout  # noqa: E402, F401 — main.per_user_fanout (monkeypatch target)
 import signal_engine  # noqa: E402, F401 — main.signal_engine
 import sizing_engine  # noqa: E402, F401 — main.sizing_engine
 import state_manager  # noqa: E402, F401 — main.state_manager
@@ -115,6 +116,22 @@ def main(argv: list[str] | None = None) -> int:
           state, old_signals, run_date,
           is_test=args.test, persist=not args.test,
         )
+        # Phase 37: per-user fan-out AFTER dispatch (T-37-05-10: never abort
+        # cycle on fan-out failure; T-37-05-11: idempotency guard inside run).
+        # CLI-01: --test is structurally read-only → skip fan-out (same as save_state).
+        if rc == 0 and run_date is not None and not args.test:
+          _run_date_str = run_date.strftime('%Y-%m-%d')
+          try:
+            per_user_fanout.run(state, _run_date_str)
+          except Exception as _fanout_exc:  # noqa: BLE001 — fan-out is additive
+            logger.warning(
+              '[FanOut] WARN per_user_fanout.run failed: %s: %s',
+              type(_fanout_exc).__name__, _fanout_exc,
+            )
+            # REVIEW #5: record crash + send CRASH-tagged admin summary
+            per_user_fanout.record_cycle_crash(
+              _run_date_str, f'{type(_fanout_exc).__name__}: {_fanout_exc}',
+            )
       return rc
     if args.once:
       # CR-01: once_state is None on weekends — guard. WR-01: mutate_state
@@ -125,6 +142,19 @@ def main(argv: list[str] | None = None) -> int:
         def _apply_once_warnings(fresh: dict) -> None:
           fresh['warnings'] = _final_once['warnings']
         state_manager.mutate_state(_apply_once_warnings)
+      # Phase 37: per-user fan-out on --once path (T-37-05-10: never abort).
+      if rc == 0 and once_state is not None and _run_date is not None:
+        _once_date_str = _run_date.strftime('%Y-%m-%d')
+        try:
+          per_user_fanout.run(once_state, _once_date_str)
+        except Exception as _fanout_exc:  # noqa: BLE001 — fan-out is additive
+          logger.warning(
+            '[FanOut] WARN per_user_fanout.run failed: %s: %s',
+            type(_fanout_exc).__name__, _fanout_exc,
+          )
+          per_user_fanout.record_cycle_crash(
+            _once_date_str, f'{type(_fanout_exc).__name__}: {_fanout_exc}',
+          )
       return rc
     # Default: D-04 + D-05 — immediate first run, then scheduler loop.
     _run_daily_check_caught(run_daily_check, args)

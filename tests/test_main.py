@@ -3305,9 +3305,9 @@ class TestW3InvariantEndToEnd:
     fanout_mutate_calls: list[int] = []
     orig_mutate = per_user_fanout.mutate_state
 
-    def _counting_mutate(fn, path=None):
+    def _counting_mutate(fn, **kw):
       fanout_mutate_calls.append(1)
-      return orig_mutate(fn, path=path)
+      return orig_mutate(fn, **kw)
 
     monkeypatch.setattr(per_user_fanout, 'mutate_state', _counting_mutate)
     # Stub async fan-out so test doesn't do real network
@@ -3421,9 +3421,9 @@ class TestCycleDateIdempotency:
       lambda *a, **kw: send_calls.append(1))
     orig_mutate = per_user_fanout.mutate_state
 
-    def _counting_mutate(fn, path=None):
+    def _counting_mutate(fn, **kw):
       mutate_calls.append(1)
-      return orig_mutate(fn, path=path)
+      return orig_mutate(fn, **kw)
 
     monkeypatch.setattr(per_user_fanout, 'mutate_state', _counting_mutate)
 
@@ -3460,9 +3460,9 @@ class TestCycleDateIdempotency:
     mutate_calls: list[int] = []
     orig_mutate = per_user_fanout.mutate_state
 
-    def _counting_mutate(fn, path=None):
+    def _counting_mutate(fn, **kw):
       mutate_calls.append(1)
-      return orig_mutate(fn, path=path)
+      return orig_mutate(fn, **kw)
 
     monkeypatch.setattr(per_user_fanout, 'mutate_state', _counting_mutate)
     monkeypatch.setattr(per_user_fanout, 'send_cycle_summary_email',

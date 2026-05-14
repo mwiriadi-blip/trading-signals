@@ -94,6 +94,20 @@ def _run_daily_check_caught(job, args) -> None:
       is_test=False,
       persist=True,
     )
+    # Phase 37: per-user fan-out AFTER dispatch on scheduler path.
+    # Late-bind per_user_fanout through _main_pkg so monkeypatch.setattr(
+    # main, ...) and monkeypatch.setattr(per_user_fanout, ...) both work.
+    _run_date_str = run_date.strftime('%Y-%m-%d')
+    try:
+      _main_pkg.per_user_fanout.run(state, _run_date_str)
+    except Exception as _fanout_exc:  # noqa: BLE001 — never abort loop
+      logger.warning(
+        '[FanOut] WARN per_user_fanout.run failed: %s: %s',
+        type(_fanout_exc).__name__, _fanout_exc,
+      )
+      _main_pkg.per_user_fanout.record_cycle_crash(
+        _run_date_str, f'{type(_fanout_exc).__name__}: {_fanout_exc}',
+      )
   except (DataFetchError, ShortFrameError) as e:
     logger.warning('[Sched] data-layer failure caught in loop: %s', e)
   except Exception as e:
