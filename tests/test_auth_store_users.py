@@ -432,3 +432,175 @@ class TestPasswordHash72ByteCap:
     from auth_store import hash_password
     with pytest.raises(ValueError):
       hash_password('a' * 72 + 'x')
+
+
+# ---------------------------------------------------------------------------
+# TestPasswordHashOnConsume (Task 2 TDD RED — Plan 37-03)
+# ---------------------------------------------------------------------------
+
+class TestPasswordHashOnConsume:
+  '''Covers consume_and_create_user password_hash kwarg behaviors.'''
+
+  def test_consume_with_password_hash_stores_it(self, pending_invite_auth_json):
+    import inspect
+    from auth_store import consume_and_create_user
+    ctx = pending_invite_auth_json
+    pw_hash = '$2b$12$AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    user = consume_and_create_user(
+      ctx['raw_token'],
+      {'email': ctx['email'], 'role': 'ff'},
+      password_hash=pw_hash,
+    )
+    assert user.get('password_hash') == pw_hash
+
+  def test_consume_legacy_no_password_hash_returns_none(self, pending_invite_auth_json):
+    from auth_store import consume_and_create_user
+    ctx = pending_invite_auth_json
+    user = consume_and_create_user(
+      ctx['raw_token'],
+      {'email': ctx['email'], 'role': 'ff'},
+    )
+    assert user.get('password_hash') is None
+
+  def test_consume_password_hash_in_signature(self):
+    import inspect
+    from auth_store import consume_and_create_user
+    sig = inspect.signature(consume_and_create_user)
+    assert 'password_hash' in sig.parameters
+
+
+# ---------------------------------------------------------------------------
+# TestPeekInviteToken (Task 2 TDD RED — Plan 37-03)
+# ---------------------------------------------------------------------------
+
+class TestPeekInviteToken:
+  '''Covers _peek_invite_token behaviors.'''
+
+  def test_peek_valid_token_returns_email(self, pending_invite_auth_json):
+    from auth_store import _peek_invite_token
+    ctx = pending_invite_auth_json
+    email = _peek_invite_token(ctx['raw_token'])
+    assert email == ctx['email']
+
+  def test_peek_does_not_consume(self, pending_invite_auth_json):
+    from auth_store import _peek_invite_token, load_auth
+    ctx = pending_invite_auth_json
+    _peek_invite_token(ctx['raw_token'])
+    data = load_auth()
+    assert data['pending_invites'][0]['consumed'] is False
+
+  def test_peek_idempotent(self, pending_invite_auth_json):
+    from auth_store import _peek_invite_token
+    ctx = pending_invite_auth_json
+    e1 = _peek_invite_token(ctx['raw_token'])
+    e2 = _peek_invite_token(ctx['raw_token'])
+    assert e1 == e2 == ctx['email']
+
+  def test_peek_then_consume_succeeds(self, pending_invite_auth_json):
+    from auth_store import _peek_invite_token, consume_and_create_user
+    ctx = pending_invite_auth_json
+    _peek_invite_token(ctx['raw_token'])
+    user = consume_and_create_user(ctx['raw_token'], {'email': ctx['email'], 'role': 'ff'})
+    assert user['email'] == ctx['email']
+
+  def test_peek_consumed_token_raises(self, pending_invite_auth_json):
+    from auth_store import _peek_invite_token, consume_and_create_user, InviteAlreadyConsumed
+    ctx = pending_invite_auth_json
+    consume_and_create_user(ctx['raw_token'], {'email': ctx['email'], 'role': 'ff'})
+    with pytest.raises(InviteAlreadyConsumed):
+      _peek_invite_token(ctx['raw_token'])
+
+  def test_peek_expired_token_raises(self, pending_invite_auth_json):
+    import json
+    from datetime import datetime, timezone, timedelta
+    from auth_store import _peek_invite_token, load_auth, save_auth, InviteExpired
+    ctx = pending_invite_auth_json
+    data = load_auth()
+    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    data['pending_invites'][0]['expires_at'] = past
+    save_auth(data)
+    with pytest.raises(InviteExpired):
+      _peek_invite_token(ctx['raw_token'])
+
+  def test_peek_unknown_token_raises_already_consumed(self):
+    from auth_store import _peek_invite_token, InviteAlreadyConsumed
+    with pytest.raises(InviteAlreadyConsumed) as exc_info:
+      _peek_invite_token('a' * 64)
+    assert 'not found' in str(exc_info.value).lower() or 'invalid' in str(exc_info.value).lower()
+
+  def test_peek_timing_safety_unknown_token(self):
+    from auth_store import _peek_invite_token, InviteAlreadyConsumed
+    with pytest.raises(InviteAlreadyConsumed):
+      _peek_invite_token('a' * 64)
+
+
+# ---------------------------------------------------------------------------
+# TestListPendingInvites (Task 2 TDD RED — Plan 37-03)
+# ---------------------------------------------------------------------------
+
+class TestListPendingInvites:
+  '''Covers list_pending_invites behavior.'''
+
+  def test_list_pending_invites_returns_all_rows(self, pending_invite_auth_json):
+    from auth_store import list_pending_invites, consume_and_create_user
+    ctx = pending_invite_auth_json
+    # One unconsumed row already exists from fixture
+    rows = list_pending_invites()
+    assert len(rows) == 1
+    # Consume it, then list should still include it
+    consume_and_create_user(ctx['raw_token'], {'email': ctx['email'], 'role': 'ff'})
+    rows_after = list_pending_invites()
+    assert len(rows_after) == 1
+    assert rows_after[0]['consumed'] is True
+
+  def test_list_pending_invites_empty_when_none(self, isolated_auth_json):
+    from auth_store import list_pending_invites
+    rows = list_pending_invites()
+    assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# TestRevokeInvite (Task 2 TDD RED — Plan 37-03)
+# ---------------------------------------------------------------------------
+
+class TestRevokeInvite:
+  '''Covers revoke_invite behaviors + docstring (review #12).'''
+
+  def test_revoke_invite_returns_true_and_marks_consumed(self, pending_invite_auth_json):
+    from auth_store import revoke_invite, load_auth
+    ctx = pending_invite_auth_json
+    result = revoke_invite(ctx['token_hash'])
+    assert result is True
+    data = load_auth()
+    row = data['pending_invites'][0]
+    assert row['consumed'] is True
+    # consumed_at should be a valid ISO datetime string
+    from datetime import datetime
+    dt = datetime.fromisoformat(row['consumed_at'])
+    assert dt is not None
+
+  def test_revoke_invite_unknown_hash_returns_false(self, pending_invite_auth_json):
+    from auth_store import revoke_invite
+    result = revoke_invite('sha256:' + '0' * 64)
+    assert result is False
+
+  def test_revoke_invite_already_consumed_returns_false(self, pending_invite_auth_json):
+    from auth_store import revoke_invite
+    ctx = pending_invite_auth_json
+    revoke_invite(ctx['token_hash'])  # first revoke
+    result = revoke_invite(ctx['token_hash'])  # second revoke
+    assert result is False
+
+  def test_revoke_invite_flock_rationale_in_docstring(self):
+    import inspect
+    from auth_store import revoke_invite
+    doc = inspect.getdoc(revoke_invite) or ''
+    doc_lower = doc.lower()
+    assert (
+      'no flock' in doc_lower
+      or 'no-flock' in doc_lower
+      or 'does not acquire flock' in doc_lower
+      or 'deliberately does not acquire flock' in doc_lower
+    ), f'docstring missing flock rationale: {doc!r}'
+    assert 'idempotent' in doc_lower
+    assert 'atomic' in doc_lower
