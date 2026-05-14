@@ -65,8 +65,8 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import Depends, FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from itsdangerous import BadSignature, SignatureExpired
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
@@ -118,6 +118,9 @@ _PAGE_OUTPUTS = {
 
 def register(app: FastAPI) -> None:
   '''Register GET / on the given FastAPI instance.'''
+
+  # Phase 37: local import of current_user_id dependency (C-2 hex boundary).
+  from web.dependencies import current_user_id as _get_current_user_id
 
   # Phase 16.1: build a session serializer at register-time so the per-request
   # cookie validator is just a signature check (the constructor is non-trivial).
@@ -347,6 +350,44 @@ def register(app: FastAPI) -> None:
       status_code=200,
       headers={'Cache-Control': 'no-store, private'},
     )
+
+  @app.patch('/settings/email-prefs')
+  def patch_email_prefs(
+    request: Request,
+    email_enabled: str = Form(default=''),
+    pause_until: str = Form(default=''),
+    uid: str = Depends(_get_current_user_id),
+  ) -> Response:
+    '''Phase 37 UMAIL-04: persist email_enabled + pause_until to per-user state.
+
+    email_enabled is an HTML checkbox: 'on' / '1' → True; absent → False.
+    pause_until is validated via date.fromisoformat; malformed values coerce to None.
+    Writes via mutate_user_state (T-37-05-02 mitigated: uid from Depends only).
+    Never crashes (T-37-05-07): malformed pause_until silently → None.
+    Returns an HTMX-compatible 200 fragment on success.
+    '''
+    from datetime import date as _date
+
+    from state_manager import mutate_user_state
+
+    enabled_bool = email_enabled in ('on', '1', 'true')
+    pause_until_str = pause_until.strip() if pause_until else ''
+    pause_date: str | None = None
+    if pause_until_str:
+      try:
+        _date.fromisoformat(pause_until_str)
+        pause_date = pause_until_str
+      except (TypeError, ValueError):
+        pause_date = None
+
+    def _apply(state: dict) -> None:
+      users = state.setdefault('users', {})
+      user_bucket = users.setdefault(uid, {})
+      user_bucket['email_enabled'] = enabled_bool
+      user_bucket['pause_until'] = pause_date
+
+    mutate_user_state(uid, _apply)
+    return HTMLResponse('<p>Email preferences saved.</p>')
 
   def _serve_dashboard_page(
     request: Request,
