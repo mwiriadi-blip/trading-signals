@@ -84,7 +84,11 @@ def _walk_routes(routes):
 # ---------------------------------------------------------------------------
 
 class TestCurrentUserId:
-  def test_returns_uid_when_set(self):
+  def test_returns_uid_when_set(self, monkeypatch):
+    monkeypatch.setattr(
+      'web.dependencies.get_user',
+      lambda uid: {'uid': uid, 'disabled': False},
+    )
     req = _fake_request('abc')
     result = current_user_id(req)
     assert result == 'abc'

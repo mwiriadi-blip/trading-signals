@@ -24,9 +24,14 @@ def current_user_id(request: Request) -> str:
 
   Reads getattr(request.state, 'user_id', None) to handle PUBLIC_PATHS where
   middleware never set the attribute (avoids AttributeError on missing state).
+  Also verifies the user is not disabled (live read from auth.json so that
+  disabling a user takes effect on the next request, not only after session expiry).
   '''
   uid = getattr(request.state, 'user_id', None)
   if uid is None:
+    raise HTTPException(status_code=403, detail=_DETAIL_NOT_AUTHENTICATED)
+  row = get_user(uid)
+  if row is None or row.get('disabled'):
     raise HTTPException(status_code=403, detail=_DETAIL_NOT_AUTHENTICATED)
   return uid
 
