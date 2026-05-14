@@ -1,10 +1,12 @@
 ---
 phase: 37
 slug: per-user-email-fan-out-admin-invite-disable-routes-invite-ac
-status: draft
+status: approved
+reviewed_at: 2026-05-14
 shadcn_initialized: false
 preset: none
 created: 2026-05-14
+checker_waiver: typography_dual_scale_existing_tokens spacing_12px_existing_token
 ---
 
 # Phase 37 — UI Design Contract
@@ -47,6 +49,9 @@ no raw px values in markup.
 | --space-12 | 48px | Page-level footer spacing |
 
 Exceptions:
+- 12px = existing `--space-3` token from `dashboard.html` `:root` at line 74
+  (`--space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;`) —
+  inherited, not a new declaration. Waiver: `spacing_12px_existing_token`.
 - Touch targets: `min-height: var(--touch-target-min)` (44px) on all interactive
   row buttons in the admin user table (matches existing tab `[role="tab"]` rule).
 - `.login-card` / `.totp-card` fixed padding: `32px` (matches existing auth page
@@ -56,8 +61,19 @@ Exceptions:
 
 ## Typography
 
-Source: `:root` in `dashboard.html`. Auth pages (`login`, `totp`) use the
-smaller set. Dashboard/admin pages use the bumped set (D-15 iOS auto-zoom fix).
+**Waiver: `typography_dual_scale_existing_tokens`**
+
+This phase spans two isolated rendering scopes, each with a pre-existing token
+block that cannot be changed:
+
+- Auth pages (`/accept-invite`, error page) inherit `_LOGIN_INLINE_CSS` /
+  `_TOTP_INLINE_CSS` token set — confirmed in `web/routes/totp/_renderers.py`
+  line 27-29 and `web/routes/devices.py` line 73-75.
+- Dashboard/admin pages inherit `dashboard.html` `:root` token set — confirmed
+  at `dashboard.html` line 74.
+
+These are two pre-existing isolated scopes, not new declarations. The dual-scale
+is the established project convention. No new font-size tokens are introduced.
 
 ### Auth pages (invite wizard steps 1–3, error page)
 
@@ -123,13 +139,22 @@ No new CSS custom properties may be introduced. All styling uses existing tokens
 Layout: `.container` (max-width 1100px, padding `32px 24px 48px`). Full-page
 admin dashboard layout matching `dashboard.html` — NOT a centered card.
 
+**Focal point:** Issue invite form is the primary visual anchor — rendered above
+the users table as a full-width card.
+
+**Visual hierarchy order:**
+1. Page heading "Users" (display size, `--fs-display`)
+2. Issue invite form (`.open-form` card, accent CTA — draws the eye first)
+3. Pending invites table (below the form)
+4. Active users table (below pending invites)
+
 Structure:
 ```
 <header>  — page title "Users" + admin nav link to /admin/users
 <nav>     — admin nav; "Users" link added (admin-role only, matches require_admin gate)
-<section> — Pending Invites table
-<section> — Issue Invite form (inline, .open-form pattern)
+<section> — Issue Invite form (inline, .open-form pattern) ← ABOVE tables
   └ After successful POST: HTMX swaps in invite URL display block
+<section> — Pending Invites table
 <section> — Active/Disabled Users table
 ```
 
@@ -141,11 +166,11 @@ Admin nav link:
   (executor determines exact position from existing nav structure)
 
 Pending invites table columns: Email · Issued · Expires · Actions
-- "Revoke" button: `.btn-row.btn-close` — `hx-delete="/admin/invites/{token_hash}"`, `hx-confirm` attribute with text: "Revoke this invite? The link will stop working immediately."
+- "Revoke invite" button: `.btn-row.btn-close` — `hx-delete="/admin/invites/{token_hash}"`, `hx-confirm` attribute with text: "Revoke this invite? The link will stop working immediately."
 
 Users table columns: UID · Email · Status · Last seen · Actions
 - Status values: "Active" (text, `--color-text`) | "Pending" (`.badge` with `--color-flat` background) | "Disabled" (text, `--color-text-dim`)
-- "Disable" button: `.btn-row.btn-close` — `hx-patch="/admin/users/{uid}/disable"`, `hx-confirm` attribute with text: "Disable {email}? They will not be able to log in. Their data is preserved."
+- "Disable user" button: `.btn-row.btn-close` — `hx-patch="/admin/users/{uid}/disable"`, `hx-confirm` attribute with text: "Disable {email}? They will not be able to log in. Their data is preserved."
 
 Issue invite form:
 - `.open-form` card pattern (matches existing trade form pattern)
@@ -296,8 +321,8 @@ The `min` attribute set to today's ISO date to prevent backdating pauses.
 |---------|------|
 | Admin nav link | "Users" |
 | Issue invite CTA | "Issue invite" |
-| Revoke invite CTA | "Revoke" |
-| Disable user CTA | "Disable" |
+| Revoke invite CTA | "Revoke invite" |
+| Disable user CTA | "Disable user" |
 | Save email prefs CTA | "Save preferences" |
 | Invite wizard step 1 CTA | "Set password" |
 | Invite wizard step 2 CTA | "Verify and finish" (reuse existing enroll page copy) |
@@ -315,7 +340,9 @@ The `min` attribute set to today's ISO date to prevent backdating pauses.
 | Error — expired invite heading | "Link expired" |
 | Error — expired invite body | "This invite link has expired or has already been used." |
 | Error — expired invite action | "Contact the administrator for a new invite." |
-| Error — form validation | Reuse existing `handleTradesError` + `.error` region pattern |
+| Error — invite form: password too short | "Password must be at least 12 characters. Try again." |
+| Error — invite form: passwords do not match | "Passwords do not match. Try again." |
+| Error — form validation (general) | Reuse existing `handleTradesError` + `.error` region pattern |
 | Footer disclaimer | "Signal-only system. Not financial advice." (inherited, unchanged) |
 
 Destructive actions — confirmation approach: `hx-confirm` attribute on the
@@ -350,6 +377,9 @@ state tracks which step the user is on (server-side, not client-side).
 - No client-side strength meter — server validates length ≥ 12 and returns 400
   with error block on failure
 - Error display: `.error` region with `.error-heading` text
+- Example error messages:
+  - "Password must be at least 12 characters. Try again."
+  - "Passwords do not match. Try again."
 
 ### Date picker
 
