@@ -3210,39 +3210,341 @@ class TestRunDailyCheckPersistsTracePayload:
 
 
 # =============================================================================
-# Phase 37 Wave 0 — fetch-count + W3 end-to-end invariant stubs
+# Phase 37 Plan 05 Task 3 — per_user_fanout wiring: W3 e2e, idempotency, crash
 # =============================================================================
+
+import per_user_fanout  # noqa: E402, F401 — Task 3 monkeypatch target
 
 
 class TestFetchCountInvariant:
   '''UMAIL-01 SC-1 invariant: data_fetcher.fetch_ohlcv invoked exactly TWICE per
-  cycle (SPI200 + BHP) regardless of N F&F users. Fan-out reads from shared
+  cycle (SPI200 + AUDUSD) regardless of N F&F users. Fan-out reads from shared
   signal state — NEVER refetches yfinance per user.'''
 
-  def test_placeholder(self):
-    pytest.skip(
-      'Wave 0 stub — implementation lands in Plan 37-05 Task 3 alongside '
-      'per_user_fanout wiring'
+  @pytest.mark.freeze_time('2026-05-11T00:00:00+00:00')  # Monday UTC
+  def test_fetch_count_invariant(self, tmp_path, monkeypatch):
+    '''UMAIL-01 SC-1: fetch_ohlcv called exactly TWICE (SPI200 + AUDUSD)
+    even when per_user_fanout.run would run for multiple users.
+    fan-out does NOT re-fetch yfinance data per user.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    fetch_calls: list[str] = []
+
+    def _tracking_fetch(sym, **_kw):
+      fetch_calls.append(sym)
+      if sym == '^AXJO':
+        return _load_recorded_fixture('axjo_400d.json')
+      return _load_recorded_fixture('audusd_400d.json')
+
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _tracking_fetch)
+    # Stub per_user_fanout.run so it never calls yfinance
+    monkeypatch.setattr(per_user_fanout, 'run', lambda state, run_date: [])
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email',
+      lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert len(fetch_calls) == 2, (
+      f'SC-1: expected exactly 2 fetch calls, got {fetch_calls!r}'
     )
 
 
 class TestW3InvariantEndToEnd:
-  '''UMAIL-02 W3 invariant proven end-to-end across main.py → daily_run →
-  per_user_fanout (review #3 — cross-module integration test, not just
-  per_user_fanout unit test). Asserts per_user_fanout.run is invoked exactly
-  ONCE per cycle and calls mutate_state exactly ONCE (W3 #2).'''
+  '''UMAIL-02 W3 invariant proven end-to-end across main.py → per_user_fanout.
+  Review #3: cross-module integration test. per_user_fanout.run invoked exactly
+  ONCE per cycle.'''
 
-  def test_per_user_fanout_run_invoked_exactly_once_per_cycle(self):
-    pytest.skip(
-      'Wave 0 stub — implementation lands in Plan 37-05 Task 3'
+  @pytest.mark.freeze_time('2026-05-11T00:00:00+00:00')  # Monday UTC
+  def test_per_user_fanout_run_invoked_exactly_once_per_cycle(
+    self, tmp_path, monkeypatch,
+  ):
+    '''main.main(--force-email) calls per_user_fanout.run exactly once.'''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    run_calls: list[tuple] = []
+
+    def _fake_run(state, run_date):
+      run_calls.append((run_date,))
+      return []
+
+    monkeypatch.setattr(per_user_fanout, 'run', _fake_run)
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email',
+      lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert len(run_calls) == 1, (
+      f'W3: per_user_fanout.run must be called exactly once; got {len(run_calls)}'
     )
 
-  def test_per_user_fanout_run_calls_mutate_state_exactly_once(self):
-    pytest.skip(
-      'Wave 0 stub — implementation lands in Plan 37-05 Task 3'
+  @pytest.mark.freeze_time('2026-05-11T00:00:00+00:00')  # Monday UTC
+  def test_per_user_fanout_run_calls_mutate_state_exactly_once(
+    self, tmp_path, monkeypatch,
+  ):
+    '''per_user_fanout internals call mutate_state exactly once (W3 #2).
+
+    Monkeypatches per_user_fanout.mutate_state (the symbol bound in that module's
+    namespace) to count calls. Runs full main.main(--force-email) to trigger
+    the wired call path.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    fanout_mutate_calls: list[int] = []
+    orig_mutate = per_user_fanout.mutate_state
+
+    def _counting_mutate(fn, path=None):
+      fanout_mutate_calls.append(1)
+      return orig_mutate(fn, path=path)
+
+    monkeypatch.setattr(per_user_fanout, 'mutate_state', _counting_mutate)
+    # Stub async fan-out so test doesn't do real network
+    monkeypatch.setattr(per_user_fanout, 'send_per_user_email',
+      lambda *a, **kw: __import__('notifier.transport', fromlist=['SendStatus']).SendStatus(ok=True, reason=None))
+    monkeypatch.setattr(per_user_fanout, 'send_cycle_summary_email',
+      lambda *a, **kw: None)
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email',
+      lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert len(fanout_mutate_calls) == 1, (
+      f'W3 #2: per_user_fanout must call mutate_state exactly once; '
+      f'got {len(fanout_mutate_calls)}'
     )
 
-  def test_call_order_daily_run_then_dispatch_then_fanout(self):
-    pytest.skip(
-      'Wave 0 stub — implementation lands in Plan 37-05 Task 3'
+  @pytest.mark.freeze_time('2026-05-11T00:00:00+00:00')  # Monday UTC
+  def test_call_order_daily_run_then_dispatch_then_fanout(
+    self, tmp_path, monkeypatch,
+  ):
+    '''Call order invariant: run_daily_check → dispatch_email → per_user_fanout.run.
+
+    Uses spy list to record call sequence across the three functions.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    call_order: list[str] = []
+
+    # Spy on run_daily_check
+    orig_rdc = main.run_daily_check
+
+    def _spy_rdc(args):
+      call_order.append('run_daily_check')
+      return orig_rdc(args)
+
+    monkeypatch.setattr(main, 'run_daily_check', _spy_rdc)
+
+    # Spy on _dispatch_email_and_maintain_warnings
+    import daily_loop
+    orig_dispatch = daily_loop._dispatch_email_and_maintain_warnings
+
+    def _spy_dispatch(state, old_signals, run_date, **kw):
+      call_order.append('_dispatch_email_and_maintain_warnings')
+      return orig_dispatch(state, old_signals, run_date, **kw)
+
+    monkeypatch.setattr(
+      daily_loop, '_dispatch_email_and_maintain_warnings', _spy_dispatch,
     )
+    monkeypatch.setattr(
+      main, '_dispatch_email_and_maintain_warnings', _spy_dispatch,
+    )
+
+    # Spy on per_user_fanout.run
+    def _spy_fanout_run(state, run_date):
+      call_order.append('per_user_fanout.run')
+      return []
+
+    monkeypatch.setattr(per_user_fanout, 'run', _spy_fanout_run)
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email',
+      lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+
+    rc = main.main(['--force-email'])
+    assert rc == 0
+    assert 'run_daily_check' in call_order
+    assert '_dispatch_email_and_maintain_warnings' in call_order
+    assert 'per_user_fanout.run' in call_order
+    # Strict order: run_daily_check first, fanout last
+    rdc_idx = call_order.index('run_daily_check')
+    fanout_idx = call_order.index('per_user_fanout.run')
+    assert rdc_idx < fanout_idx, (
+      f'W3: run_daily_check must precede per_user_fanout.run; order={call_order}'
+    )
+
+
+class TestCycleDateIdempotency:
+  '''REVIEW #4: cycle-date idempotency guard — per_user_fanout.run early-returns
+  when state.last_cycle.date == run_date.'''
+
+  def test_same_run_date_skips_fanout(self, tmp_path, monkeypatch):
+    '''Direct call to per_user_fanout.run with matching last_cycle.date → no
+    send_per_user_email calls, no mutate_state calls; returns existing users list.'''
+    import state_manager as _sm
+
+    monkeypatch.chdir(tmp_path)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    existing_users = [{'uid': 'u1', 'ok': True, 'reason': None}]
+    state = _sm.load_state()
+    # Inject last_cycle with matching date
+    def _set_lc(s):
+      s['last_cycle'] = {
+        'date': '2026-05-11',
+        'total': 1, 'ok': 1, 'failed': 0,
+        'users': existing_users,
+        'errors': [], 'crash': None,
+      }
+    _sm.mutate_state(_set_lc)
+
+    send_calls: list[int] = []
+    mutate_calls: list[int] = []
+
+    monkeypatch.setattr(per_user_fanout, 'send_per_user_email',
+      lambda *a, **kw: send_calls.append(1))
+    orig_mutate = per_user_fanout.mutate_state
+
+    def _counting_mutate(fn, path=None):
+      mutate_calls.append(1)
+      return orig_mutate(fn, path=path)
+
+    monkeypatch.setattr(per_user_fanout, 'mutate_state', _counting_mutate)
+
+    state = _sm.load_state()
+    result = per_user_fanout.run(state, '2026-05-11')
+
+    assert send_calls == [], (
+      'Idempotency: send_per_user_email must NOT be called when date matches'
+    )
+    assert mutate_calls == [], (
+      'Idempotency: mutate_state must NOT be called when date matches'
+    )
+    assert result == existing_users, (
+      'Idempotency: must return existing last_cycle.users list'
+    )
+
+  def test_different_run_date_runs_fanout_normally(self, tmp_path, monkeypatch):
+    '''per_user_fanout.run with different last_cycle.date → executes normally
+    (mutate_state called at least once).'''
+    import state_manager as _sm
+
+    monkeypatch.chdir(tmp_path)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    state = _sm.load_state()
+    def _set_lc(s):
+      s['last_cycle'] = {
+        'date': '2026-05-10',  # different date
+        'total': 1, 'ok': 1, 'failed': 0,
+        'users': [], 'errors': [], 'crash': None,
+      }
+    _sm.mutate_state(_set_lc)
+
+    mutate_calls: list[int] = []
+    orig_mutate = per_user_fanout.mutate_state
+
+    def _counting_mutate(fn, path=None):
+      mutate_calls.append(1)
+      return orig_mutate(fn, path=path)
+
+    monkeypatch.setattr(per_user_fanout, 'mutate_state', _counting_mutate)
+    monkeypatch.setattr(per_user_fanout, 'send_cycle_summary_email',
+      lambda *a, **kw: None)
+
+    state = _sm.load_state()
+    per_user_fanout.run(state, '2026-05-11')
+
+    assert len(mutate_calls) >= 1, (
+      'Different date: fanout must run normally (mutate_state called at least once)'
+    )
+
+
+class TestCycleCrashHandling:
+  '''REVIEW #5: crash-handler wrapper records last_cycle.crash and sends
+  CRASH-tagged admin summary email.'''
+
+  @pytest.mark.freeze_time('2026-05-11T00:00:00+00:00')  # Monday UTC
+  def test_fanout_crash_records_last_cycle_crash_and_sends_summary(
+    self, tmp_path, monkeypatch,
+  ):
+    '''main.main(--force-email) with per_user_fanout.run raising RuntimeError →
+    record_cycle_crash called once with run_date_str AND 'RuntimeError: boom';
+    rc == 0 (cycle not flipped to failed).
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+    _install_fixture_fetch(monkeypatch)
+
+    def _fanout_crash(state, run_date):
+      raise RuntimeError('boom')
+
+    monkeypatch.setattr(per_user_fanout, 'run', _fanout_crash)
+
+    crash_calls: list[dict] = []
+    orig_record_crash = per_user_fanout.record_cycle_crash
+
+    def _spy_crash(run_date, exc_str):
+      crash_calls.append({'run_date': run_date, 'exc_str': exc_str})
+      # Don't actually write state or send email in this test
+      return None
+
+    monkeypatch.setattr(per_user_fanout, 'record_cycle_crash', _spy_crash)
+
+    import notifier
+    monkeypatch.setattr(notifier, 'send_daily_email',
+      lambda *a, **kw: notifier.SendStatus(ok=True, reason=None))
+
+    rc = main.main(['--force-email'])
+    assert rc == 0, (
+      'Fan-out crash must NOT flip rc to non-zero (daily cycle succeeded)'
+    )
+    assert len(crash_calls) == 1, (
+      f'record_cycle_crash must be called exactly once; got {len(crash_calls)}'
+    )
+    assert 'RuntimeError: boom' in crash_calls[0]['exc_str'], (
+      f'record_cycle_crash exc_str must contain error info; '
+      f'got {crash_calls[0]["exc_str"]!r}'
+    )
+
+  def test_record_cycle_crash_writes_seven_key_schema(
+    self, tmp_path, monkeypatch,
+  ):
+    '''Direct call to per_user_fanout.record_cycle_crash writes last_cycle with
+    all 7 required keys and crash field set.
+    '''
+    import state_manager as _sm
+
+    monkeypatch.chdir(tmp_path)
+    _seed_fresh_state(tmp_path / 'state.json')
+    # Stub summary email so no network call
+    monkeypatch.setattr(per_user_fanout, 'send_cycle_summary_email',
+      lambda *a, **kw: None)
+
+    per_user_fanout.record_cycle_crash('2026-05-11', 'RuntimeError: x')
+
+    state = _sm.load_state()
+    lc = state.get('last_cycle')
+    assert lc is not None, 'record_cycle_crash must write state[last_cycle]'
+    for key in ('date', 'total', 'ok', 'failed', 'users', 'errors', 'crash'):
+      assert key in lc, f'7-key schema missing key: {key!r}'
+    assert lc['date'] == '2026-05-11'
+    assert lc['crash'] == 'RuntimeError: x'
+    assert lc['total'] == 0
