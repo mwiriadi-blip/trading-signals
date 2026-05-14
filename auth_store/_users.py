@@ -15,6 +15,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import bcrypt as _bcrypt
+
 from auth_store._io import (
   _atomic_write_unlocked,
   _default_auth_data,
@@ -43,6 +45,47 @@ class InviteAlreadyConsumed(ValueError):
 
 class InviteExpired(ValueError):
   pass
+
+
+# ---------------------------------------------------------------------------
+# Password hashing helpers (Phase 37 D-06)
+# ---------------------------------------------------------------------------
+
+def hash_password(plaintext: str) -> str:
+  '''Phase 37 D-06: bcrypt hash with OWASP minimum rounds=12.
+
+  ENFORCES 72-byte cap (review consensus #9) — bcrypt silently truncates beyond
+  72 bytes which is a footgun for security-sensitive passwords. We raise
+  ValueError at the boundary instead of accepting an effectively-truncated
+  password.
+
+  Raises:
+    TypeError: if plaintext is not a str.
+    ValueError: if len(plaintext.encode('utf-8')) > 72.
+  '''
+  if not isinstance(plaintext, str):
+    raise TypeError('plaintext must be str')
+  encoded = plaintext.encode('utf-8')
+  if len(encoded) > 72:
+    raise ValueError(
+      f'password byte length {len(encoded)} exceeds 72 (bcrypt limit); shorten the password'
+    )
+  return _bcrypt.hashpw(encoded, _bcrypt.gensalt(rounds=12)).decode('utf-8')
+
+
+def verify_password(plaintext: str, stored_hash: str | None) -> bool:
+  '''Timing-safe bcrypt verification. Fail-closed on any exception.
+
+  bcrypt.checkpw uses constant-time comparison internally. Returns False for
+  None hash, malformed hash, or any encoding/validation error — never raises.
+  '''
+  try:
+    return _bcrypt.checkpw(
+      plaintext.encode('utf-8'),
+      stored_hash.encode('utf-8'),  # type: ignore[union-attr]
+    )
+  except Exception:  # noqa: BLE001
+    return False
 
 
 # ---------------------------------------------------------------------------

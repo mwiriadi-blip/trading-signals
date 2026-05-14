@@ -54,6 +54,7 @@ class User(TypedDict):
   role: str
   created_at: str
   disabled: bool
+  password_hash: str | None  # Phase 37 D-06: optional; None for legacy admin row (admin bypasses password auth)
 
 
 class PendingInvite(TypedDict):

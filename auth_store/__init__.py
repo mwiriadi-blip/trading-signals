@@ -64,9 +64,11 @@ from auth_store._users import (  # noqa: E402
   consume_and_create_user,
   get_user,
   get_user_by_email,
+  hash_password,
   list_users,
   mint_invite_token,
   set_user_disabled,
+  verify_password,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,9 @@ __all__ = [
   'consume_and_create_user',
   'get_user',
   'get_user_by_email',
+  'hash_password',
   'list_users',
   'mint_invite_token',
   'set_user_disabled',
+  'verify_password',
 ]
