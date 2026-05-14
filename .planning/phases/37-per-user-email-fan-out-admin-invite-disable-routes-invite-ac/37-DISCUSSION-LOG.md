@@ -154,3 +154,66 @@
 - Terminal user delete — deferred to v1.3.x
 - Per-domain email loaders — `load_user_state(uid)` is sufficient
 - Retry logic per user in fan-out — fail-fast acceptable for now
+
+---
+
+## SC-5 Gap Closure Discussion (2026-05-14)
+
+**Context:** Phase 37 verification found SC-5 failed — dashboard not scoped to per-user state.
+
+### Area selection
+
+| Area | Selected |
+|------|----------|
+| Account page isolation (core SC-5 fix) | ✓ |
+| Settings page scoping | |
+| Crash-email test (line 156) | |
+| Isolation test URL (line 178) | |
+
+### Render strategy for /account
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Dynamic render, no disk | render_dashboard_as_str(); same path as market pages; no file written | ✓ |
+| Per-uid disk files | dashboard-account-{uid}.html per user | |
+| Shared disk + placeholder swap | Keep shared file; substitute uid data at serve time | |
+
+**User's choice:** Dynamic render, no disk
+
+### State scoping location
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Route layer | Pre-filter state in handler before renderer; renderer unchanged | ✓ |
+| Renderer layer | Add uid param to render_dashboard_as_str() + RenderContext | |
+
+**User's choice:** Route layer
+
+### Fields to scope
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| paper_trades + equity_history only | TRADE_CONTENT_RE targets: entry_price, n_contracts, direction | ✓ |
+| All per-user fields | Promote paper_trades, equity_history, account, positions, etc. | |
+
+**User's choice:** paper_trades + equity_history only
+
+### Isolation test URL
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| /account | Actual paper_trades render page; real assertions | ✓ |
+| /dashboard | Would 404 (route retired in Phase 32); trivially passes | |
+
+**User's choice:** /account
+
+### SC-5 Claude's Discretion
+
+- Crash-email test (line 156): update skip reason to `'SC-5 deferred: crash-email body assertions not yet written'`; keep skipped.
+- Settings page scoping: out of scope for this fix.
+- `Cache-Control: no-store, private` on account page response.
+
+### SC-5 Deferred
+
+- Settings page per-user scoping (email prefs values on page load)
+- `test_crash_email_body_has_no_trade_content` body + assertions

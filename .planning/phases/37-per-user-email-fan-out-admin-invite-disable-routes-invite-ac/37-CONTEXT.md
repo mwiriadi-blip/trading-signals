@@ -68,6 +68,27 @@ Two connected capabilities:
 - Exact UX of the per-user error boundary in `per_user_fanout.py` (retry logic or fail-fast per user).
 - How the `send_invite_email` notifier function sends the BASE_URL for the invite link (env var `BASE_URL` or `APP_URL` most likely).
 
+### SC-5 Gap Closure — Dashboard Per-User State Scoping
+
+- **D-16:** The `/account` (and `/dashboard-account.html` alias) route handler **bypasses the shared disk cache entirely**. Instead of calling `dashboard.render_dashboard_page(load_state(), ...)` which writes to `dashboard-account.html`, the handler calls `render_dashboard_as_str()` directly and returns bytes in the response. The shared `dashboard-account.html` on disk is NOT written from the request path for this fix — cache written by `main.py`/`daily_run.py` is ignored for the per-user account page.
+
+- **D-17:** State scoping is done **at the route layer**, not the renderer layer. The `get_account_page` handler adds `uid: str = Depends(_get_current_user_id)` and builds a scoped state dict before rendering:
+  ```python
+  user_bucket = full_state.get('users', {}).get(uid, {})
+  scoped_state = {
+    **full_state,
+    'paper_trades': user_bucket.get('paper_trades', []),
+    'equity_history': user_bucket.get('equity_history', []),
+  }
+  ```
+  The renderer (`render_dashboard_as_str`, `RenderContext`) is **unchanged** — no uid param added to renderer API.
+
+- **D-18:** Only `paper_trades` and `equity_history` are promoted from `state['users'][uid]` to top-level keys. These are the fields `TRADE_CONTENT_RE` tests for (`entry_price`, `n_contracts`, `direction`). Other per-user fields (`account`, `initial_account`, `contracts`, `positions`) are left as-is (renderer reads these from top-level; defaults to empty/None if missing in new schema).
+
+- **D-19:** `test_other_user_dashboard_has_no_user_a_trade_content` — update test URL from `client.get('/dashboard', ...)` to `client.get('/account', ...)`. Phase 32 retired the `/dashboard` route; `/account` is where `render_paper_trades_region` renders. Remove the `@pytest.mark.skip`. The test body already has real assertions (TRADE_CONTENT_RE match check against user B's response).
+
+- **D-20:** `test_crash_email_body_has_no_trade_content` (line 156) — skip reason is stale ("Phase 37: fan-out not yet implemented") but the test body is **empty** (no assertions). Leave it skipped but update the skip reason to: `'SC-5 deferred: crash-email body assertions not yet written'`. Do NOT un-skip an empty test. This is **out of scope** for the SC-5 dashboard fix.
+
 </decisions>
 
 <canonical_refs>
@@ -105,9 +126,16 @@ Two connected capabilities:
 - `web/dependencies.py` — `current_user_id`, `require_admin`
 - `web/app.py` — `create_app()` route registration order
 
-### Dashboard (email prefs + admin nav)
+### Dashboard (email prefs + admin nav + SC-5 per-user scoping)
 - `dashboard-settings.html` — Settings section anchor for email prefs UI
-- `web/routes/dashboard/` — dashboard route handlers; email prefs HTMX endpoint registered here
+- `web/routes/dashboard/__init__.py` — dashboard route handlers; `get_account_page` handler needs uid Depends + dynamic render path (D-16, D-17)
+- `dashboard_renderer/api.py` — `render_dashboard_as_str()` is the dynamic render entrypoint (no disk write); same function used by market-scoped pages
+- `dashboard_renderer/components/paper_trades.py` — `render_paper_trades_region(state)` reads `state.get('paper_trades', [])` from top-level (D-18 scoping targets this key)
+- `dashboard_renderer/stats.py` — `compute_*` functions read `state.get('equity_history', [])` from top-level (D-18 scoping targets this key)
+
+### SC-5 Verification
+- `.planning/phases/37-per-user-email-fan-out-admin-invite-disable-routes-invite-ac/37-VERIFICATION.md` — SC-5 gap definition; exactly what must be implemented and tested
+- `tests/test_tenant_isolation.py` — `TestTenantIsolation.test_other_user_dashboard_has_no_user_a_trade_content` (line 164); fix targets `/account` URL (D-19); `two_user_client` fixture monkeypatches `load_state` with seeded state including `state['users'][uid_a]['paper_trades']`
 
 ### Daily orchestration
 - `daily_run.py` — `run_daily_check(state)` return value shape; `per_user_fanout.run(state, run_date)` called from `main.py` after this
@@ -139,6 +167,17 @@ Two connected capabilities:
 - `dashboard-settings.html` — insert email prefs section (toggle + date picker)
 - `state["users"][uid]` — add `email_enabled` and `pause_until` fields (state schema version bump if needed)
 
+### SC-5 Account Page Pattern (D-16/D-17)
+
+The account page handler follows the same dynamic render pattern as `_serve_market_scoped_page` (lines 215–279 in `web/routes/dashboard/__init__.py`):
+- `uid: str = Depends(_get_current_user_id)` on the route handler
+- `full_state = state_manager.load_state()`
+- Pre-filter: `scoped_state = {**full_state, 'paper_trades': ..., 'equity_history': ...}` from `full_state['users'][uid]`
+- `render_dashboard_as_str(scoped_state, now=None, active_function='account')`
+- Apply `_substitute()` for placeholder swap
+- `Cache-Control: no-store, private` on response
+- The `/dashboard-account.html` file alias route also needs the same treatment
+
 </code_context>
 
 <specifics>
@@ -168,3 +207,4 @@ Two connected capabilities:
 
 *Phase: 37-per-user-email-fan-out-admin-invite-disable-routes-invite-ac*
 *Context gathered: 2026-05-14*
+*SC-5 gap closure decisions added: 2026-05-14*
