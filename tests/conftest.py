@@ -360,3 +360,148 @@ def client_with_state_v6(monkeypatch):
     state_box['value'] = payload
 
   return client, set_state, captured_saves
+
+
+# =============================================================================
+# Phase 37 Wave 0 — shared fixtures (review consensus #11)
+# =============================================================================
+
+
+@pytest.fixture
+def pending_invite_auth_json(tmp_path, monkeypatch, isolated_auth_json):
+  '''Phase 37 Wave 0 shared fixture (review consensus #11).
+
+  Provides auth.json with admin row + ONE unconsumed PendingInvite.
+  Used by Plan 03 (auth_store) and Plan 04 (invite wizard) tests.
+
+  Yields a dict:
+    auth_path  — Path to the tmp auth.json (same as isolated_auth_json)
+    raw_token  — deterministic sentinel token ('a' * 43)
+    token_hash — 'sha256:' + sha256(raw_token).hexdigest()
+    email      — 'invitee@x.com'
+    admin_uid  — 'admin-uid'
+
+  The fixture synthesises rows directly from the documented v2 schema WITHOUT
+  calling mint_invite_token so it remains stable if Plan 03 refactors helpers.
+  Downstream tests that need to call consume_and_create_user can use raw_token.
+  '''
+  import hashlib
+  import json
+  from datetime import datetime, timezone, timedelta
+
+  raw_token = 'a' * 43
+  token_hash = 'sha256:' + hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+  now = datetime.now(timezone.utc)
+  created_at = now.isoformat()
+  expires_at = (now + timedelta(days=7)).isoformat()
+
+  auth_data = {
+    'schema_version': 2,
+    'totp_secret': None,
+    'totp_enrolled': False,
+    'totp_enrolled_at': None,
+    'users': [
+      {
+        'uid': 'admin-uid',
+        'email': 'admin@x.com',
+        'role': 'admin',
+        'created_at': created_at,
+        'disabled': False,
+      },
+    ],
+    'pending_invites': [
+      {
+        'token_hash': token_hash,
+        'email': 'invitee@x.com',
+        'invited_by': 'admin-uid',
+        'created_at': created_at,
+        'expires_at': expires_at,
+        'consumed': False,
+        'consumed_at': None,
+      },
+    ],
+    'trusted_devices': [],
+    'pending_magic_links': [],
+  }
+
+  isolated_auth_json.write_text(json.dumps(auth_data))
+
+  yield {
+    'auth_path': isolated_auth_json,
+    'raw_token': raw_token,
+    'token_hash': token_hash,
+    'email': 'invitee@x.com',
+    'admin_uid': 'admin-uid',
+  }
+
+
+@pytest.fixture
+def multi_user_state_json(tmp_path, monkeypatch):
+  '''Phase 37 Wave 0 shared fixture (review consensus #11).
+
+  state.json with 3 users (active/paused/disabled) for fan-out skip-rule tests.
+
+  Users:
+    u_active   — role='ff', disabled=False, email_enabled=True, pause_until=None
+    u_paused   — role='ff', disabled=False, email_enabled=True, pause_until=today+7d
+    u_disabled — role='ff', disabled=True,  email_enabled=True, pause_until=None
+
+  Yields a dict:
+    state_path — Path to the tmp state.json
+    uids       — {'active': 'u_active', 'paused': 'u_paused', 'disabled': 'u_disabled'}
+  '''
+  import json
+  from datetime import date, timedelta
+
+  import state_manager
+
+  try:
+    schema_version = state_manager.STATE_SCHEMA_VERSION
+  except AttributeError:
+    schema_version = 12
+
+  pause_until = (date.today() + timedelta(days=7)).isoformat()
+
+  state_data = {
+    'schema_version': schema_version,
+    'positions': {},
+    'signals': {},
+    'last_cycle': None,
+    'users': {
+      'u_active': {
+        'role': 'ff',
+        'disabled': False,
+        'email': 'active@x.com',
+        'email_enabled': True,
+        'pause_until': None,
+      },
+      'u_paused': {
+        'role': 'ff',
+        'disabled': False,
+        'email': 'paused@x.com',
+        'email_enabled': True,
+        'pause_until': pause_until,
+      },
+      'u_disabled': {
+        'role': 'ff',
+        'disabled': True,
+        'email': 'disabled@x.com',
+        'email_enabled': True,
+        'pause_until': None,
+      },
+    },
+  }
+
+  state_path = tmp_path / 'state.json'
+  state_path.write_text(json.dumps(state_data))
+  monkeypatch.setenv('STATE_FILE', str(state_path))
+  monkeypatch.setattr('state_manager.STATE_FILE', str(state_path), raising=False)
+
+  yield {
+    'state_path': state_path,
+    'uids': {
+      'active': 'u_active',
+      'paused': 'u_paused',
+      'disabled': 'u_disabled',
+    },
+  }
