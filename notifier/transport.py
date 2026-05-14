@@ -184,6 +184,8 @@ def _post_to_resend(
   retries: int = _RESEND_RETRIES,
   backoff_s: int = _RESEND_BACKOFF_S,
   text_body: str | None = None,
+  *,
+  email_headers: dict[str, str] | None = None,
 ) -> None:
   '''POST to Resend with retry-on-transient (D-12 + RESEARCH §1).
 
@@ -219,6 +221,10 @@ def _post_to_resend(
     payload['html'] = html_body
   if text_body is not None:
     payload['text'] = text_body
+  # Phase 37: RFC 8058 List-Unsubscribe injection (kwarg-only, no regression
+  # on existing callers that omit email_headers — defaults to None/no-op).
+  if email_headers:
+    payload['headers'] = dict(email_headers)
   headers = {
     'Authorization': f'Bearer {api_key}',
     'Content-Type': 'application/json',

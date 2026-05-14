@@ -43,6 +43,10 @@ STRATEGY_VERSION: str = 'v1.2.0'
 # in tests/test_http_timeouts.py enforces (T-27-02-02 drift mitigation).
 HTTP_TIMEOUT_S: int = 30
 
+# Phase 37 UMAIL-03: Resend rate-limit throttle for per-user fan-out
+# (2 req/sec default; operator may bump to 5 for newer Resend accounts).
+FANOUT_SEMAPHORE_LIMIT: int = 2
+
 # =========================================================================
 # Phase 27 #13: secret redaction helper (single source of truth)
 # =========================================================================

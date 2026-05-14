@@ -2475,3 +2475,89 @@ class TestBannerStackOrder:
       f'Pitfall 4: drift banner must render BEFORE the hero card. '
       f'idx_drift={idx_drift} idx_hero={idx_hero}'
     )
+
+
+# =============================================================================
+# Phase 37 Plan 02 Task 1 — RED tests: FANOUT_SEMAPHORE_LIMIT + email_headers
+# =============================================================================
+
+
+class TestFanoutSemaphoreLimit:
+  '''Phase 37 UMAIL-03: system_params.FANOUT_SEMAPHORE_LIMIT == 2.'''
+
+  def test_fanout_semaphore_limit_value(self) -> None:
+    from system_params import FANOUT_SEMAPHORE_LIMIT
+    assert FANOUT_SEMAPHORE_LIMIT == 2, (
+      f'FANOUT_SEMAPHORE_LIMIT must be 2, got {FANOUT_SEMAPHORE_LIMIT}'
+    )
+
+  def test_fanout_semaphore_limit_is_int(self) -> None:
+    from system_params import FANOUT_SEMAPHORE_LIMIT
+    assert isinstance(FANOUT_SEMAPHORE_LIMIT, int), (
+      f'FANOUT_SEMAPHORE_LIMIT must be int, got {type(FANOUT_SEMAPHORE_LIMIT)}'
+    )
+
+
+class TestPostToResendEmailHeaders:
+  '''Phase 37: _post_to_resend accepts email_headers kwarg and injects into payload.
+
+  Test 2: email_headers dict propagates to Resend payload['headers'].
+  Test 3: Callers passing no email_headers produce payload WITHOUT 'headers' key.
+  '''
+
+  def _make_200_response(self, monkeypatch) -> list:
+    '''Patch requests.post to return 200; capture json payloads.'''
+    captured = []
+
+    class _FakeResp:
+      status_code = 200
+      text = '{}'
+      def raise_for_status(self): pass
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+      captured.append(json or {})
+      return _FakeResp()
+
+    monkeypatch.setattr('notifier.transport.requests.post', _fake_post)
+    return captured
+
+  def test_email_headers_injected_into_payload(self, monkeypatch) -> None:
+    '''With email_headers kwarg, payload sent to Resend contains headers dict.'''
+    from notifier.transport import _post_to_resend
+    captured = self._make_200_response(monkeypatch)
+
+    extra = {
+      'List-Unsubscribe': '<https://x/settings>',
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    }
+    _post_to_resend(
+      api_key='key123',
+      from_addr='from@x.com',
+      to_addr='to@x.com',
+      subject='Test',
+      html_body='<p>hi</p>',
+      email_headers=extra,
+    )
+    assert len(captured) == 1
+    payload = captured[0]
+    assert 'headers' in payload, 'Resend payload must contain headers key when email_headers provided'
+    assert payload['headers']['List-Unsubscribe'] == '<https://x/settings>'
+    assert payload['headers']['List-Unsubscribe-Post'] == 'List-Unsubscribe=One-Click'
+
+  def test_no_email_headers_no_headers_key(self, monkeypatch) -> None:
+    '''Default callers (no email_headers) produce payload WITHOUT headers key.'''
+    from notifier.transport import _post_to_resend
+    captured = self._make_200_response(monkeypatch)
+
+    _post_to_resend(
+      api_key='key123',
+      from_addr='from@x.com',
+      to_addr='to@x.com',
+      subject='Test',
+      html_body='<p>hi</p>',
+    )
+    assert len(captured) == 1
+    payload = captured[0]
+    assert 'headers' not in payload, (
+      'Resend payload must NOT contain headers key when email_headers not provided'
+    )
