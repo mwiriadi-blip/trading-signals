@@ -146,7 +146,9 @@ def record_trade(state: dict, trade: dict, uid: str = _ADMIN_UID) -> dict:
   # Phase 36 TENANT-01: per-user state bucket (v12 shape).
   # uid parameter selects user bucket; defaults to _ADMIN_UID for backward compat.
   users_map = state.get('users', {})
-  user = users_map.get(uid) or _admin_user(state)
+  user = users_map.get(uid)
+  if user is None:
+    user = _admin_user(state)
   _validate_trade(trade, allowed_instruments=set(user.get('positions', {}).keys()))
   # D-14: closing-half cost split. Phase 2 deducted opening half via
   # compute_unrealised_pnl during the position's lifetime. Phase 3 deducts
