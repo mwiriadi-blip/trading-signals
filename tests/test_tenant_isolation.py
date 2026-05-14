@@ -141,7 +141,11 @@ class TestTenantIsolation:
     '''
     client, uid_a, uid_b = two_user_client
     cookie = _build_session_cookie(uid_a)
-    resp = client.get('/admin/users', cookies={'tsi_session': cookie})
+    resp = client.get(
+      '/admin/users',
+      cookies={'tsi_session': cookie},
+      headers={'Accept': 'application/json'},
+    )
     assert resp.status_code == 200
     body_text = str(resp.json())
     matches = TRADE_CONTENT_RE.findall(body_text)
