@@ -185,11 +185,14 @@ def _render_account_balance_form(state: dict) -> str:
 
 
 def _render_account_management_region(state: dict) -> str:
+  # Phase 37 SC-5: route handler sets _account_include_open_form=False for
+  # F&F users who cannot open live positions. Admin defaults to True.
+  include_open_form = state.get('_account_include_open_form', True)
   return (
     '<div id="account-management-region">\n'
     + _render_account_balance_form(state)
     + _render_account_stats(state)
-    + render_positions_table(state, include_open_form=True)
+    + render_positions_table(state, include_open_form=include_open_form)
     + render_trades_table(state)
     + '</div>\n'
   )

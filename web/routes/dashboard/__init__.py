@@ -181,13 +181,71 @@ def register(app: FastAPI) -> None:
     # /dashboard-signals.html (and /signals).
     return _serve_dashboard_page(request, 'signals', fragment=fragment)
 
+  def _serve_account_page_scoped(
+    request: Request,
+    uid: str,
+    fragment: str | None = None,
+  ):
+    '''SC-5 (D-16, D-17, D-18): serve /account with per-user state scoping.
+
+    Bypasses the shared dashboard-account.html disk cache entirely.
+    Builds scoped_state by promoting only paper_trades + equity_history
+    from state['users'][uid] to top-level keys (D-18); renders dynamically
+    via render_dashboard_as_str (D-16, no disk write from this path).
+    Cache-Control: no-store, private prevents shared-cache poisoning (T-37-06-03).
+    '''
+    fwd = _forward_stop_fragment_response(request, fragment)
+    if fwd is not None:
+      return fwd
+
+    import state_manager
+    from dashboard_renderer.api import render_dashboard_as_str
+
+    full_state = state_manager.load_state()
+    # G-77: use .get() chains (never raw subscript) to prevent 500 leaks.
+    # G-78: explicit `or {}` guards against a non-dict sentinel for the uid key.
+    user_bucket = full_state.get('users', {}).get(uid, {}) or {}
+    # SC-5 (D-17/D-18): promote only paper_trades + equity_history from the
+    # user's sub-dict to top-level keys so the renderer sees scoped data.
+    # _account_include_open_form=False for non-admin users: F&F users cannot
+    # open live positions, so the position-open form is suppressed.
+    # Admin is identified by uid matching state['admin_user_id'] (D-16 pattern).
+    is_admin = (uid == full_state.get('admin_user_id'))
+    scoped_state = {
+      **full_state,
+      'paper_trades': user_bucket.get('paper_trades', []),
+      'equity_history': user_bucket.get('equity_history', []),
+      '_account_include_open_form': is_admin,
+    }
+    body = render_dashboard_as_str(
+      scoped_state,
+      now=None,
+      active_function='account',
+    )
+    body_bytes = _substitute(body.encode('utf-8'), request)
+    response = Response(
+      content=body_bytes,
+      media_type='text/html; charset=utf-8',
+      status_code=200,
+    )
+    response.headers['Cache-Control'] = 'no-store, private'
+    return response
+
   @app.get('/account')
-  def get_account_page(request: Request, fragment: str | None = None):
-    return _serve_dashboard_page(request, 'account', fragment=fragment)
+  def get_account_page(
+    request: Request,
+    fragment: str | None = None,
+    uid: str = Depends(_get_current_user_id),
+  ):
+    return _serve_account_page_scoped(request, uid, fragment=fragment)
 
   @app.get('/dashboard-account.html')
-  def get_account_page_file_alias(request: Request, fragment: str | None = None):
-    return _serve_dashboard_page(request, 'account', fragment=fragment)
+  def get_account_page_file_alias(
+    request: Request,
+    fragment: str | None = None,
+    uid: str = Depends(_get_current_user_id),
+  ):
+    return _serve_account_page_scoped(request, uid, fragment=fragment)
 
   @app.get('/settings')
   def get_settings_page(request: Request, fragment: str | None = None):

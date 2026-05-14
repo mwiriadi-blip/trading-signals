@@ -153,7 +153,7 @@ class TestTenantIsolation:
       f'Trade content leaked into /admin/users response: {matches}'
     )
 
-  @pytest.mark.skip(reason='Phase 37: fan-out not yet implemented')
+  @pytest.mark.skip(reason='SC-5 deferred: crash-email body assertions not yet written')
   def test_crash_email_body_has_no_trade_content(self, two_user_client):
     '''Crash-email body must contain zero TRADE_CONTENT_RE matches.
 
@@ -161,21 +161,20 @@ class TestTenantIsolation:
     and explicit redaction filter is added (CONTEXT D-12).
     '''
 
-  @pytest.mark.skip(
-    reason='Phase 37: user B dashboard not yet scoped to per-user state'
-  )
   def test_other_user_dashboard_has_no_user_a_trade_content(self, two_user_client):
     '''User B's served dashboard must contain zero matches for user A's trade fields.
 
     Setup: user A has 5 paper trades with entry_price/n_contracts/LONG direction.
-    Authenticate as user B, GET /dashboard or /markets/SPI200, assert no trade
-    content from user A appears in the response HTML.
+    Authenticate as user B, GET /account, assert no trade content from user A
+    appears in the response HTML.
 
-    Deferred to Phase 37 when per-user state scoping lands on dashboard routes.
+    Phase 32 retired /dashboard; /account is where render_paper_trades_region
+    renders. SC-5 closed: per-user state scoping lands on /account via
+    _serve_account_page_scoped (D-16, D-17, D-18).
     '''
     client, uid_a, uid_b = two_user_client
     cookie_b = _build_session_cookie(uid_b)
-    resp = client.get('/dashboard', cookies={'tsi_session': cookie_b})
+    resp = client.get('/account', cookies={'tsi_session': cookie_b})
     body_text = resp.text
     matches = TRADE_CONTENT_RE.findall(body_text)
     assert matches == [], (
