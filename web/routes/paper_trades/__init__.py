@@ -127,6 +127,7 @@ def register(app: FastAPI) -> None:  # noqa: C901 — route surface, acceptable 
         'exit_price': None,
         'realised_pnl': None,
         'strategy_version': STRATEGY_VERSION,
+        'last_alert_state': None,  # Phase 20 D-09: set on open; reset on edit
       })
 
     try:

@@ -19,7 +19,7 @@ _MULTIPLIER: dict[str, float] = {'SPI200': 5.0, 'AUDUSD': 10000.0}
 _D09_KEYS = frozenset({
   'id', 'instrument', 'side', 'entry_dt', 'entry_price', 'contracts',
   'stop_price', 'entry_cost_aud', 'status', 'exit_dt', 'exit_price',
-  'realised_pnl', 'strategy_version',
+  'realised_pnl', 'strategy_version', 'last_alert_state',
 })
 
 
