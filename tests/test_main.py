@@ -3207,3 +3207,42 @@ class TestRunDailyCheckPersistsTracePayload:
         f'If this fails, the writer captures STRATEGY_VERSION at import '
         f'time (kwarg-default capture trap — see global LEARNINGS 2026-04-29).'
       )
+
+
+# =============================================================================
+# Phase 37 Wave 0 — fetch-count + W3 end-to-end invariant stubs
+# =============================================================================
+
+
+class TestFetchCountInvariant:
+  '''UMAIL-01 SC-1 invariant: data_fetcher.fetch_ohlcv invoked exactly TWICE per
+  cycle (SPI200 + BHP) regardless of N F&F users. Fan-out reads from shared
+  signal state — NEVER refetches yfinance per user.'''
+
+  def test_placeholder(self):
+    pytest.skip(
+      'Wave 0 stub — implementation lands in Plan 37-05 Task 3 alongside '
+      'per_user_fanout wiring'
+    )
+
+
+class TestW3InvariantEndToEnd:
+  '''UMAIL-02 W3 invariant proven end-to-end across main.py → daily_run →
+  per_user_fanout (review #3 — cross-module integration test, not just
+  per_user_fanout unit test). Asserts per_user_fanout.run is invoked exactly
+  ONCE per cycle and calls mutate_state exactly ONCE (W3 #2).'''
+
+  def test_per_user_fanout_run_invoked_exactly_once_per_cycle(self):
+    pytest.skip(
+      'Wave 0 stub — implementation lands in Plan 37-05 Task 3'
+    )
+
+  def test_per_user_fanout_run_calls_mutate_state_exactly_once(self):
+    pytest.skip(
+      'Wave 0 stub — implementation lands in Plan 37-05 Task 3'
+    )
+
+  def test_call_order_daily_run_then_dispatch_then_fanout(self):
+    pytest.skip(
+      'Wave 0 stub — implementation lands in Plan 37-05 Task 3'
+    )
