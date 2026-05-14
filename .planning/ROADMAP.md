@@ -284,7 +284,7 @@ Plans:
   6. Performance test with 50 mocked users completes within 30s, throttled, with no 429s; `Müller`-style Unicode display name round-trips via `email.utils.formataddr` (RFC 2047).
 **Plans:** 5 plans
 **Plan list:**
-- [ ] 37-01-PLAN.md — Wave 0 test infrastructure stubs (per_user_fanout, web_invite, dashboard_email_prefs, admin_invite)
+- [x] 37-01-PLAN.md — Wave 0 test infrastructure stubs (per_user_fanout, web_invite, dashboard_email_prefs, admin_invite)
 - [ ] 37-02-PLAN.md — per_user_fanout.py orchestrator + notifier dispatch (send_per_user_email, send_invite_email, send_cycle_summary_email) + FANOUT_SEMAPHORE_LIMIT + RFC 8058 headers (Wave 1)
 - [ ] 37-03-PLAN.md — auth_store: bcrypt password hashing + password_hash on User TypedDict + _peek_invite_token + list_pending_invites + revoke_invite (Wave 1)
 - [ ] 37-04-PLAN.md — web/routes/invite/ public wizard (GET/POST /accept-invite + POST /accept-invite/device) + TOTP-side wizard-cookie handoff + PUBLIC_PATHS (Wave 2)
@@ -473,7 +473,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 34. user registry + invite-token storage | v1.3 | 2/2 | Complete   | 2026-05-12 |
 | 35. cookie + Depends + sub-router admin gate | v1.3 | 5/5 | Complete    | 2026-05-13 |
 | 36. per-user scoping + privacy + flock | v1.3 | 3/3 | Complete    | 2026-05-13 |
-| 37. per-user email fan-out + admin routes | v1.3 | 0/5 | Planned | - |
+| 37. per-user email fan-out + admin routes | v1.3 | 1/5 | In Progress|  |
 | 38. news integration | v1.3 | 0/0 | Not started | - |
 | 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
 | 40. milestone close audit | v1.3 | 0/0 | Not started | - |
