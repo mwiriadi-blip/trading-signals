@@ -159,6 +159,9 @@ def _render_admin_users_page(
     '<title>Admin — Users</title>'
     + _CSS
     + '</head><body>'
+    '<script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"'
+    ' integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"'
+    ' crossorigin="anonymous"></script>'
     + body
     + '</body></html>'
   )
