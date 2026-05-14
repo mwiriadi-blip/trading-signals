@@ -57,7 +57,7 @@ Two connected capabilities:
 
 - **D-14:** `per_user_fanout.py` is a top-level orchestrator module (I/O layer peer of `daily_run.py`). Called from `main.py` AFTER `daily_run.run_daily_check()` returns. Receives the post-cycle state dict and `run_date`. All per-user alert state updates are batched and applied in a single terminal `mutate_state` call to preserve the W3 invariant.
 
-- **D-15:** `/healthz/last-cycle` endpoint: JSON response `{"status": "ok", "cycle_date": "YYYY-MM-DD"|null, "users": [{"uid": ..., "ok": bool, "reason": str|null}]}`. Admin-gated (requires `require_admin` Depends). Added to the admin router.
+- **D-15:** `/healthz/last-cycle` endpoint: JSON response `{"status": "ok", "cycle_date": "YYYY-MM-DD"|null, "users": [{"uid": ..., "ok": bool, "reason": str|null}]}`. Admin-gated (requires explicit `require_admin` Depends). Registered as a standalone route in `web/routes/healthz.py` following the existing `register(app)` pattern — NOT on the admin router prefix.
 
 ### Claude's Discretion
 
