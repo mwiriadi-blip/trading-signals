@@ -594,13 +594,12 @@ class TestRevokeInvite:
   def test_revoke_invite_flock_rationale_in_docstring(self):
     import inspect
     from auth_store import revoke_invite
-    doc = inspect.getdoc(revoke_invite) or ''
-    doc_lower = doc.lower()
+    doc = (inspect.getdoc(revoke_invite) or '').lower()
     assert (
-      'no flock' in doc_lower
-      or 'no-flock' in doc_lower
-      or 'does not acquire flock' in doc_lower
-      or 'deliberately does not acquire flock' in doc_lower
-    ), f'docstring missing flock rationale: {doc!r}'
-    assert 'idempotent' in doc_lower
-    assert 'atomic' in doc_lower
+      'no flock' in doc
+      or 'no-flock' in doc
+      or 'does not acquire flock' in doc
+      or 'deliberately does not acquire flock' in doc
+    ), f'docstring missing flock rationale'
+    assert 'idempotent' in doc
+    assert 'atomic' in doc

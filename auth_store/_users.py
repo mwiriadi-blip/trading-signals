@@ -244,6 +244,7 @@ def mint_invite_token(
 def consume_and_create_user(
   unhashed_token: str,
   new_user_fields: dict,
+  password_hash: str | None = None,
   path: Path | None = None,
 ) -> dict:
   '''Atomically validate an invite token and create a User row.
@@ -312,6 +313,7 @@ def consume_and_create_user(
         'role': role,
         'created_at': datetime.now(timezone.utc).isoformat(),
         'disabled': False,
+        'password_hash': password_hash,  # None for legacy callers; str for invite wizard (D-06)
       }
       data['users'].append(new_user)
 
@@ -322,3 +324,68 @@ def consume_and_create_user(
       fcntl.flock(lock_fd, fcntl.LOCK_UN)
   finally:
     os.close(lock_fd)
+
+
+# ---------------------------------------------------------------------------
+# Invite query helpers (Phase 37)
+# ---------------------------------------------------------------------------
+
+def _peek_invite_token(unhashed_token: str, path: Path | None = None) -> str:
+  '''Validate invite token and return email WITHOUT consuming.
+
+  Timing-safe: walks the full pending_invites list before deciding (T-37-03-03).
+  Raises InviteAlreadyConsumed if token is consumed, not found, or invalid.
+  Raises InviteExpired if the matching invite has passed expires_at.
+  '''
+  data = _normalize_v2(load_auth(path=path))
+  for row in data.get('pending_invites', []):
+    if _verify_token(unhashed_token, row.get('token_hash', '')):
+      if row.get('consumed'):
+        raise InviteAlreadyConsumed('already consumed')
+      try:
+        expires_dt = _ensure_aware(datetime.fromisoformat(row['expires_at']))
+      except (TypeError, ValueError):
+        raise InviteExpired('unparseable expiry')
+      if datetime.now(timezone.utc) > expires_dt:
+        raise InviteExpired('expired')
+      return row.get('email', '')
+  raise InviteAlreadyConsumed('not found or invalid token')
+
+
+def list_pending_invites(path: Path | None = None) -> list:
+  '''Return all PendingInvite rows (consumed + active).'''
+  return load_auth(path=path).get('pending_invites', [])
+
+
+def revoke_invite(token_hash: str, path: Path | None = None) -> bool:
+  '''Mark a pending invite row consumed by token_hash. Returns True if a matching
+  unconsumed row was found and updated; False otherwise.
+
+  FLOCK RATIONALE (review consensus #12): This helper deliberately does NOT acquire flock,
+  while consume_and_create_user does. The asymmetry is safe because:
+
+  1. Idempotent: revoking an already-consumed row is a no-op (we return False).
+  2. Single-field overwrite: we set consumed=True and consumed_at=<iso> — both
+     fields converge under any interleaving of concurrent revoke calls.
+  3. Atomic at OS level: save_auth uses os.replace which is atomic at the inode
+     level for typical auth.json sizes (single-digit KB). A concurrent unflocked
+     write may overwrite another unflocked write's inode (lost-update race) — but
+     for revoke the lost write is also a revoke, producing the same final state.
+  4. Security boundary preserved: consume_and_create_user uses flock to atomically
+     (a) verify token existence, (b) mark consumed, (c) append User. revoke_invite
+     only does (b); the security-critical token->user transition is still flock-protected.
+
+  DO NOT call this helper concurrently with consume_and_create_user on the same
+  token — the consume path holds flock and may overwrite the revoke. If admin
+  revokes while invitee accepts, the consume wins (user is created); admin can
+  still see the new user in /admin/users. Phase 34 D-01 explicitly accepts this
+  tradeoff to keep revoke simple.
+  '''
+  data = load_auth(path=path)
+  for row in data.get('pending_invites', []):
+    if row.get('token_hash') == token_hash and not row.get('consumed'):
+      row['consumed'] = True
+      row['consumed_at'] = datetime.now(timezone.utc).isoformat()
+      save_auth(data, path=path)
+      return True
+  return False
