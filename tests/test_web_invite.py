@@ -175,10 +175,11 @@ class TestStep1Password:
   def test_password_too_short_returns_400(self, tmp_path, monkeypatch):
     auth_path = _make_auth_json(tmp_path)
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'short', 'password2': 'short'},
+      data={'password': 'short', 'password2': 'short', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -188,10 +189,11 @@ class TestStep1Password:
   def test_passwords_do_not_match_returns_400(self, tmp_path, monkeypatch):
     auth_path = _make_auth_json(tmp_path)
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123', 'password2': 'DifferentPassword456'},
+      data={'password': 'ValidPassword123', 'password2': 'DifferentPassword456', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -202,11 +204,12 @@ class TestStep1Password:
     '''Review #9: route catches ValueError from hash_password, returns 400 not 500.'''
     auth_path = _make_auth_json(tmp_path)
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     long_password = 'a' * 73
     resp = client.post(
       '/accept-invite',
-      data={'password': long_password, 'password2': long_password},
+      data={'password': long_password, 'password2': long_password, 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -222,10 +225,11 @@ class TestStep1Password:
     wizard cookie updated to step=totp, tsi_enroll cookie issued.'''
     auth_path = _make_auth_json(tmp_path)
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!'},
+      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -248,7 +252,7 @@ class TestStep1Password:
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!'},
+      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!', 'raw_token': RAW_TOKEN},
       follow_redirects=False,
     )
     assert resp.status_code == 302
@@ -261,7 +265,7 @@ class TestStep1Password:
     wizard_val = _wizard_cookie({'step': 'device', 'uid': 'some-uid', 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!'},
+      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -273,10 +277,11 @@ class TestStep1Password:
     from itsdangerous.url_safe import URLSafeTimedSerializer
     auth_path = _make_auth_json(tmp_path)
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!'},
+      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -404,7 +409,8 @@ class TestRouteRegistration:
 
   def test_invite_route_registered_before_auth_middleware(self):
     '''Review #1: invite_route.register line appears before add_middleware in web/app.py.'''
-    src = open('web/app.py').read()
+    # IN-02: use absolute path anchored to this file's location (not cwd-relative).
+    src = (Path(__file__).parent.parent / 'web' / 'app.py').read_text()
     import re
     reg = [m.start() for m in re.finditer(r'invite_route\.register', src)]
     mw = [m.start() for m in re.finditer(r'application\.add_middleware\(AuthMiddleware', src)]
@@ -430,10 +436,11 @@ class TestPartialEnrollmentRecovery:
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
 
     # Step A: POST step-1 to create user
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!'},
+      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )
@@ -469,10 +476,11 @@ class TestNextFieldForTOTPHandoff:
     from itsdangerous.url_safe import URLSafeTimedSerializer
     auth_path = _make_auth_json(tmp_path)
     client = _make_app_with_auth(tmp_path, auth_path, monkeypatch)
-    wizard_val = _wizard_cookie({'step': 'password', 'raw_token': RAW_TOKEN, 'email': INVITE_EMAIL})
+    # CR-02: cookie stores token_hash; form includes raw_token
+    wizard_val = _wizard_cookie({'step': 'password', 'token_hash': TOKEN_HASH, 'email': INVITE_EMAIL})
     resp = client.post(
       '/accept-invite',
-      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!'},
+      data={'password': 'ValidPassword123!', 'password2': 'ValidPassword123!', 'raw_token': RAW_TOKEN},
       cookies={'tsi_invite_wizard': wizard_val},
       follow_redirects=False,
     )

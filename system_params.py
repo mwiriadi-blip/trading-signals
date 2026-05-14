@@ -492,5 +492,9 @@ RATE_LIMIT_MAGIC_LINKS_PER_24H = 3     # F-08 per-account
 # Phase 34 Plan 02 — invite token TTL (single source of truth, WR-04).
 INVITE_TOKEN_TTL_DAYS: int = 7
 
+# Phase 37 IN-03 — invite acceptance wizard cookie TTL (single source of truth).
+# All other cookie TTLs are defined here; wizard TTL follows the same pattern.
+INVITE_WIZARD_TTL_SECONDS: int = 3600  # 1 hour: invitee window to complete all 3 wizard steps
+
 TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
 AUTH_JSON_PATH: str = 'auth.json'

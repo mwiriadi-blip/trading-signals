@@ -9,6 +9,7 @@ All dynamic values use html.escape(value, quote=True) per Phase 27 audit.
 2-space indent throughout (CLAUDE.md — do NOT run ruff format).
 '''
 import html
+from urllib.parse import quote as _url_quote
 
 _CSS = '''
   <style>
@@ -80,25 +81,23 @@ _CSS = '''
 
 
 def _render_invite_url_fragment(
-  invite_url: str,
   email: str,
   expires_at: str,
 ) -> str:
   '''HTMX swap fragment shown inline after POST /admin/invites succeeds.
 
-  Per D-09 + UI-SPEC Surface 1: shows full invite URL in <code> block for
-  admin copy-paste. Admin must copy the link before navigating away.
+  CR-01: raw token MUST NOT be embedded in HTML response. Confirmation only.
+  The invite link was sent to the invitee via email. Admin is shown a
+  confirmation message with email + expiry only.
   All dynamic values are html.escape(quote=True).
   '''
-  safe_url = html.escape(invite_url, quote=True)
   safe_email = html.escape(email, quote=True)
   safe_expires = html.escape(expires_at, quote=True)
   return (
     f'<div class="banner-success" role="status" aria-live="polite">'
-    f'<p>Invite sent to {safe_email}. Copy the link below if needed:</p>'
-    f'<code class="invite-url">{safe_url}</code>'
-    f'<p style="font-size:var(--fs-label);color:var(--color-text-dim)">'
-    f'Expires: {safe_expires}</p>'
+    f'<p>Invite sent to {safe_email}. The link expires: {safe_expires}.</p>'
+    f'<p>The invitation email has been delivered. '
+    f'Ask the invitee to check their inbox.</p>'
     f'</div>'
   )
 
@@ -180,6 +179,8 @@ def _render_pending_table(pending: list) -> str:
       safe_created = html.escape(inv.get('created_at', '')[:10], quote=True)
       safe_expires = html.escape(inv.get('expires_at', '')[:10], quote=True)
       safe_hash = html.escape(inv.get('token_hash', ''), quote=True)
+      # WR-03: URL-encode token_hash for the hx-delete path segment.
+      url_hash = _url_quote(inv.get('token_hash', ''), safe='')
       rows += (
         f'<tr>'
         f'<td>{safe_email}</td>'
@@ -187,7 +188,7 @@ def _render_pending_table(pending: list) -> str:
         f'<td>{safe_expires}</td>'
         f'<td>'
         f'<button class="btn-row btn-close" '
-        f'hx-delete="/admin/invites/{safe_hash}" '
+        f'hx-delete="/admin/invites/{url_hash}" '
         f'hx-target="closest tr" hx-swap="outerHTML" '
         f'hx-confirm="Revoke this invite? The link will stop working immediately." '
         f'aria-label="Revoke invite for {safe_email}">'

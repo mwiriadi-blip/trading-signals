@@ -114,7 +114,10 @@ class TestAdminInviteIssue:
   def test_post_admin_invites_returns_inline_invite_url_fragment(
     self, monkeypatch, pending_invite_auth_json,
   ):
-    '''POST /admin/invites → response body contains <code> element + invite URL.'''
+    '''POST /admin/invites → response body shows confirmation (no raw token in HTML).
+
+    CR-01: raw token MUST NOT appear in HTML response body. Confirmation only.
+    '''
     import per_user_fanout
 
     monkeypatch.setenv('BASE_URL', 'https://signals.example.com')
@@ -131,8 +134,10 @@ class TestAdminInviteIssue:
     )
     assert resp.status_code == 200
     body = resp.text
-    assert '<code' in body
-    assert '/accept-invite?token=' in body
+    # CR-01: confirmation banner present, raw token NOT in HTML
+    assert 'banner-success' in body
+    assert 'new@x.com' in body
+    assert '/accept-invite?token=' not in body
 
   def test_post_admin_invites_requires_admin_role(
     self, monkeypatch, pending_invite_auth_json,

@@ -146,13 +146,21 @@ body {
 '''
 
 
-def _render_step1_password_page(email: str, error: str | None = None) -> str:
+def _render_step1_password_page(
+  email: str,
+  raw_token: str = '',
+  error: str | None = None,
+) -> str:
   '''Surface 2 (UI-SPEC): centered card, max-width 360px, step 1 of 3.
 
+  CR-02: raw_token is embedded as a hidden form field (lives only in the
+  transient page — not persisted in cookie storage). The wizard cookie
+  stores only the token_hash.
   minlength=12 AND maxlength=72 on password inputs (review #9 client hint).
   All dynamic values escaped with html.escape(quote=True).
   '''
   safe_email = html.escape(email, quote=True)
+  safe_token = html.escape(raw_token, quote=True)
   error_block = ''
   if error:
     safe_error = html.escape(error, quote=True)
@@ -176,6 +184,7 @@ def _render_step1_password_page(email: str, error: str | None = None) -> str:
 <p class="step-indicator">Step 1 of 3</p>
 {error_block}
 <form method="POST" action="/accept-invite" autocomplete="off">
+<input type="hidden" name="raw_token" value="{safe_token}">
 <div class="field">
 <label for="inv-password">Password</label>
 <input id="inv-password" name="password" type="password"

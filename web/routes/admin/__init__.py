@@ -24,6 +24,7 @@ Phase 37 Plan 05:
 '''
 import logging
 import os
+import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -40,6 +41,9 @@ from web.routes.admin._renderers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# WR-01: basic email format guard at the invite route boundary.
+_INVITE_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 router = APIRouter(prefix='/admin', dependencies=[Depends(require_admin)])
 
@@ -69,13 +73,8 @@ def admin_list_users(request: Request):
   state = load_state()
   users_map = state.get('users', {})
   auth_data = load_auth()
-  # Build uid → trusted_devices mapping for last_seen_date population
-  user_devices: dict = {}
-  for dev in auth_data.get('trusted_devices', []):
-    # trusted_devices are global per auth.json v2 schema (not per-user)
-    # Phase 37: associate devices per user via device uuid → user lookup
-    pass
   # Build per-user device list from users rows (v2 schema: auth_data.users[].uid)
+  # IN-01: removed dead `user_devices` dict + empty for-loop (never populated or read).
   uid_to_user_row: dict = {u.get('uid', ''): u for u in auth_data.get('users', [])}
 
   summaries = []
@@ -122,9 +121,11 @@ def admin_list_users(request: Request):
 
 
 @router.patch('/users/{uid}/disable')
-def admin_disable_user(uid: str, disabled: bool = True):
+def admin_disable_user(uid: str, disabled: bool = Form(default=True)):
   '''Phase 36 RBAC-04: toggle disabled flag on a user account.
 
+  CR-04: disabled sourced from form body (not query string) so
+  PATCH /admin/users/{uid}/disable?disabled=false cannot bypass the intent.
   Returns 404 if uid is not found. Returns {"ok": True, "uid": ..., "disabled": ...}.
   Behind require_admin Depends on admin sub-router — non-admin gets 403 (T-36-08).
   '''
@@ -153,6 +154,17 @@ def admin_issue_invite(
   # REVIEW #10: import send_invite_email from per_user_fanout (NOT notifier)
   from per_user_fanout import send_invite_email
 
+  # WR-01: validate email format before minting token.
+  if not _INVITE_EMAIL_RE.match(email):
+    raise HTTPException(status_code=422, detail='Invalid email address')
+
+  # WR-02: admin_uid must be set — trusted-device sessions return None from current_user_id.
+  if not admin_uid:
+    raise HTTPException(
+      status_code=403,
+      detail='Cannot determine admin identity; re-login with TOTP session',
+    )
+
   base_url = os.environ.get('BASE_URL', '').strip()
   if not base_url:
     raise HTTPException(status_code=500, detail='BASE_URL not configured')
@@ -165,7 +177,8 @@ def admin_issue_invite(
   # send_invite_email is never-raise — call unconditionally
   send_invite_email(to_email=email, invite_url=invite_url)
 
-  return HTMLResponse(_render_invite_url_fragment(invite_url, email, expires_at))
+  # CR-01: raw token NOT embedded in HTML response — confirmation only.
+  return HTMLResponse(_render_invite_url_fragment(email, expires_at))
 
 
 @router.delete('/invites/{token_hash}')

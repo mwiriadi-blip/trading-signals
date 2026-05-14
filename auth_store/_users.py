@@ -159,6 +159,7 @@ def create_user(fields: dict, path: Path | None = None) -> dict:
     'role': role,
     'created_at': datetime.now(timezone.utc).isoformat(),
     'disabled': False,
+    'password_hash': fields.get('password_hash'),  # None for admin-only rows (CR-03)
   }
   data['users'].append(user)
   save_auth(data, path=path)
@@ -333,7 +334,11 @@ def consume_and_create_user(
 def _peek_invite_token(unhashed_token: str, path: Path | None = None) -> str:
   '''Validate invite token and return email WITHOUT consuming.
 
-  Timing-safe: walks the full pending_invites list before deciding (T-37-03-03).
+  WR-05: timing note — the loop breaks on the FIRST matching row (happy path),
+  so it does NOT walk the full list before returning. Full-list traversal only
+  occurs when NO row matches (not-found path). The minor timing oracle (list
+  length enumerable via response time on hit vs. miss) is an accepted tradeoff
+  at this scale.
   Raises InviteAlreadyConsumed if token is consumed, not found, or invalid.
   Raises InviteExpired if the matching invite has passed expires_at.
   '''

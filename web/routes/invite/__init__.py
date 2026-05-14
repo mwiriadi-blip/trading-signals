@@ -14,6 +14,7 @@ existing post-enroll handler at web/routes/totp/__init__.py line 203 reads
 Review #1 (deployment blocker): this module's register() must be called in
 web/app.py::create_app() BEFORE add_middleware(AuthMiddleware, ...).
 '''
+import hashlib
 import logging
 import os
 import time
@@ -23,6 +24,7 @@ from fastapi.responses import HTMLResponse, Response
 from itsdangerous import BadSignature, SignatureExpired
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
+from system_params import INVITE_WIZARD_TTL_SECONDS
 from web.routes.invite._renderers import (
   _render_invite_error_page,
   _render_step1_password_page,
@@ -33,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 # Cookie name + serializer salt for the multi-step wizard cookie.
 INVITE_WIZARD_SALT = 'tsi-invite-wizard'
-_WIZARD_COOKIE_MAX_AGE = 3600  # 1 hour TTL; invitee has this window to complete all 3 steps
+# IN-03: sourced from system_params (single source of truth for all cookie TTLs).
+_WIZARD_COOKIE_MAX_AGE = INVITE_WIZARD_TTL_SECONDS
 
 # tsi_enroll salt mirrors web/routes/totp/__init__.py constant exactly (review #6 zero-coupling).
 # The existing TOTP enroll handler reads tsi_enroll with this salt — we issue the cookie here
@@ -111,13 +114,16 @@ def register(app: FastAPI) -> None:
       )
 
     # Token valid: set wizard cookie at step=password and render the form.
-    # raw_token stored in wizard cookie (step=password only) — dropped at step=totp.
-    payload = {'step': 'password', 'raw_token': token, 'email': email}
+    # CR-02: store token_hash (not raw_token) in the signed cookie so
+    # cookie exfiltration cannot replay the raw token. The raw token is
+    # embedded as a hidden form field in the page (transient, not persisted).
+    token_hash = 'sha256:' + hashlib.sha256(token.encode('utf-8')).hexdigest()
+    payload = {'step': 'password', 'token_hash': token_hash, 'email': email}
     logger.info('[Invite] accept-invite peek ok email=%s', email)
     # NOTE: raw token NOT logged above — only email (T-37-04-05).
 
     resp = HTMLResponse(
-      content=_render_step1_password_page(email),
+      content=_render_step1_password_page(email, raw_token=token),
       status_code=200,
     )
     resp.raw_headers.append((
@@ -131,6 +137,7 @@ def register(app: FastAPI) -> None:
     request: Request,
     password: str = Form(...),
     password2: str = Form(...),
+    raw_token: str = Form(default=''),
   ) -> Response:
     '''Step 1 POST: validate password → bcrypt hash → consume token → create user → step 2.
 
@@ -151,11 +158,21 @@ def register(app: FastAPI) -> None:
 
     email = wizard_payload.get('email', '')
 
+    # CR-02: validate raw_token from form matches token_hash in cookie.
+    # Prevents cookie-replay attacks where a revoked invite's cookie is reused.
+    expected_hash = 'sha256:' + hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+    if wizard_payload.get('token_hash') != expected_hash:
+      return HTMLResponse(
+        content=_render_invite_error_page(),
+        status_code=400,
+      )
+
     # Client-side length + match check — returns 400 with re-rendered form.
     if len(password) < 12:
       return HTMLResponse(
         content=_render_step1_password_page(
           email,
+          raw_token=raw_token,
           error='Password must be at least 12 characters. Try again.',
         ),
         status_code=400,
@@ -164,6 +181,7 @@ def register(app: FastAPI) -> None:
       return HTMLResponse(
         content=_render_step1_password_page(
           email,
+          raw_token=raw_token,
           error='Passwords do not match. Try again.',
         ),
         status_code=400,
@@ -179,12 +197,11 @@ def register(app: FastAPI) -> None:
       return HTMLResponse(
         content=_render_step1_password_page(
           email,
+          raw_token=raw_token,
           error=f'Password is too long (must be ≤72 bytes). {ve}',
         ),
         status_code=400,
       )
-
-    raw_token = wizard_payload.get('raw_token', '')
 
     # Consume invite + create user (flock-guarded in auth_store).
     # Catch concurrent race: another request may have consumed the token.
