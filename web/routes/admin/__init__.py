@@ -154,8 +154,11 @@ def admin_issue_invite(
   # REVIEW #10: import send_invite_email from per_user_fanout (NOT notifier)
   from per_user_fanout import send_invite_email
 
+  logger.info('[Invite] POST received admin_uid=%s email=%s', admin_uid or 'NONE', email)
+
   # WR-01: validate email format before minting token.
   if not _INVITE_EMAIL_RE.match(email):
+    logger.warning('[Invite] rejected invalid email=%s', email)
     raise HTTPException(status_code=422, detail='Invalid email address')
 
   # WR-02: admin_uid must be set — trusted-device sessions return None from current_user_id.
@@ -167,6 +170,7 @@ def admin_issue_invite(
 
   base_url = os.environ.get('BASE_URL', '').strip()
   if not base_url:
+    logger.error('[Invite] BASE_URL not configured — invite cannot be issued')
     raise HTTPException(status_code=500, detail='BASE_URL not configured')
 
   raw_token, expires_at = mint_invite_token(invited_by_uid=admin_uid, email=email)
@@ -178,7 +182,11 @@ def admin_issue_invite(
   send_invite_email(to_email=email, invite_url=invite_url)
 
   # CR-01: raw token NOT embedded in HTML response — confirmation only.
-  return HTMLResponse(_render_invite_url_fragment(email, expires_at))
+  # HTMX: HX-Redirect causes the browser to navigate to /admin/users/ after the
+  # request completes, refreshing the pending invites table.
+  resp = HTMLResponse(_render_invite_url_fragment(email, expires_at))
+  resp.headers['HX-Redirect'] = '/admin/users/'
+  return resp
 
 
 @router.delete('/invites/{token_hash}')

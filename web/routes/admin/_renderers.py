@@ -98,6 +98,7 @@ def _render_invite_url_fragment(
     f'<p>Invite sent to {safe_email}. The link expires: {safe_expires}.</p>'
     f'<p>The invitation email has been delivered. '
     f'Ask the invitee to check their inbox.</p>'
+    f'<p><a href="/admin/users/" style="color:var(--color-long)">← Back to Users</a></p>'
     f'</div>'
   )
 
