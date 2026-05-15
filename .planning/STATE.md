@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-15T02:36:34.617Z"
+last_updated: "2026-05-15T23:46:01.265Z"
 progress:
   total_phases: 14
   completed_phases: 11
-  total_plans: 54
-  completed_plans: 55
-  percent: 100
+  total_plans: 58
+  completed_plans: 56
+  percent: 97
 ---
 
 # STATE — Trading Signals
@@ -22,15 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 37 — per-user-email-fan-out-admin-invite-disable-routes-invite-ac
+- **Current focus:** Phase 38 — news-integration
 
 ## Current Position
 
-Phase: 37 (per-user-email-fan-out-admin-invite-disable-routes-invite-ac) — EXECUTING
-Plan: 1 of 6
-Plans: 0 of 3 complete
-Next: /gsd-execute-phase 36
-Status: Executing Phase 37
+Phase: 38 (news-integration) — EXECUTING
+Plan: 2 of 4
+Plans: 1 of 4 complete
+Next: /gsd-execute-phase 38 (Plan 02 — news_filter.py)
+Status: Executing Phase 38 — Plan 01 complete
 
 ### Resume instructions for cloud Claude / fresh clone
 
@@ -133,6 +133,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 | Phase 34 P01 | 573s | 2 tasks | 7 files |
 | Phase 34 P02 | ~15min | 2 tasks | 4 files |
 | Phase 34 P02 | 15min | 2 tasks | 4 files |
+| Phase 38 P01 | ~15min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
