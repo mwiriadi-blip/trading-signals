@@ -498,3 +498,53 @@ INVITE_WIZARD_TTL_SECONDS: int = 3600  # 1 hour: invitee window to complete all 
 
 TOTP_ACCOUNT_DOMAIN: str = 'signals.mwiriadi.me'
 AUTH_JSON_PATH: str = 'auth.json'
+
+# =========================================================================
+# Phase 38 constants — news integration keyword classifier (D-06)
+# =========================================================================
+# Per-market keyword lists for critical-event banner. Word-boundary regex
+# (\b prefix/suffix) applied by news_filter.py (_build_pattern). Operator-
+# tunable; bump STRATEGY_VERSION only for signal-logic changes, NOT for
+# keyword updates.
+#
+# T-38-01-01 (tampering — keywords compiled into regex): all entries are
+# literal strings; news_filter.py applies re.escape() before compiling.
+# T-38-01-02 (DoS — catastrophic backtracking): re.escape() + word-boundary
+# anchors prevent unbounded backtracking.
+#
+# Hex-boundary: no imports beyond those already in this module (re, decimal,
+# typing). Tuple[str, ...] typing is stdlib. All entries lowercase.
+
+NEWS_KEYWORDS_SPI200: tuple[str, ...] = (
+  # Australian market systemic events
+  'rba', 'reserve bank', 'rate cut', 'rate hike', 'interest rate',
+  'recession', 'gdp', 'inflation', 'cpi', 'stagflation',
+  # ASX-specific circuit-breaker events
+  'asx halt', 'trading halt', 'market halt', 'circuit breaker',
+  'crash', 'sell-off', 'rout', 'collapse', 'plunge',
+  # Global systemic risk drivers for ASX
+  'fed', 'federal reserve', 'ecb', 'bank of japan',
+  'tariff', 'trade war', 'sanctions', 'pandemic', 'lockdown',
+)
+
+NEWS_KEYWORDS_AUDUSD: tuple[str, ...] = (
+  # AUD/USD direct drivers
+  'rba', 'reserve bank', 'rate cut', 'rate hike', 'interest rate',
+  'aud', 'aussie dollar', 'australian dollar',
+  'china gdp', 'iron ore', 'commodity', 'terms of trade',
+  # USD drivers
+  'fed', 'federal reserve', 'fomc', 'us cpi', 'us gdp',
+  'dollar', 'dxy', 'greenback',
+  # Macro risk events
+  'recession', 'stagflation', 'tariff', 'trade war', 'sanctions',
+  'pandemic', 'lockdown', 'geopolitical',
+)
+
+# Dampener: phrases that contain a keyword substring but are NOT
+# critical-event signals. Suppressed before keyword match in classify_headline.
+# (e.g. "first-rate" contains "rate" but is not a rate decision)
+NEWS_DAMPENER_ALLOWLIST: tuple[str, ...] = (
+  'first-rate', 'second-rate', 'first rate', 'second rate',
+  'flat-rate', 'flat rate', 'pro-rate', 'pro rate',
+  'interest in', 'rate your', 'interest and',
+)
