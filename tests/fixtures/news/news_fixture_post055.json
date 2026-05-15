@@ -1,0 +1,198 @@
+[
+  {
+    "id": "b1c2d3e4-f5a6-7001-8bc9-d0e1f2a3b4c5",
+    "content": {
+      "id": "b1c2d3e4-f5a6-7001-8bc9-d0e1f2a3b4c5",
+      "contentType": "STORY",
+      "title": "ASX 200 rises 0.5% on solid earnings season results",
+      "description": "",
+      "summary": "Australian shares gained ground as major banks reported strong quarterly results.",
+      "pubDate": "2026-05-07T10:00:00Z",
+      "displayTime": "2026-05-07T10:00:00Z",
+      "isHosted": true,
+      "bypassModal": false,
+      "previewUrl": null,
+      "thumbnail": {
+        "resolutions": [
+          {"url": "https://media.example.com/asx-thumb-001.jpg", "width": 1194, "height": 432, "tag": "original"},
+          {"url": "https://media.example.com/asx-thumb-001-sm.jpg", "width": 170, "height": 128, "tag": "170x128"}
+        ]
+      },
+      "provider": {
+        "displayName": "Market Watch AU",
+        "url": "https://marketwatch.com.au/",
+        "sourceId": "market_watch_au__001"
+      },
+      "canonicalUrl": {
+        "url": "https://finance.yahoo.com/news/asx-200-rises-earnings-001.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "clickThroughUrl": {
+        "url": "https://finance.yahoo.com/news/asx-200-rises-earnings-001.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "metadata": {"editorsPick": false},
+      "finance": {"premiumFinance": {"isPremiumNews": false, "isPremiumFreeNews": false}},
+      "storyline": null
+    }
+  },
+  {
+    "id": "b1c2d3e4-f5a6-7002-8bc9-d0e1f2a3b4c5",
+    "content": {
+      "id": "b1c2d3e4-f5a6-7002-8bc9-d0e1f2a3b4c5",
+      "contentType": "STORY",
+      "title": "RBA cuts interest rate by 25bp amid inflation slowdown",
+      "description": "",
+      "summary": "The Reserve Bank of Australia cut its benchmark rate to 4.10% citing easing CPI pressures.",
+      "pubDate": "2026-05-07T11:00:00Z",
+      "displayTime": "2026-05-07T11:00:00Z",
+      "isHosted": true,
+      "bypassModal": false,
+      "previewUrl": null,
+      "thumbnail": {
+        "resolutions": [
+          {"url": "https://media.example.com/rba-thumb-002.jpg", "width": 1194, "height": 432, "tag": "original"}
+        ]
+      },
+      "provider": {
+        "displayName": "Australian Financial Review",
+        "url": "https://www.afr.com/",
+        "sourceId": "afr__002"
+      },
+      "canonicalUrl": {
+        "url": "https://finance.yahoo.com/news/rba-rate-cut-inflation-002.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "clickThroughUrl": null,
+      "metadata": {"editorsPick": true},
+      "finance": {"premiumFinance": {"isPremiumNews": false, "isPremiumFreeNews": false}},
+      "storyline": null
+    }
+  },
+  {
+    "id": "b1c2d3e4-f5a6-7003-8bc9-d0e1f2a3b4c5",
+    "content": {
+      "id": "b1c2d3e4-f5a6-7003-8bc9-d0e1f2a3b4c5",
+      "contentType": "STORY",
+      "title": "<script>alert(1)</script> Breaking: Market halted on circuit breaker",
+      "description": "",
+      "summary": "ASX trading was suspended after a circuit breaker triggered amid sharp intraday volatility.",
+      "pubDate": "2026-05-07T12:00:00Z",
+      "displayTime": "2026-05-07T12:00:00Z",
+      "isHosted": true,
+      "bypassModal": false,
+      "previewUrl": null,
+      "thumbnail": {
+        "resolutions": [
+          {"url": "https://media.example.com/halt-thumb-003.jpg", "width": 1194, "height": 432, "tag": "original"}
+        ]
+      },
+      "provider": {
+        "displayName": "Breaking Finance News",
+        "url": "https://breakingfinance.example.com/",
+        "sourceId": "bfn__003"
+      },
+      "canonicalUrl": {
+        "url": "https://finance.yahoo.com/news/market-halt-circuit-breaker-003.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "clickThroughUrl": {
+        "url": "https://finance.yahoo.com/news/market-halt-circuit-breaker-003.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "metadata": {"editorsPick": false},
+      "finance": {"premiumFinance": {"isPremiumNews": false, "isPremiumFreeNews": false}},
+      "storyline": null
+    }
+  },
+  {
+    "id": "b1c2d3e4-f5a6-7004-8bc9-d0e1f2a3b4c5",
+    "content": {
+      "id": "b1c2d3e4-f5a6-7004-8bc9-d0e1f2a3b4c5",
+      "contentType": "STORY",
+      "title": "First-rate service drives customer satisfaction at CommBank",
+      "description": "",
+      "summary": "Commonwealth Bank received top ratings in the annual retail banking satisfaction survey.",
+      "pubDate": "2026-05-07T13:00:00Z",
+      "displayTime": "2026-05-07T13:00:00Z",
+      "isHosted": true,
+      "bypassModal": false,
+      "previewUrl": null,
+      "thumbnail": {
+        "resolutions": [
+          {"url": "https://media.example.com/commbank-thumb-004.jpg", "width": 1194, "height": 432, "tag": "original"}
+        ]
+      },
+      "provider": {
+        "displayName": "Simply Wall St.",
+        "url": "https://simplywall.st/",
+        "sourceId": "simply_wall_st__004"
+      },
+      "canonicalUrl": {
+        "url": "https://finance.yahoo.com/news/commbank-first-rate-service-004.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "clickThroughUrl": {
+        "url": "https://finance.yahoo.com/news/commbank-first-rate-service-004.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "metadata": {"editorsPick": false},
+      "finance": {"premiumFinance": {"isPremiumNews": false, "isPremiumFreeNews": false}},
+      "storyline": null
+    }
+  },
+  {
+    "id": "b1c2d3e4-f5a6-7005-8bc9-d0e1f2a3b4c5",
+    "content": {
+      "id": "b1c2d3e4-f5a6-7005-8bc9-d0e1f2a3b4c5",
+      "contentType": "STORY",
+      "title": "BHP reports quarterly iron ore production in line with estimates",
+      "description": "",
+      "summary": "BHP Group's iron ore shipments from the Pilbara met analyst expectations for the March quarter.",
+      "pubDate": "2026-05-07T14:00:00Z",
+      "displayTime": "2026-05-07T14:00:00Z",
+      "isHosted": true,
+      "bypassModal": false,
+      "previewUrl": null,
+      "thumbnail": {
+        "resolutions": [
+          {"url": "https://media.example.com/bhp-thumb-005.jpg", "width": 1194, "height": 432, "tag": "original"}
+        ]
+      },
+      "provider": {
+        "displayName": "Reuters",
+        "url": "https://www.reuters.com/",
+        "sourceId": "reuters__005"
+      },
+      "canonicalUrl": {
+        "url": "https://finance.yahoo.com/news/bhp-iron-ore-production-005.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "clickThroughUrl": {
+        "url": "https://finance.yahoo.com/news/bhp-iron-ore-production-005.html",
+        "site": "finance",
+        "region": "AU",
+        "lang": "en-AU"
+      },
+      "metadata": {"editorsPick": false},
+      "finance": {"premiumFinance": {"isPremiumNews": false, "isPremiumFreeNews": false}},
+      "storyline": null
+    }
+  }
+]

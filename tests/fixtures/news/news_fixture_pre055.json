@@ -1,0 +1,72 @@
+[
+  {
+    "uuid": "a1b2c3d4e5f60001",
+    "title": "ASX 200 rises 0.5% on solid earnings season results",
+    "publisher": "Market Watch AU",
+    "link": "https://finance.yahoo.com/news/asx-200-rises-earnings-001.html",
+    "providerPublishTime": 1746600000,
+    "type": "STORY",
+    "thumbnail": {
+      "resolutions": [
+        {"url": "https://media.example.com/asx-thumb-001.jpg", "width": 1194, "height": 432, "tag": "original"}
+      ]
+    },
+    "relatedTickers": ["^AXJO"]
+  },
+  {
+    "uuid": "a1b2c3d4e5f60002",
+    "title": "RBA cuts interest rate by 25bp amid inflation slowdown",
+    "publisher": "Australian Financial Review",
+    "link": "https://finance.yahoo.com/news/rba-rate-cut-inflation-002.html",
+    "providerPublishTime": 1746610000,
+    "type": "STORY",
+    "thumbnail": {
+      "resolutions": [
+        {"url": "https://media.example.com/rba-thumb-002.jpg", "width": 1194, "height": 432, "tag": "original"}
+      ]
+    },
+    "relatedTickers": ["^AXJO", "AUDUSD=X"]
+  },
+  {
+    "uuid": "a1b2c3d4e5f60003",
+    "title": "<script>alert(1)</script> Breaking: Market halted on circuit breaker",
+    "publisher": "Breaking Finance News",
+    "link": "https://finance.yahoo.com/news/market-halt-circuit-breaker-003.html",
+    "providerPublishTime": 1746620000,
+    "type": "STORY",
+    "thumbnail": {
+      "resolutions": [
+        {"url": "https://media.example.com/halt-thumb-003.jpg", "width": 1194, "height": 432, "tag": "original"}
+      ]
+    },
+    "relatedTickers": ["^AXJO"]
+  },
+  {
+    "uuid": "a1b2c3d4e5f60004",
+    "title": "First-rate service drives customer satisfaction at CommBank",
+    "publisher": "Simply Wall St.",
+    "link": "https://finance.yahoo.com/news/commbank-first-rate-service-004.html",
+    "providerPublishTime": 1746630000,
+    "type": "STORY",
+    "thumbnail": {
+      "resolutions": [
+        {"url": "https://media.example.com/commbank-thumb-004.jpg", "width": 1194, "height": 432, "tag": "original"}
+      ]
+    },
+    "relatedTickers": ["^AXJO"]
+  },
+  {
+    "uuid": "a1b2c3d4e5f60005",
+    "title": "BHP reports quarterly iron ore production in line with estimates",
+    "publisher": "Reuters",
+    "link": "https://finance.yahoo.com/news/bhp-iron-ore-production-005.html",
+    "providerPublishTime": 1746640000,
+    "type": "STORY",
+    "thumbnail": {
+      "resolutions": [
+        {"url": "https://media.example.com/bhp-thumb-005.jpg", "width": 1194, "height": 432, "tag": "original"}
+      ]
+    },
+    "relatedTickers": ["^AXJO"]
+  }
+]
