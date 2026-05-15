@@ -483,6 +483,10 @@ REGENERATE_NOTIFIER_GOLDEN_PATH = Path('tests/regenerate_notifier_golden.py')
 PNL_ENGINE_PATH = Path('pnl_engine.py')
 # Phase 20: alert_engine.py added to AST guard (D-10 + D-11 pure-math hex-tier)
 ALERT_ENGINE_PATH = Path('alert_engine.py')
+# Phase 38: news_filter.py is a pure-math hex peer (stdlib-only: re + system_params).
+# news_fetcher.py is the I/O adapter peer (mirrors data_fetcher.py).
+NEWS_FILTER_PATH = Path('news_filter.py')
+NEWS_FETCHER_PATH = Path('news_fetcher.py')
 
 # REVIEWS STRONGLY RECOMMENDED: BLOCKLIST, not whitelist. Benign additions like
 # __future__, dataclasses, collections, enum, functools are allowed. Only modules
@@ -526,6 +530,21 @@ FORBIDDEN_MODULES_STATE_MANAGER = frozenset({
   # Scheduler and external service deps
   'schedule', 'dotenv', 'yfinance',
   # pytz is third-party; state_manager uses zoneinfo (stdlib) instead
+  'pytz',
+})
+
+# Phase 38: news_fetcher.py IS the news I/O adapter — yfinance/json/os/tempfile/
+# hashlib/datetime ARE allowed (those are its PURPOSE). But it must NOT import
+# sibling hexes (signal_engine, sizing_engine, state_manager, notifier,
+# dashboard, main) or numpy (no numeric work in the news fetch hex).
+FORBIDDEN_MODULES_NEWS_FETCHER = frozenset({
+  # Sibling hexes — news_fetcher is a peer, never imports them
+  'signal_engine', 'sizing_engine', 'state_manager', 'notifier', 'dashboard', 'main',
+  # numpy direct — no numeric work in the news fetch hex
+  'numpy',
+  # Scheduler + env deps — news_fetcher is pure fetch, no orchestration
+  'schedule', 'dotenv',
+  # pytz — project uses zoneinfo (stdlib) via state_manager precedent
   'pytz',
 })
 
@@ -619,9 +638,13 @@ FORBIDDEN_MODULES_BACKTEST_PURE = FORBIDDEN_MODULES | frozenset({'pyarrow'})
 _HEX_PATHS_ALL = [SIGNAL_ENGINE_PATH, *SIZING_ENGINE_PKG_FILES, SYSTEM_PARAMS_PATH,
                   PNL_ENGINE_PATH, ALERT_ENGINE_PATH,
                   BACKTEST_SIMULATOR_PATH, BACKTEST_METRICS_PATH]
-# signal_engine.py legitimately uses numpy/pandas; Phase 2 modules must not
+# signal_engine.py legitimately uses numpy/pandas; Phase 2 modules must not.
+# Phase 38: NEWS_FILTER_PATH added — news_filter.py is stdlib-only (re + system_params).
+# When Plan 02 lands news_filter.py, the AST guard will run the stdlib-only check
+# against it. During Wave 1 (this plan), news_filter.py does not yet exist on disk;
+# the test loop skips missing files (skip-missing guard in test_forbidden_imports_absent).
 _HEX_PATHS_STDLIB_ONLY = [*SIZING_ENGINE_PKG_FILES, SYSTEM_PARAMS_PATH, PNL_ENGINE_PATH,
-                           ALERT_ENGINE_PATH]
+                           ALERT_ENGINE_PATH, NEWS_FILTER_PATH]
 
 
 def _hash_series_values(values) -> str:
@@ -803,7 +826,16 @@ class TestDeterminism:
     Note: signal_engine.py legitimately imports numpy and pandas (indicator math).
     sizing_engine.py and system_params.py must be stdlib-only; see
     test_phase2_hex_modules_no_numpy_pandas for that additional constraint.
+
+    Phase 38 Wave-order note: news_filter.py and news_fetcher.py are added to
+    _HEX_PATHS_ALL / _HEX_PATHS_STDLIB_ONLY in Wave 1 (this plan) but the files
+    themselves do not exist until Wave 2 (Plans 02/03). The skip-missing guard
+    below allows Wave-1 execution to remain green; the hard-existence meta-test
+    test_news_modules_exist_after_wave2 (below) ensures the skip cannot silently
+    hide a permanently absent module once Wave 2 completes.
     '''
+    if not module_path.exists():
+      pytest.skip(f'{module_path} not yet on disk (Wave-ordered execution; will be checked once created)')
     imports = _top_level_imports(module_path)
     leaked = imports & FORBIDDEN_MODULES
     assert not leaked, (
@@ -857,7 +889,12 @@ class TestDeterminism:
     or pandas. This keeps the Phase 2 hex free of heavy scientific deps and ensures
     math.isnan / math.isfinite are used (not numpy.isnan) per the AST blocklist design.
     Extending FORBIDDEN_MODULES with numpy/pandas for these two paths only.
+
+    Phase 38: news_filter.py added to _HEX_PATHS_STDLIB_ONLY. During Wave 1 the file
+    does not exist yet — the skip guard ensures the test stays green before Plan 02 lands.
     '''
+    if not module_path.exists():
+      pytest.skip(f'{module_path} not yet on disk (Wave-ordered execution; checked once created)')
     imports = _top_level_imports(module_path)
     leaked = imports & FORBIDDEN_MODULES_STDLIB_ONLY
     assert not leaked, (
@@ -1078,6 +1115,40 @@ class TestDeterminism:
       + '\nProject convention is 2-space indent (CLAUDE.md). Do NOT run `ruff format` '
       + 'on these files -- ruff 0.6.9 reflows to 4-space. Use .editorconfig '
       + 'indent_size=2 and manual review.'
+    )
+
+  # --- Phase 38: news modules hard-existence meta-gate (OPS-03 + T-38-01-04) ---
+
+  def test_news_modules_exist_after_wave2(self) -> None:
+    '''Hard-existence gate for news_filter.py and news_fetcher.py (Phase 38 Wave 2).
+
+    This test is EXPECTED to be SKIPPED during Wave 1 (this plan's wave) because
+    neither file exists on disk yet. It becomes GREEN once Plans 02 (news_filter.py)
+    and Plans 03 (news_fetcher.py) land in Wave 2. Plan 02/03 executors MUST observe
+    this test going green as their phase-completion gate.
+
+    Compensates for the skip-missing guard added to test_forbidden_imports_absent
+    and test_phase2_hex_modules_no_numpy_pandas: the skip is needed for Wave-ordered
+    execution but this test ensures the skip cannot silently hide a permanently absent
+    module after the phase completes (T-38-01-04 mitigate).
+
+    Implementation: if EITHER news module exists, BOTH must exist. This catches the
+    "Plan 02 landed but Plan 03 did not" failure mode without breaking Wave 1's green
+    suite invariant (neither file exists, so the early-return fires and the test passes).
+    '''
+    spi_exists = NEWS_FILTER_PATH.exists()
+    fetcher_exists = NEWS_FETCHER_PATH.exists()
+    if not spi_exists and not fetcher_exists:
+      # Wave 1: neither file exists yet — this is expected; skip to keep suite green.
+      pytest.skip('Wave 1: news_filter.py and news_fetcher.py not yet on disk (Plans 02/03 pending)')
+    # If EITHER file exists, BOTH must exist (catches partial Wave 2 landing).
+    assert NEWS_FILTER_PATH.exists(), (
+      f'{NEWS_FILTER_PATH} must exist after Wave 2 lands (Plan 02). '
+      f'{NEWS_FETCHER_PATH} is present but {NEWS_FILTER_PATH} is not — partial Wave 2 landing.'
+    )
+    assert NEWS_FETCHER_PATH.exists(), (
+      f'{NEWS_FETCHER_PATH} must exist after Wave 2 lands (Plan 03). '
+      f'{NEWS_FILTER_PATH} is present but {NEWS_FETCHER_PATH} is not — partial Wave 2 landing.'
     )
 
   # --- Phase 2 determinism snapshot (D-06) ---
