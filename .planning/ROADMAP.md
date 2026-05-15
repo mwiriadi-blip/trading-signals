@@ -304,7 +304,12 @@ Plans:
   3. Critical-event banner fires from a hand-curated word-boundary regex classifier (per-market keyword list with allowlist dampener like `first-rate`, `second-rate`); banner copy explicitly labels the heuristic ("Possible market-moving news — operator review recommended"); classifier achieves precision ≥0.7 and recall ≥0.9 against a 30-headline labelled fixture committed to the repo.
   4. User can dismiss a headline; dismiss state persists in `state['users'][uid]['news_dismissed']`; admin's dismiss does not affect any F&F user's view, and vice versa.
   5. AST hex boundary still passes: `signal_engine` cannot import `news_fetcher` or `news_filter`; `news_filter.py` is in `_HEX_PATHS_STDLIB_ONLY` (pure module); `news_fetcher.py` is an I/O peer of `data_fetcher.py` with its own no-forbidden-imports test.
-**Plans:** TBD
+**Plans:** 4 plans
+**Plan list:**
+- [ ] 38-01-PLAN.md — Foundation: system_params NEWS_* keyword constants + AST hex extensions + three test fixtures (pre/post-0.2.55 + 30-headline labelled)
+- [ ] 38-02-PLAN.md — news_filter.py pure-hex classifier + precision/recall gate (Wave 2)
+- [ ] 38-03-PLAN.md — news_fetcher.py I/O adapter + both-schema normaliser + atomic sidecar cache (Wave 2)
+- [ ] 38-04-PLAN.md — web/routes/news.py + dashboard component + assets CSS + app wiring + per-user dismiss isolation tests (Wave 3)
 **Plan-time verification (research-flagged):**
 - **yfinance fresh fixtures:** capture both pre-0.2.55 and post-0.2.55 news payload fixtures from the pinned yfinance version at plan time (library schema drift across 0.2.40 → 0.2.55 → 1.x is real); commit fixtures to the repo.
 **UI hint:** yes
