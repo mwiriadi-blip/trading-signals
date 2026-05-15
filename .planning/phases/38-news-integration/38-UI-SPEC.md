@@ -44,7 +44,8 @@ All tokens already declared in `:root` in `dashboard_renderer/assets.py`. Phase 
 | --space-12 | 48px | Not used in news panel |
 
 Exceptions:
-- Touch targets on Dismiss button: minimum 44px height (`--touch-target-min: 44px`) — matches existing `.add-market-chip summary` pattern.
+- `--space-3: 12px` is an **inherited pre-existing project token** — it was declared in `dashboard_renderer/assets.py` before Phase 38 and is used across the codebase. Phase 38 does **not** introduce this token; it merely references it for banner padding and headline row padding-x (matching existing panel patterns). Executors must **not** add any new 12px spacing tokens. This is a carry-forward exception only — 12px is not part of the Phase 38 spacing vocabulary.
+- Touch targets on Dismiss Headline button: minimum 44px height (`--touch-target-min: 44px`) — matches existing `.add-market-chip summary` pattern.
 
 ---
 
@@ -72,7 +73,7 @@ All values are existing tokens from `system_params.py` / `:root`. No new color t
 |------|-------|-------|
 | Dominant (60%) | `#0f1117` (`--color-bg`) | Page background |
 | Secondary (30%) | `#161a24` (`--color-surface`) | News panel `<details>` background, headline rows |
-| Accent (10%) | `#22c55e` (`--color-long`) | Dismiss button border/text (`.btn-row` style), "Possible market-moving news" banner left border |
+| Accent (10%) | `#22c55e` (`--color-long`) | Dismiss Headline button border/text (`.btn-row` style), "Possible market-moving news" banner left border |
 | Destructive | `#ef4444` (`--color-short`) | Not used — dismiss is non-destructive (row removal only, auto-resets next day) |
 | Border | `#252a36` (`--color-border`) | Panel border, headline row dividers |
 | Text primary | `#e5e7eb` (`--color-text`) | Headline link text, banner body |
@@ -81,9 +82,21 @@ All values are existing tokens from `system_params.py` / `:root`. No new color t
 
 Accent reserved for:
 - `.news-banner` left border (4px solid `--color-long`) — signals a potential market-moving event
-- Dismiss button border and text color (reuses `.btn-row` pattern with `--color-long` tint)
+- Dismiss Headline button border and text color (reuses `.btn-row` pattern with `--color-long` tint)
 
 No additional semantic color. Dismiss is non-destructive; no red (`--color-short`) anywhere in the news panel.
+
+---
+
+## Visual Hierarchy
+
+**Primary focal point:** the critical-event banner (`.news-banner`) when present — its 4px accent-green left border and surface background draw the eye before the headline list. When no banner is present, the primary focal point is the first headline link in the table (largest clickable element, `--color-text` at 16px weight 400).
+
+**Secondary focal point:** the `<summary>` label "Market News" (weight 600, `--color-text-muted`) anchors the panel's identity and acts as the collapse control.
+
+**Tertiary:** publisher / date metadata (`--fs-label` 14px, `--color-text-muted`) and the Dismiss Headline button recede visually — lower contrast, smaller size.
+
+This hierarchy ensures the operator's attention flows: banner (critical signal) → headline links (actionable content) → metadata (context) → dismiss (management action).
 
 ---
 
@@ -102,7 +115,7 @@ New CSS classes to add to `dashboard_renderer/assets.py`. Pattern mirrors existi
 | `.news-row` | `<tr id="news-row-{hash}">` | `.data-table tbody tr` |
 | `.news-link` | headline `<a>` | `.data-table tbody td` |
 | `.news-meta` | publisher + date `<td>` | `.data-table tbody td` |
-| `.btn-news-dismiss` | Dismiss `<button>` | `.btn-row` |
+| `.btn-news-dismiss` | Dismiss Headline `<button>` | `.btn-row` |
 
 ### Collapsible Panel
 
@@ -150,7 +163,7 @@ Banner copy is locked (CONTEXT.md D-07 / ROADMAP). Do not vary this string.
             hx-target="#news-row-{{ title_hash }}"
             hx-swap="outerHTML"
             hx-trigger="click">
-      Dismiss
+      Dismiss Headline
     </button>
   </td>
 </tr>
@@ -238,7 +251,7 @@ Rendered inside `.news-panel-inner` when `len(headlines) == 0` after dismiss fil
 
 | Interaction | Trigger | Mechanism | Server Response | Visual Outcome |
 |-------------|---------|-----------|----------------|----------------|
-| Dismiss headline | Click "Dismiss" button | `hx-post` on `<button>` inside `<tr>` | `POST /news/{market}/dismiss/{hash}` → `Response(content="", media_type="text/html")` | Row removed via `hx-swap="outerHTML"` on `<tr id="news-row-{hash}">` |
+| Dismiss headline | Click "Dismiss Headline" button | `hx-post` on `<button>` inside `<tr>` | `POST /news/{market}/dismiss/{hash}` → `Response(content="", media_type="text/html")` | Row removed via `hx-swap="outerHTML"` on `<tr id="news-row-{hash}">` |
 | Collapse panel | Click `<summary>` | Native `<details>` toggle + HTMX `hx-post` | `POST /news/panel-toggle` → updates `state['users'][uid]['news_panel_collapsed']` | Panel content collapses/expands natively; state persisted server-side |
 | Panel open on load | Server render | `news_panel_collapsed` from per-user state | — | `<details open>` or `<details>` (no attribute) |
 
@@ -252,7 +265,7 @@ Source: CONTEXT.md D-02, D-09; RESEARCH.md §3, §4.
 |---------|------|
 | Panel `<summary>` label | Market News |
 | Critical-event banner heading | Possible market-moving news — operator review recommended |
-| Dismiss button | Dismiss |
+| Dismiss button | Dismiss Headline |
 | Empty state (no visible headlines) | No headlines today. |
 | Empty state (all dismissed) | No headlines today. |
 | Panel collapse toggle aria-label | Toggle Market News panel |
@@ -271,7 +284,7 @@ Notes:
 |---------|-------------|----------------|
 | `<details>/<summary>` | `aria-expanded` auto-synced | Existing JS in `assets.py::_TRACE_TOGGLE_JS` already handles all `<details>` on `DOMContentLoaded` — news panel gets this for free (RESEARCH.md §3) |
 | Headline links | Opens in new tab | `target="_blank" rel="noopener noreferrer"` mandatory |
-| Dismiss button | Touch target ≥ 44px | `min-height: var(--touch-target-min)` (44px) |
+| Dismiss Headline button | Touch target ≥ 44px | `min-height: var(--touch-target-min)` (44px) |
 | Critical-event banner | Role: advisory | No `role="alert"` — banner is not urgent enough for screen-reader interrupt; rendered as static content |
 | Panel summary | Focus-visible | Inherited from `summary:focus-visible` rule in Phase 25 CSS |
 
@@ -319,3 +332,4 @@ No external component registries. All UI is hand-authored HTML/CSS added to `das
 
 *Phase: 38-news-integration*
 *UI-SPEC generated: 2026-05-15*
+*UI-SPEC revised: 2026-05-15 — checker fixes: spacing carry-forward exception, Dismiss→Dismiss Headline, visual hierarchy section added*
