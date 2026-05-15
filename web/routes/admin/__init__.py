@@ -201,7 +201,8 @@ def admin_revoke_invite(token_hash: str):
   found = revoke_invite(token_hash)
   if not found:
     raise HTTPException(status_code=404, detail='invite not found')
-  return {'ok': True, 'token_hash': token_hash}
+  # HTMX swaps this into the <tr> with outerHTML — empty string removes the row.
+  return HTMLResponse('', status_code=200)
 
 
 __all__ = ['router']
