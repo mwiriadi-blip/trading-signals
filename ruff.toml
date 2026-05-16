@@ -1,3 +1,4 @@
+# Format only — lint not enforced (pytest + type annotations cover correctness)
 indent-width = 2
 
 [format]
