@@ -401,6 +401,15 @@ class TestIGFetch:
   any host environment.
   '''
 
+  @pytest.fixture(autouse=True)
+  def _clear_last_fetch_source(self):
+    '''WR-04: clear LAST_FETCH_SOURCE before and after each test in this class
+    to prevent cross-test contamination from the module-level mutable dict.
+    '''
+    data_fetcher.LAST_FETCH_SOURCE.clear()
+    yield
+    data_fetcher.LAST_FETCH_SOURCE.clear()
+
   # Shared IG session response headers (returned by POST /session).
   _SESSION_HEADERS = {
     'CST': 'test-cst-token-abc123',
@@ -448,10 +457,12 @@ class TestIGFetch:
 
     df = fetch_ohlcv('^AXJO', days=5, retries=3, backoff_s=0.0)
 
+    fixture = _load_ig_fixture('ig_spi200_prices.json')
+    expected_rows = len(fixture['prices'])
     assert isinstance(df, pd.DataFrame)
     assert list(df.columns) == ['Open', 'High', 'Low', 'Close', 'Volume']
     assert isinstance(df.index, pd.DatetimeIndex)
-    assert len(df) >= 5
+    assert len(df) == expected_rows, f'Expected {expected_rows} rows, got {len(df)}'
     assert len(post_calls) >= 1, 'Expected at least one POST /session'
     assert len(get_calls) >= 1, 'Expected at least one GET /prices'
 

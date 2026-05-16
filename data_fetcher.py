@@ -26,6 +26,7 @@ validation (C-6 prevents KeyError-as-generic-Exception schema-drift leak).
 import logging
 import os
 import time
+from decimal import Decimal
 
 import pandas as pd
 import requests
@@ -36,6 +37,7 @@ import requests.exceptions
 # yet. If a vendor-key fetcher (e.g. Alpha Vantage, Polygon) is added later,
 # any logger.* / raise that would interpolate the key MUST flow through
 # redact_secret first — see system_params.redact_secret docstring.
+import system_params  # noqa: F401 — used by _epic_for_symbol
 from system_params import HTTP_TIMEOUT_S, redact_secret  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -257,13 +259,19 @@ def _ig_normalise(prices: list) -> pd.DataFrame:
   rows = []
   timestamps = []
   for p in prices:
-    ts_str = p.get('snapshotTimeUTC') or p.get('snapshotTime', '')
+    ts_str = p.get('snapshotTimeUTC') or p.get('snapshotTime')
+    if not ts_str:
+      raise DataFetchError(
+        f'IG price candle missing snapshotTimeUTC and snapshotTime: {p!r}',
+      )
     timestamps.append(ts_str)
+    def _mid(side: dict) -> float:
+      return float((Decimal(str(side['bid'])) + Decimal(str(side['ask']))) / 2)
     rows.append({
-      'Open': (p['openPrice']['bid'] + p['openPrice']['ask']) / 2,
-      'High': (p['highPrice']['bid'] + p['highPrice']['ask']) / 2,
-      'Low': (p['lowPrice']['bid'] + p['lowPrice']['ask']) / 2,
-      'Close': (p['closePrice']['bid'] + p['closePrice']['ask']) / 2,
+      'Open': _mid(p['openPrice']),
+      'High': _mid(p['highPrice']),
+      'Low': _mid(p['lowPrice']),
+      'Close': _mid(p['closePrice']),
       'Volume': p.get('lastTradedVolume', 0),
     })
   df = pd.DataFrame(rows)
@@ -281,7 +289,6 @@ def _epic_for_symbol(symbol: str) -> str | None:
 
   Returns None if symbol not found or has no ig_epic field.
   '''
-  import system_params
   for entry in system_params.DEFAULT_MARKETS.values():
     if entry.get('symbol') == symbol:
       return entry.get('ig_epic')
@@ -310,17 +317,32 @@ def _fetch_via_ig(
         redact_secret(os.environ.get('IG_API_KEY', '')),
       )
     else:
-      logger.warning('[Fetch] IG session HTTP error: %s', e)
+      logger.warning(
+        '[Fetch] IG session HTTP error %s — falling back to yfinance',
+        e.response.status_code if e.response is not None else 'unknown',
+      )
     return None
   except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
     logger.warning('[Fetch] IG session network error: %s', e)
     return None
 
+  # CR-03 fix: use while loop so re-auth can retry the SAME attempt slot
+  # without consuming the next iteration (a `continue` in a for-loop always
+  # advances the iterator, which on the last attempt skips past the boundary
+  # and returns None without ever using the fresh session).
   re_authed = False
-  for attempt in range(1, retries + 1):
+  attempt = 0
+  while attempt < retries:
+    attempt += 1
     try:
       raw = _ig_fetch_ohlcv_raw(epic, days, session)
-      df = _ig_normalise(raw)
+      try:
+        df = _ig_normalise(raw)
+      except DataFetchError as norm_err:
+        # CR-01 fix: normalise errors (e.g. empty/malformed prices) are
+        # non-retryable — return None so caller falls back to yfinance.
+        logger.warning('[Fetch] IG normalise failed: %s — falling back', norm_err)
+        return None
       LAST_FETCH_SOURCE[symbol] = 'ig'
       return df
     except requests.exceptions.HTTPError as e:
@@ -336,7 +358,8 @@ def _fetch_via_ig(
         try:
           session = _ig_create_session()
           re_authed = True
-          continue  # retry same attempt with fresh session
+          attempt -= 1  # CR-03: don't consume attempt slot for re-auth
+          continue
         except (
           requests.exceptions.HTTPError,
           requests.exceptions.ReadTimeout,
@@ -346,8 +369,9 @@ def _fetch_via_ig(
           return None
       else:
         logger.warning(
-          '[Fetch] IG prices HTTP error attempt %d/%d: %s',
-          attempt, retries, e,
+          '[Fetch] IG prices HTTP error attempt %d/%d: status=%s',
+          attempt, retries,
+          e.response.status_code if e.response is not None else 'unknown',
         )
         if attempt < retries:
           time.sleep(backoff_s)
@@ -383,6 +407,10 @@ def fetch_ohlcv(
                     (non-retry-eligible) if the response is missing any of the
                     required OHLCV columns — C-6 revision 2026-04-22.
   '''
+  # WR-04: clear stale entry from prior runs in the same process so daily_run.py
+  # always sees the current run's source, never a leftover from a prior fetch.
+  LAST_FETCH_SOURCE.pop(symbol, None)
+
   # Phase 41: IG credential gate — try IG first; fall back to yfinance.
   ig_key = os.environ.get('IG_API_KEY', '').strip()
   if ig_key:
@@ -394,6 +422,11 @@ def fetch_ohlcv(
       logger.warning(
         '[Fetch] IG fetch failed for %s — falling back to yfinance', symbol,
       )
+      LAST_FETCH_SOURCE[symbol] = 'yfinance_fallback'
+    else:
+      # CR-02: no epic mapping — treat same as fallback so daily_run.py logs
+      # the warning instead of silently missing it.
+      logger.warning('[Fetch] No IG epic for %s — falling back to yfinance', symbol)
       LAST_FETCH_SOURCE[symbol] = 'yfinance_fallback'
   else:
     logger.warning('[Fetch] IG credentials not configured — falling back to yfinance')
