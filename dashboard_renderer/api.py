@@ -84,6 +84,10 @@ def render_dashboard_files(
   mixed-return-type predecessor that returned str on htmx_panel_only=True
   is gone (eliminated annotation lie).
   '''
+  # uid, news_dismissed, and news_panel_collapsed are intentionally omitted:
+  # on-disk renders are not per-user (single shared file). Per-user context
+  # flows through render_dashboard_as_str, which is called per-request with
+  # the authenticated user's state.
   ctx = _build_render_context(
     state=state,
     now=now,
