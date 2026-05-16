@@ -54,12 +54,10 @@ class NewsItem(TypedDict):
 
 # =========================================================================
 # Valid markets allowlist (path-traversal gate).
-# No VALID_MARKETS constant exists in system_params (as of Plan 03); define
-# module-local frozenset. If system_params gains VALID_MARKETS in a future
-# plan, replace this with: from system_params import VALID_MARKETS as _VALID_MARKETS
+# Single source of truth: system_params.KNOWN_MARKET_IDS (T-38-03-04).
 # =========================================================================
 
-_VALID_MARKETS: frozenset = frozenset({'SPI200', 'AUDUSD'})
+from system_params import KNOWN_MARKET_IDS as _VALID_MARKETS
 
 
 # =========================================================================

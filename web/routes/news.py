@@ -13,6 +13,7 @@ import re
 
 from fastapi import Depends, FastAPI, HTTPException, Response
 
+from system_params import KNOWN_MARKET_IDS as _VALID_MARKETS
 from web.dependencies import current_user_id
 
 # ---------------------------------------------------------------------------
@@ -21,10 +22,6 @@ from web.dependencies import current_user_id
 
 # Valid title_hash: exactly 16 lowercase hex chars (sha256[:16] from news_fetcher)
 _HASH_RE = re.compile(r'^[0-9a-f]{16}$')
-
-# Valid markets — mirrors news_fetcher._VALID_MARKETS frozenset exactly.
-# No VALID_MARKETS constant in system_params as of Plan 04; define locally.
-_VALID_MARKETS: frozenset = frozenset({'SPI200', 'AUDUSD'})
 
 
 def _is_known_market(market: str) -> bool:
