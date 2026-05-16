@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
 status: executing
-last_updated: "2026-05-16T08:01:57.152Z"
+last_updated: "2026-05-16T08:04:58.714Z"
 progress:
   total_phases: 14
   completed_phases: 12
@@ -22,15 +22,15 @@ progress:
 - **Core value (v1.0–v1.2, validated):** Deliver a reproducible daily signal at 08:00 Sydney to a hosted dashboard + one email inbox; track paper trades with mark-to-market P&L; gate strategy changes with a 5-year backtest; make every signal hand-reproducible from the dashboard alone.
 - **Operator:** Marc (Perth, AWST UTC+8 — but production scheduler now runs Sydney AEST/AEDT DST-aware per Phase 27 polish commit `05a4c0c`)
 - **Production:** `https://signals.mwiriadi.me` (DigitalOcean droplet + systemd, daily 08:00 Sydney signal cycle, 2084 tests green)
-- **Current focus:** Phase 38 — news-integration
+- **Current focus:** Phase 41 — data-feed-integration-ig-rest-api
 
 ## Current Position
 
-Phase: 39
-Plan: Not started
+Phase: 41 (data-feed-integration-ig-rest-api) — EXECUTING
+Plan: 1 of 3
 Plans: 1 of 4 complete
 Next: /gsd-execute-phase 38 (Plan 02 — news_filter.py)
-Status: Ready to execute
+Status: Executing Phase 41
 
 ### Resume instructions for cloud Claude / fresh clone
 
