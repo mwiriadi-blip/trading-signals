@@ -60,7 +60,7 @@ class TestAtrSeedExposure:
     def test_atr_seed_persisted_in_signal_row(self):
         """atr_seed_for_window returns a finite float for a valid mid-history index.
 
-        window_start_index=20 => seed_bar_idx=19, which is past the 14-bar
+        window_start_index=20 => seed_bar_idx=20, which is past the 14-bar
         Wilder warmup (first non-NaN at bar 13), so the seed must be finite.
         """
         df = _make_ohlc_df(50)
@@ -73,22 +73,25 @@ class TestAtrSeedExposure:
         """Hand-recalc Wilder forward from the seed must match engine ATR within 1e-6.
 
         Setup: 50-bar deterministic ramp.
-        window_start_index=15 => seed_bar_idx=14, past the 14-bar warmup.
+        window_start_index=15 => seed_bar_idx=15 (first bar of window).
         The engine ATR at bar 49 is computed via compute_indicators.
-        The seed is ATR at bar 14 (= window_start_index - 1).
-        Hand-recalc: run Wilder from bar 15 to bar 49 using engine seed.
+        The seed is ATR at bar 15 (= window_start_index).
+        Hand-recalc: run Wilder from bar 16 to bar 49 using engine seed.
+        This mirrors what the Playwright UAT does: seed = ATR at bar[0] of the
+        40-bar OHLC table, then apply TRs for bars 1..39 (all computable from
+        the table, since bar[0].close is available as prev_close for bar[1]).
         """
         df = _make_ohlc_df(50)
         # Engine's full-history ATR series
         df_ind = signal_engine.compute_indicators(df)
         engine_atr_final = float(df_ind['ATR'].iloc[-1])
 
-        # Seed at bar 14 (window_start_index=15 => seed_bar_idx=14)
+        # Seed at bar 15 (window_start_index=15 => seed_bar_idx=15)
         window_start_index = 15
         seed = signal_engine.atr_seed_for_window(df, window_start_index)
         assert math.isfinite(seed), "Seed must be finite for this fixture"
 
-        # Compute TR for bars 15..49 manually
+        # Compute TR for bars 16..49 manually (bar 15's close is prev_close for bar 16)
         close = df['Close'].to_numpy()
         high = df['High'].to_numpy()
         low = df['Low'].to_numpy()
@@ -101,9 +104,9 @@ class TestAtrSeedExposure:
             lc = abs(low[i] - prev_c) if not math.isnan(prev_c) else 0.0
             return max(hl, hc, lc)
 
-        # Wilder forward from seed at bar window_start_index
+        # Wilder forward: seed = ATR at bar[0] of window; apply TRs from bar 1 onward
         atr = seed
-        for i in range(window_start_index, len(df)):
+        for i in range(window_start_index + 1, len(df)):
             tr_i = _tr_bar(i)
             atr = atr + (tr_i - atr) / period
 

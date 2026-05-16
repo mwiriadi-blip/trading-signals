@@ -91,7 +91,7 @@ def _render_trace_indicators(
   Empty indicator_scalars: all 9 rows render with "n/a (need N bars, have 0)".
 
   Phase 29 Plan 11: if atr_seed is provided and finite, render an extra
-  "ATR seed (bar -1)" row before the ATR(14) row so hand-recalc can anchor
+  "ATR seed (bar 0)" row before the ATR(14) row so hand-recalc can anchor
   to the engine-persisted Wilder seed. Stale rows (None or NaN) show a
   "(stale row — refresh after next 08:00 cycle)" fallback.
   '''
@@ -104,12 +104,12 @@ def _render_trace_indicators(
     seed_val_esc = html.escape(f'{float(atr_seed):.6f}', quote=True)
     seed_cell = seed_val_esc
   seed_title = html.escape(
-    'Wilder seed at bar before window — hand-recalc starts here', quote=True
+    'Wilder ATR at first bar of window — hand-recalc applies TRs from bar 1 onward', quote=True
   )
   rows.append(
     f'<tr>'
     f'<td class="trace-indicator-name" title="{seed_title}">'
-    f'ATR seed (bar -1)</td>'
+    f'ATR seed (bar 0)</td>'
     f'<td class="num">{seed_cell}</td>'
     f'</tr>\n'
   )

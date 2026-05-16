@@ -69,15 +69,13 @@ def _scrape_ohlc(page, instrument: str) -> list[dict]:
   ]
 
 
-def _scrape_atr_period_and_value(
-  page, instrument: str
-) -> tuple[int, Decimal]:
+def _scrape_indicators(page, instrument: str) -> list[dict]:
   selector = (
     f'details.trace-disclosure[data-instrument="{instrument}"] '
     f'table.trace-indicators-table tbody tr'
   )
   page.wait_for_selector(selector, timeout=10_000)
-  rows = page.evaluate(
+  return page.evaluate(
     """(sel) => Array.from(document.querySelectorAll(sel))
         .filter(tr => tr.querySelector('td.trace-indicator-name'))
         .map(tr => ({
@@ -86,6 +84,12 @@ def _scrape_atr_period_and_value(
         }))""",
     selector,
   )
+
+
+def _scrape_atr_period_and_value(
+  page, instrument: str
+) -> tuple[int, Decimal]:
+  rows = _scrape_indicators(page, instrument)
   for r in rows:
     m = re.match(r'^ATR\((\d+)\)$', (r['name'] or '').strip())
     if m:
@@ -95,13 +99,35 @@ def _scrape_atr_period_and_value(
   )
 
 
-def _hand_recalc_atr(period: int, ohlc: list[dict]) -> Decimal:
-  '''Wilder ATR(period). Matches signal_engine._wilder_smooth: SMA seed of
-  the first `period` TR values, then recursion
-  sm[t] = sm[t-1] + (tr[t] - sm[t-1]) / period.
+def _scrape_atr_seed(page, instrument: str) -> Decimal | None:
+  '''Read "ATR seed (bar 0)" from the indicators table.
+
+  The engine persists ATR at the first bar of the 40-bar OHLC window (bar 0).
+  Using this as the Wilder starting point lets the hand-recalc apply TRs for
+  bars 1..39 — all computable from the OHLC table since bar[0].close is the
+  prev_close for bar[1]. Bar[-1].close (needed for TR at bar[0]) is not shown.
   '''
-  if len(ohlc) < period + 1:
-    pytest.skip(f'ohlc has {len(ohlc)} bars, need >= {period + 1}')
+  rows = _scrape_indicators(page, instrument)
+  for r in rows:
+    if (r['name'] or '').strip().startswith('ATR seed'):
+      try:
+        return Decimal(r['value'])
+      except Exception:
+        return None
+  return None
+
+
+def _hand_recalc_atr(
+  period: int, ohlc: list[dict], seed: Decimal | None = None
+) -> Decimal:
+  '''Wilder ATR(period). Matches signal_engine._wilder_smooth.
+
+  If `seed` is provided (ATR at bar[0] from "ATR seed (bar 0)" trace row),
+  apply TRs for bar[1..39] starting from seed to arrive at ATR for bar[39].
+  Falls back to naive SMA seed if not provided.
+  '''
+  if len(ohlc) < 2:
+    pytest.skip(f'ohlc has {len(ohlc)} bars, need >= 2')
 
   true_ranges: list[Decimal] = []
   for i in range(1, len(ohlc)):
@@ -111,28 +137,32 @@ def _hand_recalc_atr(period: int, ohlc: list[dict]) -> Decimal:
     tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
     true_ranges.append(tr)
 
-  if len(true_ranges) < period:
-    pytest.skip(
-      f'true_ranges has {len(true_ranges)}, need >= {period}'
-    )
+  if seed is not None:
+    atr = seed
+    for tr in true_ranges:
+      atr = (atr * (period - 1) + tr) / Decimal(period)
+    return atr
 
-  seed = sum(true_ranges[:period], Decimal(0)) / Decimal(period)
-  atr = seed
+  if len(true_ranges) < period:
+    pytest.skip(f'true_ranges has {len(true_ranges)}, need >= {period}')
+  naive_seed = sum(true_ranges[:period], Decimal(0)) / Decimal(period)
+  atr = naive_seed
   for tr in true_ranges[period:]:
     atr = (atr * (period - 1) + tr) / Decimal(period)
   return atr
 
 
 def test_atr_14_handcalc_within_tolerance(page, base_url):
-  '''Scrape live trace panel, recompute ATR(N), assert |delta| <= 1e-6.'''
+  '''Scrape live trace panel, recompute ATR(N) from persisted seed, assert |delta| <= 1e-6.'''
   page.goto(f'{base_url}{DASHBOARD_PATH}')
   _open_trace_panel(page, INSTRUMENT)
   ohlc = _scrape_ohlc(page, INSTRUMENT)
   period, displayed_atr = _scrape_atr_period_and_value(page, INSTRUMENT)
-  recalc = _hand_recalc_atr(period, ohlc)
+  seed = _scrape_atr_seed(page, INSTRUMENT)
+  recalc = _hand_recalc_atr(period, ohlc, seed=seed)
   delta = abs(displayed_atr - recalc)
   assert delta <= ATR_TOLERANCE, (
     f'ATR drift: displayed={displayed_atr} recalc={recalc} '
     f'delta={delta} tolerance={ATR_TOLERANCE} period={period} '
-    f'ohlc_bars={len(ohlc)}'
+    f'ohlc_bars={len(ohlc)} seed={seed}'
   )

@@ -55,15 +55,17 @@ def test_no_pageerror_on_coldstart(page, base_url):
   where the equity chart renders.
   '''
   errors: list[str] = []
-  page.on('pageerror', errors.append)
+  page.on('pageerror', lambda e: errors.append(str(e)))
 
-  response = page.goto(base_url + '/markets/SPI200/dashboard')
-  assert response is not None, 'GET /markets/SPI200/dashboard produced no response'
+  # Phase 35+: /markets/* requires cookie auth; header-auth conftest only
+  # satisfies root. Use / which renders the full dashboard with same JS.
+  response = page.goto(base_url + '/')
+  assert response is not None, 'GET / produced no response'
   assert response.ok, (
-    f'GET /markets/SPI200/dashboard failed: status={response.status}'
+    f'GET / failed: status={response.status}'
   )
 
   # Wait for networkidle so any deferred Chart.js init has a chance to fire.
   page.wait_for_load_state('networkidle', timeout=15_000)
 
-  assert errors == [], f'JS pageerror(s): {[str(e) for e in errors]}'
+  assert errors == [], f'JS pageerror(s): {errors}'

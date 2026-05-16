@@ -298,20 +298,25 @@ def atr_seed_for_window(
   window_start_index: int,
   period: int = ATR_PERIOD,
 ) -> float:
-  '''Return the Wilder ATR value at bar window_start_index - 1 (seed bar).
+  '''Return the Wilder ATR value at bar window_start_index (first bar of window).
 
   This is the engine-persisted anchor a hand-recalc needs to reproduce
-  the displayed ATR without drift: start the Wilder recursion from this
-  seed at the first bar of the window.
+  the displayed ATR without drift. The UAT hand-recalc starts from this
+  seed and applies TR for bars window_start_index+1 .. window_end to
+  arrive at the final displayed ATR value.
+
+  Using bar[0] of the window (not bar[-1]) means the hand-recalc can compute
+  all required TR values from the 40-bar OHLC table alone — bar[0]'s close
+  serves as prev_close for bar[1]'s TR. Bar[-1]'s close is not in the table.
 
   Returns float('nan') if:
-    - window_start_index - 1 < 0 (no bar before the window), or
+    - window_start_index < 0, or
     - the ATR series has NaN at that position (still in warmup).
 
   Re-uses the same _true_range / _wilder_smooth path as compute_atr so the
   result is bit-identical to what the engine computed (no tolerance fudge).
   '''
-  seed_bar_idx = window_start_index - 1
+  seed_bar_idx = window_start_index
   if seed_bar_idx < 0:
     return float('nan')
   # Normalise column names to title-case so callers may pass either 'high' or 'High'.
