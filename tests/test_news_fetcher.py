@@ -397,9 +397,11 @@ def test_cache_miss_writes_envelope_with_date_key(monkeypatch, tmp_path):
   sidecar = tmp_path / 'news_SPI200.json'
   assert sidecar.exists()
   envelope = json.loads(sidecar.read_text())
-  assert set(envelope.keys()) == {'date', 'headlines'}
+  assert set(envelope.keys()) == {'date', 'items', 'error', 'fetched_at', 'stale'}
   assert envelope['date'] == today
-  assert isinstance(envelope['headlines'], list)
+  assert isinstance(envelope['items'], list)
+  assert envelope['error'] is None
+  assert envelope['stale'] is False
 
 
 def test_cache_write_is_atomic(monkeypatch, tmp_path):
