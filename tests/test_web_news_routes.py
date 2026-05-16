@@ -88,7 +88,7 @@ class TestRouteRegistration:
     app_instance.dependency_overrides[current_user_id] = lambda: 'user_a'
     monkeypatch.setattr('state_manager.mutate_user_state', _stub_mutate_user_state)
     c = TestClient(app_instance, raise_server_exceptions=False)
-    resp = c.post('/news/UNKNOWN/dismiss/abc1234567890deff', headers=_AUTH_HEADERS)
+    resp = c.post('/news/UNKNOWN/dismiss/abc1234567890def', headers=_AUTH_HEADERS)
     assert resp.status_code == 404
 
   def test_dismiss_route_rejects_invalid_hash(self, app_instance, monkeypatch):
@@ -133,7 +133,7 @@ class TestRouteRegistration:
 class TestNewsRenderer:
   def _make_headline(self, title='RBA Cuts Rates', url='https://example.com/article',
                      publisher='AFR', pub_date='2026-05-16',
-                     title_hash='abc1234567890deff'):
+                     title_hash='abc1234567890def'):
     return {
       'title': title,
       'url': url,
@@ -194,9 +194,9 @@ class TestNewsRenderer:
 
   def test_dismissed_hash_filters_out_row(self):
     from dashboard_renderer.components.news import render_news_panel
-    h = self._make_headline(title_hash='abc1234567890deff')
-    html = render_news_panel('SPI200', [h], {'abc1234567890deff'}, False)
-    assert 'abc1234567890deff' not in html
+    h = self._make_headline(title_hash='abc1234567890def')
+    html = render_news_panel('SPI200', [h], {'abc1234567890def'}, False)
+    assert 'abc1234567890def' not in html
 
   def test_banner_disappears_when_only_critical_headline_dismissed(self):
     from dashboard_renderer.components.news import render_news_panel
