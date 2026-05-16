@@ -36,6 +36,12 @@ from pnl_engine import entry_side_cost  # Phase 27 #7: half-cost helper
 
 import state_actions
 import daily_run_helpers
+import news_fetcher
+import news_filter
+
+# NEWS_FAIL_POLICY = "BLOCK_ON_FAILURE" — fetch failure treated as
+# gate_status='unknown' and blocks signals (D-02).
+_NEWS_FAIL_POLICY = 'BLOCK_ON_FAILURE'
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +243,29 @@ def _run_daily_check_impl(
         f'{yf_symbol} stale: signal_as_of={signal_as_of} is {days_old}d old '
         f'(threshold={_STALE_THRESHOLD_DAYS}d)',
       ))
+
+    # 3.c.ii: NEWS_FAIL_POLICY = "BLOCK_ON_FAILURE" (D-02).
+    # Call fetch_news for this market; classify result via has_critical_event.
+    # gate_status in {'blocked','unknown'} → SKIP signal generation for this run.
+    # gate_status == 'unknown' means the fetch itself failed (fail-closed).
+    yf_symbol_for_news = market.get('symbol', SYMBOL_MAP.get(state_key, state_key))
+    _news_result = news_fetcher.fetch_news(state_key, yf_symbol_for_news)
+    _event = news_filter.has_critical_event(_news_result, state_key)
+    if _event.gate_status in ('blocked', 'unknown'):
+      logger.warning(
+        '[News] SKIP signal generation for %s: gate_status=%r fetch_error=%r'
+        ' (NEWS_FAIL_POLICY=BLOCK_ON_FAILURE D-02)',
+        state_key, _event.gate_status, _event.fetch_error,
+      )
+      # Record skip in state so dashboard can surface it.
+      if 'news_gate_skips' not in state:
+        state['news_gate_skips'] = {}
+      state['news_gate_skips'][state_key] = {
+        'run_date': run_date_iso,
+        'gate_status': _event.gate_status,
+        'fetch_error': _event.fetch_error,
+      }
+      continue
 
     # 3.d-f: indicators + signal. Scalars feed sizing_engine AND get
     # persisted under state[signals][state_key][last_scalars] (G-2).
