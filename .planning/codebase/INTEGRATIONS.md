@@ -1,168 +1,160 @@
 # External Integrations
 
-**Analysis Date:** 2026-05-15
+**Analysis Date:** 2026-05-16
 
 ## APIs & External Services
 
 **Market Data:**
-- yfinance 1.2.0 - Historical OHLCV data fetcher
-  - SDK: `yfinance` package (lazy-imported via Phase 27 #14 `_get_yf()` to avoid cold-start bloat)
+- yfinance 1.2.0 — Historical OHLCV data + news headlines
+  - SDK: `yfinance` package; lazy-imported via `_get_yf()` accessor (Phase 27 #14) to avoid cold-start bloat
   - Auth: None (free tier; no API key required)
-  - Error handling: Narrow-catch on YFRateLimitError, ReadTimeout, ConnectionError; retry up to 3x with 10s backoff
-  - Timeout: `HTTP_TIMEOUT_S` (30s default) via system_params.py single source of truth
-  - Used by: `data_fetcher.py` (Phase 1, DATA-01/02/03 hex boundary)
-  - Call site: `daily_run.py` daily OHLCV fetch → Phase 1 signal logic
+  - Error handling: Narrow-catch on `YFRateLimitError`, `ReadTimeout`, `ConnectionError`; retry 3x with 10s backoff
+  - Timeout: `HTTP_TIMEOUT_S` (30s default) via `system_params.py`
+  - Used by: `data_fetcher.py` (OHLCV), `news_fetcher.py` (Phase 38 NEWS-01/NEWS-03 headlines)
+  - News cache: `news_cache_{market_id}.json` at repo root (TTL-based; JSON file cache)
 
 **Email Delivery:**
-- Resend - Transactional email service
-  - SDK: `requests.post` to `https://api.resend.com/emails`
-  - Auth: Bearer token via `RESEND_API_KEY` env var (Phase 27 #13 redacted in logs)
-  - Implementation: `notifier/transport.py::_post_to_resend` (retry-eligible transient errors: 429, 5xx, network; non-retryable: 4xx except 429)
-  - Retry policy: 3 attempts with 10s flat backoff (mirrors data_fetcher.py D-12)
-  - Timeout: (5, 30) — 5s connect + 30s read (Phase 27 #13 Fix 2)
-  - Rate limiting: Phase 37 per-user fan-out throttle via `FANOUT_SEMAPHORE_LIMIT` (default 2 req/sec; configurable)
+- Resend — transactional email service
+  - Transport: direct HTTPS POST to `https://api.resend.com/emails` via `httpx`
+  - Auth: Bearer token via `RESEND_API_KEY` env var (redacted in logs via `redact_secret()`)
+  - Implementation: `notifier/transport.py::_post_to_resend`
+  - Retry policy: 3 attempts, 10s flat backoff; 429 and 5xx are retryable; other 4xx are not
+  - Timeout: 5s connect + 30s read
   - Features used:
-    - Standard alerts (daily signal emails): `send_daily_email` → html + text bodies
-    - Crash emails: `send_crash_email` → plaintext only
+    - Daily signal alerts: `notifier/dispatch.py::send_daily_email` (HTML + text bodies)
+    - Crash emails: `notifier/dispatch.py::send_crash_email` (plaintext only)
     - Per-user fan-out: `per_user_fanout.py::send_user_email` (Phase 28+)
-    - Magic-link auth emails: Phase 16.1 `auth_store/_magic_links.py`
-    - Invite emails: Phase 37 `per_user_fanout.py::send_invite_email`
-    - RFC 8058 List-Unsubscribe: Phase 37 email_headers kwarg support
-  - Used by: `notifier/dispatch.py`, `per_user_fanout.py`, Phase 16.1 auth flows
+    - Magic-link auth emails: `auth_store/_magic_links.py`
+    - Invite emails: `per_user_fanout.py::send_invite_email` (Phase 37)
+    - RFC 8058 List-Unsubscribe header support (Phase 37)
 
 ## Data Storage
 
 **Databases:**
-- None (no SQL database)
-- State storage: JSON file (`state.json` at repo root)
-  - Persisted by: `state_manager/__init__.py` + `state_manager/io.py`
-  - Atomic write: tempfile + fsync + os.replace + dir fsync (D-13 durability sequence)
-  - Cross-process locking: fcntl.LOCK_EX (Phase 14 D-13 amendment for web layer state mutation)
-  - Schema version: `STATE_SCHEMA_VERSION` from system_params.py; migrations via `state_manager/migrations.py`
-  - Corruption recovery: JSONDecodeError triggers backup + reinit + warning (STATE-03, D-06)
-  - Decimal handling: `to_aud()` precision boundary + `_decimal_default()` JSON encoder hook (Phase 27 #1)
+- None (no SQL/NoSQL database)
+
+**Application State:**
+- `state.json` — repo root (production trading state)
+  - Writer: `state_manager/__init__.py` + `state_manager/io.py`
+  - Atomic write: tempfile + fsync + `os.replace` + dir fsync (D-13 durability sequence)
+  - Cross-process locking: `fcntl.LOCK_EX` (Phase 14 D-13 amendment)
+  - Schema version: `STATE_SCHEMA_VERSION` from `system_params.py`; migrations in `state_manager/migrations.py`
+  - Corruption recovery: `JSONDecodeError` triggers backup + reinit + warning
   - Content: trades, account balance, equity history, signals, warnings, per-market strategy settings
 
-**Authentication:**
-- Auth file: `auth.json` (Phase 16.1)
-  - Persisted by: `auth_store/_io.py`
+**Authentication Store:**
+- `auth.json` — repo root (Phase 16.1)
+  - Writer: `auth_store/_io.py`
   - Content: user credentials, TOTP secrets, device table, magic-link tokens
-  - Atomic write: same D-13 sequence as state.json (tempfile + fsync + os.replace)
-  - Managed by: `auth_store/` package (users, devices, magic-links submodules)
+  - Same D-13 atomic write sequence as `state.json`
 
 **Backtest Cache:**
-- Parquet files (Phase 23 backtest module)
+- Parquet files — `backtest/` module (Phase 23)
   - Engine: pyarrow 24.0.0
-  - Used by: `backtest/` module for historical OHLCV serialization
-  - Not persisted to state.json (temporary build artifacts)
+  - Purpose: historical OHLCV serialization for backtest runs
+  - Not persisted to `state.json`
+
+**News Cache:**
+- `news_cache_{market_id}.json` — repo root (Phase 38)
+  - Writer: `news_fetcher.py`
+  - TTL-based; avoids repeated yfinance API calls within same session
 
 **File Storage:**
 - Local filesystem only (no S3/cloud storage)
-- Paths:
-  - `state.json` — repo root (production state)
-  - `auth.json` — repo root (user credentials; Phase 16.1)
-  - `dashboard*.html` — repo root (rendered dashboard snapshots; generated by `dashboard_renderer/`)
-  - `state/users/{uid}.lock` — per-user flock files (coordination layer)
+- Key paths:
+  - `state.json` — application state
+  - `auth.json` — user credentials
+  - `dashboard*.html` — rendered dashboard snapshots (generated by `dashboard_renderer/`)
+  - `state/users/{uid}.lock` — per-user flock coordination files
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Custom implementation (Phase 16.1 Plan 03)
-- Type: Shared-secret + TOTP multi-factor
-- Flow:
-  1. Magic-link via email (Phase 16.1, Phase 37 invites)
-  2. Username + password (bcrypt-hashed; legacy path, now de-emphasized)
-  3. TOTP device enrollment (QR code → pyotp seed)
-  4. Session token via itsdangerous (URLSafeTimedSerializer)
+**Auth Provider:** Custom implementation (`auth_store/` package, Phase 16.1)
 
-**Credentials:**
-- Username: `WEB_AUTH_USERNAME` env var (validated at boot; fail-closed RuntimeError)
-- Secret: `WEB_AUTH_SECRET` env var (≥32 chars entropy; validated at boot per Phase 13 D-16/D-17)
-- TOTP: `pyotp.TOTP` per-user seeds stored in `auth.json` (Phase 16.1)
-- Recovery: `OPERATOR_RECOVERY_EMAIL` env var (defaults to `mwiriadi@gmail.com`; Phase 16.1 Plan 03 F-06)
+**Auth flow:**
+1. Magic-link via email → `auth_store/_magic_links.py`
+2. Username + password (bcrypt-hashed; legacy path)
+3. TOTP device enrollment (QR code via `qrcode` + `pyotp` seed)
+4. Session token via `itsdangerous.URLSafeTimedSerializer`
 
-**Session Management:**
-- `itsdangerous.URLSafeTimedSerializer` (auth_store/_devices.py)
-- Session token lifetime: 7 days (configurable via system_params.py)
-- Stored in auth.json device table
+**Env vars:**
+- `WEB_AUTH_USERNAME` — dashboard login username (validated at boot; fail-closed `RuntimeError`)
+- `WEB_AUTH_SECRET` — session signing secret (≥32 chars; validated at boot per D-16/D-17)
+- `TOTP_ISSUER` — TOTP app label (default: `Trading Signals`)
+- `TOTP_DOMAIN` — TOTP account domain (default: `signals.mwiriadi.me`)
+- `OPERATOR_RECOVERY_EMAIL` — fallback recovery contact (default: `mwiriadi@gmail.com`)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
 - None (no Sentry/external APM)
-- In-process: crash_path email via `notifier/crash_path.py` + `RESEND_API_KEY`
+- In-process: crash email via `notifier/crash_path.py` → Resend
 
 **Logs:**
-- Destination: stdout + systemd journal (via systemd service)
-- Format: Python logging module (stdlib)
-- Log redaction: Phase 27 #13 `system_params.redact_secret()` for all secrets
-- Monitored fields: `[Email]`, `[Fan-out]`, `[Invite]`, `[Cycle]`, `[Web]` prefixes for source filtering
+- Destination: stdout → systemd journal
+- Format: Python `logging` module (stdlib)
+- Redaction: `system_params.redact_secret()` applied to all secrets in log output
+- Source prefixes: `[Email]`, `[Fan-out]`, `[Invite]`, `[Cycle]`, `[Web]`
 
 **Health Check:**
-- HTTP GET `/healthz` — returns 200 OK if app started (Phase 11 D-25)
-- Deploy validation: curl retry loop (10 attempts @ 1s) per deploy.sh
+- `GET /healthz` → 200 OK (Phase 11 D-25)
+- nginx rate-limited: 10 req/min zone (`healthz:10m`)
+- Validated by `deploy.sh` (10 retries @ 1s)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Debian Linux droplet (Ubuntu 22.04+; operator-managed)
-- URL: `signals.mwiriadi.me` (domain → nginx reverse proxy)
+- Ubuntu 22.04/24.04 DigitalOcean droplet (IP: `209.38.30.13`)
+- Domain: `signals.mwiriadi.me` (Cloudflare DNS proxy)
 - Port: 8000 (uvicorn internal) → 443 (nginx TLS)
 
-**CI Pipeline:**
-- GitHub Actions workflow (if any) — not detected in codebase
-- Manual deployment: operator runs `deploy.sh` (git pull --ff-only + pip install + systemctl restart)
+**CI Pipeline:** Not detected (no GitHub Actions config in repo)
 
-**Deployment Process:**
-- `deploy.sh` (bash; Phase 11 D-20..D-25)
-  - Branch check: must be on `main`
-  - Git: fetch + pull --ff-only
-  - Pip: install -r requirements.txt (no pip upgrade per REVIEWS MEDIUM #7)
-  - Systemd: restart two units (`trading-signals-web.service`, `trading-signals-backup.service`)
-  - Health check: curl /healthz (10 retries @ 1s)
-  - Idempotent: no state mutation on no-op re-run
-- Backup: `trading-signals-backup.timer` (systemd) runs daily
+**Deploy process (`deploy.sh`):**
+- Branch check: must be on `main`
+- `git pull --ff-only`
+- `pip install -r requirements.txt`
+- `systemctl restart trading-signals-web.service trading-signals-backup.service`
+- `curl /healthz` health check (10 retries @ 1s)
+- Idempotent; no state mutation on no-op re-run
+
+**Backup:** `trading-signals-backup.timer` (systemd) runs daily
 
 ## Environment Configuration
 
-**Required env vars (at deploy time):**
+**Required env vars:**
 ```
 WEB_AUTH_USERNAME=<username>
-WEB_AUTH_SECRET=<32+ char secret via openssl rand -hex 16>
+WEB_AUTH_SECRET=<32+ char secret>
 SIGNALS_EMAIL_TO=<recipient@example.com>
 SIGNALS_EMAIL_FROM=<sender@resend.dev>
-RESEND_API_KEY=<Bearer token>
+RESEND_API_KEY=<re_...token>
 TZ=UTC
 BASE_URL=https://signals.mwiriadi.me
 OPERATOR_RECOVERY_EMAIL=mwiriadi@gmail.com
 ```
 
-**Secrets location:**
-- Droplet: `/home/trader/trading-signals/.env` (sourced by systemd service file)
-- Local dev: `.env` (ignored by git; `.env.example` provides template)
-- Never committed to git (per CLAUDE.md)
-
 **Optional env vars:**
-- `SIGNALS_DASHBOARD_URL` — dashboard URL for email links (fallback to BASE_URL if unset)
+- `SIGNALS_DASHBOARD_URL` — dashboard URL for email links (fallback to `BASE_URL`)
 - `FANOUT_SEMAPHORE_LIMIT` — Resend rate-limit throttle (default 2 req/sec)
+- `LAST_CRASH_PATH` — override crash log path for notifier
+- `RESET_CONFIRM` — required to confirm interactive state reset (`interactive.py`)
+
+**Secrets location:**
+- Droplet: `/home/trader/trading-signals/.env` (sourced by systemd `EnvironmentFile=`)
+- Local dev: `.env` (gitignored; `.env.example` is template)
+- UAT: `.env.uat` (gitignored; holds `WEB_AUTH_SECRET` for Playwright UAT header injection)
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- Magic-link callback: `/routes/login/magic_callback` (Phase 16.1)
-- Admin invites: `/routes/invite` (Phase 37; POST with HTMX)
+- Magic-link callback: `web/routes/login/` (Phase 16.1)
+- Admin invites: `web/routes/invite/` (Phase 37; POST via HTMX)
 
 **Outgoing:**
-- Email callbacks: None (no webhook handlers for Resend delivery events)
-- Monitoring: Manual operator review via dashboard
-
-## Integration Testing
-
-**UAT Substrate:**
-- pytest-playwright 0.5.2 (dev only)
-- Marker: `@pytest.mark.uat` — runs against production droplet
-- Run: `pytest -m uat` (Phase 28 DEBT-01; persisted UAT substrate)
+- No webhook handlers for Resend delivery events
+- No outgoing webhooks to any other service
 
 ---
 
-*Integration audit: 2026-05-15*
+*Integration audit: 2026-05-16*

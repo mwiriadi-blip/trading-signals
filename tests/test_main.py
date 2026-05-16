@@ -35,6 +35,7 @@ import pytest
 
 import data_fetcher  # noqa: F401 — Waves 2/3 monkeypatch target
 import main
+import news_fetcher  # noqa: F401 — 43-02 BLOCK_ON_FAILURE gate monkeypatch target
 import state_manager
 from data_fetcher import (  # noqa: F401 — Wave 3 ERR-01 raises DataFetchError / ShortFrameError
   DataFetchError,
@@ -80,7 +81,10 @@ def _make_args(**overrides) -> argparse.Namespace:
 
 
 def _install_fixture_fetch(monkeypatch) -> None:
-  '''Monkeypatch main.data_fetcher.fetch_ohlcv to return committed fixtures.'''
+  '''Monkeypatch main.data_fetcher.fetch_ohlcv to return committed fixtures.
+  Also stubs news_fetcher.fetch_news → clear NewsResult so BLOCK_ON_FAILURE
+  gate does not block AUDUSD signal generation in tests (43-02).
+  '''
   def _fake(sym, **_kw):
     if sym == '^AXJO':
       return _load_recorded_fixture('axjo_400d.json')
@@ -88,6 +92,9 @@ def _install_fixture_fetch(monkeypatch) -> None:
       return _load_recorded_fixture('audusd_400d.json')
     raise AssertionError(f'unexpected symbol: {sym!r}')
   monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake)
+  from datetime import UTC, datetime
+  _clear = news_fetcher.NewsResult(items=[], error=None, fetched_at=datetime.now(UTC))
+  monkeypatch.setattr(news_fetcher, 'fetch_news', lambda *_a, **_kw: _clear)
 
 
 # =========================================================================
@@ -940,17 +947,14 @@ class TestOrchestrator:
     _install_fixture_fetch(monkeypatch)
 
     # Force render_dashboard_files to raise at CALL TIME.
-    # C-2 reviews: monkeypatch target is `dashboard.render_dashboard_files`
-    # (the module attribute on the real dashboard module — the in-helper
-    # `import dashboard` reuses sys.modules['dashboard']). NOT
-    # `main.dashboard.render_dashboard_files`, which does not exist once the
-    # module-top import is removed per C-2.
-    # Phase 26 Plan 06 (R2): renamed render_dashboard -> render_dashboard_files.
-    import dashboard as _dashboard_module_for_patch
+    # Patch directly on dashboard_renderer.api — daily_run_helpers does
+    # `from dashboard_renderer.api import render_dashboard_files` inside
+    # the try block; monkeypatching the module attribute redirects that call.
+    import dashboard_renderer.api as _dr_api
 
     def _raise(*args, **kwargs):
       raise RuntimeError('simulated render failure')
-    monkeypatch.setattr(_dashboard_module_for_patch, 'render_dashboard_files', _raise)
+    monkeypatch.setattr(_dr_api, 'render_dashboard_files', _raise)
 
     rc = main.main(['--once'])
     assert rc == 0, 'D-06: dashboard failure must NOT change exit code'
@@ -970,20 +974,16 @@ class TestOrchestrator:
   @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_dashboard_import_time_failure_never_crashes_run(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''C-2 reviews: an import-time error in dashboard.py (syntax error,
-    missing sub-import, etc.) MUST be caught by the same `except Exception`
-    that catches runtime render failures. The in-helper `import dashboard`
-    statement makes this possible.
+    '''C-2 reviews: an import-time error in dashboard_renderer.api MUST be
+    caught by the same `except Exception` that catches runtime failures.
+    The local `from dashboard_renderer.api import ...` inside the try block
+    makes this possible.
 
-    Strategy: replace sys.modules['dashboard'] with an object whose
-    attribute access raises. When `_render_dashboard_never_crash` runs
-    `import dashboard`, Python reloads via the fake, and when the helper
-    tries to reach `dashboard.render_dashboard`, attribute access fails —
-    the try/except catches, and the run completes with rc == 0.
-
-    If this test ever fails, the most likely cause is that a regression
-    moved `import dashboard` back to main.py module scope — fix by moving
-    it back inside the helper (C-2 reviews).
+    Strategy: replace sys.modules['dashboard_renderer.api'] with an object
+    whose attribute access raises. When `_render_dashboard_never_crash` runs
+    `from dashboard_renderer.api import render_dashboard_files`, Python finds
+    the fake module, getattr raises ImportError — the try/except catches, and
+    the run completes with rc == 0.
     '''
     import sys
     caplog.set_level(logging.WARNING)
@@ -997,15 +997,15 @@ class TestOrchestrator:
         raise ImportError(
           f'simulated import-time failure: cannot access {name!r}'
         )
-    original = sys.modules.get('dashboard')
-    sys.modules['dashboard'] = _BrokenDashboard()
+    original = sys.modules.get('dashboard_renderer.api')
+    sys.modules['dashboard_renderer.api'] = _BrokenDashboard()
     try:
       rc = main.main(['--once'])
     finally:
       if original is not None:
-        sys.modules['dashboard'] = original
+        sys.modules['dashboard_renderer.api'] = original
       else:
-        sys.modules.pop('dashboard', None)
+        sys.modules.pop('dashboard_renderer.api', None)
 
     assert rc == 0, (
       'C-2 reviews: dashboard IMPORT-time failure must NOT change exit code'
@@ -1617,36 +1617,64 @@ class TestCrashEmailBoundary:
   '''
 
   def test_build_crash_state_summary_contains_core_sections(self) -> None:
-    '''Test 1: signals + account + positions sections present; trade_log /
-    equity_history / warnings excluded per D-06 bound.
+    '''Test 1: allowlisted keys (signals, last_run, markets) present; per-user
+    and credential keys excluded per Phase 43 D-01 allowlist bound.
+
+    Phase 43 amendment: _build_crash_state_summary now uses allowlist redaction
+    (CRASH_EMAIL_STATE_ALLOWLIST). Output is JSON. Only schema_version,
+    last_run, markets, strategy_settings, and signals keys appear. Per-user
+    keys (account, positions, trade_log, equity_history, warnings, users) are
+    excluded; a "_redacted_keys" marker is added.
     '''
     state = {
+      'schema_version': 12,
+      'last_run': '2026-04-21',
       'signals': {'^AXJO': {'signal': 1}, 'AUDUSD=X': {'signal': 0}},
+      'markets': {},
+      'strategy_settings': {},
       'account': 100_000.0,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'trade_log': [{'fake': 'trade'}] * 500,
       'equity_history': [{'date': '2026-01-01', 'equity': 99_000.0}] * 100,
       'warnings': [{'date': '2026-04-21', 'source': 'x', 'message': 'y'}] * 50,
+      'users': {'uid-x': {'totp_secret': 'secret'}},
     }
     s = main._build_crash_state_summary(state)
-    assert 'signals:' in s
-    assert 'account:' in s
-    assert 'positions:' in s
-    assert 'trade_log' not in s
-    assert 'equity_history' not in s
-    assert 'warnings' not in s
+    # Allowlisted keys are present (JSON format uses double-quoted keys).
+    assert '"signals"' in s
+    assert '"last_run"' in s
+    assert '"schema_version"' in s
+    # Excluded keys do NOT appear in the body (they appear only in the
+    # _redacted_keys marker, but not as top-level JSON keys).
+    assert '"trade_log"' not in s
+    assert '"equity_history"' not in s
+    assert '"warnings"' not in s
+    assert '"users"' not in s
+    assert '"account"' not in s
+    assert '"positions"' not in s
+    # Redaction marker is present.
+    assert '[REDACTED]' in s
 
   def test_build_crash_state_summary_state_none_returns_placeholder(self) -> None:
     '''Test 2: state=None → sentinel placeholder string.'''
     s = main._build_crash_state_summary(None)
     assert s == '(state not loaded — crash before load_state)'
 
-  def test_build_crash_state_summary_renders_open_positions(self) -> None:
-    '''Test 3: open SPI200 LONG renders as "SPI200: LONG 2@7200.0"; FLAT
-    AUDUSD renders as "AUDUSD: (none)".
+  def test_build_crash_state_summary_renders_signals_not_positions(self) -> None:
+    '''Test 3: allowlist includes signals (Phase 43 D-01); positions (per-user)
+    are excluded. Signals content is present; position direction/entry_price
+    are not in the output.
+
+    Phase 43 amendment: positions are per-user data and are NOT in the
+    CRASH_EMAIL_STATE_ALLOWLIST. The old format ("SPI200: LONG 2@7200") is
+    no longer rendered; instead, signals appear in JSON form.
     '''
     state = {
+      'schema_version': 12,
+      'last_run': '2026-05-16',
       'signals': {'^AXJO': {'signal': 1}, 'AUDUSD=X': {'signal': 0}},
+      'markets': {},
+      'strategy_settings': {},
       'account': 100_000.0,
       'positions': {
         'SPI200': {
@@ -1656,8 +1684,13 @@ class TestCrashEmailBoundary:
       },
     }
     s = main._build_crash_state_summary(state)
-    assert 'SPI200: LONG 2@7200' in s
-    assert 'AUDUSD: (none)' in s
+    # Signals are allowlisted and present.
+    assert '"signals"' in s
+    assert '^AXJO' in s
+    # Positions are per-user data — excluded by allowlist.
+    assert 'LONG' not in s
+    assert '7200' not in s
+    assert '"positions"' not in s
 
   def test_send_crash_email_wrapper_calls_notifier(
       self, monkeypatch) -> None:
@@ -1857,11 +1890,11 @@ class TestCrashEmailBoundary:
     # Received state must be the cached state — not None (SC-3).
     assert received is cached
     # _build_crash_state_summary on the cached state must NOT render the
-    # sentinel placeholder and must include signal + account.
+    # sentinel placeholder. Phase 43 D-01: output is JSON with allowlisted keys;
+    # 'signals' is allowlisted; 'account' is per-user (excluded by allowlist).
     summary = main._build_crash_state_summary(received)
     assert 'state not loaded' not in summary
-    assert 'account:' in summary
-    assert 'signals:' in summary
+    assert '"signals"' in summary
 
 
 class TestWarningCarryOverFlow:

@@ -16,6 +16,7 @@ import argparse
 import logging
 import os
 import sys
+from decimal import Decimal
 
 import state_manager
 import system_params
@@ -231,8 +232,8 @@ def _handle_reset(args: argparse.Namespace) -> int:
   # W3 invariant (one-shot CLI, not part of the run_daily_check 2-saves
   # contract).
   fresh_state = state_manager.reset_state()
-  fresh_state['initial_account'] = float(initial_account)
-  fresh_state['account'] = float(initial_account)  # Phase 10 BUG-01 D-01
+  fresh_state['initial_account'] = Decimal(str(initial_account))
+  fresh_state['account'] = Decimal(str(initial_account))  # Phase 10 BUG-01 D-01
   fresh_state['contracts'] = {'SPI200': spi_contract, 'AUDUSD': audusd_contract}
   def _apply_reset(s: dict) -> None:
     '''--reset semantics: discard whatever's in the freshly-loaded state

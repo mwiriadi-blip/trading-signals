@@ -38,20 +38,16 @@ STALENESS_DAYS_THRESHOLD: int = 2
 def _render_dashboard_never_crash(state: dict, out_path: Path, now: datetime) -> None:
   '''D-06: dashboard render failure never crashes the run.
 
-  C-2 reviews: `import dashboard` lives INSIDE the helper body (not at
-  module top) so import-time errors in dashboard.py — syntax errors,
-  bad sub-imports, circular-import bugs — are caught by the SAME
-  `except Exception` that catches runtime render failures. Without
-  this, an import-time dashboard error takes down main.py at module
-  load time, before the helper even runs.
+  Local import inside try so import-time errors in dashboard_renderer are
+  caught by the same `except Exception` as runtime failures — C-2 pattern.
 
   The ONLY place in this codebase where `except Exception:` is correct —
   dashboard.html is a cosmetic artefact. State is already saved; email
   still dispatches (Phase 6). Never abort the run on a render failure.
   '''
   try:
-    import dashboard  # local import — C-2 isolates import-time failures
-    dashboard.render_dashboard_files(state, out_path, now=now)
+    from dashboard_renderer.api import render_dashboard_files as _render_df
+    _render_df(state, out_path, now=now)
   except Exception as e:
     logger.warning('[Dashboard] render failed: %s: %s', type(e).__name__, e)
 
@@ -456,3 +452,12 @@ def _format_run_summary_footer(
     warnings,
     state_saved_label,
   )
+
+
+def record_news_gate_skip(state, state_key, run_date_iso, event):
+  """Record a news gate skip in state for dashboard display (D-02)."""
+  state.setdefault('news_gate_skips', {})[state_key] = {
+    'run_date': run_date_iso,
+    'gate_status': event.gate_status,
+    'fetch_error': event.fetch_error,
+  }

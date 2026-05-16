@@ -79,7 +79,7 @@ def client_with_dashboard(monkeypatch, tmp_path):
 
   # Track render_dashboard_files invocations (Plan 26-06 R2 rename).
   render_calls = []
-  import dashboard
+  import dashboard_renderer.api as dashboard
 
   def _track_render(state, *args, **kwargs):
     render_calls.append(state)
@@ -313,7 +313,7 @@ class TestRenderFailure:
       lambda *_a, **_kw: {'schema_version': 1},
     )
 
-    import dashboard
+    import dashboard_renderer.api as dashboard
 
     def _exploding_render(state, *args, **kwargs):
       raise RuntimeError('simulated render failure')
@@ -360,7 +360,7 @@ class TestFirstRun:
     # _is_stale's first FileNotFoundError branch is exercised, returning
     # True; render is attempted but our stubbed render_dashboard writes
     # dashboard.html — so we also disable that for this test.
-    import dashboard
+    import dashboard_renderer.api as dashboard
     # Override the tracked render to NOT create dashboard.html (simulate
     # render itself failing to write — e.g., disk full mid-write).
     def _no_write_render(*_a, **_kw):
@@ -379,7 +379,7 @@ class TestFirstRun:
   def test_503_body_is_dashboard_not_ready(self, client_with_dashboard, auth_headers):
     '''D-10: 503 body is the literal string "dashboard not ready".'''
     client, tmp, _ = client_with_dashboard
-    import dashboard
+    import dashboard_renderer.api as dashboard
     monkeypatch_dashboard = pytest.MonkeyPatch()
     try:
       monkeypatch_dashboard.setattr(dashboard, 'render_dashboard_files', lambda *_a, **_kw: None)
@@ -395,7 +395,7 @@ class TestFirstRun:
   def test_503_content_type_is_text_plain(self, client_with_dashboard, auth_headers):
     '''D-10: 503 Content-Type is "text/plain; charset=utf-8".'''
     client, tmp, _ = client_with_dashboard
-    import dashboard
+    import dashboard_renderer.api as dashboard
     monkeypatch_dashboard = pytest.MonkeyPatch()
     try:
       monkeypatch_dashboard.setattr(dashboard, 'render_dashboard_files', lambda *_a, **_kw: None)

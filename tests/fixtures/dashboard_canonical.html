@@ -1,4 +1,4 @@
-<!-- captured at HEAD bd91ae8 after 27-08+27-11 -->
+<!-- captured at HEAD a75470c after 27-08+27-11 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,6 +9,12 @@
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/ext/json-enc.js" integrity="sha384-nRnAvEUI7N/XvvowiMiq7oEI04gOXMCqD3Bidvedw+YNbj7zTQACPlRI3Jt3vYM4" crossorigin="anonymous"></script>
   <script>
+
+function _escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function handleTradesError(evt) {
   if (evt.detail.successful) return;
@@ -28,11 +34,15 @@ function handleTradesError(evt) {
     }
     var heading = '<p class="error-heading">Could not save trade:</p>';
     var rows = (body.errors || []).map(function (e) {
-      return '<div class="error-row"><code>' + e.field + '</code>: ' + e.reason + '</div>';
+      return '<div class="error-row"><code>' + _escapeHtml(e.field) + '</code>: ' + _escapeHtml(e.reason) + '</div>';
     }).join('');
     errorBox.innerHTML = heading + '<div class="error-rows">' + rows + '</div>';
   } else if (status === 409) {
-    errorBox.innerHTML = '<p class="error-heading">' + evt.detail.xhr.responseText + '</p>';
+    var p409 = document.createElement('p');
+    p409.className = 'error-heading';
+    p409.textContent = evt.detail.xhr.responseText;
+    errorBox.innerHTML = '';
+    errorBox.appendChild(p409);
   } else {
     errorBox.innerHTML = '<p class="error-heading">Server error — see journald: journalctl -u trading-signals-web</p>';
   }
@@ -1007,14 +1017,9 @@ input:focus-visible,
 <details class="news-panel-disclosure" open hx-post="/news/AUDUSD/toggle-collapse" hx-trigger="toggle" hx-swap="none">
 <summary class="news-panel-summary">Market News</summary>
 <div class="news-panel-inner">
-<div class="news-banner"><p class="news-banner-heading">Possible market-moving news — operator review recommended</p></div>
 <table class="news-table">
 <tbody>
-<tr id="news-row-30a1d518c9f8fd99"><td class="news-link"><a href="https://finance.yahoo.com/economy/policy/articles/socgen-apos-overnight-economic-news-095900184.html" target="_blank" rel="noopener noreferrer">SocGen&#x27;s Overnight Economic News Summary</a></td><td class="news-meta">MT Newswires · 2026-05-05T09:59:00Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/30a1d518c9f8fd99" hx-target="#news-row-30a1d518c9f8fd99" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
-<tr id="news-row-b6884fcfad44b29a"><td class="news-link"><a href="https://finance.yahoo.com/news/socgen-says-australia-dollar-apos-155146370.html" target="_blank" rel="noopener noreferrer">SocGen Says Australia Dollar&#x27;s Resilience Is &quot;Striking&quot;</a></td><td class="news-meta">MT Newswires · 2026-03-10T15:51:46Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/b6884fcfad44b29a" hx-target="#news-row-b6884fcfad44b29a" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
-<tr id="news-row-56f94d19cf5de69d"><td class="news-link"><a href="https://finance.yahoo.com/news/australian-dollar-tops-g10-rba-115750586.html" target="_blank" rel="noopener noreferrer">Australian Dollar Tops G10 After RBA Rate Hike, MUFG Says</a></td><td class="news-meta">MT Newswires · 2026-02-03T11:57:50Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/56f94d19cf5de69d" hx-target="#news-row-56f94d19cf5de69d" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
-<tr id="news-row-5a3ee44400f01dac"><td class="news-link"><a href="https://finance.yahoo.com/news/mitsubishi-ufg-says-global-backdrop-171505818.html" target="_blank" rel="noopener noreferrer">Mitsubishi UFG Says Global Backdrop, Central Bank Policy Shifts Provide More Support for Australian, New Zealand Dollars</a></td><td class="news-meta">MT Newswires · 2025-12-31T17:15:05Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/5a3ee44400f01dac" hx-target="#news-row-5a3ee44400f01dac" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
-<tr id="news-row-bf7c380d82484b65"><td class="news-link"><a href="https://finance.yahoo.com/news/hawkish-bank-australia-brings-forward-110927590.html" target="_blank" rel="noopener noreferrer">Hawkish Reserve Bank of Australia Update Brings Forward Rate Hike Expectations, Says MUFG</a></td><td class="news-meta">MT Newswires · 2025-12-09T11:09:27Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/bf7c380d82484b65" hx-target="#news-row-bf7c380d82484b65" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
+<p class="subtle">No headlines today.</p>
 </tbody>
 </table>
 </div>
@@ -1561,10 +1566,10 @@ input:focus-visible,
 </section>
 <section aria-labelledby="heading-trades">
   <h2 id="heading-trades">Closed Trades</h2>
-  <p class="subtle">last 20</p>
+  <p class="subtle">last 200</p>
   <div class="table-scroll" tabindex="0" role="region" aria-label="Closed trades (scrollable)">
   <table class="data-table">
-    <caption class="visually-hidden">Most recent 20 closed trades, newest first</caption>
+    <caption class="visually-hidden">Most recent 200 closed trades, newest first</caption>
     <thead>
       <tr>
         <th scope="col">Closed</th>

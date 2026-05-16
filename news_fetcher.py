@@ -29,9 +29,10 @@ import os
 import re
 import tempfile
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import requests.exceptions
 
@@ -53,11 +54,56 @@ class NewsItem(TypedDict):
 
 
 # =========================================================================
+# NewsResult — structured return type for fetch_news (D-02 fail-closed gate).
+# error is None on success; one of the typed reason strings on failure.
+# fetched_at is always populated so callers can log timing.
+# =========================================================================
+
+@dataclass(frozen=True)
+class NewsResult:
+  '''Structured result for fetch_news — NEVER a bare list (D-02 fail-closed).
+
+  Typed error reasons (T-43-05: no raw exception text surfaced to dashboard):
+    "timeout"             — ReadTimeout after retries exhausted
+    "http_error"          — Non-2xx HTTP response
+    "parse_error"         — JSON / schema parse failure
+    "network_unreachable" — ConnectionError after retries exhausted
+    "cache_missing"       — Cache file does not exist (never populated)
+    "cache_corrupt"       — Cache file exists but JSON parse failed
+  stale=True means refresh failed; items are from the last successful fetch.
+  stale=False (default) means items are current or no prior data exists.
+  '''
+  items: list = field(default_factory=list)
+  error: 'str | None' = None
+  fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+  stale: bool = False
+
+  def __post_init__(self):
+    # Validate typed error reasons (prevents raw exception strings leaking).
+    _VALID_ERRORS = frozenset({
+      'timeout', 'http_error', 'parse_error', 'network_unreachable',
+      'cache_missing', 'cache_corrupt', None,
+    })
+    if self.error not in _VALID_ERRORS:
+      # Coerce unknown errors to parse_error to avoid leaking raw text.
+      object.__setattr__(self, 'error', 'parse_error')
+
+
+# =========================================================================
 # Valid markets allowlist (path-traversal gate).
 # Single source of truth: system_params.KNOWN_MARKET_IDS (T-38-03-04).
 # =========================================================================
 
 from system_params import KNOWN_MARKET_IDS as _VALID_MARKETS
+
+# =========================================================================
+# Cache directory — absolute path anchored to project root (D-04).
+# Using __file__ avoids CWD-relative path bugs (T-38-03-04 defence-in-depth).
+# Directory created at import time; idempotent (exist_ok=True).
+# =========================================================================
+
+_PROJECT_ROOT = Path(__file__).parent
+_CACHE_DIR = _PROJECT_ROOT / '.cache' / 'news'
 
 
 # =========================================================================
@@ -158,14 +204,17 @@ def _is_valid_market_id(market_id: str) -> bool:
 
 
 def _cache_path(market_id: str) -> Path:
-  '''Return the sidecar cache path for the given market_id.
+  '''Return the cache path for the given market_id under .cache/news/.
 
+  Uses absolute path anchored to project root (D-04: no CWD-relative paths).
   Raises ValueError if market_id is not in the allowlist or contains
   traversal characters. Must be called BEFORE any Path construction.
   '''
   if not _is_valid_market_id(market_id):
     raise ValueError(f'invalid market_id: {market_id!r}')
-  return Path(f'news_cache_{market_id}.json')
+  path = _CACHE_DIR / f'news_{market_id}.json'
+  path.parent.mkdir(parents=True, exist_ok=True)
+  return path
 
 
 # =========================================================================
@@ -273,10 +322,10 @@ def _load_cache(path: Path) -> 'list[NewsItem] | None':
       return None
     if envelope.get('date') != date.today().isoformat():
       return None
-    headlines = envelope.get('headlines')
-    if not isinstance(headlines, list):
+    items = envelope.get('items') or envelope.get('headlines')
+    if not isinstance(items, list):
       return None
-    return headlines
+    return items
   except (FileNotFoundError, json.JSONDecodeError, OSError, KeyError, TypeError):
     return None
 
@@ -321,29 +370,43 @@ def fetch_news(
   max_items: int = 5,
   retries: int = 3,
   backoff_s: float = 5.0,
-) -> 'list[NewsItem]':
+) -> NewsResult:
   '''Fetch top-N deduplicated news items for the given market symbol.
 
-  1. Validates market_id against allowlist (returns [] on miss — no yfinance call).
+  Returns a NewsResult — NEVER a bare list (D-02 fail-closed gate).
+  NEVER raises; all exceptions are converted to NewsResult(error=<typed_reason>).
+
+  1. Validates market_id against allowlist (error='parse_error' on miss — no yfinance call).
   2. Checks sidecar cache (JSON date field TTL — one fetch per market per day).
   3. On cache miss: calls yfinance.Ticker(symbol).news, normalises both schema
      shapes, deduplicates by title_hash, writes cache atomically.
   4. Retries on transient network errors (ReadTimeout, ConnectionError).
-  5. Returns [] after retries exhausted.
+  5. Returns NewsResult(items=[], error=<reason>, ...) after retries exhausted.
 
   No server-side HTTP calls to headline URLs (SSRF closed — T-38-03-02).
+
+  Typed error reasons (T-43-05: no raw exception text surfaced to dashboard):
+    "timeout"             — ReadTimeout after retries exhausted
+    "http_error"          — Non-2xx HTTP response
+    "parse_error"         — JSON / schema parse failure
+    "network_unreachable" — ConnectionError after retries exhausted
   '''
+  import requests.exceptions as _req_exc
+  now = datetime.now(UTC)
+
   if not _is_valid_market_id(market_id):
     _LOGGER.warning('fetch_news rejected unknown market_id=%r', market_id)
-    return []
+    return NewsResult(items=[], error='parse_error', fetched_at=now)
 
   cache_path = _cache_path(market_id)
   cached = _load_cache(cache_path)
   if cached is not None:
-    return cached[:max_items]
+    return NewsResult(items=cached[:max_items], error=None, fetched_at=now)
 
   # Cache miss — fetch from yfinance with retry loop
   last_exc: Exception | None = None
+  last_error_reason: 'Literal["timeout","http_error","parse_error","network_unreachable"]' = 'parse_error'
+
   for attempt in range(retries):
     try:
       yf_mod = _get_yf()
@@ -368,7 +431,13 @@ def fetch_news(
 
       items = deduped[:max_items]
 
-      envelope = {'date': date.today().isoformat(), 'headlines': items}
+      envelope = {
+        'items': items,
+        'error': None,
+        'fetched_at': datetime.now(UTC).isoformat(),
+        'stale': False,
+        'date': date.today().isoformat(),
+      }
       try:
         _write_cache(cache_path, envelope)
       except Exception as write_exc:
@@ -378,12 +447,26 @@ def fetch_news(
           write_exc,
         )
 
-      return items
+      return NewsResult(items=items, error=None, fetched_at=datetime.now(UTC))
 
-    except _RETRY_EXCEPTIONS as exc:
+    except _req_exc.ReadTimeout as exc:
       last_exc = exc
+      last_error_reason = 'timeout'
       _LOGGER.warning(
-        'fetch_news transient error (attempt %d/%d) market_id=%r: %s',
+        'fetch_news timeout (attempt %d/%d) market_id=%r: %s',
+        attempt + 1,
+        retries,
+        market_id,
+        exc,
+      )
+      if attempt < retries - 1:
+        time.sleep(backoff_s)
+
+    except _req_exc.ConnectionError as exc:
+      last_exc = exc
+      last_error_reason = 'network_unreachable'
+      _LOGGER.warning(
+        'fetch_news connection error (attempt %d/%d) market_id=%r: %s',
         attempt + 1,
         retries,
         market_id,
@@ -394,6 +477,7 @@ def fetch_news(
 
     except Exception as exc:
       last_exc = exc
+      last_error_reason = 'parse_error'
       _LOGGER.warning(
         'fetch_news unexpected error (attempt %d/%d) market_id=%r: %s',
         attempt + 1,
@@ -405,9 +489,154 @@ def fetch_news(
         time.sleep(backoff_s)
 
   _LOGGER.error(
-    'fetch_news failed after %d retries for market_id=%r: %s',
+    'fetch_news failed after %d retries for market_id=%r error=%r: %s',
     retries,
     market_id,
+    last_error_reason,
     last_exc,
   )
-  return []
+  return NewsResult(items=[], error=last_error_reason, fetched_at=datetime.now(UTC))
+
+
+# =========================================================================
+# Cache-first API (D-04) — load from cache; refresh out-of-band in scheduler
+# =========================================================================
+
+_EPOCH_0 = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def load_news_cache(market_id: str) -> NewsResult:
+  '''Load news from the per-market cache file. Performs NO HTTP.
+
+  Distinct return states:
+    - Cache file missing  → NewsResult(error="cache_missing", stale=False)
+      This is NOT the same as stale — missing means never populated.
+    - Cache file corrupt  → NewsResult(error="cache_corrupt", stale=False)
+    - Cache file valid    → NewsResult reconstructed from payload; stale as stored.
+
+  Raises ValueError if market_id is invalid (same as _cache_path).
+  '''
+  now = datetime.now(UTC)
+  cache_file = _cache_path(market_id)
+
+  if not cache_file.exists():
+    return NewsResult(
+      items=[],
+      error='cache_missing',
+      fetched_at=_EPOCH_0,
+      stale=False,
+    )
+
+  try:
+    raw = cache_file.read_text(encoding='utf-8')
+    payload = json.loads(raw)
+  except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+    return NewsResult(
+      items=[],
+      error='cache_corrupt',
+      fetched_at=now,
+      stale=False,
+    )
+
+  if not isinstance(payload, dict):
+    return NewsResult(
+      items=[],
+      error='cache_corrupt',
+      fetched_at=now,
+      stale=False,
+    )
+
+  items = payload.get('items', [])
+  if not isinstance(items, list):
+    items = []
+
+  error_raw = payload.get('error')
+  # Only allow typed error strings through (same allowlist as NewsResult.__post_init__)
+  _VALID = frozenset({
+    'timeout', 'http_error', 'parse_error', 'network_unreachable',
+    'cache_missing', 'cache_corrupt', None,
+  })
+  error = error_raw if error_raw in _VALID else 'parse_error'
+
+  stale = bool(payload.get('stale', False))
+
+  fetched_at_raw = payload.get('fetched_at', '')
+  try:
+    fetched_at = datetime.fromisoformat(fetched_at_raw) if fetched_at_raw else _EPOCH_0
+  except (ValueError, TypeError):
+    fetched_at = _EPOCH_0
+
+  return NewsResult(items=items, error=error, fetched_at=fetched_at, stale=stale)
+
+
+def refresh_news_cache(market_id: str, symbol: str) -> NewsResult:
+  '''Fetch fresh news and write atomically to .cache/news/<market>.json.
+
+  Called by scheduler_driver — NOT from the render path.
+
+  On success (result.error is None):
+    - Writes fresh result with stale=False.
+
+  On failure (result.error is not None):
+    - Reads existing cache (if present).
+    - If prior cache exists: rewrite preserving its items and fetched_at,
+      but set error=result.error and stale=True (last-good-data + error flag).
+    - If no prior cache: write empty result with stale=False so missing-cache
+      state is DISTINCT from stale (D-04 must_have).
+
+  Atomic write:
+    tmp_path = cache_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(payload))
+    os.replace(tmp_path, cache_path)   # atomic on POSIX
+
+  NEVER open(cache_path, "w") directly. NEVER json.dump to the live path.
+  '''
+  now = datetime.now(UTC)
+  result = fetch_news(market_id, symbol)
+  cache_file = _cache_path(market_id)
+
+  if result.error is None:
+    # Success: write fresh data with stale=False
+    payload = {
+      'items': result.items,
+      'error': None,
+      'fetched_at': result.fetched_at.isoformat(),
+      'stale': False,
+    }
+  else:
+    # Failure: try to preserve prior cache items
+    prior = load_news_cache(market_id)
+    if prior.error not in ('cache_missing', 'cache_corrupt'):
+      # Prior cache exists and is readable — preserve items + fetched_at
+      payload = {
+        'items': prior.items,
+        'error': result.error,
+        'fetched_at': prior.fetched_at.isoformat(),
+        'stale': True,
+      }
+    else:
+      # No prior cache — write empty with stale=False (missing != stale)
+      payload = {
+        'items': [],
+        'error': result.error,
+        'fetched_at': now.isoformat(),
+        'stale': False,
+      }
+
+  # Atomic write: tmp → os.replace → cache_file (POSIX atomic on same filesystem)
+  tmp_path = cache_file.parent / (cache_file.name + '.tmp')
+  try:
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp_path, cache_file)
+  except Exception as write_exc:
+    _LOGGER.warning(
+      'refresh_news_cache atomic write failed for market_id=%r: %s',
+      market_id,
+      write_exc,
+    )
+    try:
+      tmp_path.unlink(missing_ok=True)
+    except Exception:
+      pass
+
+  return result

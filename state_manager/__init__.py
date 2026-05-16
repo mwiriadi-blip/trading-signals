@@ -42,6 +42,7 @@ import logging
 import os
 import shutil
 import sys
+import threading
 import warnings
 import zoneinfo
 from datetime import UTC, datetime, timezone
@@ -124,6 +125,10 @@ from state_manager.trades import (
 logger = logging.getLogger(__name__)
 
 _AWST = zoneinfo.ZoneInfo('Australia/Perth')
+
+# Re-entrancy guard for mutate_state.  threading.local() is safe for
+# concurrent test runs — each thread has its own independent value.
+_MUTATE_STATE_ACTIVE = threading.local()
 
 # Re-exported so any caller that imported these from state_manager still works.
 _REQUIRED_TRADE_FIELDS = validation._REQUIRED_TRADE_FIELDS
@@ -368,18 +373,31 @@ def mutate_state(
 
   Returns the post-mutation state dict (after save).
   '''
-  fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
+  # Re-entrancy guard: set flag BEFORE fcntl.flock so a nested call raises
+  # immediately without ever attempting lock acquisition (avoids deadlock).
+  prior = getattr(_MUTATE_STATE_ACTIVE, 'value', False)
+  if prior:
+    caller = sys._getframe(1).f_code.co_name
+    raise RuntimeError(
+      f'mutate_state is not re-entrant — do not call mutate_state inside a '
+      f'mutate_state callback (detected from caller: {caller!r})'
+    )
+  _MUTATE_STATE_ACTIVE.value = True
   try:
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
     try:
-      state = load_state(path=path, _under_lock=True)
-      mutator(state)
-      io._save_state_unlocked(state, path=path)
-      return state
+      fcntl.flock(fd, fcntl.LOCK_EX)
+      try:
+        state = load_state(path=path, _under_lock=True)
+        mutator(state)
+        io._save_state_unlocked(state, path=path)
+        return state
+      finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
-      fcntl.flock(fd, fcntl.LOCK_UN)
+      os.close(fd)
   finally:
-    os.close(fd)
+    _MUTATE_STATE_ACTIVE.value = prior
 
 
 def mutate_user_state(

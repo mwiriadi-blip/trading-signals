@@ -63,13 +63,14 @@ def test_main_re_exports_symbols() -> None:
 
 def test_main_re_exports_modules() -> None:
   '''Plan 27-13 agreed-2: main.data_fetcher / main.signal_engine /
-  main.sizing_engine / main.state_manager / main.dashboard / main.logging
+  main.sizing_engine / main.state_manager / main.logging
   preserved as module-attribute paths for monkeypatch.
+  (dashboard shim removed in 43-07; dashboard_renderer.api used directly.)
   '''
   import main
   for modname in [
     'data_fetcher', 'signal_engine', 'sizing_engine',
-    'state_manager', 'dashboard', 'logging',
+    'state_manager', 'logging',
   ]:
     assert hasattr(main, modname), f'main.{modname} missing'
 

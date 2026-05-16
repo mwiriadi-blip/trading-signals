@@ -4,6 +4,7 @@ Owns:
   - _get_process_tzname: process-tz wrapper (07-REVIEWS.md Codex MEDIUM-fix).
   - _run_daily_check_caught: never-crash wrapper for scheduled run_daily_check.
   - _run_schedule_loop: schedule library wiring + UTC assertion + tick loop.
+  - _refresh_news_cache_all_markets: out-of-band news cache refresh (D-04).
 
 Hex discipline: stdlib (logging, time) + system_params + (local) schedule +
 typed exceptions from data_fetcher. The `job` parameter in _run_schedule_loop
@@ -26,6 +27,52 @@ import system_params
 from data_fetcher import DataFetchError, ShortFrameError
 
 logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# D-04: Out-of-band news cache refresh
+# =========================================================================
+
+def _refresh_news_cache_all_markets(state: dict) -> None:
+  '''Refresh news cache for all enabled markets after the daily OHLCV fetch.
+
+  Called by _run_daily_check_caught on a successful daily check.
+  Each market is wrapped in try/except so one failure does not abort others.
+  Logs structured warnings on failure (never raises).
+
+  market → symbol resolution order:
+    1. state['markets'][market_id]['symbol'] (live config, may diverge from defaults)
+    2. system_params.DEFAULT_MARKETS[market_id]['symbol'] (static fallback)
+
+  Late import of news_fetcher (C-2 hex discipline — no top-level scheduler
+  → news_fetcher edge; AST boundary test verifies this).
+  '''
+  from news_fetcher import refresh_news_cache as _refresh  # local import — C-2
+
+  _markets_state = (state or {}).get('markets') or {}
+  for market_id in system_params.KNOWN_MARKET_IDS:
+    try:
+      _market_entry = _markets_state.get(market_id) or {}
+      _symbol = (
+        _market_entry.get('symbol')
+        or system_params.DEFAULT_MARKETS.get(market_id, {}).get('symbol', market_id)
+      )
+      result = _refresh(market_id, _symbol)
+      if result.error is not None:
+        logger.warning(
+          '[Sched] news refresh failed market_id=%r symbol=%r error=%r',
+          market_id, _symbol, result.error,
+        )
+      else:
+        logger.info(
+          '[Sched] news cache refreshed market_id=%r symbol=%r items=%d',
+          market_id, _symbol, len(result.items),
+        )
+    except Exception as exc:
+      logger.warning(
+        '[Sched] news refresh raised for market_id=%r: %s: %s (continuing)',
+        market_id, type(exc).__name__, exc,
+      )
 
 
 def _get_process_tzname() -> str:
@@ -94,6 +141,16 @@ def _run_daily_check_caught(job, args) -> None:
       is_test=False,
       persist=True,
     )
+    # D-04: Refresh news cache after successful daily OHLCV fetch.
+    # Per-market try/except inside so one failure does not abort others.
+    try:
+      _refresh_news_cache_all_markets(state)
+    except Exception as _news_exc:  # noqa: BLE001 — never abort loop
+      logger.warning(
+        '[Sched] news cache refresh raised unexpectedly: %s: %s',
+        type(_news_exc).__name__, _news_exc,
+      )
+
     # Phase 37: per-user fan-out AFTER dispatch on scheduler path.
     # Late-bind per_user_fanout through _main_pkg so monkeypatch.setattr(
     # main, ...) and monkeypatch.setattr(per_user_fanout, ...) both work.

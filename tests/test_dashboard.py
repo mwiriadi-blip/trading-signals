@@ -39,8 +39,8 @@ from unittest.mock import patch  # noqa: F401 — Wave 2 atomic-write patch targ
 import pytest
 import pytz
 
-import dashboard
-from dashboard import render_dashboard  # noqa: F401 — back-compat alias kept in shim
+import dashboard_renderer.api as dashboard
+from dashboard_renderer.api import render_dashboard_files as render_dashboard
 from dashboard_renderer.assets import _INLINE_CSS
 from dashboard_renderer.formatters import (
   _fmt_currency,
@@ -83,7 +83,6 @@ from dashboard_renderer.components.trades import render_trades_table
 # Module-level path + fixture constants
 # =========================================================================
 
-DASHBOARD_PATH = Path('dashboard.py')
 TEST_DASHBOARD_PATH = Path('tests/test_dashboard.py')
 REGENERATE_SCRIPT_PATH = Path('tests/regenerate_dashboard_golden.py')
 DASHBOARD_FIXTURE_DIR = Path(__file__).parent / 'fixtures' / 'dashboard'
@@ -794,7 +793,7 @@ class TestRenderBlocks:
   # --- Trades table ---
 
   def test_trades_table_slice_and_order(self) -> None:
-    '''VALIDATION row 05-02-T3: 25 trades → render exactly 20 <tbody> rows, newest first.'''
+    '''VALIDATION row 05-02-T3: 25 trades → render all 25 <tbody> rows (cap is 200), newest first.'''
     state = _make_state(with_trades=5)
     # Build 25 synthetic trades with unique exit_dates so order is verifiable
     trades = []
@@ -815,7 +814,8 @@ class TestRenderBlocks:
     tbody_end = output.find('</tbody>')
     tbody_slice = output[tbody_start:tbody_end]
     tr_count = tbody_slice.count('<tr>')
-    assert tr_count == 20, f'expected 20 tbody rows, got {tr_count}'
+    # D-06: cap is 200; 25 < 200 so all 25 render.
+    assert tr_count == 25, f'expected 25 tbody rows, got {tr_count}'
     # Newest-first: trades[-1] is the last trade pushed; its exit_date is '2026-03-25'
     # (i=24 → (24 % 27) + 1 = 25). The FIRST rendered row should reference this date.
     first_tr_start = tbody_slice.find('<tr>')
@@ -956,7 +956,7 @@ class TestRenderBlocks:
     '''
     state = _make_state()
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     expected = (
       '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.js" '
@@ -969,7 +969,7 @@ class TestRenderBlocks:
     '''VALIDATION row 05-03-T1: payload contains labels for each equity row, in date order.'''
     state = _make_state(with_equity=5)
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     for row in state['equity_history']:
       assert row['date'] in html_text
@@ -999,7 +999,7 @@ class TestRenderBlocks:
       {'date': '2026-01-05', 'equity': 104.0},
     ]
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
 
     # Assertion (a): the rendered HTML must contain EXACTLY SIX </script>
@@ -1033,7 +1033,7 @@ class TestRenderBlocks:
     '''DASH-01: CSS is entirely inline inside a <style> block.'''
     state = _make_state()
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     # Zero <link rel="stylesheet"> — all CSS is inline per DASH-01.
     assert '<link rel="stylesheet"' not in html_text
@@ -1042,7 +1042,7 @@ class TestRenderBlocks:
     '''DASH-09: visual theme palette hexes present in rendered <style> block.'''
     state = _make_state()
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     for hex_token in ('#0f1117', '#22c55e', '#ef4444', '#eab308'):
       assert hex_token in html_text, f'palette hex {hex_token} missing from rendered HTML'
@@ -1052,7 +1052,7 @@ class TestRenderBlocks:
     state = _make_state(with_equity=0)
     state['equity_history'] = []
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     assert 'Chart appears once 5 daily equity points have been recorded.' in html_text
     assert '<canvas id="equityChart"' not in html_text
@@ -1065,7 +1065,7 @@ class TestRenderBlocks:
     '''
     state = _make_state(with_equity=10)
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     assert 'type: "category"' in html_text
     assert 'chartjs-adapter-date-fns' not in html_text
@@ -1076,19 +1076,12 @@ class TestRenderBlocks:
     '''<!DOCTYPE> + <html lang="en"> + <head> + <title> + <meta charset>.'''
     state = _make_state()
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_text = out.read_text()
     assert html_text.startswith('<!DOCTYPE html>\n<html lang="en">\n')
     assert '<title>Trading Signals — Dashboard</title>' in html_text
     assert '<meta charset="utf-8">' in html_text
 
-  def test_module_main_entrypoint_exists(self) -> None:
-    '''C-6 reviews: CONTEXT D-05 convenience CLI (`python -m dashboard`).'''
-    src = DASHBOARD_PATH.read_text()
-    assert "if __name__ == '__main__':" in src, (
-      'CONTEXT D-05 convenience CLI missing — `python -m dashboard` '
-      'must be supported as an operator preview path.'
-    )
 
 
 class TestEmptyState:
@@ -1103,7 +1096,7 @@ class TestEmptyState:
     import state_manager  # test-only lazy import (keeps hex-fence report clean)
     state = state_manager.reset_state()
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered_bytes = out.read_bytes()
     golden_bytes = GOLDEN_EMPTY_HTML_PATH.read_bytes()
     assert rendered_bytes == golden_bytes, (
@@ -1122,7 +1115,7 @@ class TestGoldenSnapshot:
     '''VALIDATION row 05-03-T2: sample_state.json render byte-identical to golden.html.'''
     state = json.loads(SAMPLE_STATE_PATH.read_text())
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered_bytes = out.read_bytes()
     golden_bytes = GOLDEN_HTML_PATH.read_bytes()
     assert rendered_bytes == golden_bytes, (
@@ -1141,7 +1134,7 @@ class TestAtomicWrite:
     '''tempfile + fsync + os.replace; no .tmp left behind.'''
     state = _make_state()
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     assert out.exists()
     # No stray tempfiles in the parent dir.
     tmp_files = list(tmp_path.glob('*.tmp'))
@@ -1159,7 +1152,7 @@ class TestAtomicWrite:
     state = _make_state()
     with patch('dashboard_renderer.io.os.replace', side_effect=OSError('disk full')):
       with pytest.raises(OSError, match='disk full'):
-        dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+        dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     assert out.read_bytes() == original_bytes, (
       'Original dashboard.html must be byte-identical after failed os.replace'
     )
@@ -1170,7 +1163,7 @@ class TestAtomicWrite:
     state = _make_state()
     with patch('dashboard_renderer.io.os.replace', side_effect=OSError('disk full')):
       with pytest.raises(OSError):
-        dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+        dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     tmp_files = list(tmp_path.glob('*.tmp'))
     assert tmp_files == [], f'tempfile not cleaned up after os.replace failure: {tmp_files}'
 
@@ -1238,7 +1231,7 @@ class TestRenderDashboardHTMXVendorPin:
   def test_htmx_script_tag_present_with_exact_sri(self, tmp_path) -> None:
     '''The exact pinned URL + SRI + crossorigin attributes are emitted.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert self._EXPECTED_URL in rendered, (
       f'HTMX URL not found in rendered HTML; expected {self._EXPECTED_URL}'
@@ -1255,7 +1248,7 @@ class TestRenderDashboardHTMXVendorPin:
     load location: "<head> after Chart.js").
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     chartjs_idx = rendered.find('chart.js@4.4.6')
     htmx_idx = rendered.find('htmx.org@1.9.12')
@@ -1269,7 +1262,7 @@ class TestRenderDashboardHTMXVendorPin:
   def test_handle_trades_error_js_inline(self, tmp_path) -> None:
     '''UI-SPEC §Decision 4: inline JS handler for hx-on::after-request.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'function handleTradesError' in rendered, (
       'UI-SPEC §Decision 4: inline handleTradesError JS missing'
@@ -1278,7 +1271,7 @@ class TestRenderDashboardHTMXVendorPin:
   def test_confirmation_banner_slot_present(self, tmp_path) -> None:
     '''UI-SPEC §Decision 3: <div id="confirmation-banner"> for OOB swap.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'id="confirmation-banner"' in rendered, (
       'UI-SPEC §Decision 3: #confirmation-banner div missing from shell'
@@ -1295,7 +1288,7 @@ class TestRenderDashboardHTMXVendorPin:
     while FastAPI handlers expect JSON — every browser POST 400s.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert self._EXPECTED_JSON_ENC_URL in rendered, (
       f'CR-01: json-enc URL not found; expected {self._EXPECTED_JSON_ENC_URL}'
@@ -1316,7 +1309,7 @@ class TestRenderDashboardHTMXVendorPin:
     converts the form-encoded submission into JSON before POSTing.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     # The attribute must be inside the open form (between hx-post="/trades/open"
     # and the closing > of the <form> tag).
@@ -1337,7 +1330,7 @@ class TestRenderPositionsTableHTMXForm:
   def test_open_form_section_present(self, tmp_path) -> None:
     '''UI-SPEC §Decision 1: <section class="open-form"> ABOVE the positions table.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'class="open-form"' in rendered
     assert 'OPEN NEW POSITION' in rendered  # eyebrow per UI-SPEC §Copywriting
@@ -1356,7 +1349,7 @@ class TestRenderPositionsTableHTMXForm:
     self-refresh via fragment GET — no single #positions-tbody target exists.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'hx-post="/trades/open"' in rendered
     assert 'hx-swap="none"' in rendered
@@ -1368,7 +1361,7 @@ class TestRenderPositionsTableHTMXForm:
   def test_open_form_required_fields_present(self, tmp_path) -> None:
     '''UI-SPEC §Decision 7: 4 required fields (instrument, direction, entry_price, contracts).'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'name="instrument"' in rendered
     assert 'name="direction"' in rendered
@@ -1383,7 +1376,7 @@ class TestRenderPositionsTableHTMXForm:
   def test_open_form_advanced_collapsed_details(self, tmp_path) -> None:
     '''UI-SPEC §Decision 7: <details class="form-advanced"> wraps optional fields.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'class="form-advanced"' in rendered
     assert '<summary>Advanced</summary>' in rendered
@@ -1395,7 +1388,7 @@ class TestRenderPositionsTableHTMXForm:
   def test_actions_column_header_present(self, tmp_path) -> None:
     '''UI-SPEC §Decision 2: 9th <th scope="col">Actions</th> in positions thead.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert '<th scope="col">Actions</th>' in rendered
 
@@ -1406,7 +1399,7 @@ class TestRenderPositionsTableHTMXForm:
     tbody for valid HTML5 single-tbody-level swaps.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'id="position-group-SPI200"' in rendered
     # Old single tbody id is gone
@@ -1420,7 +1413,7 @@ class TestRenderPositionsTableHTMXForm:
     granularity.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(_make_render_state_with_position(), out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'id="position-row-SPI200"' in rendered
     assert 'class="btn-row btn-close"' in rendered
@@ -1438,7 +1431,7 @@ class TestRenderPositionsTableHTMXForm:
     empty_state = _make_render_state_with_position()
     empty_state['positions']['SPI200'] = None
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(empty_state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(empty_state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'colspan="9"' in rendered
     assert '— No open positions —' in rendered
@@ -1457,7 +1450,7 @@ class TestRenderManualStopBadge:
   def test_no_badge_when_manual_stop_is_none(self, tmp_path) -> None:
     '''Default v1.0 behavior preserved: manual_stop=None → no badge.'''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(
+    dashboard.render_dashboard_files(
       _make_render_state_with_position(manual_stop=None), out_path=out, now=FROZEN_NOW,
     )
     rendered = out.read_text()
@@ -1475,7 +1468,7 @@ class TestRenderManualStopBadge:
     structure. Asserts the trail-stop-split markup is present.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(
+    dashboard.render_dashboard_files(
       _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
     )
     rendered = out.read_text()
@@ -1503,7 +1496,7 @@ class TestRenderManualStopBadge:
     Computed = peak (8100) - 3*atr (50) = 7950. Manual = 7700.
     '''
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(
+    dashboard.render_dashboard_files(
       _make_render_state_with_position(manual_stop=7700.0), out_path=out, now=FROZEN_NOW,
     )
     rendered = out.read_text()
@@ -1634,7 +1627,7 @@ class TestRenderManualStopBadge:
       'atr_entry': 0.012, 'manual_stop': None,
     }
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     spi_start = rendered.find('id="position-row-SPI200"')
     audusd_start = rendered.find('id="position-row-AUDUSD"')
@@ -1674,7 +1667,7 @@ class TestAuthHeaderPlaceholder:
     # NOT appear in the rendered output (placeholder discipline).
     monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(
+    dashboard.render_dashboard_files(
       _make_render_state_with_position(), out_path=out, now=FROZEN_NOW,
     )
     rendered = out.read_text()
@@ -1699,7 +1692,7 @@ class TestAuthHeaderPlaceholder:
       'atr_entry': 0.012, 'manual_stop': None,
     }
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'id="position-group-SPI200"' in rendered
     assert 'id="position-group-AUDUSD"' in rendered
@@ -1717,7 +1710,7 @@ class TestAuthHeaderPlaceholder:
       'atr_entry': 0.012, 'manual_stop': None,
     }
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     # Find the positions table block
     m = re.search(
@@ -2055,7 +2048,7 @@ class TestBannerStackOrder:
     additions sit ABOVE this slot in the same composition.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard  # back-compat alias
+    from dashboard_renderer.api import render_dashboard_files as render_dashboard
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2093,7 +2086,7 @@ class TestBannerStackOrder:
     stale info is present.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard  # back-compat alias
+    from dashboard_renderer.api import render_dashboard_files as render_dashboard
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2120,7 +2113,7 @@ class TestBannerStackOrder:
     Positions section heading. NOT injected into _render_positions_table.
     '''
     from datetime import datetime, timezone
-    from dashboard import render_dashboard  # back-compat alias
+    from dashboard_renderer.api import render_dashboard_files as render_dashboard
     from state_manager import append_warning, reset_state
     state = reset_state()
     fixed_now = datetime(2026, 4, 26, 9, 30, 0, tzinfo=timezone.utc)
@@ -2260,7 +2253,7 @@ class TestRenderDashboardStrategyVersion:
     state['signals']['SPI200']['strategy_version'] = 'v1.2.0'
     state['signals']['AUDUSD']['strategy_version'] = 'v1.2.0'
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'v1.2.0' in rendered, (
       f'Phase 22: dashboard HTML must contain the active strategy_version '
@@ -2283,7 +2276,7 @@ class TestRenderDashboardStrategyVersion:
                  }},
     }
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     assert 'v1.0.0' in rendered, (
       f'D-06: missing strategy_version on every row must default to v1.0.0; '
@@ -2299,7 +2292,7 @@ class TestRenderDashboardStrategyVersion:
     state['signals']['SPI200']['strategy_version'] = 'v1.1.0'
     state['signals']['AUDUSD']['strategy_version'] = 'v1.2.0'
     out = tmp_path / 'd.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     rendered = out.read_text()
     # Find the footer's strategy-version line (CSS class anchor).
     footer_match = re.search(
@@ -2550,7 +2543,7 @@ class TestTracePanels:
     default must be None, not a mutable list [].
     '''
     import inspect
-    sig = inspect.signature(dashboard.render_dashboard)
+    sig = inspect.signature(dashboard.render_dashboard_files)
     default = sig.parameters['trace_open_keys'].default
     assert default is None, (
       f'LEARNINGS 2026-04-29: trace_open_keys default must be None '
@@ -3014,7 +3007,7 @@ class TestRenderDashboardComposition:
   def test_render_dashboard_includes_paper_trades_region(self, tmp_path) -> None:
     state = _load_v6_state()
     out_path = tmp_path / 'dash.html'
-    dashboard.render_dashboard(state, out_path, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path, now=FROZEN_NOW)
     contents = out_path.read_text()
     assert '<div id="trades-region"' in contents, (
       'render_dashboard must include <div id="trades-region"> in output'
@@ -3031,7 +3024,7 @@ class TestRenderDashboardComposition:
       {'date': '2026-04-29', 'equity': 101000.0},
     ]
     out_path = tmp_path / 'dash.html'
-    dashboard.render_dashboard(state, out_path, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path, now=FROZEN_NOW)
     contents = out_path.read_text()
     # Signal cards marker: data-instrument attribute
     signal_marker = 'data-instrument="SPI200"'
@@ -3198,7 +3191,7 @@ class TestPhase24TabbedDashboard:
     import state_manager
     state = state_manager.reset_state()
     out = tmp_path / 'dashboard.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
     assert 'Signals' in html_out
     assert '>Account<' in html_out
@@ -3210,7 +3203,7 @@ class TestPhase24TabbedDashboard:
     import state_manager
     state = state_manager.reset_state()
     out = tmp_path / 'dashboard.html'
-    dashboard.render_dashboard(state, out_path=out, now=FROZEN_NOW)
+    dashboard.render_dashboard_files(state, out_path=out, now=FROZEN_NOW)
     html_out = out.read_text()
     assert html_out.count('hx-patch="/markets/settings"') >= 2
     assert 'name="adx_gate"' in html_out
@@ -3603,7 +3596,6 @@ class TestPhase25MarketTestPlaceholders:
 
   def _make_market_test_html(self, settings_overrides: dict | None = None) -> str:
     """Render Market Test tab with a single SPI200 market."""
-    import dashboard as d
     state = {
       'markets': {'SPI200': {'display_name': 'SPI 200', 'enabled': True, 'sort_order': 10}},
       'strategy_settings': {'SPI200': settings_overrides or {}},
@@ -3663,3 +3655,46 @@ class TestPhase25MarketTestPlaceholders:
     assert 'placeholder="3"' in html_out, 'Custom votes not reflected in placeholder'
     assert 'placeholder="2.00"' in html_out, 'Custom long risk % not reflected in placeholder'
     assert 'placeholder="1.00"' in html_out, 'Custom short risk % not reflected in placeholder'
+
+
+
+# =========================================================================
+# D-06: Trade log truncation + no-mutation tests
+# =========================================================================
+
+class TestTradeLogTruncation:
+  '''Phase 43 D-06: dashboard renders last 200 trades; state is never mutated.'''
+
+  def _make_trade(self, i: int) -> dict:
+    return {
+      'instrument': 'SPI200',
+      'direction': 'LONG',
+      'entry_date': f'2026-01-{(i % 28) + 1:02d}',
+      'exit_date': f'2026-01-{(i % 28) + 2:02d}',
+      'entry_price': 7800.0 + i,
+      'exit_price': 7810.0 + i,
+      'gross_pnl': 10.0,
+      'n_contracts': 1,
+      'exit_reason': 'stop_hit',
+      'multiplier': 6.0,
+      'cost_aud': 5.0,
+      'net_pnl': 8.0,
+    }
+
+  def test_dashboard_truncates_trade_log_to_200(self):
+    '''render_trades_table with 300 trades renders exactly 200 HTML rows.'''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [self._make_trade(i) for i in range(300)]
+    html_out = render_trades_table(state)
+    row_count = html_out.count('<td data-label="Closed">')
+    assert row_count == 200, f'Expected 200 rows, got {row_count}'
+
+  def test_dashboard_render_does_not_mutate_state(self):
+    '''render_trades_table must not modify state["trade_log"] in place.'''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [self._make_trade(i) for i in range(300)]
+    original_len = len(state['trade_log'])
+    render_trades_table(state)
+    assert len(state['trade_log']) == original_len, (
+      f'state["trade_log"] mutated: was {original_len}, now {len(state["trade_log"])}'
+    )

@@ -12,7 +12,8 @@ from dashboard_renderer.formatters import (
 
 def render_trades_table(state: dict) -> str:
   trade_log = state.get('trade_log', [])
-  slice_newest_first = list(reversed(trade_log[-20:]))
+  # D-06: render last 200 only; full state preserved; admin endpoint serves full log
+  slice_newest_first = list(reversed(trade_log[-200:]))
   rendered_rows = []
   for trade in slice_newest_first:
     closed = html.escape(trade.get('exit_date', ''), quote=True)
@@ -53,10 +54,10 @@ def render_trades_table(state: dict) -> str:
   return (
     '<section aria-labelledby="heading-trades">\n'
     '  <h2 id="heading-trades">Closed Trades</h2>\n'
-    '  <p class="subtle">last 20</p>\n'
+    '  <p class="subtle">last 200</p>\n'
     '  <div class="table-scroll" tabindex="0" role="region" aria-label="Closed trades (scrollable)">\n'
     '  <table class="data-table">\n'
-    '    <caption class="visually-hidden">Most recent 20 closed trades, '
+    '    <caption class="visually-hidden">Most recent 200 closed trades, '
     'newest first</caption>\n'
     '    <thead>\n'
     '      <tr>\n'

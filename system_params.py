@@ -19,6 +19,14 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, TypedDict
 
 # =========================================================================
+# D-13 Type aliases — enforce float/Decimal boundary at annotation sites
+# =========================================================================
+# IndicatorFloat: raw indicator values (ADX, ATR, momentum scalars) — always float.
+# MoneyDecimal: monetary values (account, P&L, contract cost) — always Decimal.
+IndicatorFloat = float
+MoneyDecimal = Decimal
+
+# =========================================================================
 # Strategy version (Phase 22 D-01..D-03)
 # =========================================================================
 # Bump on signal-logic change ONLY (Mom periods, ADX gate cutoff, RVol
@@ -279,7 +287,7 @@ FALLBACK_CONTRACT_SPECS: dict[str, tuple[float, float]] = {
 # Phase 3 constants — state persistence (STATE-01, STATE-07, D-11)
 # =========================================================================
 
-INITIAL_ACCOUNT: float = 10_000.0   # starting account balance (STATE-07, reset_state); operator-default sized for retail SPI mini / AUDUSD mini lot
+INITIAL_ACCOUNT: Decimal = Decimal('10000.00')  # starting account balance (STATE-07, reset_state); operator-default sized for retail SPI mini / AUDUSD mini lot
 MAX_WARNINGS: int = 50              # FIFO bound on state['warnings'] (D-11; Phase 27 #16 review-fix agreed-4: tightened from 100 to 50)
 STATE_SCHEMA_VERSION: int = 12      # v12 buckets per-user state (account, initial_account, contracts, positions, trade_log, equity_history, paper_trades) under state['users']['u_admin_marc']; adds admin_user_id top-level key.
 STATE_FILE: str = 'state.json'      # repo-root state file path (SPEC.md §FILE STRUCTURE)

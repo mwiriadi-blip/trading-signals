@@ -122,7 +122,7 @@ class TestLoadSave:
     path = tmp_path / 'state.json'
     state = {
       'schema_version': STATE_SCHEMA_VERSION,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
@@ -236,7 +236,7 @@ class TestLoadSave:
       # _validate_loaded_state. Round-trip equality comparison below
       # ignores the runtime-only _resolved_contracts key (load_state
       # materialises it after migration; save_state strips it before dump).
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     state = {**reset_state(), **state}
@@ -603,7 +603,7 @@ class TestRecordTrade:
       cost_aud=6.0, n_contracts=2, gross_pnl=1000.0
       closing_cost_half = 6.0 * 2 / 2 = 6.0
       net_pnl = 1000.0 - 6.0 = 994.0
-      account = INITIAL_ACCOUNT + 994.0
+      account = float(INITIAL_ACCOUNT) + 994.0
     Phase 33 TENANT-01: account in users bucket.
     '''
     state = reset_state()
@@ -611,7 +611,7 @@ class TestRecordTrade:
     trade = _make_trade(gross_pnl=1000.0, n_contracts=2, cost_aud=6.0)
     result = record_trade(state, trade)
 
-    expected = INITIAL_ACCOUNT + 994.0
+    expected = float(INITIAL_ACCOUNT) + 994.0
     user = result['users']['u_admin_marc']
     assert user['account'] == expected, (
       f'D-14: expected {expected}, got {user["account"]}'
@@ -809,7 +809,7 @@ class TestRecordTrade:
     )
     result = record_trade(state, correct_trade)
     result_user = result['users']['u_admin_marc']
-    expected_correct = INITIAL_ACCOUNT + 994.0
+    expected_correct = float(INITIAL_ACCOUNT) + 994.0
     assert result_user['account'] == expected_correct, (
       f'CORRECT: gross_pnl=1000.0 (raw) -> net_pnl=994.0 -> account={expected_correct}'
     )
@@ -827,7 +827,7 @@ class TestRecordTrade:
     )
     bug_result = record_trade(state2, bug_trade)
     bug_user = bug_result['users']['u_admin_marc']
-    expected_bug = INITIAL_ACCOUNT + 988.0
+    expected_bug = float(INITIAL_ACCOUNT) + 988.0
     assert bug_user['account'] == expected_bug, (
       f'BUG: passing realised_pnl as gross_pnl double-deducts close cost; '
       f'account becomes {expected_bug} instead of {expected_correct} (short by 6.0).'
@@ -1099,7 +1099,7 @@ class TestSchemaVersion:
     path = tmp_path / 'state.json'
     state = {
       'schema_version': STATE_SCHEMA_VERSION,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       # Phase 27 #11 (Plan 27-09): dict shape only at current schema.
@@ -1108,7 +1108,7 @@ class TestSchemaVersion:
       # Phase 8 (v2 schema): CONF-01 + CONF-02 required keys. Under v2,
       # s.get(..., default) in MIGRATIONS[2] is idempotent — preserves
       # existing values without overwriting.
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     state = {**reset_state(), **state}
@@ -1124,7 +1124,7 @@ class TestSchemaVersion:
     path = tmp_path / 'state.json'
     # Write a state dict to disk WITHOUT schema_version
     bare_state = {
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {'SPI200': 0, 'AUDUSD': 0},
       'trade_log': [], 'equity_history': [], 'warnings': [],
@@ -1150,7 +1150,7 @@ class TestMigrateV2Backfill:
     Phase 33 TENANT-01: after full walk to v12, per-user keys live under users bucket.'''
     state = {
       # no schema_version key → defaults to 0 in _migrate
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {'SPI200': 0, 'AUDUSD': 0},
       'trade_log': [], 'equity_history': [], 'warnings': [],
@@ -1225,7 +1225,7 @@ class TestMigrateV2Backfill:
     migration. Backfill is transparent to the operator.'''
     state = {
       'schema_version': 1,
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {'SPI200': 0, 'AUDUSD': 0},
       'trade_log': [], 'equity_history': [], 'warnings': [],
@@ -1242,7 +1242,7 @@ class TestMigrateV2Backfill:
     STATE_SCHEMA_VERSION (now 4 per Phase 22 D-04 — was 3 under Phase 14 D-09).'''
     state = {
       # no schema_version → defaults to 0
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {'SPI200': 0, 'AUDUSD': 0},
       'trade_log': [], 'equity_history': [], 'warnings': [],
@@ -1983,7 +1983,7 @@ class TestMigrateV3ToV4:
     from state_manager import _migrate
     s = {
       'schema_version': 3,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
@@ -1991,7 +1991,7 @@ class TestMigrateV3ToV4:
         'AUDUSD': {'signal': 0, 'signal_as_of': '2026-04-29', 'as_of_run': '2026-04-29'},
       },
       'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     out = _migrate(s)
@@ -2097,7 +2097,7 @@ class TestMigrateV3ToV4:
     path = tmp_path / 'state.json'
     bare_state = {
       # no schema_version → defaults to 0
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
         'SPI200': {
@@ -2239,7 +2239,7 @@ class TestMigrateV4ToV5:
     from state_manager import _migrate
     s = {
       'schema_version': 4,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
@@ -2257,7 +2257,7 @@ class TestMigrateV4ToV5:
         },
       },
       'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     out = _migrate(s)
@@ -2405,7 +2405,7 @@ class TestFullWalkV0ToV5:
     path = tmp_path / 'state.json'
     bare_state = {
       # no schema_version → defaults to 0
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
         'SPI200': {
@@ -2461,12 +2461,12 @@ class TestMigrateV5ToV6:
     from state_manager import _migrate, _migrate_v5_to_v6
     s = {
       'schema_version': 5,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {},
       'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     # Direct function: _migrate_v5_to_v6 adds paper_trades=[]
@@ -2547,12 +2547,12 @@ class TestMigrateV5ToV6:
     }
     s = {
       'schema_version': 6,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {},
       'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
       'paper_trades': [existing_row],
     }
@@ -2577,12 +2577,12 @@ class TestMigrateV5ToV6:
     from state_manager import _migrate
     s = {
       'schema_version': 5,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {},
       'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
     }
     out = _migrate(dict(s))
@@ -2616,7 +2616,7 @@ class TestFullWalkV0ToV6:
     path = tmp_path / 'state.json'
     bare_state = {
       # no schema_version → defaults to 0
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
         'SPI200': {
@@ -2680,12 +2680,12 @@ class TestMigrateV6ToV7:
              'status': 'open'}
     s = {
       'schema_version': 6,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {},
       'trade_log': [], 'equity_history': [], 'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
       'paper_trades': [dict(row1), dict(row2)],
     }
@@ -2792,7 +2792,7 @@ class TestMigrateV6ToV7:
     from state_manager import _migrate, _migrate_v6_to_v7
     s = {
       'schema_version': 6,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
     }
     out = _migrate_v6_to_v7(dict(s))
@@ -2836,7 +2836,7 @@ class TestMigrateV6ToV7:
     path = tmp_path / 'state.json'
     bare_state = {
       # no schema_version → defaults to 0
-      'account': INITIAL_ACCOUNT, 'last_run': None,
+      'account': float(INITIAL_ACCOUNT), 'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
         'SPI200': {
@@ -2873,14 +2873,14 @@ class TestMarketRegistrySchema:
     path = tmp_path / 'state.json'
     path.write_text(_json.dumps({
       'schema_version': 7,
-      'account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {'SPI200': 0, 'AUDUSD': 0},
       'trade_log': [],
       'equity_history': [],
       'warnings': [],
-      'initial_account': INITIAL_ACCOUNT,
+      'initial_account': float(INITIAL_ACCOUNT),
       'contracts': {'SPI200': 'spi-mini', 'AUDUSD': 'audusd-standard'},
       'paper_trades': [],
     }))
@@ -3074,8 +3074,8 @@ class TestV12InitBehavior:
     from system_params import INITIAL_ACCOUNT, _DEFAULT_SPI_LABEL, _DEFAULT_AUDUSD_LABEL
     return _json.dumps({
       'schema_version': 11,
-      'account': INITIAL_ACCOUNT,
-      'initial_account': INITIAL_ACCOUNT,
+      'account': float(INITIAL_ACCOUNT),
+      'initial_account': float(INITIAL_ACCOUNT),
       'last_run': None,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'signals': {
@@ -3148,3 +3148,62 @@ class TestV12InitBehavior:
     assert '_resolved_contracts' in loaded, 'B2: _resolved_contracts must be materialised'
     assert 'SPI200' in loaded['_resolved_contracts']
     assert 'AUDUSD' in loaded['_resolved_contracts']
+
+
+# =========================================================================
+# Phase 43-05: mutate_state re-entrancy guard tests
+# =========================================================================
+
+class TestMutateStateReentrancy:
+  '''Phase 43-05: validate thread-local re-entrancy guard on mutate_state.'''
+
+  def test_mutate_state_raises_on_reentrant_call(self, tmp_path) -> None:
+    '''Nested mutate_state call inside callback raises RuntimeError immediately.'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+
+    def _nested_mutator(state):
+      # This inner call must be detected as re-entrant and raise.
+      mutate_state(lambda s: None, path=path)
+
+    with pytest.raises(RuntimeError, match='not re-entrant'):
+      mutate_state(_nested_mutator, path=path)
+
+  def test_state_writable_after_reentrant_error(self, tmp_path) -> None:
+    '''After a re-entrancy RuntimeError, subsequent mutate_state calls succeed (finally cleanup).'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+
+    def _nested_mutator(state):
+      mutate_state(lambda s: None, path=path)
+
+    # Trigger re-entrancy error.
+    with pytest.raises(RuntimeError, match='not re-entrant'):
+      mutate_state(_nested_mutator, path=path)
+
+    # State must be writable afterwards — guard flag must have been restored.
+    sentinel = {}
+    def _ok_mutator(state):
+      sentinel['ran'] = True
+
+    mutate_state(_ok_mutator, path=path)
+    assert sentinel.get('ran') is True, 'mutate_state must succeed after re-entrancy error'
+
+  def test_mutate_state_clears_flag_on_callback_exception(self, tmp_path) -> None:
+    '''When callback raises ValueError, flag is cleared and next mutate_state succeeds.'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+
+    def _bad_mutator(state):
+      raise ValueError('deliberate callback error')
+
+    with pytest.raises(ValueError, match='deliberate callback error'):
+      mutate_state(_bad_mutator, path=path)
+
+    # Guard must be False now — next call must not raise RuntimeError.
+    sentinel = {}
+    def _ok_mutator(state):
+      sentinel['ran'] = True
+
+    mutate_state(_ok_mutator, path=path)
+    assert sentinel.get('ran') is True, 'mutate_state must succeed after callback exception'

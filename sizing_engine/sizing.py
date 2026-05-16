@@ -12,6 +12,7 @@ import math
 from signal_engine import LONG, SHORT
 from system_params import (
   DEFAULT_STRATEGY_SETTINGS,
+  MoneyDecimal,
   RISK_PCT_LONG,
   RISK_PCT_SHORT,
   TRAIL_MULT_LONG,
@@ -47,7 +48,7 @@ def _vol_scale(rvol: float) -> float:
 
 
 def calc_position_size(
-  account: float,
+  account: MoneyDecimal | float,
   signal: int,
   atr: float,
   rvol: float,

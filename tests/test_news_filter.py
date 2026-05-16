@@ -7,11 +7,13 @@ require a labelled corpus 10x+ larger.
 '''
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from news_filter import classify_headline, has_critical_event
+from news_fetcher import NewsResult
+from news_filter import CriticalEventResult, classify_headline, has_critical_event
 
 
 # ---------------------------------------------------------------------------
@@ -87,22 +89,43 @@ def test_word_boundary_no_substring_match():
 
 
 # ---------------------------------------------------------------------------
-# has_critical_event
+# has_critical_event — D-02 CriticalEventResult contract
 # ---------------------------------------------------------------------------
+
+def _make_result(items=None, error=None):
+  '''Helper: build a NewsResult for test use.'''
+  return NewsResult(
+    items=items or [],
+    error=error,
+    fetched_at=datetime.now(UTC),
+  )
+
 
 def test_has_critical_event_any_match_fires():
   headlines = [{'title': 'sport results'}, {'title': 'RBA rate cut'}]
-  assert has_critical_event(headlines, 'SPI200') is True
+  result = _make_result(items=headlines)
+  event = has_critical_event(result, 'SPI200')
+  assert isinstance(event, CriticalEventResult)
+  assert event.triggered is True
+  assert event.gate_status == 'blocked'
+  assert event.fetch_error is None
 
 
 def test_has_critical_event_no_match_returns_false():
   headlines = [{'title': 'sport results'}, {'title': 'penny stock tip'}]
-  assert has_critical_event(headlines, 'SPI200') is False
+  result = _make_result(items=headlines)
+  event = has_critical_event(result, 'SPI200')
+  assert event.triggered is False
+  assert event.gate_status == 'clear'
+  assert event.fetch_error is None
 
 
 def test_has_critical_event_handles_missing_title_key():
   '''Missing title key must not raise KeyError.'''
-  assert has_critical_event([{'no_title': 'x'}], 'SPI200') is False
+  result = _make_result(items=[{'no_title': 'x'}])
+  event = has_critical_event(result, 'SPI200')
+  assert event.triggered is False
+  assert event.gate_status == 'clear'
 
 
 def test_has_critical_event_accepts_newsitem_typed_dicts():
@@ -116,7 +139,37 @@ def test_has_critical_event_accepts_newsitem_typed_dicts():
       'title_hash': 'abc123',
     }
   ]
-  assert has_critical_event(headlines, 'SPI200') is True
+  result = _make_result(items=headlines)
+  event = has_critical_event(result, 'SPI200')
+  assert event.triggered is True
+  assert event.gate_status == 'blocked'
+
+
+def test_has_critical_event_returns_unknown_on_fetch_error():
+  '''D-02: fetch failure → gate_status="unknown" (fail-closed).'''
+  result = _make_result(items=[], error='timeout')
+  event = has_critical_event(result, 'SPI200')
+  assert isinstance(event, CriticalEventResult)
+  assert event.triggered is False
+  assert event.gate_status == 'unknown'
+  assert event.fetch_error == 'timeout'
+
+
+def test_has_critical_event_unknown_on_network_error():
+  '''D-02: network_unreachable also triggers unknown gate_status.'''
+  result = _make_result(items=[], error='network_unreachable')
+  event = has_critical_event(result, 'SPI200')
+  assert event.gate_status == 'unknown'
+  assert event.fetch_error == 'network_unreachable'
+
+
+def test_has_critical_event_clear_on_successful_no_news():
+  '''D-02: successful empty fetch → gate_status="clear" (no block).'''
+  result = _make_result(items=[], error=None)
+  event = has_critical_event(result, 'SPI200')
+  assert event.gate_status == 'clear'
+  assert event.triggered is False
+  assert event.fetch_error is None
 
 
 # ---------------------------------------------------------------------------

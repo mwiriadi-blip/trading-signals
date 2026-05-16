@@ -89,6 +89,14 @@ def _setup_f1(tmp_path, monkeypatch):
   monkeypatch.setenv('RESEND_API_KEY', 'test_key_f1')
   monkeypatch.setattr(notifier, '_post_to_resend', _capture_post)
 
+  # 4b. Mock boundary 3: news_fetcher.fetch_news → clear result (no network call).
+  #     D-02: gate_status='clear' so signal generation proceeds normally in F1 chain.
+  #     Without this, _T fake ticker has no .news attr → parse_error → gate blocks.
+  from datetime import UTC, datetime as _dt
+  import news_fetcher as _nf
+  _clear_result = _nf.NewsResult(items=[], error=None, fetched_at=_dt.now(UTC))
+  monkeypatch.setattr(_nf, 'fetch_news', lambda *_a, **_kw: _clear_result)
+
   # 5. Neutralize git push subprocess (no .git in tmp_path; RESEARCH Pitfall 3)
   monkeypatch.setattr(main, '_push_state_to_git', lambda *a, **kw: None)
 

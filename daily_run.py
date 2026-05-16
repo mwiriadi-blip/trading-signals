@@ -36,6 +36,8 @@ from pnl_engine import entry_side_cost  # Phase 27 #7: half-cost helper
 
 import state_actions
 import daily_run_helpers
+import news_fetcher
+import news_filter
 
 logger = logging.getLogger(__name__)
 
@@ -100,17 +102,10 @@ def _run_daily_check_impl(
     - CLI-01: --test is STRUCTURALLY read-only; save call is conditional.
     - Phase 27 #7: entry/close-half costs via pnl_engine.entry_side_cost.
   '''
-  # Step 1: opening log line. D-07: one-shot mode acknowledgement emitted
-  # BEFORE the per-symbol loop so CLI-04/CLI-05 smoke tests see the line
-  # even if a later step raises.
+  # Step 1: opening log line (D-07 — before loop so tests see it even on raise).
   run_date = _compute_run_date()
 
-  # D-03 (Phase 7): weekday gate — short-circuits BEFORE any fetch, compute,
-  # or state mutation. Applies to ALL invocation modes (default, --once,
-  # --test, --force-email). `run_date.weekday()` returns 0=Mon..6=Sun
-  # (Python stdlib contract); 5=Sat, 6=Sun. Preserves the 4-tuple contract
-  # so main()'s dispatch ladder None-guard absorbs the state=None case
-  # without a second code path.
+  # D-03: weekday gate — short-circuits before fetch/compute/mutation on Sat/Sun.
   if run_date.weekday() >= system_params.WEEKDAY_SKIP_THRESHOLD:
     logger.info(
       '[Sched] weekend skip %s (weekday=%d) — no fetch, no state mutation',
@@ -121,11 +116,9 @@ def _run_daily_check_impl(
   run_date_iso = run_date.strftime('%Y-%m-%d')
   run_date_display = run_date.strftime('%Y-%m-%d %H:%M:%S AWST')
   run_start_monotonic = time.perf_counter()
-  # Phase 27 Plan 27-10 Task 2: canonical run-date marker for journalctl
-  # grep — locked-in shape `[Daily] run-date YYYY-MM-DD` (AWST) at INFO.
+  # Canonical run-date marker (locked-in shape for journalctl grep — D-13).
   logger.info('[Daily] run-date %s', run_date_iso)
-  # Late-bind _mode_label via main package so test patches propagate (and
-  # to keep cli_parser as the single owner of mode-label semantics).
+  # Late-bind _mode_label via main so test patches propagate.
   import main as _main_pkg
   logger.info(
     '[Sched] Run %s mode=%s', run_date_display, _main_pkg._mode_label(args),
@@ -153,23 +146,13 @@ def _run_daily_check_impl(
       for key, value in SYMBOL_MAP.items()
     }
 
-  # Phase 8 review-driven amendment (Codex MEDIUM): refresh the singleton
-  # cache as soon as load_state returns. The outer crash handler in main()
-  # reads this via state_actions._get_last_loaded_state() to build the
-  # crash-email state summary (_build_crash_state_summary already handles
-  # state=None gracefully for crashes BEFORE load_state).
+  # Refresh singleton cache for crash handler (ERR-05).
   state_actions._set_last_loaded_state(state)
 
-  # Phase 8 ERR-05 (B3 revision): staleness signalled via transient
-  # state['_stale_info']. Set BEFORE dispatch, popped BEFORE save_state
-  # by _dispatch_email_and_maintain_warnings. NOT stored in state['warnings']
-  # because Plan 02's routine age filter would drop it (date mismatch
-  # between tag-time and prior_run_date).
+  # ERR-05: transient _stale_info set here, popped in _dispatch before save.
   daily_run_helpers._maybe_set_stale_info(state, run_date)
 
-  # D-05 (Phase 6): capture old_signals BEFORE the per-symbol loop mutates
-  # state['signals']. Keyed by yfinance symbol per notifier's expectation.
-  # Handles BOTH Phase 3 int-shape AND Phase 4 D-08 dict-shape per Pitfall 7.
+  # D-05: capture old_signals before loop mutations; handles int/dict shape.
   old_signals: dict = {
     yf_sym: (
       state['signals'].get(state_key, {}).get('signal')
@@ -188,11 +171,7 @@ def _run_daily_check_impl(
   for state_key, market in enabled_markets.items():
     yf_symbol = market.get('symbol', SYMBOL_MAP.get(state_key, state_key))
     strategy_settings = state.get('strategy_settings', {}).get(state_key, {})
-    # Phase 8 D-17: resolve tier from state['_resolved_contracts'] materialised
-    # by state_manager.load_state (Plan 01). sizing_engine never imports the
-    # contract dicts — orchestrator passes multiplier + cost_aud_open through.
-    # Round-trip is split half-on-open (here) / half-on-close (via
-    # _closed_trade_to_record → state_manager.record_trade) per Phase 2 D-13.
+    # D-17: tier from _resolved_contracts; split cost half-open/half-close (D-13).
     resolved = state['_resolved_contracts'][state_key]
     multiplier = resolved['multiplier']
     cost_aud_round_trip = resolved['cost_aud']
@@ -218,10 +197,7 @@ def _run_daily_check_impl(
     # 3.c: signal_as_of from last-bar date — NO tz conversion (D-13, Pitfall 3).
     signal_as_of = df.index[-1].strftime('%Y-%m-%d')
 
-    # 3.c.i: DATA-05 stale-bar check — RESEARCH §Example 5 lines 880-897.
-    # AFTER fetch + signal_as_of, BEFORE compute_indicators (D-11 step 3.c).
-    # last_bar in market-local tz date; run_date in AWST wall-clock date —
-    # naive subtraction per Pitfall 3 (do NOT tz_convert the index).
+    # 3.c.i: DATA-05 stale-bar — naive date diff, no tz_convert (D-11/Pitfall 3).
     last_bar_date = df.index[-1].date()
     today_awst_date = run_date.date()
     days_old = (today_awst_date - last_bar_date).days
@@ -230,14 +206,22 @@ def _run_daily_check_impl(
         '[Fetch] WARN %s stale: signal_as_of=%s is %dd old (threshold=%dd)',
         yf_symbol, signal_as_of, days_old, _STALE_THRESHOLD_DAYS,
       )
-      # D-10: queue for end-of-run flush so warnings land in state.json even
-      # if later steps fail. append_warning takes POSITIONAL (source, message)
-      # — the tuple `('fetch', f'...')` unpacks via `append_warning(state, *tup)`.
+      # D-10: queue for end-of-run flush (append_warning takes positional args).
       pending_warnings.append((
         'fetch',
         f'{yf_symbol} stale: signal_as_of={signal_as_of} is {days_old}d old '
         f'(threshold={_STALE_THRESHOLD_DAYS}d)',
       ))
+
+    # 3.c.ii: news gate — BLOCK_ON_FAILURE (D-02).
+    _sym_news = market.get('symbol', SYMBOL_MAP.get(state_key, state_key))
+    _event = news_filter.has_critical_event(
+      news_fetcher.fetch_news(state_key, _sym_news), state_key)
+    if _event.gate_status in ('blocked', 'unknown'):
+      logger.warning('[News] SKIP %s gate=%r err=%r (D-02)',
+        state_key, _event.gate_status, _event.fetch_error)
+      daily_run_helpers.record_news_gate_skip(state, state_key, run_date_iso, _event)
+      continue
 
     # 3.d-f: indicators + signal. Scalars feed sizing_engine AND get
     # persisted under state[signals][state_key][last_scalars] (G-2).

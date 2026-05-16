@@ -78,7 +78,12 @@ def _make_app(monkeypatch, state, uid='user_a'):
   monkeypatch.setattr('state_manager.load_state', lambda *_a, **_kw: state_box['state'])
   monkeypatch.setattr('state_manager.mutate_user_state',
                       lambda u, m, *_a, **_kw: m(state_box['state']) or state_box['state'])
-  monkeypatch.setattr('news_fetcher.fetch_news', lambda *_a, **_kw: list(_FIXED_HEADLINES))
+  from datetime import UTC, datetime as _dt
+  from news_fetcher import NewsResult as _NewsResult
+  _fixed_result = _NewsResult(items=list(_FIXED_HEADLINES), error=None, fetched_at=_dt.now(UTC))
+  # D-04: render path uses load_news_cache; fetch_news is patched for any legacy callers.
+  monkeypatch.setattr('news_fetcher.fetch_news', lambda *_a, **_kw: _fixed_result)
+  monkeypatch.setattr('news_fetcher.load_news_cache', lambda *_a, **_kw: _fixed_result)
 
   return TestClient(app, raise_server_exceptions=True, headers=_AUTH), state_box
 
