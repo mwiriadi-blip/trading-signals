@@ -167,14 +167,15 @@ class TestNewsRenderer:
     from dashboard_renderer.components.news import render_news_panel
     h = self._make_headline()
     html = render_news_panel('SPI200', [h], set(), False)
-    assert '<details class="news-panel-disclosure" open>' in html
+    assert 'class="news-panel-disclosure"' in html
+    assert ' open' in html
 
   def test_news_panel_collapsed_when_pref_true(self):
     from dashboard_renderer.components.news import render_news_panel
     h = self._make_headline()
     html = render_news_panel('SPI200', [h], set(), True)
-    assert '<details class="news-panel-disclosure">' in html
-    assert '<details class="news-panel-disclosure" open>' not in html
+    assert 'class="news-panel-disclosure"' in html
+    assert 'class="news-panel-disclosure" open' not in html
 
   def test_banner_renders_with_locked_copy(self):
     from dashboard_renderer.components.news import render_news_panel

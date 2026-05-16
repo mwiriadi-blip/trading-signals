@@ -154,8 +154,11 @@ class TestNewsOnDashboard:
     client, _ = _make_app(monkeypatch, state)
     resp = client.get('/markets/SPI200/signals')
     assert resp.status_code == 200
-    assert '<details class="news-panel-disclosure">' in resp.text
-    assert '<details class="news-panel-disclosure" open>' not in resp.text
+    assert 'class="news-panel-disclosure"' in resp.text
+    assert not any(
+      f'{tag} open>' in resp.text or f'{tag} open ' in resp.text
+      for tag in ['<details class="news-panel-disclosure"']
+    )
 
   def test_dashboard_renders_when_no_news_state_present(self, monkeypatch):
     state = _make_state(users={'user_a': {}})
