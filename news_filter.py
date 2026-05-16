@@ -157,6 +157,15 @@ def has_critical_event(result: Any, market_id: str) -> CriticalEventResult:
       gate_status='unknown',
     )
 
+  # Unknown market_id — no keyword list; fail-closed per D-02.
+  if market_id not in _PATTERNS:
+    _LOGGER.warning('has_critical_event unknown market_id=%r; failing closed', market_id)
+    return CriticalEventResult(
+      triggered=False,
+      fetch_error=None,
+      gate_status='unknown',
+    )
+
   # Fetch succeeded — classify each headline.
   for item in result.items:
     title = item.get('title', '') if hasattr(item, 'get') else ''

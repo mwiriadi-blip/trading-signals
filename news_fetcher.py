@@ -104,7 +104,6 @@ from system_params import KNOWN_MARKET_IDS as _VALID_MARKETS
 
 _PROJECT_ROOT = Path(__file__).parent
 _CACHE_DIR = _PROJECT_ROOT / '.cache' / 'news'
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =========================================================================
@@ -213,7 +212,9 @@ def _cache_path(market_id: str) -> Path:
   '''
   if not _is_valid_market_id(market_id):
     raise ValueError(f'invalid market_id: {market_id!r}')
-  return _CACHE_DIR / f'news_{market_id}.json'
+  path = _CACHE_DIR / f'news_{market_id}.json'
+  path.parent.mkdir(parents=True, exist_ok=True)
+  return path
 
 
 # =========================================================================
@@ -321,10 +322,10 @@ def _load_cache(path: Path) -> 'list[NewsItem] | None':
       return None
     if envelope.get('date') != date.today().isoformat():
       return None
-    headlines = envelope.get('headlines')
-    if not isinstance(headlines, list):
+    items = envelope.get('items') or envelope.get('headlines')
+    if not isinstance(items, list):
       return None
-    return headlines
+    return items
   except (FileNotFoundError, json.JSONDecodeError, OSError, KeyError, TypeError):
     return None
 
@@ -430,7 +431,13 @@ def fetch_news(
 
       items = deduped[:max_items]
 
-      envelope = {'date': date.today().isoformat(), 'headlines': items}
+      envelope = {
+        'items': items,
+        'error': None,
+        'fetched_at': datetime.now(UTC).isoformat(),
+        'stale': False,
+        'date': date.today().isoformat(),
+      }
       try:
         _write_cache(cache_path, envelope)
       except Exception as write_exc:
@@ -617,7 +624,7 @@ def refresh_news_cache(market_id: str, symbol: str) -> NewsResult:
       }
 
   # Atomic write: tmp → os.replace → cache_file (POSIX atomic on same filesystem)
-  tmp_path = cache_file.with_suffix('.json.tmp')
+  tmp_path = cache_file.parent / (cache_file.name + '.tmp')
   try:
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
     os.replace(tmp_path, cache_file)
