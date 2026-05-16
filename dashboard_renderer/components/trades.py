@@ -12,10 +12,13 @@ from dashboard_renderer.formatters import (
 
 def render_trades_table(state: dict) -> str:
   trade_log = state.get('trade_log', [])
+  is_admin = state.get('_account_include_open_form', False)
   # D-06: render last 200 only; full state preserved; admin endpoint serves full log
   slice_newest_first = list(reversed(trade_log[-200:]))
+  n_total = len(trade_log)
   rendered_rows = []
-  for trade in slice_newest_first:
+  for display_i, trade in enumerate(slice_newest_first):
+    actual_index = n_total - 1 - display_i
     closed = html.escape(trade.get('exit_date', ''), quote=True)
     instrument_key = trade.get('instrument', '')
     instrument_display = _display_names(state).get(instrument_key, instrument_key)
@@ -33,6 +36,12 @@ def render_trades_table(state: dict) -> str:
     reason_display = _EXIT_REASON_DISPLAY.get(exit_reason_raw, exit_reason_raw)
     reason = html.escape(reason_display, quote=True)
     pnl_cell = _fmt_pnl_with_colour(trade.get('net_pnl', 0.0))
+    delete_cell = (
+      f'        <td><button hx-delete="/trades/{actual_index}"\n'
+      f'                    hx-confirm="Delete this trade? This cannot be undone."\n'
+      f'                    class="btn-row btn-close">Delete</button></td>\n'
+      if is_admin else ''
+    )
     rendered_rows.append(
       '      <tr>\n'
       f'        <td data-label="Closed">{closed}</td>\n'
@@ -42,15 +51,18 @@ def render_trades_table(state: dict) -> str:
       f'        <td data-label="Contracts" class="num">{contracts}</td>\n'
       f'        <td data-label="Reason">{reason}</td>\n'
       f'        <td data-label="P&amp;L" class="num">{pnl_cell}</td>\n'
+      f'{delete_cell}'
       '      </tr>\n'
     )
+  colspan = '8' if is_admin else '7'
   if not rendered_rows:
     rendered_rows = [
       '      <tr>\n'
-      '        <td colspan="7" class="empty-state">— No closed trades yet —</td>\n'
+      f'        <td colspan="{colspan}" class="empty-state">— No closed trades yet —</td>\n'
       '      </tr>\n'
     ]
   body = ''.join(rendered_rows)
+  actions_th = '        <th scope="col">Actions</th>\n' if is_admin else ''
   return (
     '<section aria-labelledby="heading-trades">\n'
     '  <h2 id="heading-trades">Closed Trades</h2>\n'
@@ -68,6 +80,7 @@ def render_trades_table(state: dict) -> str:
     '        <th scope="col">Contracts</th>\n'
     '        <th scope="col">Reason</th>\n'
     '        <th scope="col">P&amp;L</th>\n'
+    f'{actions_th}'
     '      </tr>\n'
     '    </thead>\n'
     '    <tbody>\n'
