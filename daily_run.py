@@ -207,7 +207,8 @@ def _run_daily_check_impl(
       yf_symbol, days=400, retries=3, backoff_s=10.0,
     )
     fetch_elapsed = time.perf_counter() - fetch_start
-
+    if data_fetcher.LAST_FETCH_SOURCE.get(yf_symbol) == 'yfinance_fallback':  # Phase 41 D-02
+      pending_warnings.append(('fetch', f'IG fetch failed for {yf_symbol} — yfinance fallback used'))  # noqa: E501
     # 3.b: short-frame check BEFORE compute_indicators (DATA-04 / Pitfall 6).
     if len(df) < _MIN_BARS_REQUIRED:
       raise ShortFrameError(
@@ -431,7 +432,7 @@ def _run_daily_check_impl(
   # Step 5: update equity history (STATE-06).
   state = state_manager.update_equity_history(state, run_date_iso, equity)
 
-  # Step 6: flush queued warnings (empty in Wave 2; Wave 3 DATA-05 appends).
+  # Step 6: flush queued pending_warnings into state (DATA-05; Phase 41 D-02).
   for source, message in pending_warnings:
     state = state_manager.append_warning(state, source, message)
 
@@ -498,9 +499,8 @@ def _run_daily_check_impl(
       ):
         fresh_state[key] = _accumulated[key]
   state = state_manager.mutate_state(_apply_daily_run)
-  # Phase 8 review-driven amendment: refresh singleton cache to the
-  # post-save state (mutate_state returns it). The crash-email path reads
-  # via state_actions; keep it in sync with disk.
+  # Phase 8 review-driven amendment: refresh singleton cache to post-save state
+  # (mutate_state returns it); crash-email path reads via state_actions.
   state_actions._set_last_loaded_state(state)
   # Phase 33 TENANT-01: per-user keys in user bucket
   _saved_user = state['users'][_ADMIN_UID]
