@@ -479,7 +479,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 35. cookie + Depends + sub-router admin gate | v1.3 | 5/5 | Complete    | 2026-05-13 |
 | 36. per-user scoping + privacy + flock | v1.3 | 3/3 | Complete    | 2026-05-13 |
 | 37. per-user email fan-out + admin routes | v1.3 | 6/6 | Complete   | 2026-05-14 |
-| 38. news integration | v1.3 | 4/4 | Complete   | 2026-05-16 |
+| 38. news integration | v1.3 | 4/4 | Complete    | 2026-05-16 |
 | 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
 | 40. milestone close audit | v1.3 | 0/0 | Not started | - |
 | 41. domain models — Pydantic market config | v1.4 | 0/0 | Not started | - |
