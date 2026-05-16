@@ -21,6 +21,9 @@ __pycache__/
 # Phase 23 — backtest parquet cache (per-machine, not committed)
 .planning/backtests/data/
 
+# Phase 38 — news fetcher disk cache (per-machine, not committed)
+news_cache_*.json
+
 # Phase 26 cleanup (2026-05-07) — agent runtime + OS junk + debug artefacts
 # These appear from MCP tooling, finder metadata, and ad-hoc debug exports.
 **/.DS_Store

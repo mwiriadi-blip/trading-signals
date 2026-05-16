@@ -1285,7 +1285,11 @@ def _phase26_dashboard_setup(monkeypatch, tmp_path):
   sys.modules.pop('web.app', None)
   from fastapi.testclient import TestClient
   from web.app import create_app
-  return TestClient(create_app())
+  from web.dependencies import current_user_id
+  app = create_app()
+  # Phase 38: market routes use Depends(current_user_id); override for header-auth tests.
+  app.dependency_overrides[current_user_id] = lambda: 'admin'
+  return TestClient(app)
 
 
 class TestPhase26PlaceholderLeak:

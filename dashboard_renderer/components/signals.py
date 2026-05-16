@@ -140,7 +140,18 @@ def _signal_card_stop(
   return f'Hypothetical stop {stop_val:.4f} <span class="stop-tag">(if {direction} @ {last_close:.4f})</span>'
 
 
-def render_signal_cards(state: dict, *, active_market: str | None = None) -> str:
+def render_signal_cards(
+  state: dict,
+  *,
+  active_market: str | None = None,
+  uid: str | None = None,
+  news_dismissed: dict | None = None,
+  news_panel_collapsed: dict | None = None,
+) -> str:
+  # Safe defaults for first-visit users or callers that don't supply news state
+  news_dismissed = news_dismissed or {}
+  news_panel_collapsed = news_panel_collapsed or {}
+
   # Phase 25 D-09: hide trace tables on first run; show single onboarding card.
   # last_run is None means the daemon has never completed a cycle — no signal
   # data exists yet, so the full card+trace wall of "n/a" panels is replaced
@@ -254,6 +265,46 @@ def render_signal_cards(state: dict, *, active_market: str | None = None) -> str
       }
     trace_placeholder = _TRACE_OPEN_PLACEHOLDER.get(state_key, '')
     parts.append(_render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
+
+    # Phase 38: inject news panel at the bottom of each per-market section.
+    # Local imports (C-2 hex discipline; never-crash discipline D-10).
+    try:
+      from datetime import date as _date
+      from news_fetcher import fetch_news as _fetch_news
+      from dashboard_renderer.components.news import render_news_panel as _render_news_panel
+
+      _today_iso = _date.today().isoformat()
+      _dismiss_bucket = (news_dismissed.get(state_key) or {})
+      if _dismiss_bucket.get('date') == _today_iso:
+        _dismissed_hashes = frozenset(_dismiss_bucket.get('hashes', []))
+      else:
+        # Stale bucket — treat as empty (matches dismiss handler's D-08 reset)
+        _dismissed_hashes = frozenset()
+
+      _collapsed = bool((news_panel_collapsed or {}).get(state_key, False))
+
+      # Resolve the yfinance symbol for this market
+      _markets = state.get('markets') or {}
+      _market_entry = _markets.get(state_key) or {}
+      _symbol = _market_entry.get('symbol', state_key)
+
+      try:
+        _headlines = _fetch_news(state_key, _symbol)
+      except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+          '[Signals] fetch_news failed for %s — empty fallback (D-10)', state_key,
+        )
+        _headlines = []
+
+      parts.append(_render_news_panel(state_key, _headlines, _dismissed_hashes, _collapsed))
+    except Exception:
+      # Never-crash discipline D-10: news panel must not 500 the dashboard
+      import logging as _logging
+      _logging.getLogger(__name__).warning(
+        '[Signals] news panel render failed for %s — skipping', state_key, exc_info=True,
+      )
+
   parts.append('  </div>\n')
   parts.append('</section>\n')
   return ''.join(parts)

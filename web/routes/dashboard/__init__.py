@@ -270,7 +270,12 @@ def register(app: FastAPI) -> None:
   # markets.py is registered BEFORE dashboard.py in web/app.py, preserving
   # the 18ea2c5 literal-before-dynamic discipline.
 
-  async def _serve_market_scoped_page(request: Request, market_id: str, function: str):
+  async def _serve_market_scoped_page(
+    request: Request,
+    market_id: str,
+    function: str,
+    uid: str = '',
+  ):
     '''Phase 25 D-01..D-05: serve a market-scoped page (signals/settings/market-test).
 
     Validates market_id against state['markets']; 404 on miss.
@@ -278,6 +283,10 @@ def register(app: FastAPI) -> None:
     HX-Request → render_panel_html() returns panel-only HTML (no shell, no nav);
     otherwise render_dashboard_as_str() returns the full document.
     Cache-Control: no-store, private (T-25-04-03 cache poisoning mitigation).
+
+    Phase 38: threads uid + per-user news_dismissed/news_panel_collapsed into
+    the render context so the news panel reflects each user's dismiss history.
+    Full .get() default chain for first-visit users with no news state (MEDIUM #10).
     '''
     import state_manager
 
@@ -289,6 +298,15 @@ def register(app: FastAPI) -> None:
         status_code=404,
         media_type='text/plain; charset=utf-8',
       )
+
+    # Phase 38: derive per-user news state with full .get() default chain.
+    # All .get() calls include explicit {} fallbacks so first-visit users with
+    # no 'users' key, no uid bucket, or no news keys all resolve to {} without
+    # raising AttributeError or KeyError (review MEDIUM #10 mitigation).
+    users_bucket = state.get('users', {}) or {}
+    user_bucket = users_bucket.get(uid, {}) or {}
+    news_dismissed = user_bucket.get('news_dismissed', {}) or {}
+    news_panel_collapsed = user_bucket.get('news_panel_collapsed', {}) or {}
 
     htmx = _is_htmx_request(request)
 
@@ -302,6 +320,9 @@ def register(app: FastAPI) -> None:
         now=None,
         active_function=function,
         active_market=market_id,
+        uid=uid,
+        news_dismissed=news_dismissed,
+        news_panel_collapsed=news_panel_collapsed,
       )
     else:
       # Full document path (browser navigation)
@@ -311,6 +332,9 @@ def register(app: FastAPI) -> None:
         now=None,
         active_function=function,
         active_market=market_id,
+        uid=uid,
+        news_dismissed=news_dismissed,
+        news_panel_collapsed=news_panel_collapsed,
       )
 
     # Phase 26 Plan 26-04 (B2/B3): apply the same placeholder-substitution
@@ -337,16 +361,28 @@ def register(app: FastAPI) -> None:
     return response
 
   @app.get('/markets/{market_id}/signals', response_class=Response)
-  async def get_market_signals(request: Request, market_id: str):
-    return await _serve_market_scoped_page(request, market_id, 'signals')
+  async def get_market_signals(
+    request: Request,
+    market_id: str,
+    uid: str = Depends(_get_current_user_id),
+  ):
+    return await _serve_market_scoped_page(request, market_id, 'signals', uid=uid)
 
   @app.get('/markets/{market_id}/settings', response_class=Response)
-  async def get_market_settings(request: Request, market_id: str):
-    return await _serve_market_scoped_page(request, market_id, 'settings')
+  async def get_market_settings(
+    request: Request,
+    market_id: str,
+    uid: str = Depends(_get_current_user_id),
+  ):
+    return await _serve_market_scoped_page(request, market_id, 'settings', uid=uid)
 
   @app.get('/markets/{market_id}/market-test', response_class=Response)
-  async def get_market_market_test(request: Request, market_id: str):
-    return await _serve_market_scoped_page(request, market_id, 'market-test')
+  async def get_market_market_test(
+    request: Request,
+    market_id: str,
+    uid: str = Depends(_get_current_user_id),
+  ):
+    return await _serve_market_scoped_page(request, market_id, 'market-test', uid=uid)
 
   @app.get('/status-strip', response_class=Response)
   async def get_status_strip(request: Request):

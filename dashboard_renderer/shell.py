@@ -286,7 +286,14 @@ def _render_page_body(ctx: RenderContext, page: str) -> tuple[str, str, str, str
         # Market switching is done via the tab strip in render_two_axis_nav
         # (Plan 25-03); the old <select> picker was removed in Phase 25 D-19 #4
         # and the helper deleted in Phase 26 Plan 26-08.
-        _render_signal_cards(state, active_market=active_market)
+        # Phase 38: pass per-user news state for news panel injection.
+        _render_signal_cards(
+          state,
+          active_market=active_market,
+          uid=getattr(ctx, 'uid', None),
+          news_dismissed=getattr(ctx, 'news_dismissed', {}),
+          news_panel_collapsed=getattr(ctx, 'news_panel_collapsed', {}),
+        )
         + _paper_trades_body()
         + _render_trailing_stop_guidance(state)
         + _render_equity_chart_container(state)

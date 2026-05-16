@@ -1,4 +1,4 @@
-<!-- captured at HEAD ee001be after 27-08+27-11 -->
+<!-- captured at HEAD phase38-css-updated after 27-08+27-11 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -789,6 +789,69 @@ input:focus-visible,
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+/* =========================================================================
+ * Phase 38 — News panel (mirrors trace-disclosure pattern)
+ * All tokens from :root — no new tokens introduced.
+ * ========================================================================= */
+.news-panel-disclosure { margin-top: var(--space-3); }
+.news-panel-summary { cursor: pointer; font-weight: 600; color: var(--color-text-muted); }
+.news-panel-inner { margin-top: var(--space-2); }
+.news-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.news-banner-heading {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+.news-table { width: 100%; border-collapse: collapse; }
+.news-table th {
+  text-align: left;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.news-table td {
+  font-size: var(--fs-body);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.news-table tr:last-child td { border-bottom: none; }
+.news-link a {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+}
+.news-link a:hover { color: var(--color-text-muted); }
+.news-meta {
+  font-size: var(--fs-label);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.btn-news-dismiss {
+  background: transparent;
+  color: var(--color-long);
+  border: 1px solid var(--color-long);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  cursor: pointer;
+  min-height: var(--touch-target-min);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.btn-news-dismiss:hover { background: rgba(34, 197, 94, 0.10); }
 </style>
 </head>
 <body>
@@ -890,6 +953,16 @@ input:focus-visible,
   <p><em>Awaiting first daily run.</em></p>
 </section>
 </details>
+<details class="news-panel-disclosure" open>
+<summary class="news-panel-summary">Market News</summary>
+<div class="news-panel-inner">
+<table class="news-table">
+<tbody>
+<p class="subtle">No headlines today.</p>
+</tbody>
+</table>
+</div>
+</details>
     <article class="card">
       <p class="eyebrow">AUD / USD</p>
       <p class="big-label signal-long"><span class="status-dot status-dot--long" aria-hidden="true"></span>LONG</p>
@@ -930,6 +1003,21 @@ input:focus-visible,
 <section class="trace-panel trace-vote">
   <p><em>Awaiting first daily run.</em></p>
 </section>
+</details>
+<details class="news-panel-disclosure" open>
+<summary class="news-panel-summary">Market News</summary>
+<div class="news-panel-inner">
+<div class="news-banner"><p class="news-banner-heading">Possible market-moving news — operator review recommended</p></div>
+<table class="news-table">
+<tbody>
+<tr id="news-row-30a1d518c9f8fd99"><td class="news-link"><a href="https://finance.yahoo.com/economy/policy/articles/socgen-apos-overnight-economic-news-095900184.html" target="_blank" rel="noopener noreferrer">SocGen&#x27;s Overnight Economic News Summary</a></td><td class="news-meta">MT Newswires · 2026-05-05T09:59:00Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/30a1d518c9f8fd99" hx-target="#news-row-30a1d518c9f8fd99" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
+<tr id="news-row-b6884fcfad44b29a"><td class="news-link"><a href="https://finance.yahoo.com/news/socgen-says-australia-dollar-apos-155146370.html" target="_blank" rel="noopener noreferrer">SocGen Says Australia Dollar&#x27;s Resilience Is &quot;Striking&quot;</a></td><td class="news-meta">MT Newswires · 2026-03-10T15:51:46Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/b6884fcfad44b29a" hx-target="#news-row-b6884fcfad44b29a" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
+<tr id="news-row-56f94d19cf5de69d"><td class="news-link"><a href="https://finance.yahoo.com/news/australian-dollar-tops-g10-rba-115750586.html" target="_blank" rel="noopener noreferrer">Australian Dollar Tops G10 After RBA Rate Hike, MUFG Says</a></td><td class="news-meta">MT Newswires · 2026-02-03T11:57:50Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/56f94d19cf5de69d" hx-target="#news-row-56f94d19cf5de69d" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
+<tr id="news-row-5a3ee44400f01dac"><td class="news-link"><a href="https://finance.yahoo.com/news/mitsubishi-ufg-says-global-backdrop-171505818.html" target="_blank" rel="noopener noreferrer">Mitsubishi UFG Says Global Backdrop, Central Bank Policy Shifts Provide More Support for Australian, New Zealand Dollars</a></td><td class="news-meta">MT Newswires · 2025-12-31T17:15:05Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/5a3ee44400f01dac" hx-target="#news-row-5a3ee44400f01dac" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
+<tr id="news-row-bf7c380d82484b65"><td class="news-link"><a href="https://finance.yahoo.com/news/hawkish-bank-australia-brings-forward-110927590.html" target="_blank" rel="noopener noreferrer">Hawkish Reserve Bank of Australia Update Brings Forward Rate Hike Expectations, Says MUFG</a></td><td class="news-meta">MT Newswires · 2025-12-09T11:09:27Z</td><td><button type="button" class="btn-news-dismiss" hx-post="/news/AUDUSD/dismiss/bf7c380d82484b65" hx-target="#news-row-bf7c380d82484b65" hx-swap="outerHTML" hx-trigger="click">Dismiss Headline</button></td></tr>
+</tbody>
+</table>
+</div>
 </details>
   </div>
 </section>

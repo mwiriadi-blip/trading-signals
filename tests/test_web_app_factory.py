@@ -404,7 +404,11 @@ class TestPhase25MarketRoutes:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
     from web.app import create_app
-    client = TestClient(create_app())
+    from web.dependencies import current_user_id
+    app = create_app()
+    # Phase 38: market routes use Depends(current_user_id); override for header-auth tests.
+    app.dependency_overrides[current_user_id] = lambda: 'admin'
+    client = TestClient(app)
     resp = client.get(
       '/markets/SPI200/settings',
       headers={AUTH_HEADER_NAME: VALID_SECRET},
@@ -424,7 +428,11 @@ class TestPhase25MarketRoutes:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
     from web.app import create_app
-    client = TestClient(create_app())
+    from web.dependencies import current_user_id
+    app = create_app()
+    # Phase 38: market routes now use Depends(current_user_id) for per-user news.
+    app.dependency_overrides[current_user_id] = lambda: 'admin'
+    client = TestClient(app)
     resp = client.get(
       '/markets/SPI200/signals',
       headers={AUTH_HEADER_NAME: VALID_SECRET},
@@ -441,7 +449,9 @@ class TestPhase25MarketRoutes:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
     from web.app import create_app
+    from web.dependencies import current_user_id
     app = create_app()
+    app.dependency_overrides[current_user_id] = lambda: 'admin'
     paths = {r.path for r in app.routes if hasattr(r, 'path')}
     # Gate: only meaningful once the route exists; if not registered, fail the xfail
     assert '/markets/{market_id}/signals' in paths, 'Phase 25 route not yet registered'
@@ -475,7 +485,10 @@ class TestPhase25SelectedMarketCookie:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
     from web.app import create_app
-    client = TestClient(create_app())
+    from web.dependencies import current_user_id
+    app = create_app()
+    app.dependency_overrides[current_user_id] = lambda: 'admin'
+    client = TestClient(app)
     resp = client.get(
       '/markets/AUDUSD/signals',
       headers={AUTH_HEADER_NAME: VALID_SECRET},
@@ -490,7 +503,10 @@ class TestPhase25SelectedMarketCookie:
     monkeypatch.setenv('WEB_AUTH_SECRET', VALID_SECRET)
     monkeypatch.setenv('WEB_AUTH_USERNAME', 'marc')
     from web.app import create_app
-    client = TestClient(create_app())
+    from web.dependencies import current_user_id
+    app = create_app()
+    app.dependency_overrides[current_user_id] = lambda: 'admin'
+    client = TestClient(app)
     resp = client.get(
       '/markets/SPI200/signals',
       headers={AUTH_HEADER_NAME: VALID_SECRET},
@@ -612,7 +628,13 @@ def _phase26_setup(monkeypatch, tmp_path):
   import sys
   sys.modules.pop('web.app', None)
   from web.app import create_app
-  return TestClient(create_app())
+  from web.dependencies import current_user_id
+  app = create_app()
+  # Phase 38: market routes use Depends(current_user_id); override for tests
+  # that use header-only auth (middleware doesn't set request.state.user_id
+  # for header auth paths, so FastAPI Depends resolution would 403).
+  app.dependency_overrides[current_user_id] = lambda: 'admin'
+  return TestClient(app)
 
 
 class TestPhase26MarketScoping:

@@ -254,7 +254,11 @@ class TestTraceDetailsOpenMarketScoped:
         monkeypatch.setattr(state_manager, 'load_state', lambda *_a, **_kw: state)
         sys.modules.pop('web.app', None)
         from web.app import create_app
-        return TestClient(create_app())
+        from web.dependencies import current_user_id
+        app = create_app()
+        # Phase 38: market routes use Depends(current_user_id); override for header-auth tests.
+        app.dependency_overrides[current_user_id] = lambda: 'admin'
+        return TestClient(app)
 
     def test_details_open_when_cookie_includes_instrument(
         self, monkeypatch, tmp_path,
@@ -341,7 +345,11 @@ class TestTraceDetailsOpenMarketScoped:
         monkeypatch.setattr(state_manager, 'load_state', lambda *_a, **_kw: state)
         sys.modules.pop('web.app', None)
         from web.app import create_app
-        client = TestClient(create_app())
+        from web.dependencies import current_user_id
+        app = create_app()
+        # Phase 38: market routes use Depends(current_user_id); override for header-auth tests.
+        app.dependency_overrides[current_user_id] = lambda: 'admin'
+        client = TestClient(app)
 
         # First confirm placeholder is emitted (no cookie — should be blank)
         resp_no_cookie = client.get(

@@ -37,6 +37,9 @@ def _build_render_context(
   trace_open_keys: list | None,
   active_function: str = 'signals',
   active_market: str | None = None,
+  uid: str | None = None,
+  news_dismissed: dict | None = None,
+  news_panel_collapsed: dict | None = None,
 ) -> RenderContext:
   resolved_now = _resolve_now(now)
   strategy_version = _resolve_strategy_version(state)
@@ -47,6 +50,9 @@ def _build_render_context(
     trace_open_keys=trace_open_keys,
     active_function=active_function,
     active_market=active_market,
+    uid=uid,
+    news_dismissed=news_dismissed,
+    news_panel_collapsed=news_panel_collapsed,
   )
   return ctx
 
@@ -131,6 +137,9 @@ def render_panel_html(
   active_market: str | None = None,
   now: datetime | None = None,
   trace_open_keys: list | None = None,
+  uid: str | None = None,
+  news_dismissed: dict | None = None,
+  news_panel_collapsed: dict | None = None,
 ) -> str:
   '''Return ONLY the inner panel HTML for HTMX swaps (Plan 25-04).
 
@@ -145,6 +154,9 @@ def render_panel_html(
     trace_open_keys=trace_open_keys,
     active_function=active_function,
     active_market=active_market,
+    uid=uid,
+    news_dismissed=news_dismissed,
+    news_panel_collapsed=news_panel_collapsed,
   )
   from dashboard_renderer.pages import render_panel_only
   return render_panel_only(ctx)
@@ -155,6 +167,9 @@ def render_dashboard_as_str(
   now=None,
   active_function: str = 'signals',
   active_market: str | None = None,
+  uid: str | None = None,
+  news_dismissed: dict | None = None,
+  news_panel_collapsed: dict | None = None,
 ) -> str:
   '''Render full dashboard to a string without writing to disk.
 
@@ -168,6 +183,9 @@ def render_dashboard_as_str(
     trace_open_keys=None,
     active_function=active_function,
     active_market=active_market,
+    uid=uid,
+    news_dismissed=news_dismissed,
+    news_panel_collapsed=news_panel_collapsed,
   )
   return _render_header_and_body(
     ctx=ctx,
