@@ -947,17 +947,14 @@ class TestOrchestrator:
     _install_fixture_fetch(monkeypatch)
 
     # Force render_dashboard_files to raise at CALL TIME.
-    # C-2 reviews: monkeypatch target is `dashboard.render_dashboard_files`
-    # (the module attribute on the real dashboard module — the in-helper
-    # `import dashboard` reuses sys.modules['dashboard']). NOT
-    # `main.dashboard.render_dashboard_files`, which does not exist once the
-    # module-top import is removed per C-2.
-    # Phase 26 Plan 06 (R2): renamed render_dashboard -> render_dashboard_files.
-    import dashboard as _dashboard_module_for_patch
+    # Patch directly on dashboard_renderer.api — daily_run_helpers does
+    # `from dashboard_renderer.api import render_dashboard_files` inside
+    # the try block; monkeypatching the module attribute redirects that call.
+    import dashboard_renderer.api as _dr_api
 
     def _raise(*args, **kwargs):
       raise RuntimeError('simulated render failure')
-    monkeypatch.setattr(_dashboard_module_for_patch, 'render_dashboard_files', _raise)
+    monkeypatch.setattr(_dr_api, 'render_dashboard_files', _raise)
 
     rc = main.main(['--once'])
     assert rc == 0, 'D-06: dashboard failure must NOT change exit code'
@@ -977,20 +974,16 @@ class TestOrchestrator:
   @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
   def test_dashboard_import_time_failure_never_crashes_run(
       self, tmp_path, monkeypatch, caplog) -> None:
-    '''C-2 reviews: an import-time error in dashboard.py (syntax error,
-    missing sub-import, etc.) MUST be caught by the same `except Exception`
-    that catches runtime render failures. The in-helper `import dashboard`
-    statement makes this possible.
+    '''C-2 reviews: an import-time error in dashboard_renderer.api MUST be
+    caught by the same `except Exception` that catches runtime failures.
+    The local `from dashboard_renderer.api import ...` inside the try block
+    makes this possible.
 
-    Strategy: replace sys.modules['dashboard'] with an object whose
-    attribute access raises. When `_render_dashboard_never_crash` runs
-    `import dashboard`, Python reloads via the fake, and when the helper
-    tries to reach `dashboard.render_dashboard`, attribute access fails —
-    the try/except catches, and the run completes with rc == 0.
-
-    If this test ever fails, the most likely cause is that a regression
-    moved `import dashboard` back to main.py module scope — fix by moving
-    it back inside the helper (C-2 reviews).
+    Strategy: replace sys.modules['dashboard_renderer.api'] with an object
+    whose attribute access raises. When `_render_dashboard_never_crash` runs
+    `from dashboard_renderer.api import render_dashboard_files`, Python finds
+    the fake module, getattr raises ImportError — the try/except catches, and
+    the run completes with rc == 0.
     '''
     import sys
     caplog.set_level(logging.WARNING)
@@ -1004,15 +997,15 @@ class TestOrchestrator:
         raise ImportError(
           f'simulated import-time failure: cannot access {name!r}'
         )
-    original = sys.modules.get('dashboard')
-    sys.modules['dashboard'] = _BrokenDashboard()
+    original = sys.modules.get('dashboard_renderer.api')
+    sys.modules['dashboard_renderer.api'] = _BrokenDashboard()
     try:
       rc = main.main(['--once'])
     finally:
       if original is not None:
-        sys.modules['dashboard'] = original
+        sys.modules['dashboard_renderer.api'] = original
       else:
-        sys.modules.pop('dashboard', None)
+        sys.modules.pop('dashboard_renderer.api', None)
 
     assert rc == 0, (
       'C-2 reviews: dashboard IMPORT-time failure must NOT change exit code'

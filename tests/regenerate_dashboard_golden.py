@@ -28,7 +28,7 @@ import pytz
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dashboard import render_dashboard_files  # noqa: E402, I001 — import after sys.path.insert
+from dashboard_renderer.api import render_dashboard_files  # noqa: E402, I001 — import after sys.path.insert
 
 FIXTURES_DIR = ROOT / 'tests' / 'fixtures' / 'dashboard'
 # C-1 reviews fix: PERTH.localize(...) is correct; tzinfo=PERTH is not.

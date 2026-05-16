@@ -1,112 +1,106 @@
 # Technology Stack
 
-**Analysis Date:** 2026-05-15
+**Analysis Date:** 2026-05-16
 
 ## Languages
 
 **Primary:**
-- Python 3.13 - All core trading engine, signal logic, state management, and web API
-- HTML5 - Dashboard templates rendered server-side via `dashboard_renderer/` + HTMX interactivity
+- Python 3.13 (required: `>=3.13,<3.14`) — all core trading engine, signal logic, state management, web API
+- HTML5 — dashboard templates rendered server-side via `dashboard_renderer/` + HTMX interactivity
 
 **Secondary:**
-- JavaScript/HTMX - Client-side interactivity in web dashboard (minimal; mostly server-driven)
-- Bash - Deployment and systemd automation (`deploy.sh`, service files)
+- JavaScript/HTMX — client-side interactivity in web dashboard (minimal; server-driven)
+- Bash — deployment and systemd automation (`deploy.sh`, service files)
 
 ## Runtime
 
 **Environment:**
-- Python 3.13.x (pinned in `.python-version` and `pyproject.toml` — enforced by `deploy.sh`)
-- CPython (standard interpreter)
-- Runs in `venv` (created at deploy time by `deploy.sh`)
+- CPython 3.13.x (pinned; enforced by `pyproject.toml` and `deploy.sh`)
+- Runs in `.venv` (virtualenv; created at deploy time by `deploy.sh`)
+- Deployment OS: Ubuntu 22.04/24.04 on DigitalOcean droplet
 
 **Package Manager:**
-- pip (implicit; via `.venv/bin/pip`)
-- Lockfile: `requirements.txt` (compiled production deps), `requirements-dev.txt` (test tooling)
+- pip (via `.venv/bin/pip`)
+- Lockfile: `requirements.txt` (compiled production deps), `requirements-dev.txt` (test tooling only)
 
 ## Frameworks
 
-**Core:**
-- FastAPI 0.136.1 - REST API + server-side template rendering (hexagonal adapter layer)
-- Uvicorn 0.46.0 - ASGI web server (runs on localhost:8000, reverse-proxied by nginx)
+**Web:**
+- FastAPI 0.136.1 — ASGI web framework; HTMX-only, no SPA
+- uvicorn[standard] 0.46.0 — ASGI server (single worker on `127.0.0.1:8000`, systemd managed)
 
 **Scheduling:**
-- schedule 1.2.2 - In-process daily task scheduler (runs market-open checks in UTC)
+- schedule 1.2.2 — in-process daily job scheduler (`scheduler_driver.py`), runs market-open checks in UTC
 
-**Testing:**
-- pytest 8.3.3 - Test runner (config: `pyproject.toml`)
-- pytest-freezer 0.4.9 - Clock mocking for deterministic datetime tests
-- pytest-playwright 0.5.2 (dev only) - Browser automation for UAT on production droplet
+**Data / Numerics:**
+- pandas 2.3.3 — OHLCV timeseries processing
+- numpy 2.2.6 — indicator math (ADX, RSI, momentum in `signal_engine.py`)
+- pyarrow 24.0.0 — Parquet engine for backtest cache serialization (`backtest/`)
 
-**Build/Dev:**
-- ruff 0.6.9 - Linter + formatter (config: `pyproject.toml`; 2-space indent enforced by `[tool.ruff.format]`)
-- Python built-in: `json` (state persistence), `fcntl` (cross-process locking), `tempfile` (atomic writes)
+## Testing
+
+**Runner:**
+- pytest 8.3.3 — unit/integration suite (config: `pyproject.toml`)
+- pytest-freezer 0.4.9 — deterministic datetime freezing
+- pytest-playwright 0.5.2 (dev only) — Chromium browser UAT against live production droplet
+
+**UAT:**
+- Gated with `@pytest.mark.uat`; excluded from default `pytest` invocation
+- Run: `pytest -m uat`
+- Targets production droplet `signals.mwiriadi.me` (no staging env)
+
+## Build / Dev Tools
+
+**Linter/Formatter:**
+- ruff 0.6.9 — lint (`E,F,W,I,B,UP`) + isort; line-length 100, target py313
+- **CRITICAL: `ruff format` is PROHIBITED** — reflows to 4-space indent; project requires 2-space
+
+**Config files:**
+- `pyproject.toml` — project metadata, pytest options, ruff config
+- `.env` / `python-dotenv 1.0.1` — runtime secrets (loaded in `main.py` only via local import)
 
 ## Key Dependencies
 
-**Critical:**
-- pandas 2.3.3 - OHLCV timeseries processing (Phase 23+ parquet cache I/O)
-- numpy 2.2.6 - Indicator math (ADX, RSI, momentum calculations in signal_engine)
-- yfinance 1.2.0 - Market data fetcher (lazy-imported via Phase 27 #14 deferred mechanism to avoid bloating cold-start)
-- requests 2.28.1+ - HTTP client for yfinance + Resend API (see `notifier/transport.py`)
-- pyarrow 24.0.0 - Parquet engine for backtest cache serialization (Phase 23)
+**Auth / Security:**
+- bcrypt 5.0.0 — password hashing
+- pyotp 2.9.0 — TOTP (RFC 6238) generation and verification
+- itsdangerous 2.2.0 — signed session tokens (URLSafeTimedSerializer)
+- python-multipart 0.0.27 — form data parsing for FastAPI login POSTs
 
-**Authentication & Security:**
-- bcrypt 5.0.0 - Password hashing (legacy; now replaced by itsdangerous + TOTP per Phase 16.1)
-- itsdangerous 2.2.0 - Magic-link token serialization + validation (Phase 16.1 auth path)
-- pyotp 2.9.0 - TOTP generation + verification (Phase 16.1 multi-factor)
-- python-dotenv 1.0.1 - `.env` file loader for local dev (not used in production)
+**HTTP Client:**
+- httpx 0.28.1 — outbound HTTP (Resend email API via `notifier/transport.py`)
 
-**Infrastructure:**
-- PyYAML 6.0.2 - Config deserialization (minimal usage; mostly state/auth JSON)
-- qrcode 8.2 - QR code generation for TOTP device enrollment (Phase 16.1)
-- pillow 11.3.0 - Image processing for QR codes
-- python-multipart 0.0.27 - Form data parsing for FastAPI multipart routes
+**Market Data:**
+- yfinance 1.2.0 — Yahoo Finance OHLC + news fetch (lazy-imported via `_get_yf()` accessor)
 
-## Configuration
+**QR / Image:**
+- qrcode 8.2 — TOTP provisioning URI → QR image for device enrollment
+- pillow 11.3.0 — image rendering backend for qrcode
 
-**Environment:**
-- `.env.example` documents required variables (not committed; template only)
-- Actual secrets via environment variables at runtime (on droplet: `/home/trader/trading-signals/.env`, sourced by systemd)
-- Key required env vars:
-  - `WEB_AUTH_USERNAME` - Dashboard login username (validated fail-closed at boot)
-  - `WEB_AUTH_SECRET` - FastAPI session secret (≥32 chars; validated at boot)
-  - `SIGNALS_EMAIL_TO` - Recipient for daily alert emails
-  - `SIGNALS_EMAIL_FROM` - Sender address for Resend (Phase 37 RFC 8058 List-Unsubscribe)
-  - `RESEND_API_KEY` - Resend HTTPS API token (redacted in logs per Phase 27 #13)
-  - `TZ` - Timezone (must be `UTC` per scheduler_driver.py assertions)
-  - `BASE_URL` - Dashboard URL for email links + magic-link generation
-  - `OPERATOR_RECOVERY_EMAIL` - Fallback recovery contact (defaults to `mwiriadi@gmail.com` per Phase 16.1)
+**Serialisation:**
+- PyYAML 6.0.2 — config/fixture loading
 
-**Build:**
-- `pyproject.toml` - Project metadata + pytest/ruff config
-- Ruff config: line-length=100, target-version=py313, 2-space indent, single quotes, isort with `signal_engine` as first-party module
+## Infrastructure
+
+**Reverse Proxy:** nginx 1.24 (`nginx/signals.conf`) — TLS termination → uvicorn on 127.0.0.1:8000
+**TLS:** Let's Encrypt via certbot (`certonly --standalone`), auto-renewed via certbot systemd timer
+**Process Management:** systemd — `trading-signals-web.service`, `trading-signals-backup.service/.timer`
+**State Storage:** JSON file (`state.json`) with fcntl flock atomic writes (`state_manager/`)
 
 ## Platform Requirements
 
 **Development:**
-- Python 3.13.x (pyenv/asdf/brew)
-- pip-installed venv
-- Unix-like shell (bash/zsh) for dev scripts
+- Python 3.13.x (exact minor; pyenv/asdf/brew)
+- `.venv` virtualenv
+- Playwright Chromium (`playwright install chromium`) for UAT only
 
 **Production:**
-- Debian-based Linux droplet (Ubuntu 22.04+ per SETUP-DROPLET.md)
-- Python 3.13.x (installed via apt or source)
-- nginx (reverse proxy; config: `nginx/signals.conf`)
-- systemd (service files: `systemd/trading-signals-web.service`, `trading-signals-backup.service`, `trading-signals-backup.timer`)
-- UTC timezone enforced at OS level
-
-## Deployment
-
-**Delivery:**
-- Git repository (branch protection: must be on `main` per `deploy.sh`)
-- Deployed via `deploy.sh` (idempotent bash script; runs `git pull --ff-only` + pip install + systemctl restart)
-- No containerization (Docker not used; direct venv on droplet)
-
-**Post-Deploy:**
-- Health check via `curl /healthz` (Phase 11 D-25; 10 retries @ 1s intervals)
-- State persisted to `state.json` (atomic writes + fsync; JSON format with Decimal handling)
-- Auth data persisted to `auth.json` (Phase 16.1; user credentials, TOTP seeds, magic-link tokens)
+- DigitalOcean droplet, Ubuntu 22.04/24.04
+- nginx 1.24+, systemd, certbot
+- Domain: `signals.mwiriadi.me` (Cloudflare DNS; grey-cloud during cert issuance)
+- Deploy: `deploy.sh` (idempotent; branch-checked; health-verified)
+- No Docker/containers — direct venv on droplet
 
 ---
 
-*Stack analysis: 2026-05-15*
+*Stack analysis: 2026-05-16*

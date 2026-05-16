@@ -49,13 +49,6 @@ from daily_loop import (  # noqa: E402, F401
   run_daily_check, _evaluate_paper_trade_alerts,
   _dispatch_email_and_maintain_warnings, _push_state_to_git,
 )
-# `main.dashboard` is patched in tests; expose the module (or None on
-# import-time failure — _render_dashboard_never_crash isolates internally).
-try:
-  import dashboard  # noqa: E402, F401 — main.dashboard
-except Exception:
-  dashboard = None  # type: ignore[assignment]
-
 from data_fetcher import DataFetchError, ShortFrameError  # noqa: E402, F401
 from system_params import STRATEGY_VERSION  # noqa: E402, F401
 

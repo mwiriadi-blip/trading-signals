@@ -493,7 +493,7 @@ def register(app: FastAPI) -> None:
     if fwd is not None:
       return fwd
 
-    import dashboard
+    from dashboard_renderer.api import render_dashboard_page as _render_page
     from state_manager import load_state
 
     page_output = _PAGE_OUTPUTS.get(page, _PAGE_OUTPUTS['signals'])
@@ -503,7 +503,7 @@ def register(app: FastAPI) -> None:
       # so a marker bump or a stale-on-disk sibling triggers regen even when
       # dashboard.html happens to be fresh.
       if _is_stale_for(page_path) or not page_path.exists():
-        dashboard.render_dashboard_page(load_state(), page=page, out_path=page_path)
+        _render_page(load_state(), page=page, out_path=page_path)
     except Exception as exc:  # noqa: BLE001 — D-10 never-crash
       logger.warning(
         '[Web] dashboard regen failed for page=%s, serving stale: %s: %s',
@@ -546,14 +546,14 @@ def register(app: FastAPI) -> None:
       return fwd
 
     # D-07 / Phase 11 C-2: local imports preserve hex boundary.
-    import dashboard
+    from dashboard_renderer.api import render_dashboard_files as _render_files
     from state_manager import load_state
 
     try:
       # Phase 26 Plan 26-07 (R1): _is_stale_for(dashboard.html) preserves the
       # original D-08 behaviour for the canonical dashboard.html serve path.
       if _is_stale_for(Path(_DASHBOARD_PATH)):
-        dashboard.render_dashboard_files(load_state())
+        _render_files(load_state())
     except Exception as exc:  # noqa: BLE001 — D-10 never-crash
       logger.warning(
         '[Web] dashboard regen failed, serving stale: %s: %s',

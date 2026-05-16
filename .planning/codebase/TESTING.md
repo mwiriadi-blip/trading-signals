@@ -1,329 +1,257 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-05-15
+**Analysis Date:** 2026-05-16
 
 ## Test Framework
 
 **Runner:**
 - `pytest` v8.0+ (pyproject.toml `minversion = '8.0'`)
 - Python 3.13
-- Config: `.planning` via `pyproject.toml [tool.pytest.ini_options]`
-- Test discovery: files matching `test_*.py`, classes `Test*`, functions `test_*`
+- Config: `pyproject.toml [tool.pytest.ini_options]`
+- Discovery: files `test_*.py`, classes `Test*`, functions `test_*`
+- Default addopts: `-ra --strict-markers -m "not uat"` (UAT excluded by default)
+
+**Assertion Library:**
+- `assert` statements (builtin); no `assertEqual()`
+- Error assertions: `with pytest.raises(ValueError, match='schema mismatch')`
 
 **Run Commands:**
 ```bash
-.venv/bin/pytest -x --tb=short                    # Run all tests, stop on first failure
-.venv/bin/pytest -x --tb=short tests/test_<module>.py  # Run single test file
-pytest tests/test_signal_engine.py::TestDeterminism::test_atr_matches_oracle  # Single test
-pytest -k "direction_mode" --tb=short             # Run tests matching pattern
-pytest -m "not uat"                               # Exclude UAT tests (default)
-pytest -m uat                                     # Run only UAT tests (operator-facing)
+.venv/bin/pytest -x --tb=short                         # All tests, stop on first failure
+.venv/bin/pytest -x --tb=short tests/test_<module>.py  # Single file
+.venv/bin/pytest -k "direction_mode" --tb=short        # Pattern match
+.venv/bin/pytest -m uat                                # UAT only (hits production droplet)
+pytest --cov=signal_engine --cov-report=term-missing   # With coverage
 ```
-
-**Assertion Library:**
-- `assert` statements (builtin); no `assertEqual()` or `assertRaises()`
-- Comparison assertions use `==`, `!=`, `<`, `>`, `<=`, `>=`
-- Truth assertions use `assert x is None`, `assert x is not None`, `assert x`
 
 ## Test File Organization
 
-**Location:**
-- All tests in `tests/` directory at repo root
-- Co-located with source (not separate tree) — test file mirrors module name: `signal_engine.py` ↔ `test_signal_engine.py`
-- Fixtures live in `tests/fixtures/<module>/` subdirs (e.g., `tests/fixtures/phase2/`)
-- Determinism snapshots in `tests/determinism/` (e.g., `phase2_snapshot.json`)
-- Golden/oracle files in `tests/oracle/` (e.g., `wilder.py` — pure-loop reference implementation)
+**Location:** All tests in `tests/` at repo root. File mirrors module: `signal_engine.py` ↔ `test_signal_engine.py`
 
-**Naming:**
-- Test files: `test_<module>.py` (e.g., `test_signal_engine.py`, `test_data_fetcher.py`)
-- Test classes: `Test<Concern>` grouping related tests (e.g., `TestDeterminism`, `TestRiskCalculation`, `TestFetch`, `TestColumnShape`)
-- Test functions: `test_<behavior_or_spec>` — descriptive, reads like a sentence (e.g., `test_risk_pct_long_is_1pct`, `test_vol_scale_nan_guard`, `test_get_signal_long_only_blocks_short_votes`)
-
-**Structure:**
 ```
 tests/
-├── test_signal_engine.py          # Signal phase tests
-├── test_sizing_engine.py          # Sizing phase tests (organized by class)
-├── test_data_fetcher.py           # Data fetch tests (offline, monkeypatched yf.Ticker)
-├── test_web_*.py                  # Web layer tests (depend on conftest fixtures)
-├── conftest.py                    # Shared fixtures (autouse + named)
+├── conftest.py                     # Shared fixtures (autouse + named)
+├── subprocess_helpers_v12.py       # Shared subprocess test utilities
+├── test_signal_engine.py           # Signal engine indicator + vote tests
+├── test_sizing_engine.py           # Position sizing, exits, pyramid tests
+├── test_state_manager.py           # State persistence, atomicity, migration
+├── test_web_*.py                   # Web route tests (FastAPI TestClient)
+├── test_auth_store*.py             # Auth store tests
+├── test_dashboard.py               # Dashboard rendering tests
+├── test_notifier.py                # Email compose + dispatch tests
+├── test_backtest_*.py              # Backtest simulator/metrics/CLI tests
 ├── fixtures/
-│   ├── phase2/                    # JSON scenario fixtures for sizing tests
-│   │   ├── transition_long_to_long.json
-│   │   ├── pyramid_gap_crosses_both_levels_caps_at_1.json
-│   │   └── ...
-│   └── fetch/                     # Recorded OHLCV fixtures for data_fetcher tests
-│       ├── spi200_2020_2026.json
-│       └── ...
+│   ├── phase2/                     # JSON scenario fixtures for sizing tests
+│   ├── backtest/                   # Backtest scenario fixtures
+│   ├── fetch/                      # Recorded OHLCV fixtures
+│   ├── notifier/                   # Email golden fixtures
+│   └── news/                       # News filter fixtures
 ├── determinism/
-│   └── phase2_snapshot.json       # Determinism golden snapshot
+│   └── phase2_snapshot.json        # Determinism golden snapshot
 ├── oracle/
-│   ├── wilder.py                  # Pure-loop Wilder-smoothing reference
-│   └── goldens/
-│       └── golden_empty.html      # HTML render golden for xfail tests
-└── subprocess_helpers_v12.py      # Shared test utilities
+│   ├── wilder.py                   # Pure-loop Wilder reference implementation
+│   └── goldens/                    # HTML render goldens
+└── uat/
+    ├── conftest.py                 # UAT fixtures (Playwright page, base_url)
+    ├── test_uat_17_atr_handcalc.py
+    ├── test_uat_17_cookie_persistence.py
+    ├── test_uat_23_backtest_visual.py
+    ├── test_uat_26_coldstart.py
+    └── test_uat_26_multitab.py
 ```
 
 ## Test Structure
 
-**Suite Organization:**
-Classes group tests by concern dimension per Phase research patterns:
+**Class organization:** one class per concern dimension per phase research conventions
 
 ```python
-class TestDeterminism:
-  '''D-08: determinism oracle — signal output stable across runs.
-  Compares output against test/oracle/wilder.py reference.
-  '''
-  def test_atr_matches_oracle(self) -> None: ...
-  def test_adx_matches_oracle(self) -> None: ...
-
-class TestRiskCalculation:
-  '''D-13 size calculation + vol scaling.'''
+class TestSizing:
+  '''D-13: position size = account * risk_pct / stop_dist * vol_scale.'''
   def test_risk_pct_long_is_1pct(self) -> None: ...
-  def test_trail_mult_by_direction(self) -> None: ...
+  def test_vol_scale_nan_guard(self) -> None: ...
 
-class TestFetch:
-  '''D-13 yfinance retry + error handling (offline via monkeypatch).'''
-  def test_retry_on_rate_limit(self) -> None: ...
-  def test_empty_frame_exhausts_retries(self) -> None: ...
+class TestExits:
+  '''D-14: stop-hit detection and trailing stop logic.'''
+  def test_long_trail_stop_hit_intraday_low(self) -> None: ...
+
+class TestTransitions:
+  '''D-15: position transitions (long→short, short→flat, etc.).'''
+  @pytest.mark.parametrize('fixture_name', TRANSITION_FIXTURES)
+  def test_transition_produces_correct_position(self, fixture_name: str) -> None: ...
 ```
 
-**Test setup/teardown:**
-- Fixtures preferred over setUp/tearDown methods (pytest style)
-- Autouse fixtures in `conftest.py` for cross-cutting setup (e.g., `_set_web_auth_credentials_for_web_tests`)
-- Function-scoped fixtures for test-specific state (default scope)
-- Session/module-scoped fixtures for expensive data (e.g., loading oracle snapshots once per module)
-
-**Assertion patterns:**
-Assertions include descriptive failure messages:
+**Docstrings on test methods:** always present, referencing spec decision labels (D-xx, R-xx):
 ```python
 def test_risk_pct_long_is_1pct(self) -> None:
   '''SIZE-01 LONG branch: account=100000, atr=53, rvol=0.15, mult=5 -> contracts=1.
-  
+
   Computed: risk_pct=0.01, trail_mult=3.0, stop_dist=53*3*5=795,
-  vol_scale=clip(0.12/0.15,0.3,2.0)=0.8, n_raw=(100000*0.01/795)*0.8=1.00629,
-  int(1.00629)=1.
+  vol_scale=clip(0.12/0.15,0.3,2.0)=0.8, n_raw=(100000*0.01/795)*0.8=1.00629.
   '''
-  decision = calc_position_size(
-    account=100000.0, signal=LONG, atr=53.0, rvol=0.15, multiplier=5.0,
-  )
+  decision = calc_position_size(account=100000.0, signal=LONG, atr=53.0, rvol=0.15, multiplier=5.0)
   assert decision == SizingDecision(contracts=1, warning=None), decision
 ```
 
 ## Mocking
 
-**Framework:** `monkeypatch` (pytest built-in) for isolation + custom FakeX classes for complex behavior
+**Primary tool:** `monkeypatch` (pytest built-in)
 
-**Patterns:**
-
-### Monkeypatch for module-level replacements:
+**Module-level attribute replacement:**
 ```python
 def test_with_stub(monkeypatch):
   import state_manager
   monkeypatch.setattr(state_manager, 'load_state', lambda *_a, **_kw: stub_state)
-  # Now calls to state_manager.load_state() use the stub
+  monkeypatch.setattr(state_manager, 'save_state', lambda state, *_a, **_kw: captured.append(dict(state)))
 ```
 
-### FakeTicker for yfinance retry testing:
+**`unittest.mock.patch` legacy:** present in some older test files but `monkeypatch` is preferred (annotated `# noqa: F401 — legacy alias (monkeypatch now preferred)`)
+
+**Custom fake classes for complex behavior:**
 ```python
-class _FakeTicker:
-  '''Drop-in for yfinance.Ticker. Behaviour list controls what each .history() call returns.'''
-  def __init__(self, symbol: str, behaviour, call_count: list) -> None:
-    self.symbol = symbol
-    self._behaviour = behaviour  # list of (exc_or_df) entries
-    self._call_count = call_count
+class _FakeResponse:
+  '''Minimal stand-in for requests.Response.'''
+  def __init__(self, status_code: int): self.status_code = status_code
 
-  def history(self, **kwargs):
-    self._call_count.append(1)
-    idx = min(len(self._call_count) - 1, len(self._behaviour) - 1)
-    item = self._behaviour[idx]
-    if isinstance(item, Exception):
-      raise item
-    return item
-
-# Usage in test:
-def test_retry_on_rate_limit(monkeypatch):
-  behaviour = [YFRateLimitError(), recorded_df]  # Fail once, succeed
-  call_count = []
-  factory = _make_fake_ticker_factory(behaviour, call_count)
-  monkeypatch.setattr('data_fetcher.yf.Ticker', factory)
-  df = fetch_ohlcv('SPI200')
-  assert len(call_count) == 2  # Retried once
+# Usage:
+monkeypatch.setattr('notifier.requests.post', lambda *a, **kw: _FakeResponse(200))
 ```
 
-**What to Mock:**
-- External I/O: `yfinance.Ticker`, HTTP requests, file reads (use fixtures instead)
-- State managers: `load_state`, `save_state` → test with stubs (see `conftest.py::client_with_state_v3`)
-- DateTime: clock reads (use `monkeypatch.setenv('NOW_OVERRIDE', ...)` pattern)
-- Environment variables: `monkeypatch.setenv('VAR_NAME', value)`
+**Environment variables:**
+```python
+monkeypatch.setenv('WEB_AUTH_SECRET', 'a' * 32)
+monkeypatch.delenv('WEB_AUTH_SECRET', raising=False)  # Tests for missing-var path
+```
 
-**What NOT to Mock:**
-- Core logic functions (test the real `signal_engine.get_signal`, `sizing_engine.calc_position_size`)
-- Math operations (test with real pandas/numpy)
-- Error paths (test real exceptions, not stubs)
-- Configuration loading (test real config parsing, fail-closed validation)
+**What to mock:**
+- External I/O: `yfinance.Ticker`, HTTP requests (`notifier.requests.post`)
+- State managers: `load_state`, `save_state`, `mutate_state`, `mutate_user_state`
+- Environment variables: auth secrets, API keys
+
+**What NOT to mock:**
+- Core pure-math logic (`signal_engine`, `sizing_engine`, `pnl_engine`)
+- Exception propagation paths (test real exceptions)
+- Config parsing and fail-closed validation
 
 ## Fixtures and Factories
 
-**Test Data:**
+**`tests/conftest.py` shared fixtures:**
 
-### JSON scenario fixtures:
+| Fixture | Scope | Purpose |
+|---------|-------|---------|
+| `_set_web_auth_credentials_for_web_tests` | autouse | Sets `WEB_AUTH_SECRET`, `WEB_AUTH_USERNAME`, `OPERATOR_RECOVERY_EMAIL` for all `test_web_*` and `test_auth_store*` files |
+| `valid_cookie_token` | function | Signed `tsi_session` cookie token built with `VALID_SECRET` |
+| `valid_pending_token` | function | Signed `tsi_pending` cookie token |
+| `valid_enroll_token` | function | Signed `tsi_enroll` cookie token |
+| `isolated_auth_json` | function | Redirects `auth_store.DEFAULT_AUTH_PATH` to `tmp_path` |
+| `auth_headers` | function | `{AUTH_HEADER_NAME: VALID_SECRET}` dict |
+| `htmx_headers` | function | `auth_headers` + `HX-Request: true` |
+| `client_with_state_v3` | function | TestClient + `(set_state, captured_saves)` — v12 schema with open SPI200 LONG |
+| `client_with_state_v6` | function | TestClient + `(set_state, captured_saves)` — v12 schema, no open positions |
+| `pending_invite_auth_json` | function | `auth.json` with admin + one unconsumed invite |
+| `multi_user_state_json` | function | `state.json` with 3 users (active/paused/disabled) |
+
+**Key constants in `conftest.py` (import these, do not redefine):**
 ```python
-def _load_phase2_fixture(name: str) -> dict:
-  '''Load a Phase 2 JSON scenario fixture.'''
-  import json
-  path = PHASE2_FIXTURES_DIR / f'{name}.json'
-  return json.loads(path.read_text())
-
-# Tests reference by name:
-def test_transition_long_to_short(self) -> None:
-  fix = _load_phase2_fixture('transition_long_to_short')
-  prev = fix['prev_position']
-  bar = fix['bar']
-  # ... assertions on expected vs actual
+from tests.conftest import VALID_SECRET, VALID_USERNAME, AUTH_HEADER_NAME
 ```
+Note: `tests/` is NOT on `sys.path` by default — some older test files inline these constants with `# Plan 13-02 Rule 1 deviation pattern` comment explaining why.
 
-### Shared auth fixtures (conftest.py):
+**TestClient + state pattern:**
 ```python
-@pytest.fixture
-def valid_cookie_token() -> str:
-  '''Phase 16.1: tsi_session-shaped signed token built with VALID_SECRET.'''
-  from itsdangerous.url_safe import URLSafeTimedSerializer
-  serializer = URLSafeTimedSerializer(VALID_SECRET, salt='tsi-session-cookie')
-  return serializer.dumps({'u': VALID_USERNAME, 'iat': int(time.time())})
-
-# Usage:
-def test_cookie_auth(client, valid_cookie_token):
-  response = client.get('/', cookies={'tsi_session': valid_cookie_token})
-  assert response.status_code == 200
-```
-
-### TestClient + state fixture:
-```python
-@pytest.fixture
-def client_with_state_v3(monkeypatch):
-  '''Yields (client, set_state, captured_saves) tuple.
-  Default seed: v3-schema state with one open SPI200 LONG position.
-  Tests adjust via set_state().
-  '''
-  # ... monkeypatches load_state, save_state, mutate_state
-  # ... returns (client, set_state, captured_saves)
-  return client, set_state, captured_saves
-
-# Usage:
 def test_trade_open(client_with_state_v3):
   client, set_state, captured_saves = client_with_state_v3
-  set_state({'positions': {'SPI200': None}})  # No open position
-  response = client.post('/trades/open', json={'instrument': 'SPI200', ...})
-  assert len(captured_saves) == 1  # Exactly one save
-  assert captured_saves[0]['positions']['SPI200'] is not None  # Trade opened
+  set_state({'positions': {'SPI200': None}, ...})  # Seed custom state
+  response = client.post('/trades/open', json={...}, headers=auth_headers)
+  assert len(captured_saves) == 1        # Exactly one save (atomicity)
+  assert captured_saves[0]['positions']['SPI200'] is not None
 ```
 
-**Location:**
-- Fixtures live in `tests/conftest.py` (shared across all tests)
-- JSON scenarios in `tests/fixtures/<module>/` (loaded by helper functions in test files)
-- Golden snapshots in `tests/determinism/` and `tests/oracle/goldens/`
+**JSON scenario fixtures:**
+```python
+PHASE2_FIXTURES_DIR = Path('tests/fixtures/phase2')
 
-## Coverage
+def _load_phase2_fixture(name: str) -> dict:
+  return json.loads((PHASE2_FIXTURES_DIR / f'{name}.json').read_text())
 
-**Requirements:** No explicit percentage target enforced by CI; codemoot review flags untested code paths
-
-**View Coverage:**
-```bash
-pytest --cov=signal_engine --cov=sizing_engine --cov-report=term-missing
+@pytest.mark.parametrize('fixture_name', TRANSITION_FIXTURES)
+def test_transition(self, fixture_name: str) -> None:
+  fix = _load_phase2_fixture(fixture_name)
+  result = step(fix['prev_position'], fix['bar'], ...)
+  assert result == fix['expected']
 ```
 
-**Missing coverage flags:**
-- `tests/test_signal_engine.py::TestDeterminism::test_forbidden_imports_absent` — AST walk to catch hex-boundary violations
-- `tests/test_http_timeouts.py` — AST regression checking HTTP_TIMEOUT_S single-source-of-truth constraint
-- `tests/test_secret_redaction.py` — Verify all secrets flow through `redact_secret()` before logging
+**Regeneration scripts** (for golden/fixture updates):
+- `tests/regenerate_goldens.py`
+- `tests/regenerate_phase2_fixtures.py`
+- `tests/regenerate_dashboard_golden.py`
+
+## Custom Markers
+
+```
+uat — live operator-facing UAT scenarios that hit the production droplet
+      Run with: pytest -m uat
+      Excluded by default: addopts = '-m "not uat"'
+```
 
 ## Test Types
 
-**Unit Tests:**
-- Scope: Single function or class method
-- Example: `test_risk_pct_long_is_1pct` tests `calc_position_size()` in isolation
-- Setup: Minimal fixtures, no I/O
-- Offline: All external calls mocked or stubbed
+**Unit tests:**
+- Single function/method in isolation
+- Minimal fixtures, no real I/O
+- Example: `test_signal_engine_direction_mode.py` — calls `get_signal()` directly with synthetic DataFrame
 
-**Integration Tests:**
-- Scope: Multi-function workflows (e.g., fetch → compute indicators → signal)
-- Example: `test_sizing_decision_fixture` exercises full Phase 2 step() call
-- Setup: More complex fixtures (state stubs, recorded OHLCV data)
-- Mixed: Some real logic (signal_engine + sizing_engine), stubbed I/O (state_manager.load_state)
+**Integration tests:**
+- Multi-layer workflows (fetch → compute → signal, or web route → state mutation)
+- Example: `test_web_trades.py` — POST /trades/* via TestClient → assert `captured_saves`
 
-**Scenario Tests:**
-- Scope: Full orchestration path with recorded scenarios
-- Example: `TRANSITION_FIXTURES` in `test_sizing_engine.py` — 9 position-transition scenarios
-- Setup: Loaded from JSON (tests/fixtures/phase2/*.json)
-- Validation: Assert individual step outcomes (sizing, stop_hit, pyramid) against fixture expectations
+**Scenario/fixture tests:**
+- Recorded scenarios loaded from JSON, exercised end-to-end
+- Example: `test_sizing_engine.py::TestTransitions` — 9 JSON transition fixtures via `@pytest.mark.parametrize`
 
-**E2E Tests:**
-- Scope: Full API request → response cycles (web routes)
-- Example: `test_web_routes_*.py` classes test GET/POST handlers end-to-end
-- Setup: `client_with_state_v3` fixture (TestClient + mocked state_manager)
-- Validation: Assert HTTP status, response body shape, state mutations
+**Oracle/determinism tests:**
+- Output compared against reference implementation
+- `tests/oracle/wilder.py` — pure-loop Wilder smoothing used as ground truth for `test_signal_engine.py::TestDeterminism`
 
-**UAT Tests:**
-- Scope: Operator-facing scenarios hitting production droplet
-- Marker: `@pytest.mark.uat` (excluded by default; run with `pytest -m uat`)
-- Location: Scattered per phase (e.g., test_web_routes_totp.py has UAT paths for TOTP enrollment)
-- Run: Only on operator sign-off, not in CI
+**UAT tests (Playwright):**
+- Browser-driven, hit live production droplet
+- Marker: `@pytest.mark.uat`
+- Requires: `pytest-playwright==0.5.2` from `requirements-dev.txt`; `playwright install chromium`
+- Env vars: `UAT_17_DASHBOARD_PATH`, `UAT_17_INSTRUMENT`, `base_url` fixture
 
-## Common Patterns
+## Error Testing Pattern
 
-**Async Testing:**
-Not used (trading-signals is synchronous). Async fixtures and async test functions not employed.
-
-**Error Testing:**
 ```python
-def test_missing_secret_raises_runtime_error(monkeypatch):
-  '''Phase 13 D-17: missing WEB_AUTH_SECRET raises RuntimeError at boot.'''
+def test_missing_secret_raises(monkeypatch):
   monkeypatch.delenv('WEB_AUTH_SECRET', raising=False)
-  with pytest.raises(RuntimeError, match='WEB_AUTH_USERNAME env var is missing'):
+  with pytest.raises(RuntimeError, match='WEB_AUTH_SECRET'):
     from web.app import create_app
     create_app()
 ```
 
-**Exception context chaining:**
+## sys.modules Cache Clearing
+
+Web tests that call `create_app()` must clear the cached module first:
 ```python
-def test_fetch_data_fetcher_error_wraps_yfinance(monkeypatch):
-  '''D-01: DataFetchError wraps yfinance/network errors for orchestrator.'''
-  behaviour = [ConnectionError('socket timeout')]
-  monkeypatch.setattr('data_fetcher.yf.Ticker', _make_fake_ticker_factory(behaviour, []))
-  with pytest.raises(DataFetchError, match='Failed to fetch'):
-    fetch_ohlcv('SPI200')
+import sys
+sys.modules.pop('web.app', None)
+from web.app import create_app
+```
+This prevents test-order-dependent failures from module-level state leaking across tests.
+
+## CI Configuration
+
+No active GitHub Actions CI pipeline found. `daily.yml.disabled` is the only workflow file (disabled). Testing is run locally before commits.
+
+```bash
+.venv/bin/pytest -x --tb=short  # Required before any commit
 ```
 
-**Fixture parametrization:**
-```python
-@pytest.mark.parametrize('signal,expected_direction', [
-  (LONG, 'LONG'),
-  (SHORT, 'SHORT'),
-  (FLAT, 'FLAT'),
-])
-def test_signal_direction_names(signal, expected_direction):
-  '''Verify signal-to-direction mapping.'''
-  name = SIGNAL_NAMES[signal]
-  assert name == expected_direction
-```
+## Coverage Gaps
 
-**Golden file snapshots:**
-```python
-def test_chart_payload_escapes_script_close(client_with_state_v3):
-  '''XSS defense: chart payload with </script> substring must escape as <\\/script>.'''
-  # ... set up state with equity history
-  response = client.get('/api/chart')
-  body = response.json()
-  
-  with open('tests/oracle/goldens/golden_empty.html') as f:
-    golden = f.read()
-  
-  # Regenerate golden if this test fails + you've verified the escaping
-  # pytest --update-goldens tests/test_dashboard.py::test_chart_payload_escapes_script_close
-  assert body['chart_html'] == golden
-```
+- No enforced coverage percentage target
+- UAT scenarios require manual operator trigger against production
+- Some older test files duplicate `VALID_SECRET` / `AUTH_HEADER_NAME` constants instead of importing from `conftest` (known limitation — `tests/` not on `sys.path`)
 
 ---
 
-*Testing analysis: 2026-05-15*
+*Testing analysis: 2026-05-16*
