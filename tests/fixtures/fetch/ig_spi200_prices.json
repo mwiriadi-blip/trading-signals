@@ -1,0 +1,62 @@
+{
+  "_fixture_metadata": {
+    "epic_assumed": "IX.D.ASX.IFM.IP",
+    "source": "hand-crafted from RESEARCH.md §Code Examples shape",
+    "instrument": "SPI 200 (ASX SPI 200 Index futures, spread-bet)",
+    "price_range": "~7800-7900 index points",
+    "note": "lastTradedVolume=0 is correct for IG spread-bet instruments (Pitfall 2)"
+  },
+  "prices": [
+    {
+      "snapshotTime": "2024/05/13 00:00:00",
+      "snapshotTimeUTC": "2024-05-12T14:00:00",
+      "openPrice":  {"bid": 7810.0, "ask": 7812.5, "lastTraded": null},
+      "highPrice":  {"bid": 7845.0, "ask": 7847.5, "lastTraded": null},
+      "lowPrice":   {"bid": 7800.0, "ask": 7802.5, "lastTraded": null},
+      "closePrice": {"bid": 7838.0, "ask": 7840.5, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/14 00:00:00",
+      "snapshotTimeUTC": "2024-05-13T14:00:00",
+      "openPrice":  {"bid": 7840.0, "ask": 7842.0, "lastTraded": null},
+      "highPrice":  {"bid": 7865.0, "ask": 7867.0, "lastTraded": null},
+      "lowPrice":   {"bid": 7830.0, "ask": 7832.0, "lastTraded": null},
+      "closePrice": {"bid": 7855.0, "ask": 7857.0, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/15 00:00:00",
+      "snapshotTimeUTC": "2024-05-14T14:00:00",
+      "openPrice":  {"bid": 7858.0, "ask": 7860.5, "lastTraded": null},
+      "highPrice":  {"bid": 7895.0, "ask": 7897.5, "lastTraded": null},
+      "lowPrice":   {"bid": 7845.0, "ask": 7847.5, "lastTraded": null},
+      "closePrice": {"bid": 7880.0, "ask": 7882.5, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/16 00:00:00",
+      "snapshotTimeUTC": "2024-05-15T14:00:00",
+      "openPrice":  {"bid": 7882.0, "ask": 7884.0, "lastTraded": null},
+      "highPrice":  {"bid": 7900.0, "ask": 7902.0, "lastTraded": null},
+      "lowPrice":   {"bid": 7860.0, "ask": 7862.0, "lastTraded": null},
+      "closePrice": {"bid": 7875.0, "ask": 7877.0, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/17 00:00:00",
+      "snapshotTimeUTC": "2024-05-16T14:00:00",
+      "openPrice":  {"bid": 7876.0, "ask": 7878.5, "lastTraded": null},
+      "highPrice":  {"bid": 7898.0, "ask": 7900.5, "lastTraded": null},
+      "lowPrice":   {"bid": 7855.0, "ask": 7857.5, "lastTraded": null},
+      "closePrice": {"bid": 7890.0, "ask": 7892.5, "lastTraded": null},
+      "lastTradedVolume": 0
+    }
+  ],
+  "instrumentType": "CURRENCIES",
+  "allowance": {
+    "remainingAllowance": 9950,
+    "totalAllowance": 10000,
+    "allowanceExpiry": 604800
+  }
+}
