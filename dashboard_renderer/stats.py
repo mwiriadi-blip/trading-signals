@@ -3,6 +3,7 @@
 import logging
 import math
 import statistics
+from decimal import Decimal
 
 from system_params import INITIAL_ACCOUNT, TRAIL_MULT_LONG, TRAIL_MULT_SHORT
 
@@ -53,11 +54,12 @@ def compute_total_return(state: dict) -> str:
   initial = state.get('initial_account', INITIAL_ACCOUNT)
   if not initial:
     return '—'
+  initial = Decimal(str(initial))
   eq_hist = state.get('equity_history', [])
   if eq_hist:
-    current = eq_hist[-1].get('equity', state.get('account', initial))
+    current = Decimal(str(eq_hist[-1].get('equity', state.get('account', initial))))
   else:
-    current = state.get('account', initial)
+    current = Decimal(str(state.get('account', initial)))
   total_return = (current - initial) / initial
   return f'{total_return * 100:+.1f}%'
 
