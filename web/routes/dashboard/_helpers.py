@@ -60,17 +60,21 @@ def _substitute(content: bytes, request: Request, *, is_cookie_session: Callable
   is_cookie_session: callable accepting a Request, returning bool. Injected
   from register() to preserve the T-30-03-01 session-cookie validation chain.
   '''
-  # Phase 14 Plan 14-04 Task 5 (REVIEWS HIGH #4)
-  secret = os.environ.get('WEB_AUTH_SECRET', '').encode('utf-8')
-  content = content.replace(_PLACEHOLDER, secret)
-
   # Phase 16.1: per-request auth widget.
   from dashboard_renderer.components.header import _render_session_note, _render_signout_button
 
   if is_cookie_session(request):
+    # Cookie sessions: browser sends tsi_session automatically on same-origin
+    # HTMX requests — embedding the raw secret in HTML is unnecessary and
+    # leaks it into the browser cache.
+    content = content.replace(_PLACEHOLDER, b'')
     content = content.replace(_SIGNOUT_PLACEHOLDER, _render_signout_button().encode('utf-8'))
     content = content.replace(_SESSION_NOTE_PLACEHOLDER, b'')
   else:
+    # Header sessions and unauthenticated fetches (which won't reach here):
+    # embed the real secret so HTMX hx-headers can carry it.
+    secret = os.environ.get('WEB_AUTH_SECRET', '').encode('utf-8')
+    content = content.replace(_PLACEHOLDER, secret)
     content = content.replace(_SIGNOUT_PLACEHOLDER, b'')
     content = content.replace(
       _SESSION_NOTE_PLACEHOLDER,

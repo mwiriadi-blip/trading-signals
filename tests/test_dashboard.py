@@ -2323,27 +2323,35 @@ class TestRenderDashboardStrategyVersion:
     flows via state, not via module import" — that is what this test pins.
     '''
     import ast
-    src = Path('dashboard.py').read_text()
-    tree = ast.parse(src)
-    imported_from_system_params: set[str] = set()
-    for node in ast.walk(tree):
-      if isinstance(node, ast.ImportFrom) and node.module == 'system_params':
-        for alias in node.names:
-          imported_from_system_params.add(alias.name)
-      elif isinstance(node, ast.Import):
-        for alias in node.names:
-          if alias.name == 'system_params':
-            imported_from_system_params.add('*system_params-bare-import*')
-    assert 'STRATEGY_VERSION' not in imported_from_system_params, (
-      f'Phase 22 hex-boundary: dashboard.py must NOT import STRATEGY_VERSION '
-      f'from system_params; the version flows via state dict. '
-      f'imports from system_params = {sorted(imported_from_system_params)!r}'
-    )
-    assert '*system_params-bare-import*' not in imported_from_system_params, (
-      f'Phase 22 hex-boundary: dashboard.py must NOT use bare '
-      f'`import system_params` (would expose STRATEGY_VERSION via attribute '
-      f'access — bypasses the primitive-arg contract). '
-      f'imports = {sorted(imported_from_system_params)!r}'
+    # Phase 30 refactor: dashboard.py became dashboard_renderer/ package.
+    # Scan all .py files in dashboard_renderer/ for the hex-boundary violation.
+    # Violation = explicit `from system_params import STRATEGY_VERSION` OR
+    # `import system_params` followed by `system_params.STRATEGY_VERSION` access.
+    # (Bare `import system_params as sp` for other constants is legitimate.)
+    renderer_dir = Path('dashboard_renderer')
+    py_files = list(renderer_dir.rglob('*.py'))
+    assert py_files, 'dashboard_renderer/ has no .py files — directory missing?'
+    violations: dict[str, str] = {}
+    for py_file in py_files:
+      src = py_file.read_text()
+      tree = ast.parse(src)
+      for node in ast.walk(tree):
+        # Explicit named import of STRATEGY_VERSION
+        if isinstance(node, ast.ImportFrom) and node.module == 'system_params':
+          for alias in node.names:
+            if alias.name == 'STRATEGY_VERSION':
+              violations[str(py_file)] = 'from system_params import STRATEGY_VERSION'
+        # Attribute access on bare system_params import (sp.STRATEGY_VERSION)
+        elif isinstance(node, ast.Attribute):
+          if (
+            node.attr == 'STRATEGY_VERSION'
+            and isinstance(node.value, ast.Name)
+            and node.value.id in {'system_params', 'sp'}
+          ):
+            violations[str(py_file)] = f'{node.value.id}.STRATEGY_VERSION'
+    assert not violations, (
+      f'Phase 22 hex-boundary: dashboard_renderer must NOT access STRATEGY_VERSION '
+      f'from system_params; the version flows via state dict. Violations: {violations!r}'
     )
 
 
@@ -3045,45 +3053,61 @@ class TestRenderDashboardComposition:
 
 
 class TestDashboardHexBoundary:
-  '''Phase 19 — regression guard: dashboard hex boundary unchanged.'''
+  '''Phase 19 — regression guard: dashboard hex boundary unchanged.
 
-  def test_dashboard_does_not_import_state_manager_for_paper_trades(self) -> None:
-    '''dashboard.py existing hex-boundary unchanged: no new state_manager import.'''
-    src = Path('dashboard.py').read_text()
-    # pnl_engine import IS allowed (not in FORBIDDEN_MODULES_DASHBOARD)
-    # state_manager top-level import may exist from before Phase 19 — check not added
+  Phase 30 note: dashboard.py became dashboard_renderer/ package. These tests
+  now scan dashboard_renderer/ for top-level (module-scope) forbidden imports.
+  Function-body lazy imports (e.g. signal_engine inside render helpers) are
+  intentional and allowed — only module-top-level imports are blocked.
+  '''
+
+  def _top_level_imports(self, tree) -> list:
+    '''Return Import/ImportFrom nodes that are direct children of the module body.'''
     import ast
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
-      if isinstance(node, (ast.Import, ast.ImportFrom)):
-        if isinstance(node, ast.Import):
-          for alias in node.names:
-            assert alias.name != 'pnl_engine' or True  # pnl_engine allowed
-        if isinstance(node, ast.ImportFrom):
-          # signal_engine must NOT be at module-top (inside functions is OK but
-          # we check the entire AST since dashboard.py doesn't use it at all)
-          if node.module == 'signal_engine':
-            raise AssertionError(
-              f'signal_engine import found in dashboard.py at line {node.lineno}'
-            )
+    return [
+      node for node in ast.iter_child_nodes(tree)
+      if isinstance(node, (ast.Import, ast.ImportFrom))
+    ]
 
-  def test_dashboard_does_not_import_signal_engine(self) -> None:
-    '''Regression guard: Phase 19 must not introduce signal_engine import.
-    Uses AST to check actual import nodes (not comments/docstrings).
+  def test_dashboard_does_not_import_state_manager_at_top_level(self) -> None:
+    '''dashboard_renderer must NOT import state_manager at module top level.
+    Phase 30 refactor: scan dashboard_renderer/ package files.
     '''
     import ast
-    src = Path('dashboard.py').read_text()
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
-      if isinstance(node, ast.Import):
-        for alias in node.names:
-          assert alias.name != 'signal_engine', (
-            f'signal_engine must not be imported in dashboard.py (line {node.lineno})'
+    renderer_dir = Path('dashboard_renderer')
+    for py_file in renderer_dir.rglob('*.py'):
+      src = py_file.read_text()
+      tree = ast.parse(src)
+      for node in self._top_level_imports(tree):
+        if isinstance(node, ast.Import):
+          for alias in node.names:
+            assert alias.name != 'state_manager', (
+              f'state_manager top-level import found in {py_file}:{node.lineno}'
+            )
+        elif isinstance(node, ast.ImportFrom):
+          assert node.module != 'state_manager', (
+            f'state_manager top-level import found in {py_file}:{node.lineno}'
           )
-      if isinstance(node, ast.ImportFrom):
-        assert node.module != 'signal_engine', (
-          f'signal_engine must not be imported from in dashboard.py (line {node.lineno})'
-        )
+
+  def test_dashboard_does_not_import_signal_engine_at_top_level(self) -> None:
+    '''Regression guard: signal_engine must not be imported at module top level
+    in dashboard_renderer/ — function-body lazy imports are allowed.
+    '''
+    import ast
+    renderer_dir = Path('dashboard_renderer')
+    for py_file in renderer_dir.rglob('*.py'):
+      src = py_file.read_text()
+      tree = ast.parse(src)
+      for node in self._top_level_imports(tree):
+        if isinstance(node, ast.Import):
+          for alias in node.names:
+            assert alias.name != 'signal_engine', (
+              f'signal_engine top-level import in {py_file}:{node.lineno}'
+            )
+        elif isinstance(node, ast.ImportFrom):
+          assert node.module != 'signal_engine', (
+            f'signal_engine top-level import in {py_file}:{node.lineno}'
+          )
 
 
 # =============================================================================

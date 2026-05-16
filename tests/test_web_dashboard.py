@@ -1045,6 +1045,28 @@ class TestSessionPlaceholderSubstitution:
     assert 'a' * 32 in r.text
     assert '{{WEB_AUTH_SECRET}}' not in r.text
 
+  def test_cookie_session_does_not_embed_auth_secret(
+    self, client_with_dashboard, valid_cookie_token,
+  ):
+    '''Cookie sessions must NOT receive the raw WEB_AUTH_SECRET in the
+    response — the browser sends tsi_session automatically on same-origin
+    HTMX requests; embedding the secret is unnecessary and leaks it into
+    the browser cache. Placeholder must still be substituted (not left raw).
+    '''
+    client, tmp, _ = client_with_dashboard
+    (tmp / 'dashboard.html').write_text(
+      '<html><body data-auth="{{WEB_AUTH_SECRET}}">test</body></html>',
+      encoding='utf-8',
+    )
+    r = _request_with_cookies(client, 'GET', '/', cookies={'tsi_session': valid_cookie_token})
+    assert r.status_code == 200
+    assert VALID_SECRET not in r.text, (
+      'Cookie sessions must not receive the raw auth secret in HTML'
+    )
+    assert '{{WEB_AUTH_SECRET}}' not in r.text, (
+      'Placeholder must be substituted (not left raw)'
+    )
+
 
 class TestTraceCookieAllowlist:
   '''Phase 17 D-12 + D-16: tsi_trace_open cookie read + allowlist filter +

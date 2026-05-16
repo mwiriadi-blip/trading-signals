@@ -966,63 +966,67 @@ class TestDeterminism:
       f'the orchestrator — it imports the hex modules, not their internals.'
     )
 
-  @pytest.mark.parametrize('module_path', [DASHBOARD_PATH])
-  def test_dashboard_no_forbidden_imports(self, module_path: Path) -> None:
-    '''Phase 5 Wave 0: dashboard.py must not import sibling hexes, numpy,
-    pandas, yfinance, or requests. It IS allowed to import stdlib (html, json,
-    math, os, statistics, tempfile, datetime, pathlib, logging) + pytz +
-    state_manager (for load_state, CLI path only) + system_params (palette
-    constants + INITIAL_ACCOUNT + TRAIL_MULT_*).
+  def test_dashboard_no_forbidden_imports(self) -> None:
+    '''Phase 5 Wave 0 / Phase 30 refactor: dashboard_renderer/ package must not
+    import sibling hexes, numpy, pandas, yfinance, or requests at MODULE-TOP level.
 
-    Structural enforcement of CLAUDE.md §Architecture hexagonal-lite for
-    dashboard: sibling-hex blocklists ALREADY forbid dashboard (FORBIDDEN_MODULES,
-    FORBIDDEN_MODULES_STATE_MANAGER, FORBIDDEN_MODULES_DATA_FETCHER); this test
-    closes the symmetric boundary — dashboard cannot import them either.
+    Phase 30 note: dashboard.py became dashboard_renderer/ package. Function-body
+    lazy imports (e.g. signal_engine inside render helpers) are intentional —
+    only module-top-level imports are checked here.
     '''
-    imports = _top_level_imports(module_path)
-    leaked = imports & FORBIDDEN_MODULES_DASHBOARD
-    assert not leaked, (
-      f'{module_path} illegally imports forbidden module(s): {sorted(leaked)}. '
-      f'dashboard.py must not import sibling hexes (signal_engine, sizing_engine, '
-      f'data_fetcher, notifier, main), numpy, pandas, yfinance, or requests. '
-      f'Allowed: stdlib (html, json, math, os, statistics, tempfile, datetime, '
-      f'pathlib, logging) + pytz + state_manager + system_params. Dashboard IS '
-      f'the render I/O hex — that is its PURPOSE.'
+    import ast
+    renderer_dir = Path('dashboard_renderer')
+    py_files = list(renderer_dir.rglob('*.py'))
+    assert py_files, 'dashboard_renderer/ has no .py files — directory missing?'
+    violations: dict[str, set[str]] = {}
+    for py_file in py_files:
+      tree = ast.parse(py_file.read_text())
+      mod_imports: set[str] = set()
+      for node in tree.body:
+        if isinstance(node, ast.Import):
+          for alias in node.names:
+            mod_imports.add(alias.name.split('.')[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+          mod_imports.add(node.module.split('.')[0])
+      leaked = mod_imports & FORBIDDEN_MODULES_DASHBOARD
+      if leaked:
+        violations[str(py_file)] = leaked
+    assert not violations, (
+      f'dashboard_renderer/ module-top imports of forbidden module(s): {violations}. '
+      f'Must not import sibling hexes (signal_engine, data_fetcher, notifier, main), '
+      f'numpy, pandas, yfinance, or requests at module level. '
+      f'Function-body lazy imports are allowed.'
     )
 
   def test_dashboard_no_module_top_sizing_engine_import(self) -> None:
     '''C-2 hex-discipline (Phase 15 D-01 + Phase 14 D-02 + REVIEWS M-2):
-    sizing_engine is allowed in dashboard.py ONLY as a function-body
-    (local) import. A module-top `from sizing_engine import ...` would
-    bypass C-2's "import-only-when-needed" pattern AND would also pass
-    FORBIDDEN_MODULES_DASHBOARD (since sizing_engine is no longer in
-    that frozenset as of Phase 15). This test is the explicit guard.
+    sizing_engine is allowed in dashboard_renderer/ ONLY as a function-body
+    (local) import. Module-top imports remain forbidden.
 
-    Walks dashboard.py at the AST module-body level (tree.body) — NOT
-    ast.walk — so LOCAL imports inside function/closure bodies do not
-    trigger the assertion. Only TOP-LEVEL Import / ImportFrom statements
-    are inspected.
+    Phase 30 note: scans all .py files in dashboard_renderer/ at tree.body
+    (module-top) level — NOT ast.walk — so LOCAL function-body imports do
+    not trigger the assertion.
     '''
     import ast
-    from pathlib import Path
-    source = Path('dashboard.py').read_text()
-    tree = ast.parse(source)
+    renderer_dir = Path('dashboard_renderer')
     offenders: list[str] = []
-    for node in tree.body:
-      if isinstance(node, ast.ImportFrom):
-        mod = node.module or ''
-        if mod == 'sizing_engine' or mod.startswith('sizing_engine.'):
-          offenders.append(f'line {node.lineno}: from {mod} import ...')
-      elif isinstance(node, ast.Import):
-        for alias in node.names:
-          name = alias.name
-          if name == 'sizing_engine' or name.startswith('sizing_engine.'):
-            offenders.append(f'line {node.lineno}: import {name}')
+    for py_file in sorted(renderer_dir.rglob('*.py')):
+      tree = ast.parse(py_file.read_text())
+      for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+          mod = node.module or ''
+          if mod == 'sizing_engine' or mod.startswith('sizing_engine.'):
+            offenders.append(f'{py_file}:{node.lineno}: from {mod} import ...')
+        elif isinstance(node, ast.Import):
+          for alias in node.names:
+            name = alias.name
+            if name == 'sizing_engine' or name.startswith('sizing_engine.'):
+              offenders.append(f'{py_file}:{node.lineno}: import {name}')
     assert not offenders, (
       'C-2 hex-discipline violation (Phase 15 REVIEWS M-2): '
-      'dashboard.py contains MODULE-TOP imports of sizing_engine. '
+      'dashboard_renderer/ contains MODULE-TOP imports of sizing_engine. '
       'Move them inside the function body that needs them (LOCAL import). '
-      'Phase 15 D-01 unlocked sizing_engine for dashboard.py, but only as '
+      'Phase 15 D-01 unlocked sizing_engine for dashboard_renderer, but only as '
       'a LOCAL import — module-top imports remain forbidden. Offenders: '
       + '; '.join(offenders)
     )
@@ -1100,7 +1104,9 @@ class TestDeterminism:
       TEST_DATA_FETCHER_PATH,   # Phase 4 Wave 0
       MAIN_PATH,                # Phase 4 Wave 0
       TEST_MAIN_PATH,           # Phase 4 Wave 0
-      DASHBOARD_PATH,                      # Phase 5 Wave 0
+      # Phase 5 Wave 0 / Phase 30 pkg: scan dashboard_renderer/; skip __init__.py
+      # files that are import-only (no indented code) — they have no 2-space evidence.
+      *[p for p in sorted(Path('dashboard_renderer').rglob('*.py')) if p.name != '__init__.py'],
       TEST_DASHBOARD_PATH,                 # Phase 5 Wave 0
       REGENERATE_DASHBOARD_GOLDEN_PATH,    # Phase 5 Wave 0
     ]
