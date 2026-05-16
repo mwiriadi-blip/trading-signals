@@ -482,7 +482,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 38. news integration | v1.3 | 4/4 | Complete    | 2026-05-16 |
 | 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
 | 40. milestone close audit | v1.3 | 0/0 | Not started | - |
-| 41. data feed integration — IG REST API | v1.3 | 1/3 | In Progress|  |
+| 41. data feed integration — IG REST API | v1.3 | 2/3 | In Progress|  |
 | 42. domain models — Pydantic market config | v1.4 | 0/0 | Not started | - |
 
 ### Phase 41: data feed integration - IG REST API
@@ -490,14 +490,14 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 **Goal:** IG REST API becomes the primary daily OHLCV source for SPI200 and AUD/USD; yfinance is preserved as a silent fallback with WARNING log + dashboard warning visibility on every fallback transition; data_fetcher.fetch_ohlcv contract (signature, columns, DatetimeIndex) preserved end-to-end.
 **Requirements**: FEED-01, FEED-02, FEED-03
 **Depends on:** Phase 40
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
 - [x] 41-01-PLAN.md — Wave 0 test scaffold: IG response fixtures + TestIGFetch/TestIGNormalise skeletons (autonomous)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 41-02-PLAN.md — IG branch implementation in data_fetcher.py + system_params ig_epic + .env.example (autonomous, depends on 41-01)
+- [x] 41-02-PLAN.md — IG branch implementation in data_fetcher.py + system_params ig_epic + .env.example (autonomous, depends on 41-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 41-03-PLAN.md — daily_run.py D-02 fallback warning wiring + TestIGFallbackWarning (autonomous, depends on 41-02)
