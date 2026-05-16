@@ -309,7 +309,7 @@ Plans:
 - [x] 38-01-PLAN.md — Foundation: system_params NEWS_* keyword constants + AST hex extensions + three test fixtures (pre/post-0.2.55 + 30-headline labelled)
 - [x] 38-02-PLAN.md — news_filter.py pure-hex classifier + precision/recall gate (Wave 2)
 - [x] 38-03-PLAN.md — news_fetcher.py I/O adapter + both-schema normaliser + atomic sidecar cache (Wave 2)
-- [ ] 38-04-PLAN.md — web/routes/news.py + dashboard component + assets CSS + app wiring + per-user dismiss isolation tests (Wave 3)
+- [x] 38-04-PLAN.md — web/routes/news.py + dashboard component + assets CSS + app wiring + per-user dismiss isolation tests (Wave 3)
 **Plan-time verification (research-flagged):**
 - **yfinance fresh fixtures:** capture both pre-0.2.55 and post-0.2.55 news payload fixtures from the pinned yfinance version at plan time (library schema drift across 0.2.40 → 0.2.55 → 1.x is real); commit fixtures to the repo.
 **UI hint:** yes
@@ -479,7 +479,7 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 35. cookie + Depends + sub-router admin gate | v1.3 | 5/5 | Complete    | 2026-05-13 |
 | 36. per-user scoping + privacy + flock | v1.3 | 3/3 | Complete    | 2026-05-13 |
 | 37. per-user email fan-out + admin routes | v1.3 | 6/6 | Complete   | 2026-05-14 |
-| 38. news integration | v1.3 | 3/4 | In Progress|  |
+| 38. news integration | v1.3 | 4/4 | Complete   | 2026-05-16 |
 | 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
 | 40. milestone close audit | v1.3 | 0/0 | Not started | - |
 | 41. domain models — Pydantic market config | v1.4 | 0/0 | Not started | - |
