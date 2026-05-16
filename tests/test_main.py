@@ -1617,36 +1617,64 @@ class TestCrashEmailBoundary:
   '''
 
   def test_build_crash_state_summary_contains_core_sections(self) -> None:
-    '''Test 1: signals + account + positions sections present; trade_log /
-    equity_history / warnings excluded per D-06 bound.
+    '''Test 1: allowlisted keys (signals, last_run, markets) present; per-user
+    and credential keys excluded per Phase 43 D-01 allowlist bound.
+
+    Phase 43 amendment: _build_crash_state_summary now uses allowlist redaction
+    (CRASH_EMAIL_STATE_ALLOWLIST). Output is JSON. Only schema_version,
+    last_run, markets, strategy_settings, and signals keys appear. Per-user
+    keys (account, positions, trade_log, equity_history, warnings, users) are
+    excluded; a "_redacted_keys" marker is added.
     '''
     state = {
+      'schema_version': 12,
+      'last_run': '2026-04-21',
       'signals': {'^AXJO': {'signal': 1}, 'AUDUSD=X': {'signal': 0}},
+      'markets': {},
+      'strategy_settings': {},
       'account': 100_000.0,
       'positions': {'SPI200': None, 'AUDUSD': None},
       'trade_log': [{'fake': 'trade'}] * 500,
       'equity_history': [{'date': '2026-01-01', 'equity': 99_000.0}] * 100,
       'warnings': [{'date': '2026-04-21', 'source': 'x', 'message': 'y'}] * 50,
+      'users': {'uid-x': {'totp_secret': 'secret'}},
     }
     s = main._build_crash_state_summary(state)
-    assert 'signals:' in s
-    assert 'account:' in s
-    assert 'positions:' in s
-    assert 'trade_log' not in s
-    assert 'equity_history' not in s
-    assert 'warnings' not in s
+    # Allowlisted keys are present (JSON format uses double-quoted keys).
+    assert '"signals"' in s
+    assert '"last_run"' in s
+    assert '"schema_version"' in s
+    # Excluded keys do NOT appear in the body (they appear only in the
+    # _redacted_keys marker, but not as top-level JSON keys).
+    assert '"trade_log"' not in s
+    assert '"equity_history"' not in s
+    assert '"warnings"' not in s
+    assert '"users"' not in s
+    assert '"account"' not in s
+    assert '"positions"' not in s
+    # Redaction marker is present.
+    assert '[REDACTED]' in s
 
   def test_build_crash_state_summary_state_none_returns_placeholder(self) -> None:
     '''Test 2: state=None → sentinel placeholder string.'''
     s = main._build_crash_state_summary(None)
     assert s == '(state not loaded — crash before load_state)'
 
-  def test_build_crash_state_summary_renders_open_positions(self) -> None:
-    '''Test 3: open SPI200 LONG renders as "SPI200: LONG 2@7200.0"; FLAT
-    AUDUSD renders as "AUDUSD: (none)".
+  def test_build_crash_state_summary_renders_signals_not_positions(self) -> None:
+    '''Test 3: allowlist includes signals (Phase 43 D-01); positions (per-user)
+    are excluded. Signals content is present; position direction/entry_price
+    are not in the output.
+
+    Phase 43 amendment: positions are per-user data and are NOT in the
+    CRASH_EMAIL_STATE_ALLOWLIST. The old format ("SPI200: LONG 2@7200") is
+    no longer rendered; instead, signals appear in JSON form.
     '''
     state = {
+      'schema_version': 12,
+      'last_run': '2026-05-16',
       'signals': {'^AXJO': {'signal': 1}, 'AUDUSD=X': {'signal': 0}},
+      'markets': {},
+      'strategy_settings': {},
       'account': 100_000.0,
       'positions': {
         'SPI200': {
@@ -1656,8 +1684,13 @@ class TestCrashEmailBoundary:
       },
     }
     s = main._build_crash_state_summary(state)
-    assert 'SPI200: LONG 2@7200' in s
-    assert 'AUDUSD: (none)' in s
+    # Signals are allowlisted and present.
+    assert '"signals"' in s
+    assert '^AXJO' in s
+    # Positions are per-user data — excluded by allowlist.
+    assert 'LONG' not in s
+    assert '7200' not in s
+    assert '"positions"' not in s
 
   def test_send_crash_email_wrapper_calls_notifier(
       self, monkeypatch) -> None:
@@ -1857,11 +1890,11 @@ class TestCrashEmailBoundary:
     # Received state must be the cached state — not None (SC-3).
     assert received is cached
     # _build_crash_state_summary on the cached state must NOT render the
-    # sentinel placeholder and must include signal + account.
+    # sentinel placeholder. Phase 43 D-01: output is JSON with allowlisted keys;
+    # 'signals' is allowlisted; 'account' is per-user (excluded by allowlist).
     summary = main._build_crash_state_summary(received)
     assert 'state not loaded' not in summary
-    assert 'account:' in summary
-    assert 'signals:' in summary
+    assert '"signals"' in summary
 
 
 class TestWarningCarryOverFlow:
