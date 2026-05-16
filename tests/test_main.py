@@ -3548,3 +3548,203 @@ class TestCycleCrashHandling:
     assert lc['date'] == '2026-05-11'
     assert lc['crash'] == 'RuntimeError: x'
     assert lc['total'] == 0
+
+
+# =========================================================================
+# Phase 41 Plan 03 — D-02 IG->yfinance fallback dashboard warning
+# =========================================================================
+
+class TestIGFallbackWarning:
+  '''D-02: daily_run reads data_fetcher.LAST_FETCH_SOURCE post-fetch and queues
+  a dashboard warning via pending_warnings when the value is 'yfinance_fallback'.
+
+  Covers:
+    - test_fallback_appends_warning: 'yfinance_fallback' → warning surfaced in state
+    - test_ig_success_no_warning: 'ig' → no IG-fallback warning
+    - test_missing_creds_no_warning: 'yfinance' → no IG-fallback warning (D-06 path)
+    - test_w3_invariant_preserved: no extra mutate_state calls vs baseline
+
+  All tests freeze time on a Monday (weekday gate passes), isolate state.json
+  via tmp_path, and clear data_fetcher.LAST_FETCH_SOURCE before each run to
+  prevent cross-test pollution (T-41-03-02 mitigation).
+  '''
+
+  @pytest.fixture(autouse=True)
+  def _clear_last_fetch_source(self):
+    '''Autouse fixture: clear LAST_FETCH_SOURCE before every test in this class
+    (T-41-03-02 mitigation — stale entries from a prior test must not bleed into
+    the next test).
+    '''
+    import data_fetcher as _df
+    _df.LAST_FETCH_SOURCE.clear()
+    yield
+    _df.LAST_FETCH_SOURCE.clear()
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_fallback_appends_warning(self, tmp_path, monkeypatch) -> None:
+    '''D-02 happy path: when data_fetcher.LAST_FETCH_SOURCE[symbol]
+    == 'yfinance_fallback', a warning whose message contains
+    "IG fetch failed for ^AXJO" and "yfinance fallback used" is queued
+    via pending_warnings and appears in state['warnings'] after the run.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    import data_fetcher as _df
+
+    def _fake_fetch(sym, **_kw):
+      # Set fallback source for AXJO only; AUDUSD gets 'ig' (happy path).
+      if sym == '^AXJO':
+        _df.LAST_FETCH_SOURCE[sym] = 'yfinance_fallback'
+        return _load_recorded_fixture('axjo_400d.json')
+      _df.LAST_FETCH_SOURCE[sym] = 'ig'
+      return _load_recorded_fixture('audusd_400d.json')
+
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake_fetch)
+
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    post = json.loads((tmp_path / 'state.json').read_text())
+    fallback_warnings = [
+      w for w in post['warnings']
+      if 'IG fetch failed for ^AXJO' in w['message']
+      and 'yfinance fallback used' in w['message']
+    ]
+    assert len(fallback_warnings) >= 1, (
+      'D-02: expected at least one "IG fetch failed for ^AXJO — yfinance fallback used" '
+      f'warning in state[warnings]; got {post["warnings"]!r}'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_ig_success_no_warning(self, tmp_path, monkeypatch) -> None:
+    '''D-02 guard: when LAST_FETCH_SOURCE == "ig" (IG succeeded), NO
+    "IG fetch failed" warning is appended — only the fallback transition
+    should produce operator-visible noise.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    import data_fetcher as _df
+
+    def _fake_fetch(sym, **_kw):
+      _df.LAST_FETCH_SOURCE[sym] = 'ig'
+      if sym == '^AXJO':
+        return _load_recorded_fixture('axjo_400d.json')
+      return _load_recorded_fixture('audusd_400d.json')
+
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake_fetch)
+
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    post = json.loads((tmp_path / 'state.json').read_text())
+    ig_fallback_warnings = [
+      w for w in post['warnings']
+      if 'IG fetch failed' in w['message']
+    ]
+    assert ig_fallback_warnings == [], (
+      'D-02: IG success path must NOT produce any "IG fetch failed" warning; '
+      f'got {ig_fallback_warnings!r}'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_missing_creds_no_warning(self, tmp_path, monkeypatch) -> None:
+    '''D-02 / D-06 guard: when LAST_FETCH_SOURCE == "yfinance" (creds absent —
+    operator chose no-IG config), NO "IG fetch failed" warning is appended.
+    This is the deliberate path; data_fetcher already logs at WARNING level.
+    '''
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    import data_fetcher as _df
+
+    def _fake_fetch(sym, **_kw):
+      _df.LAST_FETCH_SOURCE[sym] = 'yfinance'
+      if sym == '^AXJO':
+        return _load_recorded_fixture('axjo_400d.json')
+      return _load_recorded_fixture('audusd_400d.json')
+
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake_fetch)
+
+    rc = main.main(['--once'])
+    assert rc == 0
+
+    post = json.loads((tmp_path / 'state.json').read_text())
+    ig_fallback_warnings = [
+      w for w in post['warnings']
+      if 'IG fetch failed' in w['message']
+    ]
+    assert ig_fallback_warnings == [], (
+      'D-02 / D-06: "yfinance" (no creds) path must NOT produce "IG fetch failed" '
+      f'warning; got {ig_fallback_warnings!r}'
+    )
+
+  @pytest.mark.freeze_time('2026-04-27T00:00:00+00:00')  # Mon 08:00 AWST
+  def test_w3_invariant_preserved(self, tmp_path, monkeypatch) -> None:
+    '''W3 invariant: appending a fallback warning via pending_warnings must NOT
+    introduce any additional mutate_state calls compared to a baseline cycle.
+
+    Both the fallback run and the baseline run are measured by counting calls
+    to state_manager.mutate_state via monkeypatch. The counts must be equal,
+    proving no new state-write path was introduced (Phase 7 Wave 0 W3 contract).
+    '''
+    import data_fetcher as _df
+    import state_manager as _sm
+
+    # --- baseline run (no fallback) ---
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('main.logging.basicConfig', lambda **kw: None)
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    baseline_calls: list[int] = []
+    orig_mutate = _sm.mutate_state
+
+    def _counting_mutate_baseline(fn):
+      baseline_calls.append(1)
+      return orig_mutate(fn)
+
+    monkeypatch.setattr(_sm, 'mutate_state', _counting_mutate_baseline)
+
+    def _fake_fetch_ig(sym, **_kw):
+      _df.LAST_FETCH_SOURCE[sym] = 'ig'
+      if sym == '^AXJO':
+        return _load_recorded_fixture('axjo_400d.json')
+      return _load_recorded_fixture('audusd_400d.json')
+
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake_fetch_ig)
+    rc_baseline = main.main(['--once'])
+    assert rc_baseline == 0
+    baseline_count = len(baseline_calls)
+
+    # --- fallback run ---
+    _df.LAST_FETCH_SOURCE.clear()
+    _seed_fresh_state(tmp_path / 'state.json')
+
+    fallback_calls: list[int] = []
+
+    def _counting_mutate_fallback(fn):
+      fallback_calls.append(1)
+      return orig_mutate(fn)
+
+    monkeypatch.setattr(_sm, 'mutate_state', _counting_mutate_fallback)
+
+    def _fake_fetch_fallback(sym, **_kw):
+      _df.LAST_FETCH_SOURCE[sym] = 'yfinance_fallback'
+      if sym == '^AXJO':
+        return _load_recorded_fixture('axjo_400d.json')
+      return _load_recorded_fixture('audusd_400d.json')
+
+    monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake_fetch_fallback)
+    rc_fallback = main.main(['--once'])
+    assert rc_fallback == 0
+    fallback_count = len(fallback_calls)
+
+    assert baseline_count == fallback_count, (
+      f'W3 invariant violated: baseline mutate_state count={baseline_count} '
+      f'but fallback run count={fallback_count}. '
+      'Appending to pending_warnings must NOT introduce a new mutate_state call.'
+    )
