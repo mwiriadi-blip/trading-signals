@@ -100,6 +100,12 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 
+# Force dashboard re-render: dashboard.html is a lazy cache keyed on state.json
+# mtime. A git pull never touches either file, so stale HTML would keep serving
+# until the next daily run. Touching state.json triggers re-render on next request.
+touch state.json
+echo "[deploy] state.json touched — dashboard will re-render on next request"
+
 # D-20 (Phase 12): reverse-proxy config test + reload hook, gated.
 # Pre-Phase-12 droplets (no reverse-proxy binary installed) skip
 # silently via `command -v` — the first use of optional-feature
