@@ -81,7 +81,7 @@ def _render_close_form_partial(state, instrument, pos) -> str:
     f'<tr><td colspan="9">'
     f'Close {esc(pos["direction"])} {esc(instrument)} '
     f'({esc(pos["n_contracts"])} contracts) at exit price '
-    f'<input type="number" step="0.01" min="0" name="exit_price" required autofocus />'
+    f'<input type="number" step="0.01" min="0.01" name="exit_price" required autofocus />'
     f'<button type="button" class="btn-row" '
     f'hx-get="/trades/cancel-row?instrument={esc(instrument)}" '
     f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML">Cancel</button>'
@@ -91,7 +91,8 @@ def _render_close_form_partial(state, instrument, pos) -> str:
     f'<button type="button" class="btn-row btn-close" '
     f'hx-post="/trades/close" hx-ext="json-enc" hx-include="closest tr" '
     f'hx-vals=\'{{"instrument": "{esc(instrument)}"}}\' '
-    f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML">Confirm close</button>'
+    f'hx-target="#position-group-{esc(instrument)}" hx-swap="innerHTML" '
+    f'hx-on::after-request="handleTradesError(event)">Confirm close</button>'
     f'</td></tr>'
   )
 

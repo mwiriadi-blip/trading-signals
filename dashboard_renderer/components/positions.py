@@ -373,6 +373,7 @@ def render_positions_table(state: dict, include_open_form: bool = True) -> str:
     prefix
     + '<section aria-labelledby="heading-positions">\n'
     '  <h2 id="heading-positions">Open Positions</h2>\n'
+    '  <div class="error" role="alert" aria-live="polite" hidden></div>\n'
     '  <div class="table-scroll" tabindex="0" role="region" aria-label="Open positions (scrollable)">\n'
     '  <table class="data-table">\n'
     '    <caption class="visually-hidden">Open positions with current price, '
