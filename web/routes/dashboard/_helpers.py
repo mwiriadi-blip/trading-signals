@@ -209,6 +209,7 @@ def _serve_account_page_scoped(
   scoped_state = {
     **full_state,
     'positions': user_bucket.get('positions', {}),
+    'trade_log': user_bucket.get('trade_log', []),
     'paper_trades': user_bucket.get('paper_trades', []),
     'equity_history': user_bucket.get('equity_history', []),
     '_account_include_open_form': is_admin,
