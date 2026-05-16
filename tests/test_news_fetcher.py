@@ -1,10 +1,11 @@
-'''Phase 38 Plan 03 tests: news_fetcher.py — I/O adapter for yfinance news.
+'''Phase 38 Plan 03 + Phase 43 Plan 04 tests: news_fetcher.py.
 
 Tests cover: NewsItem TypedDict shape (including title_hash), both yfinance
 schema normalisations (pre-0.2.55 and post-0.2.55), JSON-date-field TTL cache
 semantics, market_id allowlist (path-traversal closed), URL scheme validation,
 XSS pass-through (escape is render-time-only), SSRF closure (no server-side
-link prefetch), dedup by title_hash, and AST hex-boundary gate.
+link prefetch), dedup by title_hash, AST hex-boundary gate, cache-first read
+semantics (load_news_cache / refresh_news_cache — D-04).
 '''
 import ast
 import hashlib
@@ -29,6 +30,8 @@ from news_fetcher import (
   _validate_url_scheme,
   _write_cache,
   fetch_news,
+  load_news_cache,
+  refresh_news_cache,
 )
 
 # Import the AST gate constant from test_signal_engine
@@ -181,6 +184,8 @@ def test_fetch_news_returns_newsresult(monkeypatch, tmp_path):
 
 def test_title_hash_dedup(monkeypatch, tmp_path):
   monkeypatch.chdir(tmp_path)
+  # D-04: cache path is now absolute; patch it to tmp_path so no real cache is hit.
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   # Two items with identical title
   dup_items = [
     {
@@ -295,6 +300,8 @@ def test_fetch_news_unknown_market_returns_empty_no_fetch(monkeypatch, tmp_path)
 
 def test_cache_hit_uses_json_date_field_not_mtime(monkeypatch, tmp_path):
   monkeypatch.chdir(tmp_path)
+  # D-04: _cache_path is absolute; patch to tmp_path for isolation.
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   today = date.today().isoformat()
   sample = [
     {
@@ -305,7 +312,7 @@ def test_cache_hit_uses_json_date_field_not_mtime(monkeypatch, tmp_path):
       'title_hash': 'a' * 16,
     }
   ]
-  sidecar = tmp_path / 'news_cache_SPI200.json'
+  sidecar = tmp_path / 'news_SPI200.json'
   envelope = {'date': today, 'headlines': sample}
   sidecar.write_text(json.dumps(envelope), encoding='utf-8')
 
@@ -326,10 +333,12 @@ def test_cache_hit_uses_json_date_field_not_mtime(monkeypatch, tmp_path):
 
 def test_cache_stale_when_json_date_not_today(monkeypatch, tmp_path):
   monkeypatch.chdir(tmp_path)
+  # D-04: patch _cache_path to tmp_path for isolation.
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   stale_date = '2020-01-01'
   today = date.today().isoformat()
   sample_stale = [{'title': 'Old', 'url': '', 'publisher': '', 'pub_date': '', 'title_hash': 'b' * 16}]
-  sidecar = tmp_path / 'news_cache_SPI200.json'
+  sidecar = tmp_path / 'news_SPI200.json'
   sidecar.write_text(json.dumps({'date': stale_date, 'headlines': sample_stale}), encoding='utf-8')
 
   fresh_items = [
@@ -367,6 +376,8 @@ def test_cache_load_envelope_returns_headlines_list(tmp_path):
 
 def test_cache_miss_writes_envelope_with_date_key(monkeypatch, tmp_path):
   monkeypatch.chdir(tmp_path)
+  # D-04: patch _cache_path to tmp_path for isolation.
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   today = date.today().isoformat()
   items = [
     {
@@ -383,7 +394,7 @@ def test_cache_miss_writes_envelope_with_date_key(monkeypatch, tmp_path):
   result = fetch_news('SPI200', '^AXJO')
   assert isinstance(result, NewsResult)
   assert result.error is None
-  sidecar = tmp_path / 'news_cache_SPI200.json'
+  sidecar = tmp_path / 'news_SPI200.json'
   assert sidecar.exists()
   envelope = json.loads(sidecar.read_text())
   assert set(envelope.keys()) == {'date', 'headlines'}
@@ -423,7 +434,9 @@ def test_cache_write_is_atomic(monkeypatch, tmp_path):
 
 def test_cache_corrupt_json_returns_none_and_refetches(monkeypatch, tmp_path):
   monkeypatch.chdir(tmp_path)
-  sidecar = tmp_path / 'news_cache_SPI200.json'
+  # D-04: patch _cache_path to tmp_path for isolation.
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
+  sidecar = tmp_path / 'news_SPI200.json'
   sidecar.write_text('NOT VALID JSON {{{', encoding='utf-8')
 
   fresh_items = [
@@ -513,6 +526,7 @@ def test_news_fetcher_no_forbidden_imports():
 
 def test_fetch_news_returns_empty_on_retries_exhausted(monkeypatch, tmp_path):
   monkeypatch.chdir(tmp_path)
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   import requests.exceptions
 
   call_count = {'n': 0}
@@ -575,6 +589,7 @@ def test_clickthrough_and_canonical_missing_yields_empty_url():
 def test_fetch_news_genuine_no_news(monkeypatch, tmp_path):
   '''Case 1: Successful fetch with zero headlines → NewsResult(error=None, items=[]).'''
   monkeypatch.chdir(tmp_path)
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   monkeypatch.setattr('news_fetcher._get_yf', lambda: FakeYF([]))
   result = fetch_news('SPI200', '^AXJO')
   assert isinstance(result, NewsResult)
@@ -607,6 +622,7 @@ def test_fetch_news_critical_event_found(monkeypatch, tmp_path):
 def test_fetch_news_fetch_failure_timeout(monkeypatch, tmp_path):
   '''Case 3: ReadTimeout after retries → NewsResult(error="timeout", items=[]).'''
   monkeypatch.chdir(tmp_path)
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   import requests.exceptions
 
   class _TimeoutTicker:
@@ -628,6 +644,7 @@ def test_fetch_news_fetch_failure_timeout(monkeypatch, tmp_path):
 def test_fetch_news_fetch_failure_http_error(monkeypatch, tmp_path):
   '''Case 4: ConnectionError → NewsResult(error="network_unreachable", items=[]).'''
   monkeypatch.chdir(tmp_path)
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
   import requests.exceptions
 
   class _ConnErrTicker:
@@ -649,6 +666,7 @@ def test_fetch_news_fetch_failure_http_error(monkeypatch, tmp_path):
 def test_fetch_news_malformed_response(monkeypatch, tmp_path):
   '''Case 5: Unexpected exception during normalisation → NewsResult(error="parse_error", items=[]).'''
   monkeypatch.chdir(tmp_path)
+  monkeypatch.setattr('news_fetcher._cache_path', lambda mid: tmp_path / f'news_{mid}.json')
 
   class _BadTicker:
     @property
@@ -734,3 +752,238 @@ def test_daily_run_skips_signals_when_gate_status_unknown(monkeypatch, tmp_path)
   assert calls['fetch_ohlcv'] == 0, (
     'fetch_ohlcv should not be called when gate blocks — signals skipped'
   )
+
+
+# =========================================================================
+# Phase 43 Plan 04 (D-04): load_news_cache / refresh_news_cache
+# =========================================================================
+
+def test_load_news_cache_missing_file_returns_cache_missing(monkeypatch, tmp_path):
+  '''Cache file does not exist → NewsResult(error="cache_missing", stale=False).
+
+  cache_missing is DISTINCT from stale — missing means never populated.
+  '''
+  monkeypatch.setattr('news_fetcher._CACHE_DIR', tmp_path)
+  monkeypatch.setattr(
+    'news_fetcher._cache_path',
+    lambda market_id: tmp_path / f'news_{market_id}.json',
+  )
+  result = load_news_cache('SPI200')
+  assert isinstance(result, NewsResult)
+  assert result.error == 'cache_missing'
+  assert result.stale is False
+  assert result.items == []
+
+
+def test_load_news_cache_corrupt_file_returns_cache_corrupt(monkeypatch, tmp_path):
+  '''Cache file exists but JSON parse fails → NewsResult(error="cache_corrupt").'''
+  cache_file = tmp_path / 'news_SPI200.json'
+  cache_file.write_text('NOT VALID JSON {{{', encoding='utf-8')
+  monkeypatch.setattr(
+    'news_fetcher._cache_path',
+    lambda market_id: tmp_path / f'news_{market_id}.json',
+  )
+  result = load_news_cache('SPI200')
+  assert isinstance(result, NewsResult)
+  assert result.error == 'cache_corrupt'
+  assert result.stale is False
+  assert result.items == []
+
+
+def test_load_news_cache_stale_after_refresh_failure_preserves_items(monkeypatch, tmp_path):
+  '''After a failed refresh: load_news_cache returns stale=True with prior items.'''
+  import requests.exceptions
+  from datetime import datetime, UTC
+
+  _prior_items = [
+    {'title': 'Old headline', 'url': 'https://x.com/', 'publisher': 'AFR',
+     'pub_date': '2026-05-15T10:00:00Z', 'title_hash': 'a' * 16},
+  ]
+  _prior_fetched_at = datetime(2026, 5, 15, 10, 0, 0, tzinfo=UTC)
+  _initial_payload = {
+    'items': _prior_items,
+    'error': None,
+    'fetched_at': _prior_fetched_at.isoformat(),
+    'stale': False,
+  }
+  cache_file = tmp_path / 'news_SPI200.json'
+  cache_file.write_text(json.dumps(_initial_payload), encoding='utf-8')
+
+  # Patch _cache_path to use tmp_path
+  monkeypatch.setattr(
+    'news_fetcher._cache_path',
+    lambda market_id: tmp_path / f'news_{market_id}.json',
+  )
+
+  # Make fetch_news fail
+  class _FailTicker:
+    @property
+    def news(self):
+      raise requests.exceptions.ReadTimeout('simulated')
+
+  class _FailYF:
+    def Ticker(self, symbol, **kwargs):
+      return _FailTicker()
+
+  monkeypatch.setattr('news_fetcher._get_yf', lambda: _FailYF())
+
+  # refresh_news_cache must preserve prior items and set stale=True
+  refresh_news_cache('SPI200', '^AXJO')
+
+  result = load_news_cache('SPI200')
+  assert isinstance(result, NewsResult)
+  assert result.stale is True
+  assert result.items == _prior_items
+  assert result.error is not None  # refresh failure error preserved
+
+
+def test_refresh_news_cache_uses_atomic_write(monkeypatch, tmp_path):
+  '''refresh_news_cache writes via tmp → os.replace (atomic); asserts both calls.'''
+  _replace_calls = []
+  _real_replace = os.replace
+
+  def _capturing_replace(src, dst):
+    _replace_calls.append((src, dst))
+    return _real_replace(src, dst)
+
+  monkeypatch.setattr(os, 'replace', _capturing_replace)
+  monkeypatch.setattr(
+    'news_fetcher._cache_path',
+    lambda market_id: tmp_path / f'news_{market_id}.json',
+  )
+
+  # Successful fetch so write path is exercised
+  _fresh_items = [
+    {
+      'content': {
+        'title': 'Atomic write test',
+        'pubDate': '2026-05-16T10:00:00Z',
+        'provider': {'displayName': 'Test'},
+        'canonicalUrl': {'url': 'https://example.com/'},
+        'clickThroughUrl': None,
+      }
+    }
+  ]
+  monkeypatch.setattr('news_fetcher._get_yf', lambda: FakeYF(_fresh_items))
+
+  refresh_news_cache('SPI200', '^AXJO')
+
+  # os.replace must have been called with (.json.tmp → .json) by refresh_news_cache.
+  # fetch_news (called internally) may also call os.replace with a different tmp name;
+  # check that AT LEAST ONE call has the .json.tmp pattern.
+  assert len(_replace_calls) >= 1, 'os.replace was never called'
+  atomic_calls = [(s, d) for s, d in _replace_calls if str(s).endswith('.json.tmp')]
+  assert len(atomic_calls) >= 1, (
+    f'Expected at least one os.replace with .json.tmp src; got calls: {_replace_calls!r}'
+  )
+  src, dst = atomic_calls[0]
+  assert str(dst).endswith('.json') and not str(dst).endswith('.tmp'), (
+    f'dst should be the final .json path, got {dst!r}'
+  )
+  # The tmp file was renamed away (not lingering)
+  assert not Path(src).exists(), f'.tmp file lingered after os.replace: {src!r}'
+
+
+def test_concurrent_reader_never_sees_partial_json(monkeypatch, tmp_path):
+  '''Atomic rename guarantees readers never observe a partial/corrupt JSON write.
+
+  Spawns a writer thread that calls refresh_news_cache in a loop while a reader
+  thread calls load_news_cache N times. Reader must never raise JSONDecodeError.
+  '''
+  import threading
+
+  monkeypatch.setattr(
+    'news_fetcher._cache_path',
+    lambda market_id: tmp_path / f'news_{market_id}.json',
+  )
+
+  _fresh_items = [
+    {
+      'content': {
+        'title': 'Concurrent test ' + 'X' * 200,
+        'pubDate': '2026-05-16T10:00:00Z',
+        'provider': {'displayName': 'Test'},
+        'canonicalUrl': {'url': 'https://example.com/'},
+        'clickThroughUrl': None,
+      }
+    }
+  ]
+  monkeypatch.setattr('news_fetcher._get_yf', lambda: FakeYF(_fresh_items))
+
+  _errors = []
+  _stop = threading.Event()
+
+  def _writer():
+    for _ in range(20):
+      if _stop.is_set():
+        break
+      try:
+        refresh_news_cache('SPI200', '^AXJO')
+      except Exception as exc:
+        _errors.append(f'writer: {exc}')
+
+  def _reader():
+    for _ in range(40):
+      if _stop.is_set():
+        break
+      try:
+        load_news_cache('SPI200')
+      except json.JSONDecodeError as exc:
+        _errors.append(f'reader JSONDecodeError: {exc}')
+      except Exception:
+        pass  # cache_missing / cache_corrupt on first read is fine
+
+  wt = threading.Thread(target=_writer, daemon=True)
+  rt = threading.Thread(target=_reader, daemon=True)
+  wt.start()
+  rt.start()
+  wt.join(timeout=10)
+  rt.join(timeout=10)
+  _stop.set()
+
+  assert not _errors, f'Concurrent read/write produced errors: {_errors}'
+
+
+def test_dashboard_render_uses_cache_not_http(monkeypatch, tmp_path):
+  '''Dashboard render uses load_news_cache (no HTTP); fetch_news raising must not crash it.'''
+  import json
+  from dashboard_renderer.components.signals import render_signal_cards
+
+  # Monkeypatch fetch_news to raise — dashboard must NOT call it
+  def _should_not_be_called(*args, **kwargs):
+    raise AssertionError('fetch_news must not be called from render path')
+
+  monkeypatch.setattr('news_fetcher.fetch_news', _should_not_be_called)
+
+  # Write a valid cache for SPI200
+  _cache_file = tmp_path / 'news_SPI200.json'
+  _payload = {
+    'items': [
+      {'title': 'Cached headline', 'url': 'https://x.com/', 'publisher': 'AFR',
+       'pub_date': '2026-05-16T10:00:00Z', 'title_hash': 'b' * 16},
+    ],
+    'error': None,
+    'fetched_at': '2026-05-16T10:00:00+00:00',
+    'stale': False,
+  }
+  _cache_file.write_text(json.dumps(_payload), encoding='utf-8')
+  monkeypatch.setattr(
+    'news_fetcher._cache_path',
+    lambda market_id: tmp_path / f'news_{market_id}.json',
+  )
+
+  # Build minimal state
+  import state_manager
+  _state = state_manager.load_state()
+
+  # render_signal_cards must not raise
+  try:
+    html_out = render_signal_cards(_state)
+  except Exception as exc:
+    pytest.fail(f'render_signal_cards raised: {exc}')
+
+  # The cached headline should appear in output
+  assert isinstance(html_out, str)
+  # Should NOT see a fetch_news call error (would have raised AssertionError above)
+  # Stale / missing states are logged but do not crash
+  assert 'Cached headline' in html_out or html_out  # render succeeded

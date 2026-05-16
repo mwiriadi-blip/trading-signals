@@ -3148,3 +3148,62 @@ class TestV12InitBehavior:
     assert '_resolved_contracts' in loaded, 'B2: _resolved_contracts must be materialised'
     assert 'SPI200' in loaded['_resolved_contracts']
     assert 'AUDUSD' in loaded['_resolved_contracts']
+
+
+# =========================================================================
+# Phase 43-05: mutate_state re-entrancy guard tests
+# =========================================================================
+
+class TestMutateStateReentrancy:
+  '''Phase 43-05: validate thread-local re-entrancy guard on mutate_state.'''
+
+  def test_mutate_state_raises_on_reentrant_call(self, tmp_path) -> None:
+    '''Nested mutate_state call inside callback raises RuntimeError immediately.'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+
+    def _nested_mutator(state):
+      # This inner call must be detected as re-entrant and raise.
+      mutate_state(lambda s: None, path=path)
+
+    with pytest.raises(RuntimeError, match='not re-entrant'):
+      mutate_state(_nested_mutator, path=path)
+
+  def test_state_writable_after_reentrant_error(self, tmp_path) -> None:
+    '''After a re-entrancy RuntimeError, subsequent mutate_state calls succeed (finally cleanup).'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+
+    def _nested_mutator(state):
+      mutate_state(lambda s: None, path=path)
+
+    # Trigger re-entrancy error.
+    with pytest.raises(RuntimeError, match='not re-entrant'):
+      mutate_state(_nested_mutator, path=path)
+
+    # State must be writable afterwards — guard flag must have been restored.
+    sentinel = {}
+    def _ok_mutator(state):
+      sentinel['ran'] = True
+
+    mutate_state(_ok_mutator, path=path)
+    assert sentinel.get('ran') is True, 'mutate_state must succeed after re-entrancy error'
+
+  def test_mutate_state_clears_flag_on_callback_exception(self, tmp_path) -> None:
+    '''When callback raises ValueError, flag is cleared and next mutate_state succeeds.'''
+    from state_manager import mutate_state
+    path = tmp_path / 'state.json'
+
+    def _bad_mutator(state):
+      raise ValueError('deliberate callback error')
+
+    with pytest.raises(ValueError, match='deliberate callback error'):
+      mutate_state(_bad_mutator, path=path)
+
+    # Guard must be False now — next call must not raise RuntimeError.
+    sentinel = {}
+    def _ok_mutator(state):
+      sentinel['ran'] = True
+
+    mutate_state(_ok_mutator, path=path)
+    assert sentinel.get('ran') is True, 'mutate_state must succeed after callback exception'

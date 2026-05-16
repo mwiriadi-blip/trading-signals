@@ -794,7 +794,7 @@ class TestRenderBlocks:
   # --- Trades table ---
 
   def test_trades_table_slice_and_order(self) -> None:
-    '''VALIDATION row 05-02-T3: 25 trades → render exactly 20 <tbody> rows, newest first.'''
+    '''VALIDATION row 05-02-T3: 25 trades → render all 25 <tbody> rows (cap is 200), newest first.'''
     state = _make_state(with_trades=5)
     # Build 25 synthetic trades with unique exit_dates so order is verifiable
     trades = []
@@ -815,7 +815,8 @@ class TestRenderBlocks:
     tbody_end = output.find('</tbody>')
     tbody_slice = output[tbody_start:tbody_end]
     tr_count = tbody_slice.count('<tr>')
-    assert tr_count == 20, f'expected 20 tbody rows, got {tr_count}'
+    # D-06: cap is 200; 25 < 200 so all 25 render.
+    assert tr_count == 25, f'expected 25 tbody rows, got {tr_count}'
     # Newest-first: trades[-1] is the last trade pushed; its exit_date is '2026-03-25'
     # (i=24 → (24 % 27) + 1 = 25). The FIRST rendered row should reference this date.
     first_tr_start = tbody_slice.find('<tr>')
@@ -3663,3 +3664,46 @@ class TestPhase25MarketTestPlaceholders:
     assert 'placeholder="3"' in html_out, 'Custom votes not reflected in placeholder'
     assert 'placeholder="2.00"' in html_out, 'Custom long risk % not reflected in placeholder'
     assert 'placeholder="1.00"' in html_out, 'Custom short risk % not reflected in placeholder'
+
+
+
+# =========================================================================
+# D-06: Trade log truncation + no-mutation tests
+# =========================================================================
+
+class TestTradeLogTruncation:
+  '''Phase 43 D-06: dashboard renders last 200 trades; state is never mutated.'''
+
+  def _make_trade(self, i: int) -> dict:
+    return {
+      'instrument': 'SPI200',
+      'direction': 'LONG',
+      'entry_date': f'2026-01-{(i % 28) + 1:02d}',
+      'exit_date': f'2026-01-{(i % 28) + 2:02d}',
+      'entry_price': 7800.0 + i,
+      'exit_price': 7810.0 + i,
+      'gross_pnl': 10.0,
+      'n_contracts': 1,
+      'exit_reason': 'stop_hit',
+      'multiplier': 6.0,
+      'cost_aud': 5.0,
+      'net_pnl': 8.0,
+    }
+
+  def test_dashboard_truncates_trade_log_to_200(self):
+    '''render_trades_table with 300 trades renders exactly 200 HTML rows.'''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [self._make_trade(i) for i in range(300)]
+    html_out = render_trades_table(state)
+    row_count = html_out.count('<td data-label="Closed">')
+    assert row_count == 200, f'Expected 200 rows, got {row_count}'
+
+  def test_dashboard_render_does_not_mutate_state(self):
+    '''render_trades_table must not modify state["trade_log"] in place.'''
+    state = _make_state(with_trades=0)
+    state['trade_log'] = [self._make_trade(i) for i in range(300)]
+    original_len = len(state['trade_log'])
+    render_trades_table(state)
+    assert len(state['trade_log']) == original_len, (
+      f'state["trade_log"] mutated: was {original_len}, now {len(state["trade_log"])}'
+    )

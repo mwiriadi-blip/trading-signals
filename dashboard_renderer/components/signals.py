@@ -266,12 +266,14 @@ def render_signal_cards(
     trace_placeholder = _TRACE_OPEN_PLACEHOLDER.get(state_key, '')
     parts.append(_render_trace_panels(trace_sig_dict, state_key, trace_placeholder))
 
-    # Phase 38: inject news panel at the bottom of each per-market section.
+    # Phase 43 D-04: news panel reads from cache only — no inline HTTP fetch.
+    # Scheduler refreshes cache out-of-band via refresh_news_cache().
     # Local imports (C-2 hex discipline; never-crash discipline D-10).
     try:
       from datetime import date as _date
-      from news_fetcher import fetch_news as _fetch_news
+      from news_fetcher import load_news_cache as _load_news_cache
       from dashboard_renderer.components.news import render_news_panel as _render_news_panel
+      import logging as _logging
 
       _today_iso = _date.today().isoformat()
       _dismiss_bucket = (news_dismissed.get(state_key) or {})
@@ -283,38 +285,32 @@ def render_signal_cards(
 
       _collapsed = bool((news_panel_collapsed or {}).get(state_key, False))
 
-      # Resolve the yfinance symbol for this market
-      _markets = state.get('markets') or {}
-      _market_entry = _markets.get(state_key) or {}
-      _symbol = _market_entry.get('symbol', state_key)
-
       try:
-        _news_result = _fetch_news(state_key, _symbol)
+        _news_result = _load_news_cache(state_key)
       except Exception:
-        import logging as _logging
         from datetime import datetime as _dt, UTC as _utc
         from news_fetcher import NewsResult as _NewsResult
         _logging.getLogger(__name__).warning(
-          '[Signals] fetch_news failed for %s — error fallback (D-10)', state_key,
+          '[Signals] load_news_cache failed for %s — error fallback (D-10)', state_key,
           exc_info=True,
         )
-        _news_result = _NewsResult(items=[], error='parse_error', fetched_at=_dt.now(_utc))
+        _news_result = _NewsResult(items=[], error='parse_error')
 
-      # Surface gate_status in dashboard: render news panel with fetched items.
-      # fetch_news returns NewsResult; pass .items to render_news_panel (list).
-      # Gate status is rendered separately via the news panel gate_status display.
-      _headlines = _news_result.items if hasattr(_news_result, 'items') else list(_news_result)
-
-      # Render gate_status banner above news panel when not clear.
-      _gate_status = getattr(_news_result, 'gate_status', None)
+      # Distinct UI state logging (D-04 must_have: missing != stale).
       _fetch_error = getattr(_news_result, 'error', None)
-      if _gate_status not in (None,) and _gate_status != 'clear':
-        import logging as _logging
+      _is_stale = getattr(_news_result, 'stale', False)
+      _fetched_at = getattr(_news_result, 'fetched_at', None)
+      if _fetch_error == 'cache_missing':
+        _logging.getLogger(__name__).info(
+          '[Signals] news cache not yet populated for %s', state_key,
+        )
+      elif _is_stale:
         _logging.getLogger(__name__).warning(
-          '[Signals] news gate_status=%r fetch_error=%r for %s',
-          _gate_status, _fetch_error, state_key,
+          '[Signals] serving stale news for %s (refresh failed at %s error=%r)',
+          state_key, _fetched_at, _fetch_error,
         )
 
+      _headlines = list(_news_result.items) if hasattr(_news_result, 'items') else []
       parts.append(_render_news_panel(state_key, _headlines, _dismissed_hashes, _collapsed))
     except Exception:
       # Never-crash discipline D-10: news panel must not 500 the dashboard

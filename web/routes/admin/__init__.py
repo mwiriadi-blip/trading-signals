@@ -22,12 +22,14 @@ Phase 37 Plan 05:
   Note: GET /healthz/last-cycle is NOT in admin router — it lives in
     web/routes/healthz.py per D-15 (plan spec: standalone route).
 '''
+import json
 import logging
 import os
 import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from web.dependencies import current_user_id, require_admin
 from web.routes.admin._models import (
@@ -52,6 +54,27 @@ router = APIRouter(prefix='/admin', dependencies=[Depends(require_admin)])
 def ping():
   '''D-09: non-vacuous startup invariant target. Returns 200 {"ok": true}.'''
   return {'ok': True}
+
+
+@router.get('/trades/full')
+def admin_trades_full(user_id: str = Depends(current_user_id)):
+  '''D-06: download full trade log for the authenticated user (tenant-scoped).
+
+  Resolves user_id from session only — no query-param override, no cross-user
+  iteration. require_admin on the router enforces auth before this handler runs.
+  '''
+  from state_manager import load_state
+  state = load_state()
+  trade_log = state.get('users', {}).get(user_id, {}).get('trade_log', [])
+  date_str = datetime.now(UTC).strftime('%Y-%m-%d')
+  body = json.dumps({'user_id': user_id, 'trade_log': trade_log})
+  return Response(
+    content=body,
+    media_type='application/json',
+    headers={
+      'Content-Disposition': f'attachment; filename="trades-{user_id}-{date_str}.json"',
+    },
+  )
 
 
 @router.get('/users')

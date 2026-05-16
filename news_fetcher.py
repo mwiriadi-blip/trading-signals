@@ -68,15 +68,21 @@ class NewsResult:
     "http_error"          — Non-2xx HTTP response
     "parse_error"         — JSON / schema parse failure
     "network_unreachable" — ConnectionError after retries exhausted
+    "cache_missing"       — Cache file does not exist (never populated)
+    "cache_corrupt"       — Cache file exists but JSON parse failed
+  stale=True means refresh failed; items are from the last successful fetch.
+  stale=False (default) means items are current or no prior data exists.
   '''
   items: list = field(default_factory=list)
   error: 'str | None' = None
   fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+  stale: bool = False
 
   def __post_init__(self):
     # Validate typed error reasons (prevents raw exception strings leaking).
     _VALID_ERRORS = frozenset({
-      'timeout', 'http_error', 'parse_error', 'network_unreachable', None,
+      'timeout', 'http_error', 'parse_error', 'network_unreachable',
+      'cache_missing', 'cache_corrupt', None,
     })
     if self.error not in _VALID_ERRORS:
       # Coerce unknown errors to parse_error to avoid leaking raw text.
@@ -89,6 +95,16 @@ class NewsResult:
 # =========================================================================
 
 from system_params import KNOWN_MARKET_IDS as _VALID_MARKETS
+
+# =========================================================================
+# Cache directory — absolute path anchored to project root (D-04).
+# Using __file__ avoids CWD-relative path bugs (T-38-03-04 defence-in-depth).
+# Directory created at import time; idempotent (exist_ok=True).
+# =========================================================================
+
+_PROJECT_ROOT = Path(__file__).parent
+_CACHE_DIR = _PROJECT_ROOT / '.cache' / 'news'
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =========================================================================
@@ -189,14 +205,15 @@ def _is_valid_market_id(market_id: str) -> bool:
 
 
 def _cache_path(market_id: str) -> Path:
-  '''Return the sidecar cache path for the given market_id.
+  '''Return the cache path for the given market_id under .cache/news/.
 
+  Uses absolute path anchored to project root (D-04: no CWD-relative paths).
   Raises ValueError if market_id is not in the allowlist or contains
   traversal characters. Must be called BEFORE any Path construction.
   '''
   if not _is_valid_market_id(market_id):
     raise ValueError(f'invalid market_id: {market_id!r}')
-  return Path(f'news_cache_{market_id}.json')
+  return _CACHE_DIR / f'news_{market_id}.json'
 
 
 # =========================================================================
@@ -472,3 +489,147 @@ def fetch_news(
     last_exc,
   )
   return NewsResult(items=[], error=last_error_reason, fetched_at=datetime.now(UTC))
+
+
+# =========================================================================
+# Cache-first API (D-04) — load from cache; refresh out-of-band in scheduler
+# =========================================================================
+
+_EPOCH_0 = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def load_news_cache(market_id: str) -> NewsResult:
+  '''Load news from the per-market cache file. Performs NO HTTP.
+
+  Distinct return states:
+    - Cache file missing  → NewsResult(error="cache_missing", stale=False)
+      This is NOT the same as stale — missing means never populated.
+    - Cache file corrupt  → NewsResult(error="cache_corrupt", stale=False)
+    - Cache file valid    → NewsResult reconstructed from payload; stale as stored.
+
+  Raises ValueError if market_id is invalid (same as _cache_path).
+  '''
+  now = datetime.now(UTC)
+  cache_file = _cache_path(market_id)
+
+  if not cache_file.exists():
+    return NewsResult(
+      items=[],
+      error='cache_missing',
+      fetched_at=_EPOCH_0,
+      stale=False,
+    )
+
+  try:
+    raw = cache_file.read_text(encoding='utf-8')
+    payload = json.loads(raw)
+  except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+    return NewsResult(
+      items=[],
+      error='cache_corrupt',
+      fetched_at=now,
+      stale=False,
+    )
+
+  if not isinstance(payload, dict):
+    return NewsResult(
+      items=[],
+      error='cache_corrupt',
+      fetched_at=now,
+      stale=False,
+    )
+
+  items = payload.get('items', [])
+  if not isinstance(items, list):
+    items = []
+
+  error_raw = payload.get('error')
+  # Only allow typed error strings through (same allowlist as NewsResult.__post_init__)
+  _VALID = frozenset({
+    'timeout', 'http_error', 'parse_error', 'network_unreachable',
+    'cache_missing', 'cache_corrupt', None,
+  })
+  error = error_raw if error_raw in _VALID else 'parse_error'
+
+  stale = bool(payload.get('stale', False))
+
+  fetched_at_raw = payload.get('fetched_at', '')
+  try:
+    fetched_at = datetime.fromisoformat(fetched_at_raw) if fetched_at_raw else _EPOCH_0
+  except (ValueError, TypeError):
+    fetched_at = _EPOCH_0
+
+  return NewsResult(items=items, error=error, fetched_at=fetched_at, stale=stale)
+
+
+def refresh_news_cache(market_id: str, symbol: str) -> NewsResult:
+  '''Fetch fresh news and write atomically to .cache/news/<market>.json.
+
+  Called by scheduler_driver — NOT from the render path.
+
+  On success (result.error is None):
+    - Writes fresh result with stale=False.
+
+  On failure (result.error is not None):
+    - Reads existing cache (if present).
+    - If prior cache exists: rewrite preserving its items and fetched_at,
+      but set error=result.error and stale=True (last-good-data + error flag).
+    - If no prior cache: write empty result with stale=False so missing-cache
+      state is DISTINCT from stale (D-04 must_have).
+
+  Atomic write:
+    tmp_path = cache_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(payload))
+    os.replace(tmp_path, cache_path)   # atomic on POSIX
+
+  NEVER open(cache_path, "w") directly. NEVER json.dump to the live path.
+  '''
+  now = datetime.now(UTC)
+  result = fetch_news(market_id, symbol)
+  cache_file = _cache_path(market_id)
+
+  if result.error is None:
+    # Success: write fresh data with stale=False
+    payload = {
+      'items': result.items,
+      'error': None,
+      'fetched_at': result.fetched_at.isoformat(),
+      'stale': False,
+    }
+  else:
+    # Failure: try to preserve prior cache items
+    prior = load_news_cache(market_id)
+    if prior.error not in ('cache_missing', 'cache_corrupt'):
+      # Prior cache exists and is readable — preserve items + fetched_at
+      payload = {
+        'items': prior.items,
+        'error': result.error,
+        'fetched_at': prior.fetched_at.isoformat(),
+        'stale': True,
+      }
+    else:
+      # No prior cache — write empty with stale=False (missing != stale)
+      payload = {
+        'items': [],
+        'error': result.error,
+        'fetched_at': now.isoformat(),
+        'stale': False,
+      }
+
+  # Atomic write: tmp → os.replace → cache_file (POSIX atomic on same filesystem)
+  tmp_path = cache_file.with_suffix('.json.tmp')
+  try:
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp_path, cache_file)
+  except Exception as write_exc:
+    _LOGGER.warning(
+      'refresh_news_cache atomic write failed for market_id=%r: %s',
+      market_id,
+      write_exc,
+    )
+    try:
+      tmp_path.unlink(missing_ok=True)
+    except Exception:
+      pass
+
+  return result
