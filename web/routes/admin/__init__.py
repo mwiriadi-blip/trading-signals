@@ -72,7 +72,7 @@ def admin_trades_full(user_id: str = Depends(current_user_id)):
     content=body,
     media_type='application/json',
     headers={
-      'Content-Disposition': f'attachment; filename="trades-{user_id}-{date_str}.json"',
+      'Content-Disposition': f'attachment; filename="trades-{re.sub(r"[^\\w.-]", "_", user_id)}-{date_str}.json"',
     },
   )
 
