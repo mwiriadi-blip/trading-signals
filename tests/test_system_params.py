@@ -1,6 +1,7 @@
 '''Phase 22 (v1.2) — STRATEGY_VERSION + STATE_SCHEMA_VERSION presence/format tests.
 Phase 17 (v1.2) — STATE_SCHEMA_VERSION bump 4->5 for ohlc_window + indicator_scalars.
 Phase 19 (v1.2) — STATE_SCHEMA_VERSION bump 5->6 for paper_trades[] top-level array.
+Phase 43 Plan 03 (D-03): INITIAL_ACCOUNT must be Decimal (CLAUDE.md money rule).
 
 D-01 .. D-04 (22-CONTEXT.md): system_params owns the strategy-version contract
 plus the schema-version bump (3 -> 4 then 4 -> 5 then 5 -> 6). These tests pin the
@@ -8,6 +9,7 @@ public-API contract so any future bump is a deliberate test edit, not a silent
 constant change.
 '''
 import re
+from decimal import Decimal
 
 import system_params
 
@@ -244,4 +246,24 @@ class TestPaperTradeRouteConstantsParity:
     }, (
       'WR-04: web/routes/paper_trades._COST_AUD drifted from '
       'system_params (SPI_COST_AUD, AUDUSD_COST_AUD).'
+    )
+
+
+class TestInitialAccount:
+  '''Phase 43 Plan 03 (D-03): INITIAL_ACCOUNT must be Decimal per CLAUDE.md
+  money rule — no floats for AUD amounts.
+  '''
+
+  def test_initial_account_is_decimal(self) -> None:
+    '''D-03: INITIAL_ACCOUNT must be Decimal, not float.'''
+    assert isinstance(system_params.INITIAL_ACCOUNT, Decimal), (
+      f'D-03: INITIAL_ACCOUNT must be Decimal (CLAUDE.md money rule); '
+      f'got {type(system_params.INITIAL_ACCOUNT)!r}'
+    )
+
+  def test_initial_account_value(self) -> None:
+    '''D-03: INITIAL_ACCOUNT default value is 10000.00.'''
+    assert system_params.INITIAL_ACCOUNT == Decimal('10000.00'), (
+      f'D-03: INITIAL_ACCOUNT must be Decimal("10000.00"); '
+      f'got {system_params.INITIAL_ACCOUNT!r}'
     )

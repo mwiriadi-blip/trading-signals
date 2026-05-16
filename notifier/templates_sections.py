@@ -338,13 +338,14 @@ def _render_todays_pnl_email(state: dict) -> str:
       f'{html.escape(_fmt_em_dash_email(), quote=True)}</span>'
     )
 
+  from decimal import Decimal
   if equity_history:
     equity = equity_history[-1]['equity']
   else:
     equity = float(state.get('account', INITIAL_ACCOUNT))
   equity_cell = html.escape(_fmt_currency_email(equity), quote=True)
 
-  since_inception_frac = (equity - INITIAL_ACCOUNT) / INITIAL_ACCOUNT
+  since_inception_frac = (Decimal(str(equity)) - INITIAL_ACCOUNT) / INITIAL_ACCOUNT
   since_inception_str = _fmt_percent_signed_email(since_inception_frac)
   if since_inception_frac > 0:
     si_colour = _COLOR_LONG
