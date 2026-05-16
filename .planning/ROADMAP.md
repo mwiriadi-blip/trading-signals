@@ -8,7 +8,7 @@
 - ✅ **v1.1 Interactive Trading Workstation** — Phases 10–16 + 16.1 (shipped 2026-04-30). See [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md).
 - ✅ **v1.2 Trader-Grade Transparency & Validation** — Phases 17, 19, 20, 22, 23, 24, 25, 26, 27 (shipped 2026-05-10). See [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md).
 - 🟢 **v1.3 Multi-Tenant Friends & Family** — Phases 28–40 (planning, started 2026-05-10).
-- 🔵 **v1.4 Domain Models** — Phase 41 (planned).
+- 🔵 **v1.4 Domain Models** — Phase 42 (planned).
 
 ---
 
@@ -349,7 +349,7 @@ Plans:
 **Goal:** Replace dict-shaped market config and strategy settings with typed Pydantic models so schema mistakes are caught at construction time, `dict.get(...)` defensive patterns disappear at call sites, and future per-user market customisation has a stable contract to extend.
 
 **Granularity:** fine.
-**Phase numbering:** continues from v1.3 (last phase 40). v1.4 starts at **Phase 41**.
+**Phase numbering:** continues from v1.3 (last phase 40). v1.4 starts at **Phase 42** (Phase 41 is reserved for the IG data feed integration).
 
 ### Hard Constraints (inherited; non-negotiable)
 
@@ -359,14 +359,14 @@ Plans:
 
 ### Phases
 
-- [ ] **Phase 41: Domain Models — Pydantic Market Config + Strategy Settings** — `MarketConfig` and `StrategySettings` Pydantic models replace `dict[str, dict]` shapes in `system_params.py`; `SignalSnapshot` Pydantic model replaces ad-hoc dict construction in `signal_engine.py`; `Position` TypedDict upgraded to Pydantic `BaseModel`; all call-site `dict.get(...)` replaced with attribute access; import-time validation catches schema mistakes.
+- [ ] **Phase 42: Domain Models — Pydantic Market Config + Strategy Settings** — `MarketConfig` and `StrategySettings` Pydantic models replace `dict[str, dict]` shapes in `system_params.py`; `SignalSnapshot` Pydantic model replaces ad-hoc dict construction in `signal_engine.py`; `Position` TypedDict upgraded to Pydantic `BaseModel`; all call-site `dict.get(...)` replaced with attribute access; import-time validation catches schema mistakes.
 
 ---
 
-### Phase 41: Domain Models — Pydantic Market Config + Strategy Settings
+### Phase 42: Domain Models — Pydantic Market Config + Strategy Settings
 
 **Goal:** `DEFAULT_MARKETS` and `DEFAULT_STRATEGY_SETTINGS_BY_MARKET` in `system_params.py` are backed by `MarketConfig` and `StrategySettings` Pydantic models; `signal_engine.py` emits a typed `SignalSnapshot`; `Position` TypedDict is upgraded to a Pydantic `BaseModel`; all call-site `dict.get(key, default)` patterns at the domain boundary are replaced with typed attribute access.
-**Depends on:** Phase 40
+**Depends on:** Phase 41
 **Requirements:** DOMAIN-01, DOMAIN-02, DOMAIN-03
 **Success Criteria** (what must be TRUE):
   1. `MarketConfig` Pydantic model covers all fields currently in `DEFAULT_MARKETS` dict entries (`ticker`, `display_name`, `contract_type`, `financing_rate_annual_pct`, etc.); `DEFAULT_MARKETS` values validate at import time; any unknown or missing field raises `ValidationError` at startup, not silently at call-site.
@@ -482,8 +482,26 @@ Phase dirs archived to [milestones/v1.0-phases/](milestones/v1.0-phases/). Roadm
 | 38. news integration | v1.3 | 4/4 | Complete    | 2026-05-16 |
 | 39. guide UI — tour + tooltips | v1.3 | 0/0 | Not started | - |
 | 40. milestone close audit | v1.3 | 0/0 | Not started | - |
-| 41. domain models — Pydantic market config | v1.4 | 0/0 | Not started | - |
+| 41. data feed integration — IG REST API | v1.3 | 3/3 | Complete   | 2026-05-16 |
+| 42. domain models — Pydantic market config | v1.4 | 0/0 | Not started | - |
+
+### Phase 41: data feed integration - IG REST API
+
+**Goal:** IG REST API becomes the primary daily OHLCV source for SPI200 and AUD/USD; yfinance is preserved as a silent fallback with WARNING log + dashboard warning visibility on every fallback transition; data_fetcher.fetch_ohlcv contract (signature, columns, DatetimeIndex) preserved end-to-end.
+**Requirements**: FEED-01, FEED-02, FEED-03
+**Depends on:** Phase 40
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+- [x] 41-01-PLAN.md — Wave 0 test scaffold: IG response fixtures + TestIGFetch/TestIGNormalise skeletons (autonomous)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 41-02-PLAN.md — IG branch implementation in data_fetcher.py + system_params ig_epic + .env.example (autonomous, depends on 41-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 41-03-PLAN.md — daily_run.py D-02 fallback warning wiring + TestIGFallbackWarning (autonomous, depends on 41-02)
 
 ---
 
-*Last updated: 2026-05-12 — Phases 31 (core module split) and 32 (dashboard legacy retirement) inserted from Codex audit recommendations; old Phases 31–38 renumbered to 33–40; OPS-05 and OPS-06 added to coverage map; requirement count updated to 30/30. v1.4 Domain Models milestone added (Phase 41, DOMAIN-01..03).*
+*Last updated: 2026-05-16 — Domain Models phase renumbered from 41 → 42 to resolve conflict with Phase 41 IG data feed integration; Phase 41 requirements renamed FEED-01/02/03; v1.4 milestone updated to start at Phase 42.*

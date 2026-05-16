@@ -1,0 +1,62 @@
+{
+  "_fixture_metadata": {
+    "epic_assumed": "CS.D.AUDUSD.MINI.IP",
+    "source": "hand-crafted from RESEARCH.md §Code Examples shape",
+    "instrument": "AUD/USD (FX mini, spread-bet)",
+    "price_range": "~0.65-0.67 (5-decimal FX convention)",
+    "note": "lastTradedVolume=0 is correct for IG spread-bet FX instruments (Pitfall 2)"
+  },
+  "prices": [
+    {
+      "snapshotTime": "2024/05/13 00:00:00",
+      "snapshotTimeUTC": "2024-05-12T21:00:00",
+      "openPrice":  {"bid": 0.65180, "ask": 0.65220, "lastTraded": null},
+      "highPrice":  {"bid": 0.65450, "ask": 0.65490, "lastTraded": null},
+      "lowPrice":   {"bid": 0.65050, "ask": 0.65090, "lastTraded": null},
+      "closePrice": {"bid": 0.65380, "ask": 0.65420, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/14 00:00:00",
+      "snapshotTimeUTC": "2024-05-13T21:00:00",
+      "openPrice":  {"bid": 0.65390, "ask": 0.65430, "lastTraded": null},
+      "highPrice":  {"bid": 0.65700, "ask": 0.65740, "lastTraded": null},
+      "lowPrice":   {"bid": 0.65300, "ask": 0.65340, "lastTraded": null},
+      "closePrice": {"bid": 0.65620, "ask": 0.65660, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/15 00:00:00",
+      "snapshotTimeUTC": "2024-05-14T21:00:00",
+      "openPrice":  {"bid": 0.65630, "ask": 0.65670, "lastTraded": null},
+      "highPrice":  {"bid": 0.66150, "ask": 0.66190, "lastTraded": null},
+      "lowPrice":   {"bid": 0.65520, "ask": 0.65560, "lastTraded": null},
+      "closePrice": {"bid": 0.66010, "ask": 0.66050, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/16 00:00:00",
+      "snapshotTimeUTC": "2024-05-15T21:00:00",
+      "openPrice":  {"bid": 0.66020, "ask": 0.66060, "lastTraded": null},
+      "highPrice":  {"bid": 0.66480, "ask": 0.66520, "lastTraded": null},
+      "lowPrice":   {"bid": 0.65900, "ask": 0.65940, "lastTraded": null},
+      "closePrice": {"bid": 0.66350, "ask": 0.66390, "lastTraded": null},
+      "lastTradedVolume": 0
+    },
+    {
+      "snapshotTime": "2024/05/17 00:00:00",
+      "snapshotTimeUTC": "2024-05-16T21:00:00",
+      "openPrice":  {"bid": 0.66360, "ask": 0.66400, "lastTraded": null},
+      "highPrice":  {"bid": 0.66780, "ask": 0.66820, "lastTraded": null},
+      "lowPrice":   {"bid": 0.66200, "ask": 0.66240, "lastTraded": null},
+      "closePrice": {"bid": 0.66650, "ask": 0.66690, "lastTraded": null},
+      "lastTradedVolume": 0
+    }
+  ],
+  "instrumentType": "CURRENCIES",
+  "allowance": {
+    "remainingAllowance": 9950,
+    "totalAllowance": 10000,
+    "allowanceExpiry": 604800
+  }
+}
