@@ -1,4 +1,10 @@
 
+function _escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function handleTradesError(evt) {
   if (evt.detail.successful) return;
   var section = evt.target.closest('section');
@@ -17,11 +23,15 @@ function handleTradesError(evt) {
     }
     var heading = '<p class="error-heading">Could not save trade:</p>';
     var rows = (body.errors || []).map(function (e) {
-      return '<div class="error-row"><code>' + e.field + '</code>: ' + e.reason + '</div>';
+      return '<div class="error-row"><code>' + _escapeHtml(e.field) + '</code>: ' + _escapeHtml(e.reason) + '</div>';
     }).join('');
     errorBox.innerHTML = heading + '<div class="error-rows">' + rows + '</div>';
   } else if (status === 409) {
-    errorBox.innerHTML = '<p class="error-heading">' + evt.detail.xhr.responseText + '</p>';
+    var p409 = document.createElement('p');
+    p409.className = 'error-heading';
+    p409.textContent = evt.detail.xhr.responseText;
+    errorBox.innerHTML = '';
+    errorBox.appendChild(p409);
   } else {
     errorBox.innerHTML = '<p class="error-heading">Server error — see journald: journalctl -u trading-signals-web</p>';
   }
