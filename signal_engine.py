@@ -27,6 +27,7 @@ from system_params import (
   ADX_PERIOD,
   ANNUALISATION_FACTOR,
   ATR_PERIOD,
+  IndicatorFloat,
   MOM_PERIODS,
   MOM_THRESHOLD,
   RVOL_PERIOD,
@@ -271,7 +272,7 @@ def get_signal(
   return FLAT
 
 
-def get_latest_indicators(df: pd.DataFrame) -> dict:
+def get_latest_indicators(df: pd.DataFrame) -> dict[str, IndicatorFloat]:
   '''Last-row indicator scalars per D-08.
 
   Returns dict with keys: atr, adx, pdi, ndi, mom1, mom3, mom12, rvol.

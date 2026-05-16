@@ -19,6 +19,14 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal, TypedDict
 
 # =========================================================================
+# D-13 Type aliases — enforce float/Decimal boundary at annotation sites
+# =========================================================================
+# IndicatorFloat: raw indicator values (ADX, ATR, momentum scalars) — always float.
+# MoneyDecimal: monetary values (account, P&L, contract cost) — always Decimal.
+IndicatorFloat = float
+MoneyDecimal = Decimal
+
+# =========================================================================
 # Strategy version (Phase 22 D-01..D-03)
 # =========================================================================
 # Bump on signal-logic change ONLY (Mom periods, ADX gate cutoff, RVol
