@@ -55,10 +55,15 @@ _PATTERNS: dict[str, re.Pattern] = {
 # Dampener: phrases that contain a keyword substring but are NOT critical-event
 # signals (e.g. "first-rate" matches "rate" but is not a rate decision).
 # Using simple |join; re.escape handles hyphens/spaces in multi-word entries.
-_DAMPENER_RE: re.Pattern = re.compile(
-  '|'.join(re.escape(d) for d in NEWS_DAMPENER_ALLOWLIST),
-  re.IGNORECASE,
-)
+# Guard: empty allowlist must compile to a never-matching pattern (r'(?!)'),
+# not '|'.join([]) which would produce '' and match everything.
+if NEWS_DAMPENER_ALLOWLIST:
+  _DAMPENER_RE: re.Pattern = re.compile(
+    '|'.join(re.escape(d) for d in NEWS_DAMPENER_ALLOWLIST),
+    re.IGNORECASE,
+  )
+else:
+  _DAMPENER_RE = re.compile(r'(?!)')
 
 # ---------------------------------------------------------------------------
 # Public API
