@@ -84,46 +84,36 @@ def _send_email_never_crash(
 
 def _build_crash_state_summary(state: 'dict | None') -> str:
   '''D-06 (Phase 8): build bounded text/plain state summary for crash
-  email body. Excludes trade_log, equity_history, warnings (would
-  leak thousands of lines in a crash mail; operator has dashboard.html
-  for forensic recovery).
+  email body.
+
+  Phase 43 D-01 (T-43-01/T-43-02): uses ALLOWLIST redaction via
+  notifier.templates._redact_state_for_crash_email. Only keys in
+  CRASH_EMAIL_STATE_ALLOWLIST appear in the output; per-user data,
+  credentials, and trade logs are excluded. "[REDACTED]" marker
+  distinguishes "absent" from "hidden" for operator debugging.
 
   On `state is None` (crash before load_state) returns a short
   placeholder so the crash email still has a concrete state block.
   '''
   if state is None:
     return '(state not loaded — crash before load_state)'
-  # Phase 8 IN-01: state['signals'] is canonically keyed by state_key
-  # ('SPI200' / 'AUDUSD') per Phase 3 reset_state and run_daily_check's
-  # write pattern. The earlier yfinance-keyed lookup branch was dead code
-  # (state is never dual-keyed mid-flow); removed for clarity.
-  sig_spi = state.get('signals', {}).get('SPI200', {})
-  sig_aud = state.get('signals', {}).get('AUDUSD', {})
-  sig_spi_val = sig_spi.get('signal') if isinstance(sig_spi, dict) else sig_spi
-  sig_aud_val = sig_aud.get('signal') if isinstance(sig_aud, dict) else sig_aud
-  label = {1: 'LONG', -1: 'SHORT', 0: 'FLAT'}
-  sig_spi_str = label.get(sig_spi_val, '(none)')
-  sig_aud_str = label.get(sig_aud_val, '(none)')
-  account = state.get('account', 0.0)
-  positions = state.get('positions', {})
 
-  def _pos_line(symbol: str) -> str:
-    p = positions.get(symbol)
-    if not p:
-      return f'{symbol}: (none)'
-    return (
-      f'{symbol}: {p.get("direction")} '
-      f'{p.get("n_contracts")}@{p.get("entry_price")}'
-    )
+  # Phase 43 D-01: allowlist redaction — import locally to preserve the
+  # C-2 pattern (notifier import failures are caught at call site, not
+  # at crash_boundary module import time).
+  try:
+    from notifier.templates import _redact_state_for_crash_email
+    safe_state = _redact_state_for_crash_email(state)
+  except Exception:
+    # Belt-and-suspenders: if notifier is somehow unimportable during a
+    # crash, produce a minimal safe summary with no user data.
+    safe_state = {
+      'schema_version': state.get('schema_version', '(unknown)'),
+      '_redacted_keys': '[REDACTED]: notifier import failed',
+    }
 
-  lines = [
-    f'signals: SPI200={sig_spi_str}, AUDUSD={sig_aud_str}',
-    f'account: ${account:,.2f}',
-    'positions:',
-    f'  {_pos_line("SPI200")}',
-    f'  {_pos_line("AUDUSD")}',
-  ]
-  return '\n'.join(lines)
+  import json as _json
+  return _json.dumps(safe_state, indent=2, default=str)
 
 
 def _send_crash_email(

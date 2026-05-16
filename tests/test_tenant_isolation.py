@@ -153,13 +153,140 @@ class TestTenantIsolation:
       f'Trade content leaked into /admin/users response: {matches}'
     )
 
-  @pytest.mark.skip(reason='SC-5 deferred: crash-email body assertions not yet written')
-  def test_crash_email_body_has_no_trade_content(self, two_user_client):
-    '''Crash-email body must contain zero TRADE_CONTENT_RE matches.
+  def test_crash_email_body_redacts_other_users(self):
+    '''Crash-email state summary must NOT contain any sentinel values from
+    any user's trade data, PII, or credentials.
 
-    Deferred to Phase 37 when crash_boundary.py per-user logging path lands
-    and explicit redaction filter is added (CONTEXT D-12).
+    Phase 43 D-01 (T-43-01): _build_crash_state_summary uses allowlist
+    redaction — only CRASH_EMAIL_STATE_ALLOWLIST keys appear in the output.
+
+    Sentinel strategy: seed state with two users, each carrying unique
+    sentinel strings in trade_log, positions, pnl, email, totp_secret, and
+    magic_link_hash. Assert the rendered body contains NONE of these
+    sentinels, proving the allowlist excludes all per-user substructures.
+    Assert at least one allowlisted system-metadata value IS present, proving
+    the redaction did not nuke everything.
     '''
+    import crash_boundary
+
+    # Unique sentinel values per user — assert ABSENCE from crash body.
+    SENTINEL_USER_A_TRADELOG = 'SENTINEL_USER_A_TRADELOG'
+    SENTINEL_USER_A_POS = 'SENTINEL_USER_A_POS'
+    SENTINEL_USER_A_PNL = 'SENTINEL_USER_A_PNL'
+    SENTINEL_USER_A_EMAIL = 'SENTINEL_USER_A_EMAIL'
+    SENTINEL_USER_A_TOTP = 'SENTINEL_USER_A_TOTP'
+    SENTINEL_USER_A_MAGIC = 'SENTINEL_USER_A_MAGIC'
+
+    SENTINEL_USER_B_TRADELOG = 'SENTINEL_USER_B_TRADELOG'
+    SENTINEL_USER_B_POS = 'SENTINEL_USER_B_POS'
+    SENTINEL_USER_B_PNL = 'SENTINEL_USER_B_PNL'
+    SENTINEL_USER_B_EMAIL = 'SENTINEL_USER_B_EMAIL'
+    SENTINEL_USER_B_TOTP = 'SENTINEL_USER_B_TOTP'
+    SENTINEL_USER_B_MAGIC = 'SENTINEL_USER_B_MAGIC'
+
+    # Allowlisted value that MUST appear in output (proves redaction is
+    # selective, not a total wipe).
+    ALLOWLISTED_SCHEMA_VERSION = 12
+
+    seeded_state = {
+      'schema_version': ALLOWLISTED_SCHEMA_VERSION,
+      'admin_user_id': 'uid-admin',
+      'last_run': '2026-05-16',
+      'signals': {
+        'SPI200': {'signal': 0, 'strategy_version': 'v1.2.0'},
+        'AUDUSD': {'signal': 0, 'strategy_version': 'v1.2.0'},
+      },
+      'warnings': [],
+      'markets': {},
+      'strategy_settings': {},
+      'users': {
+        'uid-user-a': {
+          'account': 100_000.0,
+          'initial_account': 100_000.0,
+          'email': SENTINEL_USER_A_EMAIL,
+          'totp_secret': SENTINEL_USER_A_TOTP,
+          'magic_link_hash': SENTINEL_USER_A_MAGIC,
+          'positions': {
+            'SPI200': {
+              'direction': 'LONG',
+              'entry_price': 8000.0,
+              'n_contracts': 1,
+              'sentinel': SENTINEL_USER_A_POS,
+            },
+          },
+          'trade_log': [
+            {'side': 'LONG', 'pnl': 100.0, 'sentinel': SENTINEL_USER_A_TRADELOG},
+          ],
+          'pnl': SENTINEL_USER_A_PNL,
+        },
+        'uid-user-b': {
+          'account': 50_000.0,
+          'initial_account': 50_000.0,
+          'email': SENTINEL_USER_B_EMAIL,
+          'totp_secret': SENTINEL_USER_B_TOTP,
+          'magic_link_hash': SENTINEL_USER_B_MAGIC,
+          'positions': {
+            'SPI200': {
+              'direction': 'SHORT',
+              'entry_price': 7900.0,
+              'n_contracts': 2,
+              'sentinel': SENTINEL_USER_B_POS,
+            },
+          },
+          'trade_log': [
+            {'side': 'SHORT', 'pnl': -50.0, 'sentinel': SENTINEL_USER_B_TRADELOG},
+          ],
+          'pnl': SENTINEL_USER_B_PNL,
+        },
+      },
+    }
+
+    body = crash_boundary._build_crash_state_summary(seeded_state)
+
+    # --- ABSENCE assertions: no sentinel from either user must appear ---
+    assert SENTINEL_USER_A_TRADELOG not in body, (
+      f'User A trade_log sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_A_POS not in body, (
+      f'User A position sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_A_PNL not in body, (
+      f'User A pnl sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_A_EMAIL not in body, (
+      f'User A email sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_A_TOTP not in body, (
+      f'User A totp_secret sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_A_MAGIC not in body, (
+      f'User A magic_link_hash sentinel leaked into crash email body'
+    )
+
+    assert SENTINEL_USER_B_TRADELOG not in body, (
+      f'User B trade_log sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_B_POS not in body, (
+      f'User B position sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_B_PNL not in body, (
+      f'User B pnl sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_B_EMAIL not in body, (
+      f'User B email sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_B_TOTP not in body, (
+      f'User B totp_secret sentinel leaked into crash email body'
+    )
+    assert SENTINEL_USER_B_MAGIC not in body, (
+      f'User B magic_link_hash sentinel leaked into crash email body'
+    )
+
+    # --- PRESENCE assertion: allowlisted system key value must appear ---
+    assert str(ALLOWLISTED_SCHEMA_VERSION) in body, (
+      f'schema_version ({ALLOWLISTED_SCHEMA_VERSION}) not found in crash '
+      f'email body — allowlist redaction may have nuked everything'
+    )
 
   def test_other_user_dashboard_has_no_user_a_trade_content(self, two_user_client):
     '''User B's served dashboard must contain zero matches for user A's trade fields.

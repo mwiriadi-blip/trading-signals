@@ -14,6 +14,16 @@ Inline style='...' on every coloured span — NO CSS classes, NO <style>.
 Clock injection (D-01): compose_email_body(state, old_signals, now)
 requires a timezone-aware datetime (T-06-04). C-1 reviews (Phase 5):
 construct via PERTH.localize(...) — never datetime(..., tzinfo=PERTH).
+
+Crash email redaction (Phase 43 D-01, T-43-01/T-43-02):
+  CRASH_EMAIL_STATE_ALLOWLIST — only these top-level state keys may appear
+  in a crash email body. All other keys (users, warnings, admin_user_id,
+  and any future additions) are excluded by default. ALLOWLIST semantics
+  means new state schema keys are denied automatically — no blocklist
+  maintenance required.
+  _redact_state_for_crash_email(state) — returns a NEW dict containing
+  ONLY allowlisted keys. The literal string "[REDACTED]" is added at the
+  summary level so operators can distinguish "absent" from "hidden".
 '''
 import html
 from datetime import datetime
@@ -40,6 +50,43 @@ from .templates_sections import (
   _render_signal_status_email,
   _render_todays_pnl_email,
 )
+
+# Phase 43 D-01: Allowlist for crash-email state serialisation.
+# ONLY system-metadata keys. Per-user, credential, and trade keys are
+# NEVER added. Unknown/new keys are excluded by default (T-43-02).
+CRASH_EMAIL_STATE_ALLOWLIST: frozenset[str] = frozenset({
+  'schema_version',
+  'last_run',
+  'markets',
+  'strategy_settings',
+  'signals',
+})
+
+
+def _redact_state_for_crash_email(state: dict) -> dict:
+  '''Return a NEW dict with ONLY allowlisted top-level keys.
+
+  Excluded keys are replaced at the summary level by a single
+  "[REDACTED]" marker so operators can distinguish "absent" from
+  "hidden" during debugging (T-43-03 accept: full state never
+  belongs in email; operator uses journalctl for forensics).
+
+  Defence-in-depth: any allowlisted value that is itself a dict is
+  passed through as-is (current schema has no nested user-scoped
+  structures under allowlisted keys). If the schema ever introduces
+  nested user substructures under an allowlisted key, add a recursive
+  filter at that point — do NOT add user-scoped keys to the allowlist.
+  '''
+  redacted: dict = {}
+  excluded: list[str] = []
+  for key, value in state.items():
+    if key in CRASH_EMAIL_STATE_ALLOWLIST:
+      redacted[key] = value
+    else:
+      excluded.append(key)
+  if excluded:
+    redacted['_redacted_keys'] = '[REDACTED]: ' + ', '.join(sorted(excluded))
+  return redacted
 
 
 def _render_hero_card_email(state: dict, now: datetime) -> str:
