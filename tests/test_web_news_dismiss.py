@@ -5,13 +5,15 @@ per-user isolation, collapse toggle per-market bool flip.
 
 TDD RED: these tests FAIL before Task 2 lands web/routes/news.py.
 '''
-import json
 import sys
 from datetime import date
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.conftest import VALID_SECRET, AUTH_HEADER_NAME
+
+_AUTH = {AUTH_HEADER_NAME: VALID_SECRET}
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +24,12 @@ TODAY = date.today().isoformat()
 
 
 def _make_app(monkeypatch, state, uid='user_a'):
+  '''Build an app + TestClient with:
+    - current_user_id overridden to uid
+    - state_manager stubs pointing at the provided state dict
+    - auth headers pre-configured
+  Returns (client, state_box) where state_box['state'] is mutated in place.
+  '''
   sys.modules.pop('web.app', None)
   from web.app import create_app
   from web.dependencies import current_user_id
@@ -40,7 +48,9 @@ def _make_app(monkeypatch, state, uid='user_a'):
   monkeypatch.setattr('state_manager.load_state', _load)
   monkeypatch.setattr('state_manager.mutate_user_state', _mutate_user)
 
-  return TestClient(app, raise_server_exceptions=True), state_box
+  # TestClient wraps all requests so we can use client-level headers arg
+  client = TestClient(app, raise_server_exceptions=True, headers=_AUTH)
+  return client, state_box
 
 
 # ---------------------------------------------------------------------------
@@ -116,19 +126,19 @@ class TestDismissWrites:
       'users': {
         'user_a': {
           'news_dismissed': {
-            'SPI200': {'date': '2020-01-01', 'hashes': ['old1234567890ab', 'old2234567890ab']},
+            'SPI200': {'date': '2020-01-01', 'hashes': ['cc001234567890ab', 'dd001234567890ab']},
           },
         },
       },
     }
     client, sb = _make_app(monkeypatch, state)
-    resp = client.post('/news/SPI200/dismiss/new1234567890ab')
+    resp = client.post('/news/SPI200/dismiss/ee001234567890ff')
     assert resp.status_code == 200
     bucket = sb['state']['users']['user_a']['news_dismissed']['SPI200']
     assert bucket['date'] == TODAY
-    assert 'old1234567890ab' not in bucket['hashes']
-    assert 'old2234567890ab' not in bucket['hashes']
-    assert 'new1234567890ab' in bucket['hashes']
+    assert 'cc001234567890ab' not in bucket['hashes']
+    assert 'dd001234567890ab' not in bucket['hashes']
+    assert 'ee001234567890ff' in bucket['hashes']
     assert len(bucket['hashes']) == 1
 
   def test_dismiss_d08_expiry_is_per_market(self, monkeypatch):
@@ -136,19 +146,19 @@ class TestDismissWrites:
       'users': {
         'user_a': {
           'news_dismissed': {
-            'SPI200': {'date': '2020-01-01', 'hashes': ['stale234567890a']},
-            'AUDUSD': {'date': TODAY, 'hashes': ['fresh234567890a']},
+            'SPI200': {'date': '2020-01-01', 'hashes': ['aa00234567890abc']},
+            'AUDUSD': {'date': TODAY, 'hashes': ['bb00234567890abc']},
           },
         },
       },
     }
     client, sb = _make_app(monkeypatch, state)
-    resp = client.post('/news/SPI200/dismiss/new1234567890ab')
+    resp = client.post('/news/SPI200/dismiss/ee001234567890ff')
     assert resp.status_code == 200
     spi_bucket = sb['state']['users']['user_a']['news_dismissed']['SPI200']
     aud_bucket = sb['state']['users']['user_a']['news_dismissed']['AUDUSD']
-    assert 'stale234567890a' not in spi_bucket['hashes']
-    assert 'fresh234567890a' in aud_bucket['hashes']
+    assert 'aa00234567890abc' not in spi_bucket['hashes']
+    assert 'bb00234567890abc' in aud_bucket['hashes']
 
   def test_dismiss_isolation_user_a_vs_user_b(self, monkeypatch):
     state_a = {}
@@ -179,11 +189,11 @@ class TestDismissWrites:
       return sb_box['state']
 
     monkeypatch.setattr('state_manager.mutate_user_state', _mutate_a)
-    c_a = TestClient(app_a, raise_server_exceptions=True)
+    c_a = TestClient(app_a, raise_server_exceptions=True, headers=_AUTH)
     c_a.post('/news/SPI200/dismiss/aaaa1234567890ab')
 
     monkeypatch.setattr('state_manager.mutate_user_state', _mutate_b)
-    c_b = TestClient(app_b, raise_server_exceptions=True)
+    c_b = TestClient(app_b, raise_server_exceptions=True, headers=_AUTH)
     c_b.post('/news/SPI200/dismiss/bbbb1234567890ab')
 
     a_hashes = sa_box['state']['users']['user_a']['news_dismissed']['SPI200']['hashes']
