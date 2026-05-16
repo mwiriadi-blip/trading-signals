@@ -381,6 +381,57 @@ class TestOpenAdvancedFields:
 
 
 # =========================================================================
+# TestJsonEncEmptyString — json-enc submits "" for unfilled optional inputs
+# =========================================================================
+
+
+class TestJsonEncEmptyString:
+  '''json-enc (HTMX extension) serialises unfilled <input> elements as "".
+  Pydantic rejects "" for _date / float / int fields. The before-validator
+  must coerce "" -> None (open/close) or strip the key (modify).
+  '''
+
+  def test_open_with_empty_optional_fields_returns_200(self, client_with_state_v3, htmx_headers):
+    '''Advanced fields submitted as "" by json-enc must not cause 400.'''
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_no_positions())
+    r = client.post('/trades/open', headers=htmx_headers, json={
+      'instrument': 'SPI200', 'direction': 'LONG',
+      'entry_price': 7800.0, 'contracts': 1,
+      'executed_at': '', 'peak_price': '', 'trough_price': '', 'pyramid_level': '',
+    })
+    assert r.status_code == 200, f'expected 200 with empty optional fields, got {r.status_code}: {r.text}'
+
+  def test_close_with_empty_executed_at_returns_200(self, client_with_state_v3, htmx_headers):
+    '''executed_at="" must be coerced to None (default to today AWST).'''
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_open_position(
+      instrument='SPI200', direction='LONG', n_contracts=1,
+      entry_price=7800.0, atr=50.0,
+    ))
+    r = client.post('/trades/close', headers=htmx_headers, json={
+      'instrument': 'SPI200', 'exit_price': 7850.0, 'executed_at': '',
+    })
+    assert r.status_code == 200, f'expected 200 with empty executed_at, got {r.status_code}: {r.text}'
+
+  def test_modify_with_empty_optional_fields_returns_400_at_least_one(
+    self, client_with_state_v3, htmx_headers,
+  ):
+    '''Empty new_stop and new_contracts must be stripped (not set to None),
+    so model_fields_set is empty and the "at least one" validator fires.
+    '''
+    client, set_state, _ = client_with_state_v3
+    set_state(_v3_state_with_open_position(
+      instrument='SPI200', direction='LONG', n_contracts=1,
+      entry_price=7800.0, atr=50.0,
+    ))
+    r = client.post('/trades/modify', headers=htmx_headers, json={
+      'instrument': 'SPI200', 'new_stop': '', 'new_contracts': '',
+    })
+    assert r.status_code == 400, f'expected 400 (at least one field required), got {r.status_code}'
+
+
+# =========================================================================
 # TestCloseTradeEndpoint — TRADE-03 (D-05 inline + D-06 + D-07 + D-08)
 # =========================================================================
 

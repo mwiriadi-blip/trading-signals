@@ -21,6 +21,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+_OPTIONAL_OPEN = frozenset({'executed_at', 'peak_price', 'trough_price', 'pyramid_level'})
+
 _AWST = zoneinfo.ZoneInfo('Australia/Perth')
 _OPERATOR_CLOSE = 'operator_close'  # D-06 literal
 
@@ -66,6 +68,17 @@ class OpenTradeRequest(BaseModel):
   trough_price: float | None = None
   pyramid_level: int | None = None
 
+  @model_validator(mode='before')
+  @classmethod
+  def _coerce_empty_str(cls, data):
+    # json-enc submits unfilled optional inputs as "" — coerce to None so
+    # Pydantic's _date / float / int parsers don't reject them.
+    if isinstance(data, dict):
+      for key in _OPTIONAL_OPEN:
+        if data.get(key) == '':
+          data[key] = None
+    return data
+
   @model_validator(mode='after')
   def _coherence(self):
     # math.isfinite check rejects NaN, +/-inf (D-04 explicit validator)
@@ -108,6 +121,13 @@ class CloseTradeRequest(BaseModel):
   exit_price: float = Field(gt=0)
   executed_at: _date | None = None
 
+  @model_validator(mode='before')
+  @classmethod
+  def _coerce_empty_str(cls, data):
+    if isinstance(data, dict) and data.get('executed_at') == '':
+      data['executed_at'] = None
+    return data
+
   @model_validator(mode='after')
   def _exit_finite(self):
     if not math.isfinite(self.exit_price):
@@ -138,6 +158,18 @@ class ModifyTradeRequest(BaseModel):
   instrument: str = Field(pattern=r'^[A-Z0-9_]{2,20}$')
   new_stop: float | None = None
   new_contracts: int | None = None
+
+  @model_validator(mode='before')
+  @classmethod
+  def _strip_empty_str(cls, data):
+    # json-enc submits unfilled optional inputs as "". For modify, empty means
+    # "not sent" — strip so they're absent from model_fields_set (absent-vs-null
+    # semantics: absent=no-op, None=clear, value=set).
+    if isinstance(data, dict):
+      for key in ('new_stop', 'new_contracts'):
+        if data.get(key) == '':
+          del data[key]
+    return data
 
   @model_validator(mode='after')
   def _at_least_one(self):
