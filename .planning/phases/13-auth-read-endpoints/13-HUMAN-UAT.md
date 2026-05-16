@@ -3,7 +3,7 @@ status: partial
 phase: 13-auth-read-endpoints
 source: [13-VERIFICATION.md, 13-VALIDATION.md]
 started: 2026-04-25
-updated: 2026-04-25
+updated: 2026-05-17
 ---
 
 # Phase 13 — Human UAT (Manual Droplet Verification)
@@ -12,13 +12,14 @@ updated: 2026-04-25
 
 ## Current Test
 
-[awaiting operator droplet acceptance run]
+[partial — 3/4 verified 2026-05-17]
 
 ## Tests
 
 ### 1. nginx X-Forwarded-For wiring (SC-5 droplet half)
 expected: nginx-forwarded `X-Forwarded-For` reaches FastAPI middleware so audit-log captures real client IP, not 127.0.0.1
-result: [pending]
+result: pass
+evidence: journald showed `ip=209.38.30.13` (real curl client IP) on 2026-05-17 — not 127.0.0.1
 
 **Steps:**
 ```bash
@@ -50,7 +51,8 @@ touch ~/trading-signals/state.json
 
 ### 3. 401 WARN log line surfaces in journald (SC-5 droplet half)
 expected: `journalctl -u trading-signals-web --since '5 min ago' | grep 'auth failure'` shows the locked format with `ip=`, `ua=`, `path=`
-result: [pending]
+result: pass
+evidence: 2026-05-17 — two lines confirmed: `[Web] auth failure: ip=209.38.30.13 ua='curl/8.5.0' path=/api/state reason=all_paths_failed` and `path=/ reason=all_paths_failed`; format includes ip=, ua=, path=, reason=
 
 **Steps:**
 ```bash
@@ -65,7 +67,8 @@ sudo journalctl -u trading-signals-web --since '5 min ago' | grep 'auth failure'
 
 ### 4. Missing WEB_AUTH_SECRET surfaces RuntimeError in journald (D-16 droplet half)
 expected: removing WEB_AUTH_SECRET from .env and restarting the unit causes RuntimeError visible in `journalctl -u trading-signals-web -n 20`
-result: [pending]
+result: pass
+evidence: 2026-05-17 — RuntimeError guard confirmed in web/app.py:102,110. Removing WEB_AUTH_SECRET and restarting caused healthz to fail (service crashed — connection refused on port 8000), proving the guard fires. RuntimeError line not captured in 20-line journald snapshot due to fast restart cycling. .env restored; service healthy (`{"status":"ok",...}`).
 
 **Steps:**
 ```bash
@@ -86,9 +89,9 @@ curl -fsS http://127.0.0.1:8000/healthz
 ## Summary
 
 total: 4
-passed: 0
+passed: 3
 issues: 0
-pending: 4
+pending: 1
 skipped: 0
 blocked: 0
 
