@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Multi-Tenant Friends & Family
-status: ready_to_plan
-last_updated: "2026-05-16T00:44:47.209Z"
+status: planning
+last_updated: "2026-05-16T07:35:01.750Z"
 progress:
   total_phases: 14
-  completed_phases: 13
+  completed_phases: 12
   total_plans: 58
   completed_plans: 59
-  percent: 93
+  percent: 100
 ---
 
 # STATE — Trading Signals
@@ -142,6 +142,7 @@ Wave 1 (autonomous) → Wave 2 (UAT checkpoint blocks until iPhone Safari + Chro
 
 - Phase 16.1 inserted after Phase 16: Phone-friendly auth UX for dashboard access (URGENT)
 - Phase 27 added: Code quality & correctness sweep — apply 2026-05-07 code-review findings (Decimal money math, file-size splits, timeout/security/HTML-escape audits, etc.)
+- Phase 41 added: data feed integration - IG REST API
 
 ### Decisions
 
