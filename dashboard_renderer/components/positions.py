@@ -264,10 +264,14 @@ def _render_drift_banner(state: dict) -> str:
     f'  </div>\n'
   )
 
-def _render_trailing_stop_guidance(state: dict) -> str:
+def _render_trailing_stop_guidance(state: dict, uid: str | None = None) -> str:
+  user_positions = (
+    (state.get('users', {}).get(uid, {}) or {}).get('positions', {})
+    if uid else state.get('positions', {})
+  )
   rows = []
   for market_id, display in _display_names(state).items():
-    pos = state.get('positions', {}).get(market_id)
+    pos = user_positions.get(market_id)
     if pos is None:
       continue
     sig = state.get('signals', {}).get(market_id, {})

@@ -295,7 +295,7 @@ def _render_page_body(ctx: RenderContext, page: str) -> tuple[str, str, str, str
           news_panel_collapsed=getattr(ctx, 'news_panel_collapsed', {}),
         )
         + _paper_trades_body()
-        + _render_trailing_stop_guidance(state)
+        + _render_trailing_stop_guidance(state, uid=getattr(ctx, 'uid', None))
         + _render_equity_chart_container(state)
         + _render_drift_banner(state)
       ),
