@@ -397,22 +397,22 @@ IG_ACCOUNT_TYPE=demo
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact EPIC codes for SPI200 and AUDUSD**
+1. **Q1 — Exact EPIC codes for SPI200 and AUDUSD** — **RESOLUTION: ASSUMED**
    - What we know: `IX.D.ASX.IFM.IP` for SPI200 and `CS.D.AUDUSD.MINI.IP` for AUDUSD are cited in multiple IG API community examples [MEDIUM confidence]
    - What's unclear: Whether these epics are the correct IG AU offering (cash vs futures, mini vs standard)
-   - Recommendation: Wave 0 task — operator runs `GET /markets?searchTerm=Australia+200` against demo API and confirms the epic before coding; add confirmed value to `system_params.DEFAULT_MARKETS`
+   - **Resolution:** ASSUMED for plan execution; values land in `system_params.DEFAULT_MARKETS` with inline `# ASSUMED — operator verify` comments (see Plan 02 Task 1). Operator verification via `GET /markets?searchTerm=Australia+200` is documented in Manual-Only Verifications (VALIDATION.md). If wrong, IG returns 404 → existing yfinance fallback covers the run; operator updates the constant. Recorded in Assumptions Log A1, A2.
 
-2. **D-02: where does append_warning get called?**
+2. **Q2 — D-02: where does `append_warning` get called?** — **RESOLUTION: Option A selected**
    - What we know: `fetch_ohlcv` has no `state` parameter; `daily_run.py` calls `fetch_ohlcv` and has access to `state`
    - What's unclear: Whether the planner prefers adding `state` to the signature or handling it in `daily_run.py`
-   - Recommendation: Use Option A (log-only in fetch_ohlcv, daily_run.py calls append_warning). No signature change.
+   - **Resolution:** Option A — `fetch_ohlcv` logs only and writes `data_fetcher.LAST_FETCH_SOURCE[symbol]`; `daily_run.py` reads that module-level dict post-fetch and appends to `pending_warnings`, which the existing end-of-cycle flush at `daily_run.py:435-436` passes through `state_manager.append_warning(state, source, message)`. D-02 contract is satisfied — `append_warning` IS called, via the canonical flush path. No `fetch_ohlcv` signature change. Implemented in Plan 03 Task 1.
 
-3. **snapshotTimeUTC field presence**
+3. **Q3 — `snapshotTimeUTC` field presence** — **RESOLUTION: defensive fallback to `snapshotTime`**
    - What we know: Multiple sources show `snapshotTimeUTC` in the response [MEDIUM confidence]
    - What's unclear: Whether it's always present for all resolution types and account types
-   - Recommendation: Normalisation should defensively fall back to parsing `snapshotTime` if `snapshotTimeUTC` is absent
+   - **Resolution:** `_ig_normalise` defensively falls back to `p['snapshotTime']` if `p['snapshotTimeUTC']` is absent. `pd.to_datetime(..., utc=True)` coerces either format to a UTC-aware DatetimeIndex. Specified in Plan 02 Task 2 behavior block. Recorded in Assumptions Log A4.
 
 ---
 
