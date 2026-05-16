@@ -107,7 +107,10 @@ def render_news_panel(
   )
 
   return (
-    f'<details class="news-panel-disclosure"{open_attr}>\n'
+    f'<details class="news-panel-disclosure"{open_attr}'
+    f' hx-post="/news/{mkt_esc}/toggle-collapse"'
+    f' hx-trigger="toggle"'
+    f' hx-swap="none">\n'
     f'<summary class="news-panel-summary">Market News</summary>\n'
     f'<div class="news-panel-inner">\n'
     f'{banner_html}'
