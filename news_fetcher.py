@@ -184,7 +184,12 @@ def _normalise_post_055(raw: dict) -> 'NewsItem | None':
   if not title:
     return None
   url_obj = c.get('clickThroughUrl') or c.get('canonicalUrl') or {}
-  raw_url = url_obj.get('url', '') if isinstance(url_obj, dict) else ''
+  if isinstance(url_obj, dict):
+    raw_url = url_obj.get('url', '')
+  elif isinstance(url_obj, str):
+    raw_url = url_obj
+  else:
+    raw_url = ''
   url = _validate_url_scheme(raw_url)
   publisher = c.get('provider', {}).get('displayName', '')
   pub_date = c.get('pubDate', '')
