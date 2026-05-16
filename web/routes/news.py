@@ -23,6 +23,10 @@ from web.dependencies import current_user_id
 # Valid title_hash: exactly 16 lowercase hex chars (sha256[:16] from news_fetcher)
 _HASH_RE = re.compile(r'^[0-9a-f]{16}$')
 
+# Maximum dismissed hashes per market per day (D-08 auto-expiry resets daily).
+# Prevents unbounded state growth if a user dismisses every headline repeatedly.
+_MAX_DISMISSED_HASHES = 50
+
 
 def _is_known_market(market: str) -> bool:
   '''Return True iff market is in the known-market allowlist.
@@ -79,7 +83,7 @@ def register(app: FastAPI) -> None:
       if bucket.get('date') != today:
         bucket['date'] = today
         bucket['hashes'] = []
-      if title_hash not in bucket['hashes']:
+      if title_hash not in bucket['hashes'] and len(bucket['hashes']) < _MAX_DISMISSED_HASHES:
         bucket['hashes'].append(title_hash)
 
     mutate_user_state(uid, _apply)
