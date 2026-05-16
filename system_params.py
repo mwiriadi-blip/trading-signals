@@ -322,6 +322,7 @@ DEFAULT_MARKETS: dict[str, dict] = {
     'sort_order': 10,
     'contract_type': 'mini',
     'financing_rate_annual_pct': 0.0,
+    'ig_epic': 'IX.D.ASX.IFM.IP',  # Phase 41 D-11; ASSUMED — operator verify
   },
   'AUDUSD': {
     'display_name': 'AUD / USD',
@@ -333,6 +334,7 @@ DEFAULT_MARKETS: dict[str, dict] = {
     'sort_order': 20,
     'contract_type': 'mini',
     'financing_rate_annual_pct': 0.0,
+    'ig_epic': 'CS.D.AUDUSD.MINI.IP',  # Phase 41 D-11; ASSUMED — operator verify
   },
 }
 
