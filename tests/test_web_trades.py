@@ -1292,6 +1292,112 @@ class TestRequestValidationErrorRemap:
 
 
 # =========================================================================
+# TestDeleteTradeLogEntry — DELETE /trades/{index}
+# =========================================================================
+
+_ADMIN_UID_FOR_DELETE = 'u_admin_marc'  # mirrors state_manager.migrations._ADMIN_UID
+
+
+def _v12_state_with_trades(trades: list) -> dict:
+  '''v12-shaped state with given trades in the admin user's trade_log.'''
+  return {
+    'schema_version': 12,
+    'admin_user_id': _ADMIN_UID_FOR_DELETE,
+    'last_run': '2026-04-25',
+    'positions': {},
+    'signals': {},
+    'markets': {},
+    'strategy_settings': {},
+    'warnings': [],
+    '_resolved_contracts': {
+      'SPI200': {'multiplier': 5.0, 'cost_aud': 6.0},
+    },
+    'users': {
+      _ADMIN_UID_FOR_DELETE: {
+        'account': 100_000.0,
+        'initial_account': 100_000.0,
+        'contracts': {},
+        'positions': {},
+        'trade_log': list(trades),
+        'equity_history': [],
+        'paper_trades': [],
+        'ui_prefs': {'tour_completed': True},
+      },
+    },
+  }
+
+
+_TRADE_A = {'instrument': 'SPI200', 'gross_pnl': 100.0, 'exit_reason': 'operator_close'}
+_TRADE_B = {'instrument': 'AUDUSD', 'gross_pnl': 50.0, 'exit_reason': 'stop_hit'}
+
+
+class TestDeleteTradeLogEntry:
+  '''DELETE /trades/{index} — admin-only trade log entry removal.'''
+
+  def _override_require_admin(self, client):
+    from web.dependencies import require_admin
+    client.app.dependency_overrides[require_admin] = lambda: _ADMIN_UID_FOR_DELETE
+
+  def test_delete_first_entry_happy_path(self, client_with_state_v3, htmx_headers):
+    client, set_state, captured_saves = client_with_state_v3
+    self._override_require_admin(client)
+    set_state(_v12_state_with_trades([_TRADE_A, _TRADE_B]))
+    r = client.delete('/trades/0', headers=htmx_headers)
+    assert r.status_code == 200, r.text
+    assert len(captured_saves) == 1
+    assert len(captured_saves[0]['trade_log']) == 1
+    assert captured_saves[0]['trade_log'][0]['instrument'] == 'AUDUSD'
+
+  def test_delete_last_entry_happy_path(self, client_with_state_v3, htmx_headers):
+    client, set_state, captured_saves = client_with_state_v3
+    self._override_require_admin(client)
+    set_state(_v12_state_with_trades([_TRADE_A, _TRADE_B]))
+    r = client.delete('/trades/1', headers=htmx_headers)
+    assert r.status_code == 200, r.text
+    assert len(captured_saves) == 1
+    assert len(captured_saves[0]['trade_log']) == 1
+    assert captured_saves[0]['trade_log'][0]['instrument'] == 'SPI200'
+
+  def test_delete_calls_save_exactly_once(self, client_with_state_v3, htmx_headers):
+    client, set_state, captured_saves = client_with_state_v3
+    self._override_require_admin(client)
+    set_state(_v12_state_with_trades([_TRADE_A]))
+    r = client.delete('/trades/0', headers=htmx_headers)
+    assert r.status_code == 200
+    assert len(captured_saves) == 1
+
+  def test_delete_out_of_range_returns_404(self, client_with_state_v3, htmx_headers):
+    client, set_state, captured_saves = client_with_state_v3
+    self._override_require_admin(client)
+    set_state(_v12_state_with_trades([_TRADE_A]))
+    r = client.delete('/trades/99', headers=htmx_headers)
+    assert r.status_code == 404
+    assert len(captured_saves) == 0
+
+  def test_delete_negative_index_returns_404(self, client_with_state_v3, htmx_headers):
+    '''Negative indices must not wrap around (Python list semantics).'''
+    client, set_state, captured_saves = client_with_state_v3
+    self._override_require_admin(client)
+    set_state(_v12_state_with_trades([_TRADE_A, _TRADE_B]))
+    r = client.delete('/trades/-1', headers=htmx_headers)
+    assert r.status_code == 404
+    assert len(captured_saves) == 0
+
+  def test_delete_non_admin_returns_403(self, client_with_state_v3, htmx_headers):
+    '''Non-admin user must get 403 — require_admin raises before state is touched.'''
+    client, set_state, captured_saves = client_with_state_v3
+    from web.dependencies import require_admin
+    from fastapi import HTTPException as _HTTPException
+    def _raise_403():
+      raise _HTTPException(status_code=403, detail='Admin access required')
+    client.app.dependency_overrides[require_admin] = _raise_403
+    set_state(_v12_state_with_trades([_TRADE_A]))
+    r = client.delete('/trades/0', headers=htmx_headers)
+    assert r.status_code == 403
+    assert len(captured_saves) == 0
+
+
+# =========================================================================
 # TestEndToEnd — round-trip integration
 # =========================================================================
 

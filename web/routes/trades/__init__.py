@@ -15,7 +15,7 @@ import logging
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from web.dependencies import current_user_id
+from web.dependencies import current_user_id, require_admin
 from web.routes.trades._models import (
   _OPERATOR_CLOSE,
   CloseTradeRequest,
@@ -330,6 +330,27 @@ def register(app: FastAPI) -> None:
       )
     display_state = {**state, 'positions': positions}
     return HTMLResponse(content=_render_position_row_partial(display_state, instrument, pos))
+
+  @app.delete('/trades/{index}')
+  def delete_trade_log_entry(index: int, user_id: str = Depends(require_admin)):
+    '''Admin-only: remove trade_log[index] for the requesting admin user.
+
+    Returns 200 on success, 404 if index is out of range, 403 if not admin.
+    '''
+    from state_manager import mutate_user_state
+
+    def _apply(state):
+      trade_log = state['users'][user_id]['trade_log']
+      if index < 0 or index >= len(trade_log):
+        raise HTTPException(
+          status_code=404,
+          detail=f'trade_log index {index} out of range',
+        )
+      del trade_log[index]
+
+    mutate_user_state(user_id, _apply)
+    logger.info('[Web] DELETE /trades/%d: admin=%s', index, user_id)
+    return Response(status_code=200)
 
 
 # D-03 import-surface preservation — tests and service layer import these names
