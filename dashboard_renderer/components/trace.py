@@ -52,10 +52,10 @@ def _render_trace_inputs(ohlc_window: list) -> str:
   rows = []
   for i, entry in enumerate(ohlc_window):
     date_esc = html.escape(str(entry.get('date', '')), quote=True)
-    open_esc = html.escape(f'{entry.get("open", 0.0):.2f}', quote=True)
-    high_esc = html.escape(f'{entry.get("high", 0.0):.2f}', quote=True)
-    low_esc = html.escape(f'{entry.get("low", 0.0):.2f}', quote=True)
-    close_esc = html.escape(f'{entry.get("close", 0.0):.2f}', quote=True)
+    open_esc = html.escape(f'{entry.get("open", 0.0):.8f}', quote=True)
+    high_esc = html.escape(f'{entry.get("high", 0.0):.8f}', quote=True)
+    low_esc = html.escape(f'{entry.get("low", 0.0):.8f}', quote=True)
+    close_esc = html.escape(f'{entry.get("close", 0.0):.8f}', quote=True)
     rows.append(
       f'<tr data-row-index="{i}">'
       f'<td class="date">{date_esc}</td>'
