@@ -336,15 +336,7 @@ class _FakeResponse:
 # =========================================================================
 
 class TestIGNormalise:
-  '''Verify _ig_normalise contract once Plan 41-02 ships the helper.
-
-  All tests skip until `data_fetcher._ig_normalise` exists.
-  '''
-
-  pytestmark = pytest.mark.skipif(
-    not hasattr(data_fetcher, '_ig_normalise'),
-    reason='Plan 41-02 not yet shipped — IG helpers absent',
-  )
+  '''Verify _ig_normalise contract once Plan 41-02 ships the helper.'''
 
   def test_mid_price_calculation(self) -> None:
     '''D-12: every Open == (bid + ask) / 2 for openPrice across all rows.'''
@@ -399,9 +391,6 @@ class TestIGNormalise:
 class TestIGFetch:
   '''IG fetch branch: happy path, retry, fallback, warning, auth gate.
 
-  All tests skip until `data_fetcher._ig_normalise` exists (proxy for the
-  full IG helper set shipped in Plan 41-02).
-
   Monkeypatch targets:
     data_fetcher.requests.post  — IG session POST /session
     data_fetcher.requests.get   — IG prices GET /prices/{epic}/D/{n}
@@ -411,11 +400,6 @@ class TestIGFetch:
   All tests set required IG env vars via monkeypatch.setenv to isolate from
   any host environment.
   '''
-
-  pytestmark = pytest.mark.skipif(
-    not hasattr(data_fetcher, '_ig_normalise'),
-    reason='Plan 41-02 not yet shipped — IG helpers absent',
-  )
 
   # Shared IG session response headers (returned by POST /session).
   _SESSION_HEADERS = {
