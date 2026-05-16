@@ -29,9 +29,10 @@ import os
 import re
 import tempfile
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import requests.exceptions
 
@@ -50,6 +51,36 @@ class NewsItem(TypedDict):
   publisher: str
   pub_date: str
   title_hash: str
+
+
+# =========================================================================
+# NewsResult — structured return type for fetch_news (D-02 fail-closed gate).
+# error is None on success; one of the typed reason strings on failure.
+# fetched_at is always populated so callers can log timing.
+# =========================================================================
+
+@dataclass(frozen=True)
+class NewsResult:
+  '''Structured result for fetch_news — NEVER a bare list (D-02 fail-closed).
+
+  Typed error reasons (T-43-05: no raw exception text surfaced to dashboard):
+    "timeout"             — ReadTimeout after retries exhausted
+    "http_error"          — Non-2xx HTTP response
+    "parse_error"         — JSON / schema parse failure
+    "network_unreachable" — ConnectionError after retries exhausted
+  '''
+  items: list = field(default_factory=list)
+  error: 'str | None' = None
+  fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+  def __post_init__(self):
+    # Validate typed error reasons (prevents raw exception strings leaking).
+    _VALID_ERRORS = frozenset({
+      'timeout', 'http_error', 'parse_error', 'network_unreachable', None,
+    })
+    if self.error not in _VALID_ERRORS:
+      # Coerce unknown errors to parse_error to avoid leaking raw text.
+      object.__setattr__(self, 'error', 'parse_error')
 
 
 # =========================================================================
@@ -321,29 +352,43 @@ def fetch_news(
   max_items: int = 5,
   retries: int = 3,
   backoff_s: float = 5.0,
-) -> 'list[NewsItem]':
+) -> NewsResult:
   '''Fetch top-N deduplicated news items for the given market symbol.
 
-  1. Validates market_id against allowlist (returns [] on miss — no yfinance call).
+  Returns a NewsResult — NEVER a bare list (D-02 fail-closed gate).
+  NEVER raises; all exceptions are converted to NewsResult(error=<typed_reason>).
+
+  1. Validates market_id against allowlist (error='parse_error' on miss — no yfinance call).
   2. Checks sidecar cache (JSON date field TTL — one fetch per market per day).
   3. On cache miss: calls yfinance.Ticker(symbol).news, normalises both schema
      shapes, deduplicates by title_hash, writes cache atomically.
   4. Retries on transient network errors (ReadTimeout, ConnectionError).
-  5. Returns [] after retries exhausted.
+  5. Returns NewsResult(items=[], error=<reason>, ...) after retries exhausted.
 
   No server-side HTTP calls to headline URLs (SSRF closed — T-38-03-02).
+
+  Typed error reasons (T-43-05: no raw exception text surfaced to dashboard):
+    "timeout"             — ReadTimeout after retries exhausted
+    "http_error"          — Non-2xx HTTP response
+    "parse_error"         — JSON / schema parse failure
+    "network_unreachable" — ConnectionError after retries exhausted
   '''
+  import requests.exceptions as _req_exc
+  now = datetime.now(UTC)
+
   if not _is_valid_market_id(market_id):
     _LOGGER.warning('fetch_news rejected unknown market_id=%r', market_id)
-    return []
+    return NewsResult(items=[], error='parse_error', fetched_at=now)
 
   cache_path = _cache_path(market_id)
   cached = _load_cache(cache_path)
   if cached is not None:
-    return cached[:max_items]
+    return NewsResult(items=cached[:max_items], error=None, fetched_at=now)
 
   # Cache miss — fetch from yfinance with retry loop
   last_exc: Exception | None = None
+  last_error_reason: 'Literal["timeout","http_error","parse_error","network_unreachable"]' = 'parse_error'
+
   for attempt in range(retries):
     try:
       yf_mod = _get_yf()
@@ -378,12 +423,26 @@ def fetch_news(
           write_exc,
         )
 
-      return items
+      return NewsResult(items=items, error=None, fetched_at=datetime.now(UTC))
 
-    except _RETRY_EXCEPTIONS as exc:
+    except _req_exc.ReadTimeout as exc:
       last_exc = exc
+      last_error_reason = 'timeout'
       _LOGGER.warning(
-        'fetch_news transient error (attempt %d/%d) market_id=%r: %s',
+        'fetch_news timeout (attempt %d/%d) market_id=%r: %s',
+        attempt + 1,
+        retries,
+        market_id,
+        exc,
+      )
+      if attempt < retries - 1:
+        time.sleep(backoff_s)
+
+    except _req_exc.ConnectionError as exc:
+      last_exc = exc
+      last_error_reason = 'network_unreachable'
+      _LOGGER.warning(
+        'fetch_news connection error (attempt %d/%d) market_id=%r: %s',
         attempt + 1,
         retries,
         market_id,
@@ -394,6 +453,7 @@ def fetch_news(
 
     except Exception as exc:
       last_exc = exc
+      last_error_reason = 'parse_error'
       _LOGGER.warning(
         'fetch_news unexpected error (attempt %d/%d) market_id=%r: %s',
         attempt + 1,
@@ -405,9 +465,10 @@ def fetch_news(
         time.sleep(backoff_s)
 
   _LOGGER.error(
-    'fetch_news failed after %d retries for market_id=%r: %s',
+    'fetch_news failed after %d retries for market_id=%r error=%r: %s',
     retries,
     market_id,
+    last_error_reason,
     last_exc,
   )
-  return []
+  return NewsResult(items=[], error=last_error_reason, fetched_at=datetime.now(UTC))

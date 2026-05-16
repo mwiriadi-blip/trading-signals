@@ -15,6 +15,7 @@ Security:
 '''
 import html
 
+from news_fetcher import NewsResult
 from news_filter import has_critical_event
 
 
@@ -93,8 +94,13 @@ def render_news_panel(
   # Step 1 — filter dismissed hashes BEFORE banner check
   filtered = [h for h in headlines if h.get('title_hash') not in dismissed_hashes]
 
-  # Step 2 — evaluate banner on POST-FILTER list (T-38-04-11)
-  has_critical = has_critical_event(filtered, market_id)
+  # Step 2 — evaluate banner on POST-FILTER list (T-38-04-11).
+  # Wrap filtered list into a NewsResult (error=None — headlines were already
+  # successfully fetched by the caller; render-time wrapping preserves the
+  # D-02 contract without requiring news.py to consume a NewsResult directly).
+  _result_for_filter = NewsResult(items=filtered, error=None)
+  _event = has_critical_event(_result_for_filter, market_id)
+  has_critical = _event.triggered
 
   # Step 3 — build HTML
   open_attr = '' if collapsed else ' open'

@@ -289,14 +289,31 @@ def render_signal_cards(
       _symbol = _market_entry.get('symbol', state_key)
 
       try:
-        _headlines = _fetch_news(state_key, _symbol)
+        _news_result = _fetch_news(state_key, _symbol)
       except Exception:
         import logging as _logging
+        from datetime import datetime as _dt, UTC as _utc
+        from news_fetcher import NewsResult as _NewsResult
         _logging.getLogger(__name__).warning(
-          '[Signals] fetch_news failed for %s — empty fallback (D-10)', state_key,
+          '[Signals] fetch_news failed for %s — error fallback (D-10)', state_key,
           exc_info=True,
         )
-        _headlines = []
+        _news_result = _NewsResult(items=[], error='parse_error', fetched_at=_dt.now(_utc))
+
+      # Surface gate_status in dashboard: render news panel with fetched items.
+      # fetch_news returns NewsResult; pass .items to render_news_panel (list).
+      # Gate status is rendered separately via the news panel gate_status display.
+      _headlines = _news_result.items if hasattr(_news_result, 'items') else list(_news_result)
+
+      # Render gate_status banner above news panel when not clear.
+      _gate_status = getattr(_news_result, 'gate_status', None)
+      _fetch_error = getattr(_news_result, 'error', None)
+      if _gate_status not in (None,) and _gate_status != 'clear':
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+          '[Signals] news gate_status=%r fetch_error=%r for %s',
+          _gate_status, _fetch_error, state_key,
+        )
 
       parts.append(_render_news_panel(state_key, _headlines, _dismissed_hashes, _collapsed))
     except Exception:
