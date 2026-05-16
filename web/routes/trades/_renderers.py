@@ -13,7 +13,6 @@ Contains:
   _render_modify_success_partial
 '''
 import html
-import json as _json
 
 from fastapi.responses import HTMLResponse, Response
 
@@ -131,36 +130,16 @@ def _render_open_success_partial(state, instrument, direction, entry_price, cont
   return HTMLResponse(
     content=tbody_partial + banner_html,
     status_code=200,
-    headers={'HX-Trigger': 'positions-changed'},
+    headers={'HX-Refresh': 'true'},
   )
 
 
 def _render_close_success_partial(instrument, gross_pnl, cost_aud, n_contracts) -> Response:
-  '''REVIEWS HIGH #2: close-success returns EMPTY body + HX-Trigger event.
-
-  Why empty body: the response targets a per-instrument <tbody> via
-  hx-swap="innerHTML". Returning a <div> banner would land as a direct
-  child of <tbody> — invalid HTML5 table structure. Instead: empty body
-  + HX-Trigger header tells the dashboard's tbody listener (Plan 14-05)
-  to refresh the group via fragment GET. Banner display is handled by
-  the listener (it can render the OOB confirmation banner client-side
-  from the event detail).
-  '''
-  # Phase 27 WR-01: route entry-side cost through pnl_engine.entry_side_cost
-  # so the half-split uses the canonical AUD-quantized HALF_UP helper.
-  from pnl_engine import entry_side_cost  # noqa: PLC0415
-  net_pnl = gross_pnl - float(entry_side_cost(cost_aud)) * n_contracts
-  payload = {
-    'positions-changed': {
-      'instrument': instrument,
-      'kind': 'close',
-      'net_pnl': net_pnl,
-    },
-  }
+  '''Close success — full page refresh so stats/positions update immediately.'''
   return HTMLResponse(
-    content='',  # empty: tbody listener refreshes via fragment GET
+    content='',
     status_code=200,
-    headers={'HX-Trigger': _json.dumps(payload)},
+    headers={'HX-Refresh': 'true'},
   )
 
 
@@ -175,5 +154,5 @@ def _render_modify_success_partial(state, instrument) -> Response:
   row_html = _render_position_row_partial(state, instrument, pos) if pos else ''
   return HTMLResponse(
     content=row_html + banner_html, status_code=200,
-    headers={'HX-Trigger': 'positions-changed'},
+    headers={'HX-Refresh': 'true'},
   )
