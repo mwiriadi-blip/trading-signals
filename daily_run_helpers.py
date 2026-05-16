@@ -456,3 +456,12 @@ def _format_run_summary_footer(
     warnings,
     state_saved_label,
   )
+
+
+def record_news_gate_skip(state, state_key, run_date_iso, event):
+  """Record a news gate skip in state for dashboard display (D-02)."""
+  state.setdefault('news_gate_skips', {})[state_key] = {
+    'run_date': run_date_iso,
+    'gate_status': event.gate_status,
+    'fetch_error': event.fetch_error,
+  }

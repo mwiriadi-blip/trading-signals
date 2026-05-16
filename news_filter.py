@@ -15,15 +15,12 @@ FORBIDDEN imports (would break _HEX_PATHS_STDLIB_ONLY AST guard):
 
 Public API:
   classify_headline(text: str, market_id: str) -> bool
-  has_critical_event(result: NewsResult) -> CriticalEventResult
+  has_critical_event(result: Any, market_id: str) -> CriticalEventResult
 '''
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-  from news_fetcher import NewsResult
+from typing import Any, Literal
 
 from system_params import (
   NEWS_DAMPENER_ALLOWLIST,
@@ -137,7 +134,7 @@ def classify_headline(text: str, market_id: str) -> bool:
   return bool(pat.search(scrubbed))
 
 
-def has_critical_event(result: 'NewsResult', market_id: str) -> CriticalEventResult:
+def has_critical_event(result: Any, market_id: str) -> CriticalEventResult:
   '''Classify a NewsResult for critical market-moving events.
 
   D-02 BLOCK_ON_FAILURE mapping:

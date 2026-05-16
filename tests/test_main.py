@@ -35,6 +35,7 @@ import pytest
 
 import data_fetcher  # noqa: F401 — Waves 2/3 monkeypatch target
 import main
+import news_fetcher  # noqa: F401 — 43-02 BLOCK_ON_FAILURE gate monkeypatch target
 import state_manager
 from data_fetcher import (  # noqa: F401 — Wave 3 ERR-01 raises DataFetchError / ShortFrameError
   DataFetchError,
@@ -80,7 +81,10 @@ def _make_args(**overrides) -> argparse.Namespace:
 
 
 def _install_fixture_fetch(monkeypatch) -> None:
-  '''Monkeypatch main.data_fetcher.fetch_ohlcv to return committed fixtures.'''
+  '''Monkeypatch main.data_fetcher.fetch_ohlcv to return committed fixtures.
+  Also stubs news_fetcher.fetch_news → clear NewsResult so BLOCK_ON_FAILURE
+  gate does not block AUDUSD signal generation in tests (43-02).
+  '''
   def _fake(sym, **_kw):
     if sym == '^AXJO':
       return _load_recorded_fixture('axjo_400d.json')
@@ -88,6 +92,9 @@ def _install_fixture_fetch(monkeypatch) -> None:
       return _load_recorded_fixture('audusd_400d.json')
     raise AssertionError(f'unexpected symbol: {sym!r}')
   monkeypatch.setattr(main.data_fetcher, 'fetch_ohlcv', _fake)
+  from datetime import UTC, datetime
+  _clear = news_fetcher.NewsResult(items=[], error=None, fetched_at=datetime.now(UTC))
+  monkeypatch.setattr(news_fetcher, 'fetch_news', lambda *_a, **_kw: _clear)
 
 
 # =========================================================================
