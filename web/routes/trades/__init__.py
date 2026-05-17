@@ -350,7 +350,7 @@ def register(app: FastAPI) -> None:
 
     mutate_user_state(user_id, _apply)
     logger.info('[Web] DELETE /trades/%d: admin=%s', index, user_id)
-    return Response(status_code=200)
+    return Response(status_code=200, headers={'HX-Refresh': 'true'})
 
 
 # D-03 import-surface preservation — tests and service layer import these names
