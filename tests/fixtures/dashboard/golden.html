@@ -672,7 +672,8 @@ td.calc-cell.entry-target {
   color: var(--color-text-muted);
   font-weight: 600;
 }
-.account-stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.account-stats-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.account-stats-grid .stat-tile .value { font-size: clamp(16px, 1.8vw, 24px); }
 .market-test-result { margin-top: var(--space-4); }
 @media (max-width: 600px) {
   .stats-bar-item { min-width: calc(33% - var(--space-4)); }
@@ -1475,6 +1476,7 @@ input:focus-visible,
 </section>
 <section aria-labelledby="heading-positions">
   <h2 id="heading-positions">Open Positions</h2>
+  <div class="error" role="alert" aria-live="polite" hidden></div>
   <div class="table-scroll" tabindex="0" role="region" aria-label="Open positions (scrollable)">
   <table class="data-table">
     <caption class="visually-hidden">Open positions with current price, contracts, trail stop, and unrealised P&amp;L</caption>

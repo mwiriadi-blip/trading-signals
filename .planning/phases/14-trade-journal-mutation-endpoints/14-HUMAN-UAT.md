@@ -3,7 +3,7 @@ status: partial
 phase: 14-trade-journal-mutation-endpoints
 source: [14-VERIFICATION.md, 14-VALIDATION.md]
 started: 2026-04-26
-updated: 2026-04-26
+updated: 2026-05-17
 ---
 
 # Phase 14 — Human UAT (Manual Droplet Verification)
@@ -12,13 +12,14 @@ updated: 2026-04-26
 
 ## Current Test
 
-[awaiting operator droplet acceptance run]
+[partial — 4/5 verified 2026-05-17; #2 fcntl race pending]
 
 ## Tests
 
 ### 1. HTMX form swaps render correctly in real browsers (TRADE-05 / SC-5)
 expected: Open / Close / Modify forms submit successfully via HTMX with json-enc extension; per-tbody-group swaps cleanly; error responses render inline without full-page reload
-result: [pending]
+result: pass
+evidence: 2026-05-17 — open form submitted LONG SPI200 @ 7800 (1 contract); 409 conflict rendered inline with no full-page reload (pyramid blocked — correct). Close form confirmed position closed successfully. Error path (inline 4xx) confirmed. Bug found and fixed: positions table + trailing stops table were reading from stale top-level state['positions'] key (removed Phase 36); fixed to read from state['users'][uid]['positions'].
 
 **Steps:**
 ```
@@ -111,22 +112,20 @@ print('trade_log length preserved:', len(s['trade_log']))
 
 ### 4. 4xx error responses render inline (TRADE-02 / SC-2 browser half)
 expected: 400 errors from POST endpoints render inline in `.error` div without full-page reload; field-level errors visible
-result: [pending]
-
-**Steps:** Covered in test #1 (Open form error path test). Verify across all 3 forms.
+result: pass
+evidence: 2026-05-17 — covered by test #1. 409 conflict rendered inline with no full-page reload confirmed in Chrome DevTools (initiator chain shows htmx.min.js).
 
 ### 5. 2-stage destructive close UX evaluation (UI-SPEC §Decision 5)
 expected: Operator finds the close confirmation flow intuitive; Cancel reachable; confirmation panel shows correct exit_price input
-result: [pending]
-
-**Steps:** Subjective. Submit Close on a real position, evaluate UX. Adjust copy if needed in a follow-up.
+result: pass
+evidence: 2026-05-17 — close flow completed successfully with valid exit price. Entering 0 was blocked. Error feedback for invalid values was unclear (browser native min tooltip not prominent). Inline error handler now wired (hx-on::after-request + .error div added to positions section). Underlying close UX is functional; error copy can be improved in a follow-up polish phase.
 
 ## Summary
 
 total: 5
-passed: 1
+passed: 4
 issues: 0
-pending: 4
+pending: 1
 skipped: 0
 blocked: 0
 

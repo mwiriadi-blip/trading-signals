@@ -180,7 +180,7 @@ class TestOpenTradeEndpoint:
     })
     assert r.status_code == 200
     assert r.headers['content-type'].startswith('text/html')
-    assert r.headers.get('HX-Trigger') == 'positions-changed'
+    assert r.headers.get('HX-Refresh') == 'true'
 
   def test_open_no_atr_in_signals_returns_409(self, client_with_state_v3, htmx_headers):
     client, set_state, captured_saves = client_with_state_v3
@@ -947,7 +947,7 @@ class TestHTMXResponses:
     })
     assert r.status_code == 200
     assert r.headers['content-type'].startswith('text/html')
-    assert 'HX-Trigger' in r.headers
+    assert r.headers.get('HX-Refresh') == 'true'
 
   def test_open_response_contains_positions_tbody_partial(
     self, client_with_state_v3, htmx_headers,
@@ -982,15 +982,13 @@ class TestHTMXResponses:
       'instrument': 'SPI200', 'exit_price': 7900.0,
     })
     assert r.status_code == 200
-    # REVIEWS HIGH #2: HX-Trigger event payload includes positions-changed
-    trigger = r.headers.get('HX-Trigger', '')
-    assert 'positions-changed' in trigger
+    assert r.headers.get('HX-Refresh') == 'true'
 
-  def test_close_success_returns_empty_with_hx_trigger(
+  def test_close_success_returns_empty_with_hx_refresh(
     self, client_with_state_v3, htmx_headers,
   ):
-    '''REVIEWS HIGH #2: close-success returns EMPTY body (avoids invalid
-    <div>-as-tbody-child) + HX-Trigger event for the listener.'''
+    '''close-success returns EMPTY body + HX-Refresh: true (full page reload
+    so all sections — positions, stats, trade log — update immediately).'''
     client, set_state, _ = client_with_state_v3
     set_state(_v3_state_with_open_position(direction='LONG'))
     r = client.post('/trades/close', headers=htmx_headers, json={
@@ -998,11 +996,7 @@ class TestHTMXResponses:
     })
     assert r.status_code == 200
     assert r.text == '', f'close-success body must be EMPTY; got: {r.text!r}'
-    trigger = r.headers.get('HX-Trigger', '')
-    payload = json.loads(trigger)
-    assert 'positions-changed' in payload
-    assert payload['positions-changed']['instrument'] == 'SPI200'
-    assert payload['positions-changed']['kind'] == 'close'
+    assert r.headers.get('HX-Refresh') == 'true'
 
   def test_modify_response_returns_re_rendered_row(
     self, client_with_state_v3, htmx_headers,
